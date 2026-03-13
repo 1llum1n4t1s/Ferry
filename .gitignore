@@ -1,0 +1,23 @@
+# Build results
+bin/
+obj/
+
+# Visual Studio
+.vs/
+
+# User-specific files
+*.user
+*.suo
+
+# NuGet
+packages/
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Node modules (Bridge)
+node_modules/
+
+# Claude local settings
+.claude/settings.local.json

@@ -1,0 +1,74 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Ferry.ViewModels"
+             x:Class="Ferry.Views.ConnectionPanel"
+             x:DataType="vm:ConnectionViewModel">
+
+    <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+            BorderThickness="1"
+            CornerRadius="8"
+            Padding="16">
+        <StackPanel Spacing="12">
+
+            <!-- 状態テキスト -->
+            <TextBlock Text="{Binding StatusText}"
+                       FontSize="14"
+                       HorizontalAlignment="Center"
+                       TextWrapping="Wrap" />
+
+            <!-- QR コード画像 -->
+            <Image Source="{Binding QrCodeImage}"
+                   Width="200"
+                   Height="200"
+                   HorizontalAlignment="Center"
+                   IsVisible="{Binding QrCodeImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+            <!-- セッション ID 表示 -->
+            <TextBlock Text="{Binding SessionId, StringFormat='Session: {0}'}"
+                       FontSize="10"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                       HorizontalAlignment="Center"
+                       IsVisible="{Binding SessionId, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+            <!-- 接続先ピア名 -->
+            <TextBlock Text="{Binding PeerName, StringFormat='接続先: {0}'}"
+                       FontSize="12"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center"
+                       IsVisible="{Binding PeerName, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+            <!-- ボタン群 -->
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Center"
+                        Spacing="8">
+
+                <!-- セッション開始ボタン -->
+                <Button Content="接続開始"
+                        Command="{Binding StartSessionCommand}"
+                        IsVisible="{Binding ConnectionState, Converter={StaticResource EqualConverter}, ConverterParameter=Disconnected}" />
+
+                <!-- ペアリング承認/拒否ボタン -->
+                <Button Content="承認"
+                        Command="{Binding AcceptPairingCommand}"
+                        Classes="accent"
+                        IsVisible="{Binding ConnectionState, Converter={StaticResource EqualConverter}, ConverterParameter=PairingRequested}" />
+
+                <Button Content="拒否"
+                        Command="{Binding RejectPairingCommand}"
+                        IsVisible="{Binding ConnectionState, Converter={StaticResource EqualConverter}, ConverterParameter=PairingRequested}" />
+
+                <!-- 切断ボタン -->
+                <Button Content="切断"
+                        Command="{Binding DisconnectCommand}"
+                        IsVisible="{Binding ConnectionState, Converter={StaticResource NotEqualConverter}, ConverterParameter=Disconnected}" />
+            </StackPanel>
+
+            <!-- 接続中インジケーター -->
+            <ProgressBar IsIndeterminate="True"
+                         IsVisible="{Binding IsConnecting}"
+                         Height="4" />
+
+        </StackPanel>
+    </Border>
+
+</UserControl>

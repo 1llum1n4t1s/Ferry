@@ -1,0 +1,20 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Ferry.App"
+             xmlns:local="using:Ferry"
+             xmlns:conv="using:Ferry.Converters"
+             RequestedThemeVariant="Default">
+
+    <Application.Resources>
+        <conv:EqualConverter x:Key="EqualConverter" />
+        <conv:NotEqualConverter x:Key="NotEqualConverter" />
+    </Application.Resources>
+
+    <Application.DataTemplates>
+        <local:ViewLocator/>
+    </Application.DataTemplates>
+
+    <Application.Styles>
+        <FluentTheme />
+    </Application.Styles>
+</Application>

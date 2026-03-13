@@ -1,0 +1,28 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Ferry.ViewModels"
+        xmlns:views="using:Ferry.Views"
+        x:Class="Ferry.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="Ferry"
+        Width="500"
+        Height="700"
+        MinWidth="400"
+        MinHeight="500"
+        WindowStartupLocation="CenterScreen">
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel />
+    </Design.DataContext>
+
+    <DockPanel Margin="16">
+        <!-- 接続パネル（上部） -->
+        <views:ConnectionPanel DockPanel.Dock="Top"
+                               DataContext="{Binding Connection}"
+                               Margin="0,0,0,16" />
+
+        <!-- 転送パネル（残りの領域） -->
+        <views:TransferPanel DataContext="{Binding Transfer}" />
+    </DockPanel>
+
+</Window>

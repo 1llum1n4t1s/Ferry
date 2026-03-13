@@ -1,0 +1,71 @@
+name: Velopack Release
+
+on:
+  push:
+    branches: ["release/*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: .NET SDK をセットアップ
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+          dotnet-quality: "preview"
+
+      - name: Velopack CLI をインストール
+        run: dotnet tool install -g vpk
+
+      - name: csproj からバージョンを取得
+        id: version
+        shell: pwsh
+        run: |
+          [xml]$csproj = Get-Content "src/Ferry/Ferry.csproj"
+          $version = $csproj.Project.PropertyGroup.Version
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Version: $version"
+
+      - name: アイコンを生成
+        shell: pwsh
+        run: |
+          Set-Location icon
+          .\generate_icon.ps1
+
+      - name: アプリケーションを発行
+        run: dotnet publish src/Ferry/Ferry.csproj -c Release -r win-x64 -o publish
+
+      - name: Velopack パッケージを作成
+        run: vpk pack -u Ferry -v ${{ steps.version.outputs.VERSION }} -p publish -o releases --channel win --icon icon/app.ico
+
+      - name: 既存リリースを削除（存在する場合）
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tagName = "v${{ steps.version.outputs.VERSION }}"
+          $existingRelease = gh release view $tagName 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "既存リリース $tagName を削除中..."
+            gh release delete $tagName --yes --cleanup-tag
+          }
+
+      - name: GitHub リリースを作成
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tagName = "v${{ steps.version.outputs.VERSION }}"
+          $releaseName = "Ferry ${{ steps.version.outputs.VERSION }}"
+          gh release create $tagName releases/* --title $releaseName --generate-notes
+
+      - name: Velopack を GitHub にアップロード
+        run: vpk upload github --repoUrl https://github.com/1llum1n4t1s/Ferry --channel win --token ${{ secrets.GITHUB_TOKEN }} --tag v${{ steps.version.outputs.VERSION }}

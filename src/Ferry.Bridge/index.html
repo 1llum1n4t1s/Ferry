@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ferry - ペアリング</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+        }
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 8px;
+            color: #fff;
+        }
+        .subtitle {
+            color: #888;
+            margin-bottom: 32px;
+        }
+        .status {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .status-text {
+            font-size: 1.1rem;
+            margin-bottom: 12px;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #333;
+            border-top-color: #0078d4;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 16px auto;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .session-info {
+            background: #0f3460;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 16px;
+        }
+        .session-id {
+            font-family: monospace;
+            font-size: 0.85rem;
+            word-break: break-all;
+            color: #aaa;
+        }
+        .btn {
+            background: #0078d4;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 32px;
+            font-size: 1rem;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 12px;
+        }
+        .btn:hover { background: #106ebe; }
+        .btn:disabled { background: #555; cursor: not-allowed; }
+        .error { color: #ff6b6b; }
+        .success { color: #51cf66; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Ferry</h1>
+        <p class="subtitle">P2P ファイル転送ペアリング</p>
+
+        <div class="status" id="statusPanel">
+            <p class="status-text" id="statusText">セッション情報を取得中…</p>
+            <div class="spinner" id="spinner"></div>
+        </div>
+
+        <!-- セッション A の情報 -->
+        <div class="session-info hidden" id="sessionAInfo">
+            <p>接続元</p>
+            <p class="session-id" id="sessionAId"></p>
+        </div>
+
+        <!-- 2 台目の QR スキャン待ち -->
+        <div class="hidden" id="waitingPanel">
+            <p>2 台目のデバイスで QR コードをスキャンしてください</p>
+            <div class="spinner"></div>
+        </div>
+
+        <!-- ペアリング完了 -->
+        <div class="hidden" id="pairedPanel">
+            <p class="success">ペアリングが完了しました！</p>
+            <p>デスクトップアプリで接続を承認してください。</p>
+        </div>
+
+        <!-- エラー表示 -->
+        <div class="hidden" id="errorPanel">
+            <p class="error" id="errorText"></p>
+            <button class="btn" onclick="location.reload()">再試行</button>
+        </div>
+    </div>
+
+    <!-- Firebase SDK (v9 compat) -->
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+    <script src="bridge.js"></script>
+</body>
+</html>
