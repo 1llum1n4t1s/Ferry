@@ -1,19 +1,25 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Version>1.0.0</Version>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
-    <ApplicationIcon>..\..\icon\app.ico</ApplicationIcon>
+    <ApplicationManifest Condition="$([MSBuild]::IsOSPlatform('Windows'))">app.manifest</ApplicationManifest>
+    <ApplicationIcon Condition="$([MSBuild]::IsOSPlatform('Windows'))">..\..\icon\app.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
-    <Title>Ferry</Title>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+
+    <Product>Ferry</Product>
+    <Description>P2P File Transfer Application</Description>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <PublishAot>true</PublishAot>
     <PublishTrimmed>true</PublishTrimmed>
-    <SelfContained>true</SelfContained>
-    <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <TrimMode>link</TrimMode>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <SupportedOSPlatformVersion>13.0</SupportedOSPlatformVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,7 +27,8 @@
     <AvaloniaResource Include="..\..\icon\app.ico" Link="icon\app.ico" />
   </ItemGroup>
 
-  <Target Name="GenerateIcon" BeforeTargets="BeforeBuild" Inputs="..\..\icon\app_icon.png" Outputs="..\..\icon\app.ico">
+  <Target Name="GenerateIcon" BeforeTargets="BeforeBuild" Inputs="..\..\icon\app_icon.png" Outputs="..\..\icon\app.ico"
+          Condition="$([MSBuild]::IsOSPlatform('Windows'))">
     <Exec Command="powershell -ExecutionPolicy Bypass -NoProfile -File &quot;$(ProjectDir)..\..\icon\generate_icon.ps1&quot;" />
   </Target>
 
@@ -30,15 +37,18 @@
     <PackageReference Include="Avalonia.Desktop" Version="11.3.12" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.12" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.12" />
-    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.12">
-      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
-      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
-    </PackageReference>
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.12" Condition="'$(Configuration)' == 'Debug'" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="Velopack" Version="0.0.1298" />
     <PackageReference Include="SIPSorcery" Version="10.0.3" />
     <PackageReference Include="QRCoder" Version="1.7.0" />
     <PackageReference Include="FirebaseDatabase.net" Version="5.0.0" />
     <PackageReference Include="NLog" Version="6.1.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <TrimmerRootAssembly Include="Ferry" />
+    <TrimmerRootAssembly Include="Avalonia.Themes.Fluent" />
+    <TrimmerRootAssembly Include="Velopack" />
   </ItemGroup>
 </Project>

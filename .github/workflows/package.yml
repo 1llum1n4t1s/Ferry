@@ -1,0 +1,110 @@
+name: Package
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Ferry package version
+        required: true
+        type: string
+jobs:
+  windows:
+    name: Package Windows
+    runs-on: windows-2022
+    strategy:
+      matrix:
+        include:
+          - runtime: win-x64
+            label: windows-x64
+          - runtime: win-arm64
+            label: windows-arm64
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+      - name: Download build
+        uses: actions/download-artifact@v4
+        with:
+          name: ferry.${{ matrix.runtime }}
+          path: build/Ferry
+      - name: Package
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+          LABEL: ${{ matrix.label }}
+        run: ./build/scripts/package.win.ps1
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: package.${{ matrix.label }}
+          path: build/ferry_*.zip
+  osx-app:
+    name: Package macOS
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - runtime: osx-arm64
+            label: macos-apple-silicon
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+      - name: Download build
+        uses: actions/download-artifact@v4
+        with:
+          name: ferry.${{ matrix.runtime }}
+          path: build
+      - name: Package
+        env:
+          VERSION: ${{ inputs.version }}
+          LABEL: ${{ matrix.label }}
+        run: |
+          mkdir build/Ferry
+          tar -xf "build/ferry.${{ matrix.runtime }}.tar" -C build/Ferry
+          ./build/scripts/package.osx-app.sh
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: package.${{ matrix.label }}
+          path: build/ferry_*.zip
+  linux:
+    name: Package Linux
+    runs-on: ubuntu-latest
+    container: ubuntu:20.04
+    strategy:
+      matrix:
+        include:
+          - runtime: linux-x64
+            label: linux-x64
+          - runtime: linux-arm64
+            label: linux-arm64
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+      - name: Download package dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime
+          apt-get update
+          apt-get install -y curl wget git dpkg-dev fakeroot tzdata zip unzip desktop-file-utils rpm libfuse2 file build-essential binutils
+      - name: Download build
+        uses: actions/download-artifact@v4
+        with:
+          name: ferry.${{ matrix.runtime }}
+          path: build
+      - name: Package
+        env:
+          VERSION: ${{ inputs.version }}
+          LABEL: ${{ matrix.label }}
+          RUNTIME: ${{ matrix.runtime }}
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: |
+          mkdir build/Ferry
+          tar -xf "build/ferry.${{ matrix.runtime }}.tar" -C build/Ferry
+          ./build/scripts/package.linux.sh
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: package.${{ matrix.label }}
+          path: |
+            build/ferry-*.AppImage
+            build/ferry_*.deb
+            build/ferry-*.rpm

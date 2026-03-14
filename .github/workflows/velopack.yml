@@ -1,0 +1,94 @@
+name: Velopack
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+jobs:
+  velopack:
+    strategy:
+      matrix:
+        include:
+          - runtime: win-x64
+            label: windows-x64
+            os: windows-2022
+            mainExe: Ferry.exe
+          - runtime: win-arm64
+            label: windows-arm64
+            os: windows-2022
+            mainExe: Ferry.exe
+          - runtime: osx-arm64
+            label: macos-apple-silicon
+            os: macos-latest
+            mainExe: Ferry
+          - runtime: linux-x64
+            label: linux-x64
+            os: ubuntu-latest
+            mainExe: ferry
+          - runtime: linux-arm64
+            label: linux-arm64
+            os: ubuntu-latest
+            mainExe: ferry
+    name: Velopack ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Checkout app metadata
+        if: ${{ !startsWith(matrix.runtime, 'win-') }}
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            build/resources/app/App.icns
+            build/resources/app/App.plist
+            build/resources/_common/icons/ferry.png
+      - name: Prepare macOS app metadata
+        if: startsWith(matrix.runtime, 'osx-')
+        run: |
+          sed "s/FERRY_VERSION/${{ inputs.version }}/g" build/resources/app/App.plist > Info.plist
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ferry.${{ matrix.runtime }}
+          path: publish
+      - name: Extract tar
+        if: ${{ !startsWith(matrix.runtime, 'win-') }}
+        run: |
+          tar -xf publish/ferry.${{ matrix.runtime }}.tar -C publish
+          rm publish/ferry.${{ matrix.runtime }}.tar
+      - name: Install Velopack CLI
+        run: dotnet tool install --global vpk
+      - name: Create Velopack package (Windows)
+        if: startsWith(matrix.runtime, 'win-')
+        run: vpk pack --packId Ferry --packVersion ${{ inputs.version }} --mainExe ${{ matrix.mainExe }} --packDir publish --outputDir artifacts --channel ${{ matrix.runtime }}
+      - name: Create Velopack package (Linux)
+        if: startsWith(matrix.runtime, 'linux-')
+        run: >
+          vpk pack
+          --packId Ferry
+          --packVersion ${{ inputs.version }}
+          --mainExe ${{ matrix.mainExe }}
+          --packDir publish
+          --outputDir artifacts
+          --channel ${{ matrix.runtime }}
+          --icon build/resources/_common/icons/ferry.png
+      - name: Create Velopack package (macOS)
+        if: startsWith(matrix.runtime, 'osx-')
+        run: >
+          vpk pack
+          --packId Ferry
+          --packVersion ${{ inputs.version }}
+          --mainExe ${{ matrix.mainExe }}
+          --packDir publish
+          --outputDir artifacts
+          --channel ${{ matrix.runtime }}
+          --icon build/resources/app/App.icns
+          --plist Info.plist
+      - name: Upload Velopack artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: velopack.${{ matrix.label }}
+          path: artifacts/*

@@ -1,0 +1,88 @@
+name: Release
+on:
+  push:
+    branches:
+      - 'release/**'
+jobs:
+  build:
+    name: Build
+    uses: ./.github/workflows/build.yml
+  version:
+    name: Prepare version string
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+      - name: Output version string
+        id: version
+        run: |
+          version=$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$version" >> "$GITHUB_OUTPUT"
+  package:
+    needs: [build, version]
+    name: Package
+    uses: ./.github/workflows/package.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+  velopack:
+    needs: [build, version]
+    name: Velopack
+    uses: ./.github/workflows/velopack.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+  release:
+    needs: [package, velopack, version]
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+      - name: Delete existing releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release delete "$TAG" --yes --cleanup-tag
+          fi
+          if gh release view "velopack-$TAG" > /dev/null 2>&1; then
+            gh release delete "velopack-$TAG" --yes --cleanup-tag
+          fi
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: package.*
+          path: packages
+          merge-multiple: true
+      - name: Download Velopack artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: velopack.*
+          path: velopack-packages
+          merge-multiple: true
+      - name: Create Velopack release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release create "velopack-$TAG" \
+            -t "Velopack $VERSION" \
+            --latest=false \
+            --notes "Auto-update packages for Velopack."
+          gh release upload "velopack-$TAG" velopack-packages/*
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release create "$TAG" -t "$VERSION" --generate-notes
+          gh release upload "$TAG" packages/*
+          gh release upload "$TAG" velopack-packages/*-Setup.exe velopack-packages/*-Setup.pkg

@@ -8,40 +8,11 @@ on:
       - "**.md"
   workflow_dispatch:
 
-# release/* ブランチの PR はリリースワークフローに任せる
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    runs-on: windows-latest
-
-    steps:
-      - name: リポジトリをチェックアウト
-        uses: actions/checkout@v4
-
-      - name: .NET SDK をセットアップ
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "10.0.x"
-          dotnet-quality: "preview"
-
-      - name: アイコンを生成
-        shell: pwsh
-        run: |
-          Set-Location icon
-          .\generate_icon.ps1
-
-      - name: NuGet パッケージを復元
-        run: dotnet restore src/Ferry/Ferry.csproj
-
-      - name: ビルド
-        run: dotnet build src/Ferry/Ferry.csproj -c Release --no-restore
-
-      - name: 成果物をアップロード
-        uses: actions/upload-artifact@v4
-        with:
-          name: ferry-build
-          path: src/Ferry/bin/Release/
-          retention-days: 7
+    name: Build
+    uses: ./.github/workflows/build.yml

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+	<id>com.1llum1n4t1s.Ferry</id>
+	<metadata_license>MIT</metadata_license>
+	<project_license>MIT</project_license>
+	<name>Ferry</name>
+	<summary>P2P File Transfer Application</summary>
+	<description>
+		<p>P2P file transfer application using WebRTC DataChannel</p>
+	</description>
+	<url type="homepage">https://github.com/1llum1n4t1s/Ferry</url>
+	<launchable type="desktop-id">com.1llum1n4t1s.Ferry.desktop</launchable>
+	<provides>
+		<id>com.1llum1n4t1s.Ferry.desktop</id>
+	</provides>
+</component>

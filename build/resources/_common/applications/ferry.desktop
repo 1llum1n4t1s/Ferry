@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Ferry
+Comment=P2P File Transfer Application
+Exec=/opt/ferry/ferry
+Icon=/usr/share/icons/ferry.png
+Terminal=false
+Type=Application
+Categories=Network;FileTransfer;
+MimeType=inode/directory;
