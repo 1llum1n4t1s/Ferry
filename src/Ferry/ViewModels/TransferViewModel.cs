@@ -76,6 +76,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             }
             catch (Exception ex)
             {
+                Util.Logger.Log($"ファイル送信エラー ({filePath}): {ex.Message}", Util.LogLevel.Error);
                 item.State = TransferState.Error;
                 item.ErrorMessage = ex.Message;
             }
@@ -112,6 +113,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
+            Util.Logger.Log($"転送レジュームエラー ({transferId}): {ex.Message}", Util.LogLevel.Error);
             item.State = TransferState.Error;
             item.ErrorMessage = ex.Message;
         }
@@ -138,7 +140,8 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
 
     private void OnProgressChanged(object? sender, TransferItem e)
     {
-        var item = Transfers.FirstOrDefault(t => t.FileName == e.FileName && t.State == TransferState.InProgress);
+        // TransferId で照合（同名ファイルが複数ある場合に誤動作を防ぐ）
+        var item = Transfers.FirstOrDefault(t => t.TransferId == e.TransferId && t.State == TransferState.InProgress);
         if (item is not null)
         {
             item.TransferredBytes = e.TransferredBytes;
@@ -152,7 +155,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
 
     private void OnTransferError(object? sender, TransferItem e)
     {
-        var item = Transfers.FirstOrDefault(t => t.FileName == e.FileName && t.State == TransferState.InProgress);
+        var item = Transfers.FirstOrDefault(t => t.TransferId == e.TransferId && t.State == TransferState.InProgress);
         if (item is not null)
         {
             item.State = TransferState.Error;

@@ -1,12 +1,11 @@
 /**
- * Ferry Bridge — スマートフォンブラウザでの QR ペアリングロジック。
+ * Ferry Bridge — スマートフォンブラウザで 2 台の PC をペアリングする。
  *
  * 処理フロー:
- * 1. URL の ?sid= パラメータからセッション ID (Side A) を取得
- * 2. Firebase Anonymous Auth でサインイン
- * 3. Firebase Realtime Database の pairing/{sessionId} にリクエストを書き込む
- * 4. デスクトップアプリ側が accepted を書き込むのを監視
- * 5. ペアリング成立を検知して完了表示
+ * 1. URL の ?sid=&name= から 1 台目のセッション情報を取得
+ * 2. Firebase Realtime Database で sessions/{sid} の存在を確認
+ * 3. ページ内カメラ（html5-qrcode）で 2 台目の QR コードをスキャン
+ * 4. pairings/ に両方のセッション ID を書き込み → 両 PC に通知
  */
 
 const FIREBASE_CONFIG = {
@@ -20,21 +19,31 @@ const FIREBASE_CONFIG = {
     measurementId: "G-K29NXSWF83",
 };
 
+// DOM 要素
 const statusText = document.getElementById("statusText");
 const spinner = document.getElementById("spinner");
 const sessionAInfo = document.getElementById("sessionAInfo");
 const sessionAId = document.getElementById("sessionAId");
-const waitingPanel = document.getElementById("waitingPanel");
+const sessionAName = document.getElementById("sessionAName");
+const scanPanel = document.getElementById("scanPanel");
+const qrReader = document.getElementById("qrReader");
 const pairedPanel = document.getElementById("pairedPanel");
+const pairedNames = document.getElementById("pairedNames");
 const errorPanel = document.getElementById("errorPanel");
 const errorText = document.getElementById("errorText");
 
+let db = null;
+let html5QrCode = null;
+
 /**
- * URL パラメータからセッション ID を取得する。
+ * URL パラメータを取得する。
  */
-function getSessionIdFromUrl() {
+function getParams() {
     const params = new URLSearchParams(window.location.search);
-    return params.get("sid");
+    return {
+        sid: params.get("sid"),
+        name: params.get("name") ? decodeURIComponent(params.get("name")) : null,
+    };
 }
 
 /**
@@ -43,109 +52,153 @@ function getSessionIdFromUrl() {
 function showError(message) {
     statusText.textContent = "エラー";
     spinner.classList.add("hidden");
-    waitingPanel.classList.add("hidden");
+    scanPanel.classList.add("hidden");
     errorPanel.classList.remove("hidden");
     errorText.textContent = message;
+    stopCamera();
 }
 
 /**
  * ペアリング成功を表示する。
  */
-function showPaired() {
-    statusText.textContent = "ペアリング完了";
+function showPaired(nameA, nameB) {
+    statusText.textContent = "ペアリング完了！";
     spinner.classList.add("hidden");
-    waitingPanel.classList.add("hidden");
+    scanPanel.classList.add("hidden");
     pairedPanel.classList.remove("hidden");
+    pairedNames.textContent = `「${nameA}」と「${nameB}」がペアリングされました`;
+    stopCamera();
+}
+
+/**
+ * カメラを停止する。
+ */
+function stopCamera() {
+    if (html5QrCode) {
+        html5QrCode.stop().catch(() => {});
+        html5QrCode = null;
+    }
+}
+
+/**
+ * QR コードの URL からセッション情報を抽出する。
+ */
+function parseQrUrl(text) {
+    try {
+        const url = new URL(text);
+        const params = new URLSearchParams(url.search);
+        return {
+            sid: params.get("sid"),
+            name: params.get("name") ? decodeURIComponent(params.get("name")) : null,
+        };
+    } catch {
+        return { sid: null, name: null };
+    }
+}
+
+/**
+ * 2 台目の QR スキャン用カメラを起動する。
+ */
+async function startQrScanner(sidA, nameA) {
+    scanPanel.classList.remove("hidden");
+    statusText.textContent = "2 台目の PC の QR コードをスキャンしてください";
+    spinner.classList.add("hidden");
+
+    html5QrCode = new Html5Qrcode("qrReader");
+
+    try {
+        await html5QrCode.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 250, height: 250 } },
+            async (decodedText) => {
+                // QR コード読み取り成功
+                const { sid: sidB, name: nameB } = parseQrUrl(decodedText);
+
+                if (!sidB) {
+                    // Ferry の QR コードではない
+                    return;
+                }
+
+                if (sidB === sidA) {
+                    // 同じ PC の QR コードをスキャンした
+                    return;
+                }
+
+                // カメラ停止
+                stopCamera();
+                statusText.textContent = "ペアリング中…";
+                spinner.classList.remove("hidden");
+                scanPanel.classList.add("hidden");
+
+                try {
+                    // sessions/{sidB} の存在を確認
+                    const snapB = await db.ref(`sessions/${sidB}`).once("value");
+                    if (!snapB.exists()) {
+                        showError("2 台目のセッションが見つかりません。PC でアプリが起動していることを確認してください。");
+                        return;
+                    }
+
+                    // pairings/ にペアリング情報を書き込み
+                    const pairingId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                    await db.ref(`pairings/${pairingId}`).set({
+                        SidA: sidA,
+                        SidB: sidB,
+                        NameA: nameA || "PC-A",
+                        NameB: nameB || snapB.val().DisplayName || "PC-B",
+                        CreatedAt: Date.now(),
+                    });
+
+                    showPaired(nameA || "PC-A", nameB || snapB.val().DisplayName || "PC-B");
+                } catch (err) {
+                    showError(`ペアリングエラー: ${err.message}`);
+                }
+            },
+            () => {
+                // QR コード未検出（スキャン中）
+            }
+        );
+    } catch (err) {
+        showError(`カメラの起動に失敗しました: ${err.message}`);
+    }
 }
 
 /**
  * メイン処理。
  */
 async function main() {
-    const sessionId = getSessionIdFromUrl();
+    const { sid: sidA, name: nameA } = getParams();
 
-    if (!sessionId) {
+    if (!sidA) {
         showError("セッション ID が見つかりません。QR コードを再スキャンしてください。");
         return;
     }
 
     // セッション A の情報を表示
     sessionAInfo.classList.remove("hidden");
-    sessionAId.textContent = sessionId;
+    sessionAId.textContent = sidA;
+    if (nameA) sessionAName.textContent = nameA;
 
     statusText.textContent = "Firebase に接続中…";
 
     try {
-        // Firebase SDK 初期化
+        // Firebase SDK 初期化（認証なし）
         firebase.initializeApp(FIREBASE_CONFIG);
-        const db = firebase.database();
-        const auth = firebase.auth();
+        db = firebase.database();
 
-        // Anonymous Auth でサインイン
-        statusText.textContent = "認証中…";
-        await auth.signInAnonymously();
+        // sessions/{sidA} の存在を確認
+        statusText.textContent = "セッション情報を確認中…";
+        const snapA = await db.ref(`sessions/${sidA}`).once("value");
+        if (!snapA.exists()) {
+            showError("セッションが見つかりません。PC でアプリが起動していることを確認してください。");
+            return;
+        }
 
-        // pairing ノードにペアリングリクエストを書き込む
-        statusText.textContent = "ペアリングリクエスト送信中…";
-        const pairingRef = db.ref(`pairing/${sessionId}`);
-
-        // デバイス情報を取得
-        const deviceName = getDeviceName();
-
-        await pairingRef.set({
-            sidA: sessionId,
-            deviceName: deviceName,
-            timestamp: firebase.database.ServerValue.TIMESTAMP,
-            status: "waiting",
-        });
-
-        // ペアリング待機中の表示
-        statusText.textContent = "デスクトップアプリの応答を待機中…";
-        waitingPanel.classList.remove("hidden");
-
-        // pairing ノードの変更を監視
-        pairingRef.on("value", (snapshot) => {
-            const data = snapshot.val();
-            if (!data) return;
-
-            if (data.status === "accepted") {
-                // デスクトップアプリがペアリングを承認した
-                showPaired();
-                // 監視を停止
-                pairingRef.off("value");
-            } else if (data.status === "rejected") {
-                // デスクトップアプリがペアリングを拒否した
-                showError("接続が拒否されました。");
-                pairingRef.off("value");
-            }
-        });
-
-        // タイムアウト処理（5 分）
-        setTimeout(() => {
-            pairingRef.off("value");
-            pairingRef.remove().catch(() => {});
-            if (!pairedPanel.classList.contains("hidden") === false) {
-                showError("タイムアウト: デスクトップアプリからの応答がありませんでした。");
-            }
-        }, 5 * 60 * 1000);
+        // 1 台目の登録確認完了 → 2 台目のスキャンへ
+        await startQrScanner(sidA, nameA || snapA.val().DisplayName || "PC-A");
 
     } catch (err) {
         showError(`接続エラー: ${err.message}`);
     }
-}
-
-/**
- * ブラウザの User Agent からデバイス名を簡易取得する。
- */
-function getDeviceName() {
-    const ua = navigator.userAgent;
-    if (/iPhone/.test(ua)) return "iPhone";
-    if (/iPad/.test(ua)) return "iPad";
-    if (/Android/.test(ua)) {
-        const match = ua.match(/;\s*([^;)]+)\s*Build\//);
-        return match ? match[1].trim() : "Android";
-    }
-    return "モバイルブラウザ";
 }
 
 // ページ読み込み時に実行

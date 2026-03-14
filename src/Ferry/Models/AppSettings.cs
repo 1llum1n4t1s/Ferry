@@ -20,4 +20,13 @@ public sealed class AppSettings
 
     /// <summary>Firebase Hosting の橋渡しページ URL（プレースホルダー）。</summary>
     public string BridgePageUrl { get; set; } = string.Empty;
+
+    /// <summary>OS 起動時にアプリを自動起動するか。</summary>
+    public bool RunAtStartup { get; set; }
+
+    /// <summary>起動時にウィンドウを最小化した状態にするか。</summary>
+    public bool StartMinimized { get; set; }
+
+    /// <summary>閉じるボタンでタスクトレイに格納するか。</summary>
+    public bool MinimizeToTray { get; set; }
 }

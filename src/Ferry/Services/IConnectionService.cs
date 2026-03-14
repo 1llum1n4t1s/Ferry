@@ -7,7 +7,7 @@ namespace Ferry.Services;
 
 /// <summary>
 /// 接続管理サービス。
-/// ペアリング（QR スキャン時の 1 回限りのハンドシェイク）と
+/// ペアリング（QR スキャン → Bridge ページ経由のマッチング）と
 /// オンデマンド接続（転送時の一時的な WebRTC 接続）を分離して管理する。
 /// </summary>
 public interface IConnectionService
@@ -20,16 +20,19 @@ public interface IConnectionService
     /// <summary>接続中のピア情報。未接続時は null。</summary>
     PeerInfo? ConnectedPeer { get; }
 
+    /// <summary>現在の接続経路（LAN 直接 / STUN P2P / TURN リレー）。</summary>
+    ConnectionRoute Route { get; }
+
     // === イベント ===
 
     /// <summary>状態が変化したときに発火するイベント。</summary>
     event EventHandler<PeerState>? StateChanged;
 
+    /// <summary>接続経路が確定したときに発火するイベント。</summary>
+    event EventHandler<ConnectionRoute>? RouteChanged;
+
     /// <summary>ペアリングが完了したときに発火するイベント。</summary>
     event EventHandler<PairedPeer>? PairingCompleted;
-
-    /// <summary>ペアリング要求を受信したときに発火するイベント（承認/拒否 UI 表示用）。</summary>
-    event EventHandler<PeerInfo>? PairingReceived;
 
     /// <summary>DataChannel でバイナリデータを受信したときに発火するイベント。</summary>
     event EventHandler<byte[]>? DataReceived;
@@ -37,25 +40,19 @@ public interface IConnectionService
     /// <summary>接続が切断されたときに発火するイベント（転送中の切断検知用）。</summary>
     event EventHandler? ConnectionLost;
 
-    // === ペアリング（初回 QR スキャン時のみ） ===
+    // === ペアリング（QR スキャン → Bridge ページ経由） ===
 
     /// <summary>
     /// ペアリングセッションを開始し、セッション ID を返す。
     /// QR コード URL 生成に使用する。
-    /// ペアリング完了後、Firebase セッションは即座に切断される。
+    /// Firebase でマッチング完了を監視し、完了時に PairingCompleted を発火する。
     /// </summary>
     Task<string> StartPairingSessionAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// ペアリング要求を許可する。
-    /// ペア情報は PeerRegistryService に自動保存される。
+    /// ペアリングセッションをキャンセルする。
     /// </summary>
-    Task AcceptPairingAsync(CancellationToken ct = default);
-
-    /// <summary>
-    /// ペアリング要求を拒否する。
-    /// </summary>
-    Task RejectPairingAsync(CancellationToken ct = default);
+    Task CancelPairingAsync(CancellationToken ct = default);
 
     // === オンデマンド接続（転送時） ===
 

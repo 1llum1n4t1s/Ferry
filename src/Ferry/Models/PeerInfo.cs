@@ -26,8 +26,8 @@ public enum PeerState
     /// <summary>接続待機中（QR 表示中）。</summary>
     WaitingForPairing,
 
-    /// <summary>ペアリング要求受信。</summary>
-    PairingRequested,
+    /// <summary>Bridge ページ経由でマッチング待機中。</summary>
+    WaitingForMatch,
 
     /// <summary>WebRTC 接続確立中。</summary>
     Connecting,
@@ -40,4 +40,22 @@ public enum PeerState
 
     /// <summary>再接続中（切断後の自動復帰）。</summary>
     Reconnecting,
+}
+
+/// <summary>
+/// 接続経路の種別。UI に表示して転送速度の期待値をユーザーに伝える。
+/// </summary>
+public enum ConnectionRoute
+{
+    /// <summary>未確定。</summary>
+    Unknown,
+
+    /// <summary>LAN 内ホスト候補による直接接続。最速。</summary>
+    Direct,
+
+    /// <summary>STUN による NAT 越え P2P 接続。サーバー非経由。</summary>
+    StunAssisted,
+
+    /// <summary>TURN サーバー経由のリレー接続。サーバーがボトルネック。</summary>
+    Relay,
 }

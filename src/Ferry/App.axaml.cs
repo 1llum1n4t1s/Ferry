@@ -1,5 +1,6 @@
 using System.Linq;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Data.Core;
 using Avalonia.Data.Core.Plugins;
@@ -13,6 +14,8 @@ namespace Ferry;
 
 public partial class App : Application
 {
+    private MainWindow? _mainWindow;
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -28,23 +31,43 @@ public partial class App : Application
             DisableAvaloniaDataAnnotationValidation();
 
             // サービス組み立て
-            var connectionService = new StubConnectionService();
+            var settingsService = new StubSettingsService();
+            var settings = settingsService.Settings;
+            var connectionService = new ConnectionService(settings.FirebaseDatabaseUrl, settings.DisplayName);
             var transferService = new StubTransferService();
             var qrCodeService = new QrCodeGenerator();
-            var settingsService = new StubSettingsService();
             var peerRegistry = new PeerRegistryService();
 
             var connectionVm = new ConnectionViewModel(connectionService, qrCodeService, settingsService, peerRegistry);
             var transferVm = new TransferViewModel(connectionService, transferService);
-            var mainVm = new MainWindowViewModel(connectionVm, transferVm);
+            var settingsVm = new SettingsViewModel(settingsService);
+            var mainVm = new MainWindowViewModel(connectionVm, transferVm, settingsVm);
 
-            desktop.MainWindow = new MainWindow
+            _mainWindow = new MainWindow
             {
                 DataContext = mainVm,
             };
+            desktop.MainWindow = _mainWindow;
 
-            // 起動時に自動でセッション開始（QR コード表示）
-            connectionVm.StartSessionCommand.Execute(null);
+            // トレイアイコン設定（MinimizeToTray 有効時にウィンドウ復帰用）
+            var trayIcon = new TrayIcon
+            {
+                ToolTipText = "Ferry",
+                IsVisible = true,
+            };
+            trayIcon.Clicked += (_, _) =>
+            {
+                _mainWindow.Show();
+                _mainWindow.WindowState = WindowState.Normal;
+                _mainWindow.Activate();
+            };
+            TrayIcon.SetIcons(this, [trayIcon]);
+
+            // 起動時に自動でセッション開始（ペアリング済みピアがなければ QR コード表示）
+            if (connectionVm.PairedPeers.Count == 0)
+            {
+                connectionVm.StartSessionCommand.Execute(null);
+            }
         }
 
         base.OnFrameworkInitializationCompleted();

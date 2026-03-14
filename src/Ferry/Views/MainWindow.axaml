@@ -15,14 +15,26 @@
         <vm:MainWindowViewModel />
     </Design.DataContext>
 
-    <DockPanel Margin="16">
-        <!-- 接続パネル（上部） -->
-        <views:ConnectionPanel DockPanel.Dock="Top"
-                               DataContext="{Binding Connection}"
-                               Margin="0,0,0,16" />
+    <TabControl Margin="8">
+        <!-- 転送タブ -->
+        <TabItem Header="転送">
+            <DockPanel Margin="8">
+                <!-- 接続パネル（上部） -->
+                <views:ConnectionPanel DockPanel.Dock="Top"
+                                       DataContext="{Binding Connection}"
+                                       Margin="0,0,0,16" />
 
-        <!-- 転送パネル（残りの領域） -->
-        <views:TransferPanel DataContext="{Binding Transfer}" />
-    </DockPanel>
+                <!-- 転送パネル（残りの領域） -->
+                <views:TransferPanel DataContext="{Binding Transfer}" />
+            </DockPanel>
+        </TabItem>
+
+        <!-- 設定タブ -->
+        <TabItem Header="設定">
+            <ScrollViewer Margin="8">
+                <views:SettingsPanel DataContext="{Binding Settings}" />
+            </ScrollViewer>
+        </TabItem>
+    </TabControl>
 
 </Window>

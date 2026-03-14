@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Ferry.ViewModels"
+             xmlns:models="using:Ferry.Models"
              x:Class="Ferry.Views.ConnectionPanel"
              x:DataType="vm:ConnectionViewModel">
 
@@ -16,52 +17,125 @@
                        HorizontalAlignment="Center"
                        TextWrapping="Wrap" />
 
-            <!-- QR コード画像 -->
-            <Image Source="{Binding QrCodeImage}"
-                   Width="200"
-                   Height="200"
-                   HorizontalAlignment="Center"
-                   IsVisible="{Binding QrCodeImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
-
-            <!-- セッション ID 表示 -->
-            <TextBlock Text="{Binding SessionId, StringFormat='Session: {0}'}"
-                       FontSize="10"
-                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                       HorizontalAlignment="Center"
-                       IsVisible="{Binding SessionId, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-
-            <!-- 接続先ピア名 -->
-            <TextBlock Text="{Binding PeerName, StringFormat='接続先: {0}'}"
+            <!-- 接続経路ステータス（接続中のみ表示） -->
+            <TextBlock Text="{Binding ConnectionRouteText}"
                        FontSize="12"
-                       FontWeight="SemiBold"
                        HorizontalAlignment="Center"
-                       IsVisible="{Binding PeerName, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                       IsVisible="{Binding ConnectionRouteText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-            <!-- ボタン群 -->
-            <StackPanel Orientation="Horizontal"
-                        HorizontalAlignment="Center"
-                        Spacing="8">
+            <!-- === QR コードペアリング表示 (ペアリング済みピアがない or ペアリング中) === -->
+            <StackPanel Spacing="12"
+                        IsVisible="{Binding !HasPairedPeers}">
 
-                <!-- セッション開始ボタン -->
+                <!-- QR コード画像 -->
+                <Image Source="{Binding QrCodeImage}"
+                       Width="200"
+                       Height="200"
+                       HorizontalAlignment="Center"
+                       IsVisible="{Binding QrCodeImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+                <!-- セッション ID 表示 -->
+                <TextBlock Text="{Binding SessionId, StringFormat='Session: {0}'}"
+                           FontSize="10"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                           HorizontalAlignment="Center"
+                           IsVisible="{Binding SessionId, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                <!-- 接続開始ボタン -->
                 <Button Content="接続開始"
                         Command="{Binding StartSessionCommand}"
+                        HorizontalAlignment="Center"
                         IsVisible="{Binding ConnectionState, Converter={StaticResource EqualConverter}, ConverterParameter=Disconnected}" />
-
-                <!-- ペアリング承認/拒否ボタン -->
-                <Button Content="承認"
-                        Command="{Binding AcceptPairingCommand}"
-                        Classes="accent"
-                        IsVisible="{Binding ConnectionState, Converter={StaticResource EqualConverter}, ConverterParameter=PairingRequested}" />
-
-                <Button Content="拒否"
-                        Command="{Binding RejectPairingCommand}"
-                        IsVisible="{Binding ConnectionState, Converter={StaticResource EqualConverter}, ConverterParameter=PairingRequested}" />
-
-                <!-- 切断ボタン -->
-                <Button Content="切断"
-                        Command="{Binding DisconnectCommand}"
-                        IsVisible="{Binding ConnectionState, Converter={StaticResource NotEqualConverter}, ConverterParameter=Disconnected}" />
             </StackPanel>
+
+            <!-- === QR コードペアリング中（ペアリング済みピアがある場合の追加ペアリング） === -->
+            <StackPanel Spacing="12"
+                        IsVisible="{Binding QrCodeImage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <StackPanel.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="HasPairedPeers" />
+                        <Binding Path="QrCodeImage" Converter="{x:Static ObjectConverters.IsNotNull}" />
+                    </MultiBinding>
+                </StackPanel.IsVisible>
+
+                <!-- QR コード画像 -->
+                <Image Source="{Binding QrCodeImage}"
+                       Width="200"
+                       Height="200"
+                       HorizontalAlignment="Center" />
+
+                <!-- セッション ID 表示 -->
+                <TextBlock Text="{Binding SessionId, StringFormat='Session: {0}'}"
+                           FontSize="10"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                           HorizontalAlignment="Center"
+                           IsVisible="{Binding SessionId, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                <!-- キャンセルボタン -->
+                <Button Content="キャンセル"
+                        Command="{Binding DisconnectCommand}"
+                        HorizontalAlignment="Center" />
+            </StackPanel>
+
+            <!-- === 宛先選択リスト (ペアリング済みピアがある + QR 非表示時) === -->
+            <StackPanel Spacing="8">
+                <StackPanel.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="HasPairedPeers" />
+                        <Binding Path="QrCodeImage" Converter="{x:Static ObjectConverters.IsNull}" />
+                    </MultiBinding>
+                </StackPanel.IsVisible>
+
+                <TextBlock Text="宛先"
+                           FontSize="12"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+                <ListBox ItemsSource="{Binding PairedPeers}"
+                         SelectedItem="{Binding SelectedPeer}"
+                         x:DataType="vm:ConnectionViewModel">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="models:PairedPeer">
+                            <DockPanel Margin="4">
+                                <Button Content="&#xE74D;"
+                                        FontFamily="{StaticResource SymbolThemeFontFamily}"
+                                        FontSize="14"
+                                        Command="{Binding $parent[ListBox].((vm:ConnectionViewModel)DataContext).RemovePeerCommand}"
+                                        CommandParameter="{Binding PeerId}"
+                                        DockPanel.Dock="Right"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        VerticalAlignment="Center"
+                                        ToolTip.Tip="ペアリング解除" />
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="{Binding DisplayName}"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding PairedAt, StringFormat='{}{0:yyyy/MM/dd HH:mm}'}"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    <!-- 接続経路（接続中のみ表示） -->
+                                    <TextBlock Text="{Binding RouteText}"
+                                               FontSize="11"
+                                               IsVisible="{Binding RouteText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                </StackPanel>
+                            </DockPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <!-- 新しいピアを追加ボタン -->
+                <Button Content="+ 新しいデバイスを追加"
+                        Command="{Binding AddNewPeerCommand}"
+                        HorizontalAlignment="Center"
+                        FontSize="12" />
+            </StackPanel>
+
+            <!-- 切断ボタン（接続中のみ） -->
+            <Button Content="切断"
+                    Command="{Binding DisconnectCommand}"
+                    HorizontalAlignment="Center"
+                    IsVisible="{Binding ConnectionState, Converter={StaticResource EqualConverter}, ConverterParameter=Connected}" />
 
             <!-- 接続中インジケーター -->
             <ProgressBar IsIndeterminate="True"

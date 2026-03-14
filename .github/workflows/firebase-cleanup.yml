@@ -1,0 +1,51 @@
+name: Firebase ゴミセッション定期削除
+
+on:
+  schedule:
+    # 毎時0分に実行
+    - cron: '0 * * * *'
+  workflow_dispatch: # 手動実行も可能
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 古い Firebase データを削除
+        env:
+          FIREBASE_DB_URL: ${{ secrets.FIREBASE_DB_URL }}
+        shell: bash
+        run: |
+          # 1時間前のタイムスタンプ（ミリ秒）
+          THRESHOLD=$(( ($(date +%s) - 3600) * 1000 ))
+          echo "削除閾値: $(date -d @$(( THRESHOLD / 1000 )) -u '+%Y-%m-%d %H:%M:%S UTC')"
+
+          cleanup_node() {
+            local node="$1"
+            echo "--- ${node} をチェック中 ---"
+
+            # 全エントリを取得
+            local data
+            data=$(curl -sf "${FIREBASE_DB_URL}/${node}.json")
+
+            if [ "$data" = "null" ] || [ -z "$data" ]; then
+              echo "  データなし、スキップ"
+              return
+            fi
+
+            # 各キーの CreatedAt/createdAt を確認し、古ければ削除
+            echo "$data" | jq -r 'to_entries[] | select(
+              (.value.CreatedAt // .value.createdAt // 0) < '"$THRESHOLD"' and
+              (.value.CreatedAt // .value.createdAt // 0) > 0
+            ) | .key' | while read -r key; do
+              echo "  削除: ${node}/${key}"
+              curl -sf -X DELETE "${FIREBASE_DB_URL}/${node}/${key}.json" > /dev/null
+            done
+
+            echo "  完了"
+          }
+
+          cleanup_node "sessions"
+          cleanup_node "pairings"
+          cleanup_node "signaling"
+
+          echo "=== クリーンアップ完了 ==="

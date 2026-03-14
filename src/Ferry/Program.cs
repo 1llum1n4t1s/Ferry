@@ -1,6 +1,8 @@
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using Avalonia;
+using Ferry.Util;
 using Velopack;
 using Velopack.Sources;
 
@@ -21,6 +23,16 @@ internal sealed class Program
     public static async Task Main(string[] args)
     {
         VelopackApp.Build().Run();
+
+        Logger.Initialize(new LoggerConfig
+        {
+            LogDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Ferry", "logs"),
+            FilePrefix = "Ferry",
+        });
+        Logger.LogStartup(args);
+
         await TryForceUpdateAsync(args);
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
