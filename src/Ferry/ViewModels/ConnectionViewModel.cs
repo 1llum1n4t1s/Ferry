@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Ferry.Models;
@@ -132,9 +133,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     private async Task DisconnectAsync()
     {
         await _connectionService.DisconnectAsync();
-        var oldImage = QrCodeImage;
-        QrCodeImage = null;
-        oldImage?.Dispose();
+        ClearQrCodeImage();
         PeerName = string.Empty;
         SessionId = string.Empty;
         ConnectionState = PeerState.Disconnected;
@@ -152,41 +151,48 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
 
     private void OnStateChanged(object? sender, PeerState state)
     {
-        ConnectionState = state;
-        StatusText = state switch
+        // 非 UI スレッドから呼ばれる可能性があるため UI スレッドにディスパッチ
+        Dispatcher.UIThread.Post(() =>
         {
-            PeerState.Disconnected => HasPairedPeers ? "宛先を選択してください" : "未接続",
-            PeerState.WaitingForPairing => "QR コードをスマートフォンでスキャンしてください",
-            PeerState.WaitingForMatch => "ペアリング先の PC の QR コードをスキャンしてください…",
-            PeerState.Connecting => "接続中…",
-            PeerState.Connected => $"「{PeerName}」と接続中",
-            PeerState.Reconnecting => "再接続中…",
-            PeerState.Error => "接続エラー",
-            _ => "不明な状態",
-        };
+            ConnectionState = state;
+            StatusText = state switch
+            {
+                PeerState.Disconnected => HasPairedPeers ? "宛先を選択してください" : "未接続",
+                PeerState.WaitingForPairing => "QR コードをスマートフォンでスキャンしてください",
+                PeerState.WaitingForMatch => "ペアリング先の PC の QR コードをスキャンしてください…",
+                PeerState.Connecting => "接続中…",
+                PeerState.Connected => $"「{PeerName}」と接続中",
+                PeerState.Reconnecting => "再接続中…",
+                PeerState.Error => "接続エラー",
+                _ => "不明な状態",
+            };
 
-        // 未接続時は経路表示をクリア
-        if (state != PeerState.Connected)
-        {
-            ConnectionRouteText = string.Empty;
-            if (SelectedPeer != null)
-                SelectedPeer.Route = ConnectionRoute.Unknown;
-        }
+            // 未接続時は経路表示をクリア
+            if (state != PeerState.Connected)
+            {
+                ConnectionRouteText = string.Empty;
+                if (SelectedPeer != null)
+                    SelectedPeer.Route = ConnectionRoute.Unknown;
+            }
+        });
     }
 
     private void OnRouteChanged(object? sender, ConnectionRoute route)
     {
-        // 選択中のピアの経路を更新（宛先リストの各行に表示される）
-        if (SelectedPeer != null)
-            SelectedPeer.Route = route;
-
-        ConnectionRouteText = route switch
+        Dispatcher.UIThread.Post(() =>
         {
-            ConnectionRoute.Direct => "🟢 LAN 直接接続",
-            ConnectionRoute.StunAssisted => "🟡 インターネット P2P（STUN）",
-            ConnectionRoute.Relay => "🔴 サーバー経由（TURN リレー）",
-            _ => string.Empty,
-        };
+            // 選択中のピアの経路を更新（宛先リストの各行に表示される）
+            if (SelectedPeer != null)
+                SelectedPeer.Route = route;
+
+            ConnectionRouteText = route switch
+            {
+                ConnectionRoute.Direct => "🟢 LAN 直接接続",
+                ConnectionRoute.StunAssisted => "🟡 インターネット P2P（STUN）",
+                ConnectionRoute.Relay => "🔴 サーバー経由（TURN リレー）",
+                _ => string.Empty,
+            };
+        });
     }
 
     private async void OnPairingCompleted(object? sender, PairedPeer peer)
@@ -194,31 +200,47 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         // ペアリング情報を永続化
         await _peerRegistry.AddOrUpdatePeerAsync(peer);
 
-        if (PairedPeers.All(p => p.PeerId != peer.PeerId))
+        // UI スレッドで ObservableCollection・ObservableProperty を更新
+        await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            PairedPeers.Add(peer);
-        }
-        UpdateHasPairedPeers();
+            if (PairedPeers.All(p => p.PeerId != peer.PeerId))
+            {
+                PairedPeers.Add(peer);
+            }
+            UpdateHasPairedPeers();
 
-        // QR コード表示をクリアし、宛先選択モードへ（null を先にセットし UI バインディング解除後に Dispose）
-        var oldImage = QrCodeImage;
-        QrCodeImage = null;
-        oldImage?.Dispose();
-        SessionId = string.Empty;
-        SelectedPeer = peer;
-        ConnectionState = PeerState.Disconnected;
-        StatusText = $"「{peer.DisplayName}」とペアリング完了";
+            // QR コード表示をクリアし、宛先選択モードへ
+            ClearQrCodeImage();
+            SessionId = string.Empty;
+            SelectedPeer = peer;
+            ConnectionState = PeerState.Disconnected;
+            StatusText = $"「{peer.DisplayName}」とペアリング完了";
+        });
     }
 
     private void UpdateHasPairedPeers() => HasPairedPeers = PairedPeers.Count > 0;
+
+    /// <summary>
+    /// QrCodeImage を安全にクリアする。
+    /// null 代入 → UI レイアウト完了後に Dispose することで
+    /// レイアウトパス中の NullReferenceException を防ぐ。
+    /// </summary>
+    private void ClearQrCodeImage()
+    {
+        var oldImage = QrCodeImage;
+        QrCodeImage = null;
+        if (oldImage is not null)
+        {
+            // Background 優先度で Dispose → レイアウトパス完了後に実行される
+            Dispatcher.UIThread.Post(() => oldImage.Dispose(), DispatcherPriority.Background);
+        }
+    }
 
     public void Dispose()
     {
         _connectionService.StateChanged -= OnStateChanged;
         _connectionService.RouteChanged -= OnRouteChanged;
         _connectionService.PairingCompleted -= OnPairingCompleted;
-        var oldImage = QrCodeImage;
-        QrCodeImage = null;
-        oldImage?.Dispose();
+        ClearQrCodeImage();
     }
 }
