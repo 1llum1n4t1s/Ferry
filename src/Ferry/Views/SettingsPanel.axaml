@@ -1,0 +1,76 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Ferry.ViewModels"
+             x:Class="Ferry.Views.SettingsPanel"
+             x:DataType="vm:SettingsViewModel">
+
+    <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+            BorderThickness="1"
+            CornerRadius="8"
+            Padding="16">
+        <StackPanel Spacing="16">
+
+            <TextBlock Text="設定"
+                       FontSize="16"
+                       FontWeight="SemiBold" />
+
+            <!-- PC 名 -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="PC の表示名"
+                           FontSize="12"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <TextBox Text="{Binding DisplayName}"
+                         Watermark="PC 名を入力" />
+            </StackPanel>
+
+            <Separator />
+
+            <!-- 起動時にアプリを開く -->
+            <DockPanel>
+                <ToggleSwitch IsChecked="{Binding RunAtStartup}"
+                              DockPanel.Dock="Right"
+                              VerticalAlignment="Center" />
+                <StackPanel Spacing="2">
+                    <TextBlock Text="起動時にFerryを開く"
+                               FontWeight="SemiBold" />
+                    <TextBlock Text="パソコンの起動時にクリックを省いてFerryを立ち上げます。"
+                               FontSize="12"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </DockPanel>
+
+            <!-- 最小化した状態で起動する -->
+            <DockPanel>
+                <ToggleSwitch IsChecked="{Binding StartMinimized}"
+                              DockPanel.Dock="Right"
+                              VerticalAlignment="Center" />
+                <StackPanel Spacing="2">
+                    <TextBlock Text="最小化した状態で起動する"
+                               FontWeight="SemiBold" />
+                    <TextBlock Text="起動時にFerryが立ち上がる際はバックグラウンドで実行されるため、邪魔になりません。"
+                               FontSize="12"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </DockPanel>
+
+            <!-- 閉じるボタンでトレイに最小化 -->
+            <DockPanel>
+                <ToggleSwitch IsChecked="{Binding MinimizeToTray}"
+                              DockPanel.Dock="Right"
+                              VerticalAlignment="Center" />
+                <StackPanel Spacing="2">
+                    <TextBlock Text="閉じるボタンでトレイに最小化"
+                               FontWeight="SemiBold" />
+                    <TextBlock Text="「X」を押すと、アプリを閉じたときにFerryはあなたのシステムトレイで休止します。"
+                               FontSize="12"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </DockPanel>
+
+        </StackPanel>
+    </Border>
+
+</UserControl>
