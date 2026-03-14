@@ -132,8 +132,9 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     private async Task DisconnectAsync()
     {
         await _connectionService.DisconnectAsync();
-        QrCodeImage?.Dispose();
+        var oldImage = QrCodeImage;
         QrCodeImage = null;
+        oldImage?.Dispose();
         PeerName = string.Empty;
         SessionId = string.Empty;
         ConnectionState = PeerState.Disconnected;
@@ -156,7 +157,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         {
             PeerState.Disconnected => HasPairedPeers ? "宛先を選択してください" : "未接続",
             PeerState.WaitingForPairing => "QR コードをスマートフォンでスキャンしてください",
-            PeerState.WaitingForMatch => "2台目の PC の QR コードをスキャンしてください…",
+            PeerState.WaitingForMatch => "ペアリング先の PC の QR コードをスキャンしてください…",
             PeerState.Connecting => "接続中…",
             PeerState.Connected => $"「{PeerName}」と接続中",
             PeerState.Reconnecting => "再接続中…",
@@ -199,9 +200,10 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         }
         UpdateHasPairedPeers();
 
-        // QR コード表示をクリアし、宛先選択モードへ
-        QrCodeImage?.Dispose();
+        // QR コード表示をクリアし、宛先選択モードへ（null を先にセットし UI バインディング解除後に Dispose）
+        var oldImage = QrCodeImage;
         QrCodeImage = null;
+        oldImage?.Dispose();
         SessionId = string.Empty;
         SelectedPeer = peer;
         ConnectionState = PeerState.Disconnected;
@@ -215,6 +217,8 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         _connectionService.StateChanged -= OnStateChanged;
         _connectionService.RouteChanged -= OnRouteChanged;
         _connectionService.PairingCompleted -= OnPairingCompleted;
-        QrCodeImage?.Dispose();
+        var oldImage = QrCodeImage;
+        QrCodeImage = null;
+        oldImage?.Dispose();
     }
 }

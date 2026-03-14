@@ -80,12 +80,12 @@ public sealed class StubConnectionService : IConnectionService
     {
         try
         {
-            // 1台目スキャン完了をシミュレート
+            // 接続元スキャン完了をシミュレート
             await Task.Delay(1500, ct);
             State = PeerState.WaitingForMatch;
             StateChanged?.Invoke(this, State);
 
-            // 2台目スキャン完了 → ペアリング完了をシミュレート
+            // ペアリング先スキャン完了 → ペアリング完了をシミュレート
             await Task.Delay(1500, ct);
             var peer = new PairedPeer
             {

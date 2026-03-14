@@ -2,9 +2,9 @@
  * Ferry Bridge — スマートフォンブラウザで 2 台の PC をペアリングする。
  *
  * 処理フロー:
- * 1. URL の ?sid=&name= から 1 台目のセッション情報を取得
+ * 1. URL の ?sid=&name= から接続元のセッション情報を取得
  * 2. Firebase Realtime Database で sessions/{sid} の存在を確認
- * 3. ページ内カメラ（html5-qrcode）で 2 台目の QR コードをスキャン
+ * 3. ページ内カメラ（html5-qrcode）でペアリング先の QR コードをスキャン
  * 4. pairings/ に両方のセッション ID を書き込み → 両 PC に通知
  */
 
@@ -55,6 +55,12 @@ function showError(message) {
     scanPanel.classList.add("hidden");
     errorPanel.classList.remove("hidden");
     errorText.textContent = message;
+    // ステータスパネル内にもエラー詳細を表示（確実に見える位置）
+    const detail = document.getElementById("errorDetail");
+    if (detail) {
+        detail.textContent = message;
+        detail.classList.remove("hidden");
+    }
     stopCamera();
 }
 
@@ -97,11 +103,11 @@ function parseQrUrl(text) {
 }
 
 /**
- * 2 台目の QR スキャン用カメラを起動する。
+ * ペアリング先の QR スキャン用カメラを起動する。
  */
 async function startQrScanner(sidA, nameA) {
     scanPanel.classList.remove("hidden");
-    statusText.textContent = "2 台目の PC の QR コードをスキャンしてください";
+    statusText.textContent = "ペアリング先の QR コードをスキャンしてください";
     spinner.classList.add("hidden");
 
     html5QrCode = new Html5Qrcode("qrReader");
@@ -134,7 +140,7 @@ async function startQrScanner(sidA, nameA) {
                     // sessions/{sidB} の存在を確認
                     const snapB = await db.ref(`sessions/${sidB}`).once("value");
                     if (!snapB.exists()) {
-                        showError("2 台目のセッションが見つかりません。PC でアプリが起動していることを確認してください。");
+                        showError("ペアリング先のセッションが見つかりません。PC でアプリが起動していることを確認してください。");
                         return;
                     }
 
@@ -173,7 +179,7 @@ async function main() {
         return;
     }
 
-    // セッション A の情報を表示
+    // 接続元の情報を表示
     sessionAInfo.classList.remove("hidden");
     sessionAId.textContent = sidA;
     if (nameA) sessionAName.textContent = nameA;
@@ -193,11 +199,12 @@ async function main() {
             return;
         }
 
-        // 1 台目の登録確認完了 → 2 台目のスキャンへ
+        // 接続元の登録確認完了 → ペアリング先のスキャンへ
         await startQrScanner(sidA, nameA || snapA.val().DisplayName || "PC-A");
 
     } catch (err) {
-        showError(`接続エラー: ${err.message}`);
+        console.error("Bridge エラー:", err);
+        showError(`接続エラー: ${err.code || ""} ${err.message}`);
     }
 }
 

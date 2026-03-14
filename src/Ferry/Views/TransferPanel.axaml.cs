@@ -1,7 +1,7 @@
 using System.Linq;
-using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Platform.Storage;
 using Ferry.ViewModels;
 
 namespace Ferry.Views;
@@ -34,14 +34,12 @@ public partial class TransferPanel : UserControl
         if (DataContext is not TransferViewModel vm)
             return;
 
-        if (e.DataTransfer is not IAsyncDataTransfer asyncTransfer)
-            return;
-
-        var files = await asyncTransfer.TryGetFilesAsync();
+        var files = e.DataTransfer.TryGetFiles();
         if (files is null)
             return;
 
         var filePaths = files
+            .OfType<IStorageFile>()
             .Select(f => f.Path.LocalPath)
             .Where(p => System.IO.File.Exists(p))
             .ToArray();

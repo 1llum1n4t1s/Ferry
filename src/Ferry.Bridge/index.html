@@ -98,7 +98,14 @@
         }
         .btn:hover { background: #106ebe; }
         .btn:disabled { background: #555; cursor: not-allowed; }
-        .error { color: #ff6b6b; }
+        .error-box {
+            background: #2d1b1b;
+            border: 1px solid #ff6b6b;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 16px;
+        }
+        .error { color: #ff6b6b; font-size: 1rem; word-break: break-word; }
         .success { color: #51cf66; font-size: 1.2rem; margin-bottom: 12px; }
         .paired-names { color: #ccc; font-size: 0.95rem; }
         .hidden { display: none; }
@@ -109,22 +116,23 @@
         <h1>Ferry</h1>
         <p class="subtitle">P2P ファイル転送ペアリング</p>
 
+        <!-- ペアリング先の QR スキャンエリア（カメラは最上部に表示） -->
+        <div class="hidden" id="scanPanel">
+            <p class="scan-hint">ペアリング先の PC に表示されている QR コードにカメラを向けてください</p>
+            <div id="qrReader"></div>
+        </div>
+
         <div class="status" id="statusPanel">
             <p class="status-text" id="statusText">セッション情報を取得中…</p>
             <div class="spinner" id="spinner"></div>
+            <p class="error hidden" id="errorDetail" style="margin-top: 12px; font-size: 0.9rem;"></p>
         </div>
 
-        <!-- 1 台目のセッション情報 -->
+        <!-- 接続元のセッション情報 -->
         <div class="session-info hidden" id="sessionAInfo">
-            <p><span class="check-mark">✓</span>1 台目の PC</p>
+            <p><span class="check-mark">✓</span>接続元の PC</p>
             <p class="session-name" id="sessionAName"></p>
             <p class="session-id" id="sessionAId"></p>
-        </div>
-
-        <!-- 2 台目の QR スキャンエリア -->
-        <div class="hidden" id="scanPanel">
-            <p class="scan-hint">2 台目の PC に表示されている QR コードにカメラを向けてください</p>
-            <div id="qrReader"></div>
         </div>
 
         <!-- ペアリング完了 -->
@@ -136,7 +144,9 @@
 
         <!-- エラー表示 -->
         <div class="hidden" id="errorPanel">
-            <p class="error" id="errorText"></p>
+            <div class="error-box">
+                <p class="error" id="errorText"></p>
+            </div>
             <button class="btn" onclick="location.reload()">再試行</button>
         </div>
     </div>
@@ -145,7 +155,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 
-    <!-- html5-qrcode ライブラリ（ページ内カメラで 2 台目の QR を読み取る） -->
+    <!-- html5-qrcode ライブラリ（ページ内カメラでペアリング先の QR を読み取る） -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
     <script src="bridge.js"></script>
