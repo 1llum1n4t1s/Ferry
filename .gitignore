@@ -19,5 +19,8 @@ Thumbs.db
 # Node modules (Bridge)
 node_modules/
 
+# Generated icons
+build/resources/app/App.icns
+
 # Claude local settings
 .claude/settings.local.json
