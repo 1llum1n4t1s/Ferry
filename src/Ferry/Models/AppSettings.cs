@@ -8,12 +8,16 @@ namespace Ferry.Models;
 /// </summary>
 public sealed class AppSettings
 {
+    /// <summary>このデバイスの一意識別子（初回起動時に自動生成、永続化）。</summary>
+    public string DeviceId { get; set; } = Guid.NewGuid().ToString("N");
+
     /// <summary>このPCの表示名。</summary>
     public string DisplayName { get; set; } = Environment.MachineName;
 
-    /// <summary>受信ファイルの保存先ディレクトリ。</summary>
+    /// <summary>受信ファイルの保存先ディレクトリ。
+    /// デフォルトはユーザーの「ダウンロード」フォルダ（Win/Mac 共通）。</summary>
     public string SaveDirectory { get; set; } =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Ferry");
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
 
     /// <summary>Firebase プロジェクト URL（プレースホルダー）。</summary>
     public string FirebaseDatabaseUrl { get; set; } = string.Empty;
@@ -29,4 +33,7 @@ public sealed class AppSettings
 
     /// <summary>閉じるボタンでタスクトレイに格納するか。</summary>
     public bool MinimizeToTray { get; set; }
+
+    /// <summary>テーマモード。"Dark" または "Light"。</summary>
+    public string ThemeMode { get; set; } = "Dark";
 }

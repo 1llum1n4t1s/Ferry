@@ -19,8 +19,13 @@ internal sealed class Program
     /// アプリケーションのエントリポイント。Velopack のブートストラップを最初に実行し、
     /// GitHub Releases に最新版があれば強制更新してから Avalonia アプリを起動する。
     /// </summary>
+    /// <remarks>
+    /// 【重要】Main は void でなければならない。async Task にすると [STAThread] が無視され、
+    /// スレッドが MTA になり、COM ベースの DragDrop が完全に動作しなくなる。
+    /// See: https://github.com/AvaloniaUI/Avalonia/issues/12499
+    /// </remarks>
     [STAThread]
-    public static async Task Main(string[] args)
+    public static void Main(string[] args)
     {
         VelopackApp.Build().Run();
 
@@ -33,7 +38,7 @@ internal sealed class Program
         });
         Logger.LogStartup(args);
 
-        await TryForceUpdateAsync(args);
+        TryForceUpdateAsync(args).GetAwaiter().GetResult();
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

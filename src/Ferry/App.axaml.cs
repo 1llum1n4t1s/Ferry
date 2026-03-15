@@ -1,10 +1,12 @@
 using System.Linq;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Data.Core;
 using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
+using Avalonia.Styling;
 using Ferry.Infrastructure;
 using Ferry.Services;
 using Ferry.ViewModels;
@@ -30,16 +32,30 @@ public partial class App : Application
         {
             DisableAvaloniaDataAnnotationValidation();
 
-            // サービス組み立て
-            var settingsService = new StubSettingsService();
+            // サービス組み立て（コンストラクタで同期的に settings.json を読み込み、DeviceId を永続化）
+            var settingsService = new SettingsService();
             var settings = settingsService.Settings;
-            var connectionService = new ConnectionService(settings.FirebaseDatabaseUrl, settings.DisplayName);
+            // Firebase URL が未設定の場合はデフォルト値を設定して保存
+            if (string.IsNullOrEmpty(settings.FirebaseDatabaseUrl))
+            {
+                settings.FirebaseDatabaseUrl = "https://ferry-edf09-default-rtdb.firebaseio.com";
+                settings.BridgePageUrl = "https://ferry-edf09.web.app";
+                _ = settingsService.SaveAsync().ContinueWith(t =>
+                {
+                    if (t.IsFaulted)
+                        Util.Logger.Log($"初期設定の保存に失敗: {t.Exception?.GetBaseException().Message}", Util.LogLevel.Warning);
+                }, TaskScheduler.Default);
+            }
+            var connectionService = new ConnectionService(settings.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName);
             var transferService = new StubTransferService();
             var qrCodeService = new QrCodeGenerator();
             var peerRegistry = new PeerRegistryService();
 
+            // テーマを設定から復元
+            RequestedThemeVariant = settings.ThemeMode == "Light" ? ThemeVariant.Light : ThemeVariant.Dark;
+
             var connectionVm = new ConnectionViewModel(connectionService, qrCodeService, settingsService, peerRegistry);
-            var transferVm = new TransferViewModel(connectionService, transferService);
+            var transferVm = new TransferViewModel(connectionService, transferService, connectionVm);
             var settingsVm = new SettingsViewModel(settingsService);
             var mainVm = new MainWindowViewModel(connectionVm, transferVm, settingsVm);
 
@@ -63,8 +79,13 @@ public partial class App : Application
             };
             TrayIcon.SetIcons(this, [trayIcon]);
 
-            // 起動時に自動でセッション開始（ペアリング済みピアがなければ QR コード表示）
-            if (connectionVm.PairedPeers.Count == 0)
+            // 起動時：ペアリング済みピアがあれば最初のピアを宛先として選択（接続はしない）
+            // なければ QR コードを表示してペアリング待ち
+            if (connectionVm.PairedPeers.Count > 0)
+            {
+                connectionVm.SelectedPeer = connectionVm.PairedPeers[0];
+            }
+            else
             {
                 connectionVm.StartSessionCommand.Execute(null);
             }

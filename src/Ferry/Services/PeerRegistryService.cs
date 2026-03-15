@@ -19,11 +19,21 @@ public sealed class PeerRegistryService : IPeerRegistryService
     private readonly List<PairedPeer> _peers = [];
 
     public PeerRegistryService()
+        : this(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "Ferry",
+            "peers.json"))
     {
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var ferryDir = Path.Combine(appData, "Ferry");
-        Directory.CreateDirectory(ferryDir);
-        _filePath = Path.Combine(ferryDir, "peers.json");
+    }
+
+    /// <summary>
+    /// テスト用: ファイルパスを指定してインスタンスを生成する。
+    /// </summary>
+    public PeerRegistryService(string filePath)
+    {
+        _filePath = filePath;
+        var dir = Path.GetDirectoryName(_filePath);
+        if (dir != null) Directory.CreateDirectory(dir);
         Load();
     }
 

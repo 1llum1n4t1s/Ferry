@@ -4,73 +4,145 @@
              x:Class="Ferry.Views.SettingsPanel"
              x:DataType="vm:SettingsViewModel">
 
-    <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
-            BorderThickness="1"
-            CornerRadius="8"
-            Padding="16">
-        <StackPanel Spacing="16">
+    <StackPanel Spacing="12">
 
-            <TextBlock Text="設定"
-                       FontSize="16"
-                       FontWeight="SemiBold" />
+        <!-- === 一般設定セクション === -->
+        <TextBlock Text="一般" Classes="section-label" />
 
-            <!-- PC 名 -->
-            <StackPanel Spacing="4">
-                <TextBlock Text="PC の表示名"
-                           FontSize="12"
-                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                <TextBox Text="{Binding DisplayName}"
-                         Watermark="PC 名を入力" />
+        <Border Classes="glass-card">
+            <StackPanel Spacing="0">
+
+                <!-- PC 名 -->
+                <DockPanel MinHeight="40">
+                    <TextBlock Text="PC の表示名"
+                               Classes="body"
+                               FontWeight="Medium"
+                               VerticalAlignment="Center"
+                               DockPanel.Dock="Left" />
+                    <TextBox Text="{Binding DisplayName}"
+                             Classes="tahoe-input"
+                             Watermark="PC 名を入力"
+                             HorizontalAlignment="Right"
+                             Width="180" />
+                </DockPanel>
+
             </StackPanel>
+        </Border>
 
-            <Separator />
+        <!-- === 外観セクション === -->
+        <TextBlock Text="外観" Classes="section-label" />
 
-            <!-- 起動時にアプリを開く -->
-            <DockPanel>
-                <ToggleSwitch IsChecked="{Binding RunAtStartup}"
-                              DockPanel.Dock="Right"
-                              VerticalAlignment="Center" />
-                <StackPanel Spacing="2">
-                    <TextBlock Text="起動時にFerryを開く"
-                               FontWeight="SemiBold" />
-                    <TextBlock Text="パソコンの起動時にクリックを省いてFerryを立ち上げます。"
-                               FontSize="12"
-                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                               TextWrapping="Wrap" />
+        <Border Classes="glass-card">
+            <StackPanel Spacing="0">
+
+                <!-- ダークモード切替 -->
+                <DockPanel MinHeight="44">
+                    <ToggleSwitch IsChecked="{Binding IsDarkMode}"
+                                  Classes="tahoe-toggle"
+                                  DockPanel.Dock="Right"
+                                  VerticalAlignment="Center" />
+                    <StackPanel Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="ダークモード"
+                                   Classes="body"
+                                   FontWeight="Medium" />
+                        <TextBlock Text="オフにするとライトモードになります"
+                                   Classes="caption"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </DockPanel>
+
+            </StackPanel>
+        </Border>
+
+        <!-- === ファイル保存セクション === -->
+        <TextBlock Text="ファイル" Classes="section-label" />
+
+        <Border Classes="glass-card">
+            <StackPanel Spacing="0">
+
+                <!-- 保存先ディレクトリ -->
+                <StackPanel Spacing="8">
+                    <TextBlock Text="受信ファイルの保存先"
+                               Classes="body"
+                               FontWeight="Medium" />
+                    <DockPanel>
+                        <Button Content="変更"
+                                Classes="tahoe-secondary"
+                                Command="{Binding BrowseSaveDirectoryCommand}"
+                                DockPanel.Dock="Right"
+                                VerticalAlignment="Center"
+                                Margin="8,0,0,0" />
+                        <TextBox Text="{Binding SaveDirectory}"
+                                 Classes="tahoe-input"
+                                 IsReadOnly="True"
+                                 FontSize="11" />
+                    </DockPanel>
                 </StackPanel>
-            </DockPanel>
 
-            <!-- 最小化した状態で起動する -->
-            <DockPanel>
-                <ToggleSwitch IsChecked="{Binding StartMinimized}"
-                              DockPanel.Dock="Right"
-                              VerticalAlignment="Center" />
-                <StackPanel Spacing="2">
-                    <TextBlock Text="最小化した状態で起動する"
-                               FontWeight="SemiBold" />
-                    <TextBlock Text="起動時にFerryが立ち上がる際はバックグラウンドで実行されるため、邪魔になりません。"
-                               FontSize="12"
-                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                               TextWrapping="Wrap" />
-                </StackPanel>
-            </DockPanel>
+            </StackPanel>
+        </Border>
 
-            <!-- 閉じるボタンでトレイに最小化 -->
-            <DockPanel>
-                <ToggleSwitch IsChecked="{Binding MinimizeToTray}"
-                              DockPanel.Dock="Right"
-                              VerticalAlignment="Center" />
-                <StackPanel Spacing="2">
-                    <TextBlock Text="閉じるボタンでトレイに最小化"
-                               FontWeight="SemiBold" />
-                    <TextBlock Text="「X」を押すと、アプリを閉じたときにFerryはあなたのシステムトレイで休止します。"
-                               FontSize="12"
-                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                               TextWrapping="Wrap" />
-                </StackPanel>
-            </DockPanel>
+        <!-- === 動作セクション === -->
+        <TextBlock Text="動作" Classes="section-label" />
 
-        </StackPanel>
-    </Border>
+        <Border Classes="glass-card">
+            <StackPanel Spacing="0">
+
+                <!-- 起動時にアプリを開く -->
+                <DockPanel MinHeight="44">
+                    <ToggleSwitch IsChecked="{Binding RunAtStartup}"
+                                  Classes="tahoe-toggle"
+                                  DockPanel.Dock="Right"
+                                  VerticalAlignment="Center" />
+                    <StackPanel Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="起動時に Ferry を開く"
+                                   Classes="body"
+                                   FontWeight="Medium" />
+                        <TextBlock Text="パソコンの起動時に自動で立ち上がります"
+                                   Classes="caption"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </DockPanel>
+
+                <Separator Classes="tahoe-sep" />
+
+                <!-- 最小化した状態で起動する -->
+                <DockPanel MinHeight="44">
+                    <ToggleSwitch IsChecked="{Binding StartMinimized}"
+                                  Classes="tahoe-toggle"
+                                  DockPanel.Dock="Right"
+                                  VerticalAlignment="Center" />
+                    <StackPanel Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="最小化した状態で起動"
+                                   Classes="body"
+                                   FontWeight="Medium" />
+                        <TextBlock Text="バックグラウンドで起動します"
+                                   Classes="caption"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </DockPanel>
+
+                <Separator Classes="tahoe-sep" />
+
+                <!-- 閉じるボタンでトレイに最小化 -->
+                <DockPanel MinHeight="44">
+                    <ToggleSwitch IsChecked="{Binding MinimizeToTray}"
+                                  Classes="tahoe-toggle"
+                                  DockPanel.Dock="Right"
+                                  VerticalAlignment="Center" />
+                    <StackPanel Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="閉じるボタンでトレイに最小化"
+                                   Classes="body"
+                                   FontWeight="Medium" />
+                        <TextBlock Text="×ボタンでシステムトレイに格納されます"
+                                   Classes="caption"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </DockPanel>
+
+            </StackPanel>
+        </Border>
+
+    </StackPanel>
 
 </UserControl>

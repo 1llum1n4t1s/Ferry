@@ -54,10 +54,23 @@ public interface IConnectionService
     /// </summary>
     Task CancelPairingAsync(CancellationToken ct = default);
 
-    // === オンデマンド接続（転送時） ===
+    // === 着信接続監視 ===
 
     /// <summary>
-    /// ペアリング済みピアに接続する。
+    /// 指定ピアからの接続要求（Offer）をバックグラウンドで監視開始する。
+    /// Offer を検知したら自動的に Answer を返して WebRTC 接続を確立する。
+    /// </summary>
+    void StartListeningForConnection(string peerId);
+
+    /// <summary>
+    /// 着信接続監視を停止する。
+    /// </summary>
+    void StopListeningForConnection();
+
+    // === オンデマンド接続（送信側が呼ぶ） ===
+
+    /// <summary>
+    /// ペアリング済みピアに接続する（Offer を作成して送信）。
     /// Firebase シグナリングで SDP/ICE 交換 → WebRTC 確立。
     /// </summary>
     Task ConnectToPeerAsync(string peerId, CancellationToken ct = default);

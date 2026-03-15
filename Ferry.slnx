@@ -1,3 +1,6 @@
 <Solution>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ferry.Tests/Ferry.Tests.csproj" />
+  </Folder>
   <Project Path="src\Ferry\Ferry.csproj" />
 </Solution>

@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Ferry.Models;
+using Microsoft.Extensions.Logging;
 using SIPSorcery.Net;
 
 namespace Ferry.Infrastructure;
@@ -15,6 +18,12 @@ namespace Ferry.Infrastructure;
 /// </summary>
 public sealed class WebRtcTransport : IDisposable
 {
+    // SIPSorcery 内部ログの初期化（静的コンストラクタで1回だけ）
+    static WebRtcTransport()
+    {
+        SIPSorcery.LogFactory.Set(new SIPSorceryLogFactory());
+    }
+
     // ICE サーバー設定
     private const string StunServerUrl = "stun:1llum1n4t1.net:3478";
     private const string TurnServerUrl = "turn:1llum1n4t1.net:3478";
@@ -36,6 +45,9 @@ public sealed class WebRtcTransport : IDisposable
     private bool _hasHostCandidate;
     private bool _hasSrflxCandidate;
     private bool _hasRelayCandidate;
+
+    // Vanilla ICE: gathering 中に収集した全候補（SDP に手動追加するため）
+    private readonly List<RTCIceCandidate> _gatheredCandidates = [];
 
     /// <summary>DataChannel でバイナリデータを受信したときに発火するイベント。</summary>
     public event EventHandler<byte[]>? DataReceived;
@@ -98,7 +110,20 @@ public sealed class WebRtcTransport : IDisposable
                     break;
             }
 
+            // Vanilla ICE: SDP に後で追加するために全候補を収集
+            _gatheredCandidates.Add(candidate);
+
             IceCandidateGenerated?.Invoke(this, candidate);
+        };
+
+        pc.oniceconnectionstatechange += iceState =>
+        {
+            Util.Logger.Log($"ICE 接続状態: {iceState}");
+        };
+
+        pc.onicegatheringstatechange += gatherState =>
+        {
+            Util.Logger.Log($"ICE 収集状態: {gatherState}");
         };
 
         pc.onconnectionstatechange += state =>
@@ -162,8 +187,11 @@ public sealed class WebRtcTransport : IDisposable
 
     /// <summary>
     /// WebRTC ピア接続を作成し、SDP Offer を生成する（発信側）。
+    /// ICE 候補の収集完了を待ってから SDP を返す（Vanilla ICE）。
+    /// これにより全候補（host/srflx/relay）が SDP に含まれ、
+    /// trickle ICE に依存しない確実な接続が可能になる。
     /// </summary>
-    /// <returns>SDP Offer 文字列。</returns>
+    /// <returns>SDP Offer 文字列（全 ICE 候補を含む）。</returns>
     public async Task<string> CreateOfferAsync(CancellationToken ct = default)
     {
         var pc = InitPeerConnection();
@@ -173,16 +201,24 @@ public sealed class WebRtcTransport : IDisposable
         AttachDataChannelEvents(dc);
         _dataChannel = dc;
 
-        // SDP Offer 生成
+        // SDP Offer 生成（この時点では host 候補のみ SDP に含まれる）
+        _gatheredCandidates.Clear();
         var offer = pc.createOffer();
         await pc.setLocalDescription(offer);
 
-        Util.Logger.Log("SDP Offer 生成完了");
-        return offer.sdp;
+        // ICE 収集完了を待つ（srflx/relay 候補の収集を待機）
+        await WaitForIceGatheringCompleteAsync(pc, ct);
+
+        // SDP に収集した全候補を手動追加（SIPSorcery は localDescription を更新しないため）
+        var sdp = AppendGatheredCandidatesToSdp(offer.sdp);
+        Util.Logger.Log($"SDP Offer 生成完了（Vanilla ICE: 全候補収集済み, SDP長={sdp.Length}）");
+        LogSdpCandidates(sdp, "Offer");
+        return sdp;
     }
 
     /// <summary>
     /// リモートの SDP Offer を受け取り、SDP Answer を生成する（着信側）。
+    /// ICE 候補の収集完了を待ってから SDP を返す（Vanilla ICE）。
     /// </summary>
     public async Task<string> CreateAnswerAsync(string remoteSdp, CancellationToken ct = default)
     {
@@ -195,18 +231,31 @@ public sealed class WebRtcTransport : IDisposable
             sdp = remoteSdp,
         };
 
+        Util.Logger.Log($"リモート Offer 受信（SDP長={remoteSdp.Length}）");
+        LogSdpCandidates(remoteSdp, "Remote Offer");
+
         var result = pc.setRemoteDescription(remoteOffer);
         if (result != SetDescriptionResultEnum.OK)
         {
             throw new InvalidOperationException($"リモート SDP の設定に失敗: {result}");
         }
 
-        // SDP Answer 生成
+        // SIPSorcery が SDP 内の候補を正しくパースしない場合に備え、明示的に追加
+        AddCandidatesFromSdp(remoteSdp);
+
+        // SDP Answer 生成（この時点では host 候補のみ SDP に含まれる）
+        _gatheredCandidates.Clear();
         var answer = pc.createAnswer(null);
         await pc.setLocalDescription(answer);
 
-        Util.Logger.Log("SDP Answer 生成完了");
-        return answer.sdp;
+        // ICE 収集完了を待つ（srflx/relay 候補の収集を待機）
+        await WaitForIceGatheringCompleteAsync(pc, ct);
+
+        // SDP に収集した全候補を手動追加（SIPSorcery は localDescription を更新しないため）
+        var sdp = AppendGatheredCandidatesToSdp(answer.sdp);
+        Util.Logger.Log($"SDP Answer 生成完了（Vanilla ICE: 全候補収集済み, SDP長={sdp.Length}）");
+        LogSdpCandidates(sdp, "Answer");
+        return sdp;
     }
 
     /// <summary>
@@ -216,6 +265,9 @@ public sealed class WebRtcTransport : IDisposable
     {
         if (_pc == null)
             throw new InvalidOperationException("PeerConnection が初期化されていません");
+
+        Util.Logger.Log($"リモート Answer 受信（SDP長={remoteSdp.Length}）");
+        LogSdpCandidates(remoteSdp, "Remote Answer");
 
         var remoteAnswer = new RTCSessionDescriptionInit
         {
@@ -230,18 +282,30 @@ public sealed class WebRtcTransport : IDisposable
         }
 
         Util.Logger.Log("リモート SDP Answer 設定完了");
+
+        // SIPSorcery が SDP 内の候補を正しくパースしない場合に備え、
+        // 明示的に addIceCandidate で全候補を追加する（ベルトとサスペンダー方式）
+        AddCandidatesFromSdp(remoteSdp);
+
         return Task.CompletedTask;
     }
 
     /// <summary>
     /// リモートの ICE Candidate を追加する。
+    /// remote description が設定された後に呼ぶこと。
     /// </summary>
     public Task AddIceCandidateAsync(string candidate, CancellationToken ct = default)
     {
         if (_pc == null)
             throw new InvalidOperationException("PeerConnection が初期化されていません");
 
-        _pc.addIceCandidate(new RTCIceCandidateInit { candidate = candidate });
+        var init = new RTCIceCandidateInit
+        {
+            candidate = candidate,
+            sdpMLineIndex = 0,
+            sdpMid = "0",
+        };
+        _pc.addIceCandidate(init);
         return Task.CompletedTask;
     }
 
@@ -273,6 +337,141 @@ public sealed class WebRtcTransport : IDisposable
         var credential = Convert.ToBase64String(hash);
 
         return (username, credential);
+    }
+
+    /// <summary>
+    /// ICE 候補の収集が完了するまで待機する。
+    /// Vanilla ICE: SDP に全候補を含めるために収集完了を待つ。
+    /// </summary>
+    private static async Task WaitForIceGatheringCompleteAsync(RTCPeerConnection pc, CancellationToken ct)
+    {
+        if (pc.iceGatheringState == RTCIceGatheringState.complete)
+        {
+            Util.Logger.Log("ICE 収集: 既に完了済み");
+            return;
+        }
+
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        pc.onicegatheringstatechange += state =>
+        {
+            if (state == RTCIceGatheringState.complete)
+                tcs.TrySetResult();
+        };
+
+        // 登録後に再チェック（レースコンディション対策）
+        if (pc.iceGatheringState == RTCIceGatheringState.complete)
+        {
+            tcs.TrySetResult();
+        }
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
+        await using var _ = timeoutCts.Token.Register(() => tcs.TrySetCanceled());
+
+        try
+        {
+            await tcs.Task;
+            Util.Logger.Log("ICE 収集完了（Vanilla ICE 準備完了）");
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            Util.Logger.Log("ICE 収集タイムアウト（10秒）: 収集済みの候補で続行", Util.LogLevel.Warning);
+        }
+    }
+
+    /// <summary>
+    /// gathering 中に収集した ICE 候補のうち、SDP に未掲載のものを追加する。
+    /// SIPSorcery の localDescription は setLocalDescription 時点の SDP しか保持しないため、
+    /// srflx/relay 候補を手動で SDP に追加して Vanilla ICE を実現する。
+    /// </summary>
+    private string AppendGatheredCandidatesToSdp(string originalSdp)
+    {
+        // SDP 内の既存候補を収集（重複防止）
+        var existingCandidates = new HashSet<string>();
+        foreach (var line in originalSdp.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("a=candidate:"))
+            {
+                existingCandidates.Add(trimmed);
+            }
+        }
+
+        // 未掲載の候補を a=candidate: 行として追加
+        var newCandidateLines = new List<string>();
+        foreach (var candidate in _gatheredCandidates)
+        {
+            // SIPSorcery の RTCIceCandidate.ToString() は "foundation component ..." 形式（candidate: プレフィックスなし）
+            // SDP の候補行は "a=candidate:foundation component ..." 形式が必要
+            var candidateStr = candidate.ToString();
+            var candidateLine = candidateStr.StartsWith("candidate:")
+                ? $"a={candidateStr}"
+                : $"a=candidate:{candidateStr}";
+
+            if (!existingCandidates.Contains(candidateLine))
+            {
+                newCandidateLines.Add(candidateLine);
+                Util.Logger.Log($"SDP 候補追加: {candidateLine}");
+            }
+        }
+
+        if (newCandidateLines.Count == 0)
+        {
+            Util.Logger.Log("SDP 候補追加: 追加なし（全候補が既に SDP に含まれている）");
+            return originalSdp;
+        }
+
+        // SDP の改行コードを検出（SIPSorcery は \r\n を使用）
+        var lineEnding = originalSdp.Contains("\r\n") ? "\r\n" : "\n";
+
+        // SDP の最後の m= セクション内に候補行を挿入
+        var lines = originalSdp.TrimEnd().Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+
+        // 挿入位置: 最後の a= 行の直後
+        var insertIndex = lines.Count;
+        for (var i = lines.Count - 1; i >= 0; i--)
+        {
+            var trimmed = lines[i].Trim();
+            if (trimmed.StartsWith("a="))
+            {
+                insertIndex = i + 1;
+                break;
+            }
+        }
+
+        foreach (var line in newCandidateLines)
+        {
+            lines.Insert(insertIndex, line);
+            insertIndex++;
+        }
+
+        var lineEndingName = lineEnding == "\r\n" ? "CRLF" : "LF";
+        Util.Logger.Log($"SDP 候補追加完了: {newCandidateLines.Count} 件追加 (改行={lineEndingName})");
+        return string.Join(lineEnding, lines) + lineEnding;
+    }
+
+    /// <summary>
+    /// SDP に含まれる ICE 候補行をログ出力する（診断用）。
+    /// </summary>
+    private static void LogSdpCandidates(string sdp, string label)
+    {
+        var lines = sdp.Split('\n');
+        var candidateCount = 0;
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("a=candidate:"))
+            {
+                candidateCount++;
+                Util.Logger.Log($"SDP [{label}] 候補 {candidateCount}: {trimmed}");
+            }
+            else if (trimmed.StartsWith("a=ice-ufrag:") || trimmed.StartsWith("a=ice-pwd:"))
+            {
+                Util.Logger.Log($"SDP [{label}] {trimmed}");
+            }
+        }
+        Util.Logger.Log($"SDP [{label}] 候補数合計: {candidateCount}");
     }
 
     /// <summary>
@@ -310,6 +509,7 @@ public sealed class WebRtcTransport : IDisposable
         _hasHostCandidate = false;
         _hasSrflxCandidate = false;
         _hasRelayCandidate = false;
+        _gatheredCandidates.Clear();
         _dataChannel = null;
 
         if (_pc != null)
@@ -323,5 +523,67 @@ public sealed class WebRtcTransport : IDisposable
     public void Dispose()
     {
         Close();
+    }
+
+    /// <summary>
+    /// SDP 文字列から ICE 候補行を抽出し、addIceCandidate で明示的に追加する。
+    /// SIPSorcery の setRemoteDescription が SDP 内候補を正しくパースしない場合の保険。
+    /// </summary>
+    private void AddCandidatesFromSdp(string sdp)
+    {
+        if (_pc == null) return;
+
+        var count = 0;
+        foreach (var line in sdp.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (!trimmed.StartsWith("a=candidate:")) continue;
+
+            // "a=candidate:" プレフィックスを除去して candidate 文字列のみにする
+            var candidateValue = trimmed["a=".Length..];
+            var init = new RTCIceCandidateInit
+            {
+                candidate = candidateValue,
+                sdpMLineIndex = 0,
+                sdpMid = "0",
+            };
+            _pc.addIceCandidate(init);
+            count++;
+        }
+        Util.Logger.Log($"リモート SDP から ICE 候補を明示追加: {count} 件");
+    }
+}
+
+/// <summary>
+/// SIPSorcery 内部ログを Ferry のログシステムに転送する ILoggerFactory 実装。
+/// パッケージ追加なしで動作する。ICE 接続チェックのデバッグに使用。
+/// </summary>
+internal sealed class SIPSorceryLogFactory : ILoggerFactory
+{
+    public ILogger CreateLogger(string categoryName) => new SIPSorceryLogger(categoryName);
+    public void AddProvider(ILoggerProvider provider) { }
+    public void Dispose() { }
+}
+
+internal sealed class SIPSorceryLogger(string category) : ILogger
+{
+    // ICE 関連のログのみ出力（他は大量すぎるのでフィルタ）
+    private static readonly Regex IceLogPattern = new(
+        @"ICE|candidate|STUN|TURN|connectivity|check|nominate|relay|binding",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+    public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Debug;
+
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state,
+        Exception? exception, Func<TState, Exception?, string> formatter)
+    {
+        var message = formatter(state, exception);
+        if (IceLogPattern.IsMatch(message))
+        {
+            var shortCategory = category.Length > 30 ? category[^30..] : category;
+            Util.Logger.Log($"[SIPSorcery:{shortCategory}] {message}");
+        }
     }
 }

@@ -47,6 +47,9 @@ public sealed class StubConnectionService : IConnectionService
         return Task.CompletedTask;
     }
 
+    public void StartListeningForConnection(string peerId) { }
+    public void StopListeningForConnection() { }
+
     public Task ConnectToPeerAsync(string peerId, CancellationToken ct = default)
     {
         State = PeerState.Connected;

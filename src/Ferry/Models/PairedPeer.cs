@@ -27,6 +27,11 @@ public sealed partial class PairedPeer : ObservableObject
     [property: JsonIgnore]
     private ConnectionRoute _route = ConnectionRoute.Unknown;
 
+    /// <summary>接続状態テキスト（ランタイム専用）。</summary>
+    [ObservableProperty]
+    [property: JsonIgnore]
+    private string _connectionStatusText = string.Empty;
+
     /// <summary>接続経路の表示テキスト。</summary>
     [JsonIgnore]
     public string RouteText => Route switch

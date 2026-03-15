@@ -18,6 +18,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
 {
     private readonly IConnectionService _connectionService;
     private readonly ITransferService _transferService;
+    private readonly ConnectionViewModel _connectionViewModel;
 
     [ObservableProperty]
     private bool _isDragOver;
@@ -32,10 +33,12 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
 
     public TransferViewModel(
         IConnectionService connectionService,
-        ITransferService transferService)
+        ITransferService transferService,
+        ConnectionViewModel connectionViewModel)
     {
         _connectionService = connectionService;
         _transferService = transferService;
+        _connectionViewModel = connectionViewModel;
 
         _transferService.ProgressChanged += OnProgressChanged;
         _transferService.FileReceived += OnFileReceived;
@@ -44,12 +47,40 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
 
     /// <summary>
     /// ファイルパスの配列を受け取り、送信を開始する。
+    /// 未接続の場合はオンデマンドで WebRTC 接続を確立してから転送する。
     /// </summary>
     [RelayCommand]
     private async Task SendFilesAsync(string[] filePaths)
     {
-        if (_connectionService.State != PeerState.Connected || filePaths.Length == 0)
+        Util.Logger.Log($"SendFilesAsync 開始: {filePaths.Length} ファイル, SelectedPeer={_connectionViewModel.SelectedPeer?.DisplayName ?? "null"}, State={_connectionService.State}");
+
+        if (filePaths.Length == 0 || _connectionViewModel.SelectedPeer == null)
+        {
+            Util.Logger.Log($"送信スキップ: filePaths={filePaths.Length}, peer={_connectionViewModel.SelectedPeer?.DisplayName ?? "null"}");
             return;
+        }
+
+        // 未接続ならオンデマンド接続
+        if (_connectionService.State != PeerState.Connected)
+        {
+            Util.Logger.Log("未接続のためオンデマンド接続を開始…");
+            try
+            {
+                await _connectionViewModel.ConnectToSelectedPeerAsync();
+                Util.Logger.Log($"オンデマンド接続完了: State={_connectionService.State}");
+            }
+            catch (Exception ex)
+            {
+                Util.Logger.Log($"転送前の接続に失敗: {ex.Message}", Util.LogLevel.Error);
+                return;
+            }
+        }
+
+        if (_connectionService.State != PeerState.Connected)
+        {
+            Util.Logger.Log($"接続状態が Connected ではないため転送中止: State={_connectionService.State}", Util.LogLevel.Warning);
+            return;
+        }
 
         foreach (var filePath in filePaths)
         {

@@ -1,0 +1,209 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ============================================================ -->
+    <!--  macOS 26 Tahoe — Liquid Glass テーマ                         -->
+    <!--  半透明ガラス、大きな角丸、繊細なボーダー、San Francisco 風     -->
+    <!-- ============================================================ -->
+
+    <Styles.Resources>
+
+        <!-- === カラーパレット === -->
+
+        <!-- ダークモード基本色 -->
+        <Color x:Key="TahoeWindowBg">#1A1A1E</Color>
+        <Color x:Key="TahoeSurfaceBg">#2A2A2E</Color>
+        <Color x:Key="TahoeGlassBg">#33FFFFFF</Color>
+        <Color x:Key="TahoeGlassHighBg">#1AFFFFFF</Color>
+        <Color x:Key="TahoeGlassBorder">#33FFFFFF</Color>
+        <Color x:Key="TahoeGlassActiveBorder">#66FFFFFF</Color>
+
+        <!-- テキスト色 -->
+        <Color x:Key="TahoeTextPrimary">#F5F5F7</Color>
+        <Color x:Key="TahoeTextSecondary">#99EBEBF5</Color>
+        <Color x:Key="TahoeTextTertiary">#4DEBEBF5</Color>
+
+        <!-- アクセントカラー（Apple Blue 系） -->
+        <Color x:Key="TahoeAccent">#007AFF</Color>
+        <Color x:Key="TahoeAccentHover">#0A84FF</Color>
+        <Color x:Key="TahoeAccentMuted">#33007AFF</Color>
+
+        <!-- ステータス色 -->
+        <Color x:Key="TahoeGreen">#30D158</Color>
+        <Color x:Key="TahoeOrange">#FF9F0A</Color>
+        <Color x:Key="TahoeRed">#FF453A</Color>
+
+        <!-- セパレータ -->
+        <Color x:Key="TahoeSeparator">#1AFFFFFF</Color>
+
+        <!-- === ブラシ === -->
+        <SolidColorBrush x:Key="TahoeWindowBgBrush" Color="{StaticResource TahoeWindowBg}" />
+        <SolidColorBrush x:Key="TahoeSurfaceBgBrush" Color="{StaticResource TahoeSurfaceBg}" />
+        <SolidColorBrush x:Key="TahoeGlassBgBrush" Color="{StaticResource TahoeGlassBg}" />
+        <SolidColorBrush x:Key="TahoeGlassHighBgBrush" Color="{StaticResource TahoeGlassHighBg}" />
+        <SolidColorBrush x:Key="TahoeGlassBorderBrush" Color="{StaticResource TahoeGlassBorder}" />
+        <SolidColorBrush x:Key="TahoeGlassActiveBorderBrush" Color="{StaticResource TahoeGlassActiveBorder}" />
+        <SolidColorBrush x:Key="TahoeTextPrimaryBrush" Color="{StaticResource TahoeTextPrimary}" />
+        <SolidColorBrush x:Key="TahoeTextSecondaryBrush" Color="{StaticResource TahoeTextSecondary}" />
+        <SolidColorBrush x:Key="TahoeTextTertiaryBrush" Color="{StaticResource TahoeTextTertiary}" />
+        <SolidColorBrush x:Key="TahoeAccentBrush" Color="{StaticResource TahoeAccent}" />
+        <SolidColorBrush x:Key="TahoeAccentHoverBrush" Color="{StaticResource TahoeAccentHover}" />
+        <SolidColorBrush x:Key="TahoeAccentMutedBrush" Color="{StaticResource TahoeAccentMuted}" />
+        <SolidColorBrush x:Key="TahoeGreenBrush" Color="{StaticResource TahoeGreen}" />
+        <SolidColorBrush x:Key="TahoeOrangeBrush" Color="{StaticResource TahoeOrange}" />
+        <SolidColorBrush x:Key="TahoeRedBrush" Color="{StaticResource TahoeRed}" />
+        <SolidColorBrush x:Key="TahoeSeparatorBrush" Color="{StaticResource TahoeSeparator}" />
+
+        <!-- === 角丸 === -->
+        <CornerRadius x:Key="TahoeRadiusSmall">8</CornerRadius>
+        <CornerRadius x:Key="TahoeRadiusMedium">12</CornerRadius>
+        <CornerRadius x:Key="TahoeRadiusLarge">16</CornerRadius>
+        <CornerRadius x:Key="TahoeRadiusXLarge">24</CornerRadius>
+
+        <!-- === 間隔 === -->
+        <Thickness x:Key="TahoePaddingCard">20</Thickness>
+        <Thickness x:Key="TahoePaddingSection">16</Thickness>
+        <Thickness x:Key="TahoePaddingItem">12,10</Thickness>
+
+    </Styles.Resources>
+
+    <!-- === Glass Card スタイル === -->
+    <Style Selector="Border.glass-card">
+        <Setter Property="Background" Value="{StaticResource TahoeGlassBgBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource TahoeGlassBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource TahoeRadiusLarge}" />
+        <Setter Property="Padding" Value="{StaticResource TahoePaddingCard}" />
+    </Style>
+
+    <!-- === Glass Card Inner（ネスト用の軽い背景） === -->
+    <Style Selector="Border.glass-inner">
+        <Setter Property="Background" Value="{StaticResource TahoeGlassHighBgBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource TahoeGlassBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource TahoeRadiusMedium}" />
+        <Setter Property="Padding" Value="{StaticResource TahoePaddingSection}" />
+    </Style>
+
+    <!-- === セクションラベル === -->
+    <Style Selector="TextBlock.section-label">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource TahoeTextSecondaryBrush}" />
+        <Setter Property="Margin" Value="4,0,0,4" />
+    </Style>
+
+    <!-- === ヘッダーテキスト === -->
+    <Style Selector="TextBlock.header">
+        <Setter Property="FontSize" Value="20" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource TahoeTextPrimaryBrush}" />
+    </Style>
+
+    <!-- === サブヘッダーテキスト === -->
+    <Style Selector="TextBlock.subheader">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Foreground" Value="{StaticResource TahoeTextSecondaryBrush}" />
+    </Style>
+
+    <!-- === ボディテキスト === -->
+    <Style Selector="TextBlock.body">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Foreground" Value="{StaticResource TahoeTextPrimaryBrush}" />
+    </Style>
+
+    <!-- === キャプションテキスト === -->
+    <Style Selector="TextBlock.caption">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Foreground" Value="{StaticResource TahoeTextTertiaryBrush}" />
+    </Style>
+
+    <!-- === プライマリボタン（Liquid Glass アクセント） === -->
+    <Style Selector="Button.tahoe-primary">
+        <Setter Property="Background" Value="{StaticResource TahoeAccentBrush}" />
+        <Setter Property="Foreground" Value="White" />
+        <Setter Property="CornerRadius" Value="{StaticResource TahoeRadiusSmall}" />
+        <Setter Property="Padding" Value="20,8" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="Medium" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.tahoe-primary:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{StaticResource TahoeAccentHoverBrush}" />
+    </Style>
+
+    <!-- === セカンダリボタン（Glass 背景） === -->
+    <Style Selector="Button.tahoe-secondary">
+        <Setter Property="Background" Value="{StaticResource TahoeGlassHighBgBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource TahoeTextPrimaryBrush}" />
+        <Setter Property="CornerRadius" Value="{StaticResource TahoeRadiusSmall}" />
+        <Setter Property="Padding" Value="16,8" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="Regular" />
+        <Setter Property="BorderBrush" Value="{StaticResource TahoeGlassBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.tahoe-secondary:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{StaticResource TahoeGlassBgBrush}" />
+    </Style>
+
+    <!-- === ゴーストボタン（削除等） === -->
+    <Style Selector="Button.tahoe-ghost">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{StaticResource TahoeTextSecondaryBrush}" />
+        <Setter Property="CornerRadius" Value="{StaticResource TahoeRadiusSmall}" />
+        <Setter Property="Padding" Value="6" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Opacity" Value="0.6" />
+    </Style>
+    <Style Selector="Button.tahoe-ghost:pointerover">
+        <Setter Property="Opacity" Value="1.0" />
+    </Style>
+    <Style Selector="Button.tahoe-ghost:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{StaticResource TahoeGlassHighBgBrush}" />
+    </Style>
+
+    <!-- === ListBox スタイル（Liquid Glass） === -->
+    <Style Selector="ListBox.tahoe-list">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox.tahoe-list ListBoxItem">
+        <Setter Property="CornerRadius" Value="{StaticResource TahoeRadiusMedium}" />
+        <Setter Property="Padding" Value="{StaticResource TahoePaddingItem}" />
+        <Setter Property="Margin" Value="0,2" />
+    </Style>
+    <Style Selector="ListBox.tahoe-list ListBoxItem:selected /template/ ContentPresenter">
+        <Setter Property="Background" Value="{StaticResource TahoeAccentMutedBrush}" />
+    </Style>
+    <Style Selector="ListBox.tahoe-list ListBoxItem:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{StaticResource TahoeGlassHighBgBrush}" />
+    </Style>
+
+    <!-- === TextBox スタイル === -->
+    <Style Selector="TextBox.tahoe-input">
+        <Setter Property="Background" Value="{StaticResource TahoeGlassHighBgBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource TahoeGlassBorderBrush}" />
+        <Setter Property="CornerRadius" Value="{StaticResource TahoeRadiusSmall}" />
+        <Setter Property="Foreground" Value="{StaticResource TahoeTextPrimaryBrush}" />
+        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="FontSize" Value="13" />
+    </Style>
+
+    <!-- === ToggleSwitch スタイル === -->
+    <Style Selector="ToggleSwitch.tahoe-toggle">
+        <Setter Property="OnContent" Value="" />
+        <Setter Property="OffContent" Value="" />
+    </Style>
+
+    <!-- === Separator === -->
+    <Style Selector="Separator.tahoe-sep">
+        <Setter Property="Background" Value="{StaticResource TahoeSeparatorBrush}" />
+        <Setter Property="Margin" Value="0,4" />
+        <Setter Property="Height" Value="1" />
+    </Style>
+
+</Styles>

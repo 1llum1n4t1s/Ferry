@@ -3,7 +3,7 @@
              x:Class="Ferry.App"
              xmlns:local="using:Ferry"
              xmlns:conv="using:Ferry.Converters"
-             RequestedThemeVariant="Default">
+             RequestedThemeVariant="Dark">
 
     <Application.Resources>
         <conv:EqualConverter x:Key="EqualConverter" />
@@ -16,5 +16,6 @@
 
     <Application.Styles>
         <FluentTheme />
+        <StyleInclude Source="/Styles/TahoeTheme.axaml" />
     </Application.Styles>
 </Application>

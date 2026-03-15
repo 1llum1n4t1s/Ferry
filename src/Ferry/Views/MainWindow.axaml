@@ -5,38 +5,159 @@
         x:Class="Ferry.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="Ferry"
-        Width="500"
-        Height="700"
-        MinWidth="400"
-        MinHeight="500"
-        WindowStartupLocation="CenterScreen">
+        Width="480"
+        Height="540"
+        MinWidth="380"
+        MinHeight="400"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource TahoeWindowBgBrush}"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="PreferSystemChrome"
+        ExtendClientAreaTitleBarHeightHint="36"
+        DragDrop.AllowDrop="True">
 
     <Design.DataContext>
         <vm:MainWindowViewModel />
     </Design.DataContext>
 
-    <TabControl Margin="8">
-        <!-- 転送タブ -->
-        <TabItem Header="転送">
-            <DockPanel Margin="8">
-                <!-- 接続パネル（上部） -->
-                <views:ConnectionPanel x:Name="ConnectionArea"
-                                       DockPanel.Dock="Top"
-                                       DataContext="{Binding Connection}"
-                                       Margin="0,0,0,16" />
+    <Panel>
 
-                <!-- 転送パネル（QR コード表示中は非表示） -->
-                <views:TransferPanel DataContext="{Binding Transfer}"
-                                     IsVisible="{Binding #ConnectionArea.((vm:ConnectionViewModel)DataContext).QrCodeImage, Converter={x:Static ObjectConverters.IsNull}}" />
-            </DockPanel>
-        </TabItem>
+        <!-- === メインコンテンツ === -->
+        <Grid RowDefinitions="36,*">
 
-        <!-- 設定タブ -->
-        <TabItem Header="設定">
-            <ScrollViewer Margin="8">
-                <views:SettingsPanel DataContext="{Binding Settings}" />
-            </ScrollViewer>
-        </TabItem>
-    </TabControl>
+            <!-- タイトルバー領域 -->
+            <Border Grid.Row="0"
+                    Background="Transparent"
+                    IsHitTestVisible="False" />
+
+            <!-- メインコンテンツ（DragDrop のヒットテスト用に Background 必須） -->
+            <Grid Grid.Row="1" Margin="16,0,16,16" RowDefinitions="Auto,*"
+                  Background="Transparent"
+                  DragDrop.AllowDrop="True">
+
+                <!-- ナビゲーションタブ（Liquid Glass 風セグメントコントロール） -->
+                <Border Grid.Row="0"
+                        HorizontalAlignment="Center"
+                        Margin="0,0,0,16"
+                        Background="{StaticResource TahoeGlassHighBgBrush}"
+                        BorderBrush="{StaticResource TahoeGlassBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="10"
+                        Padding="3">
+                    <StackPanel Orientation="Horizontal" Spacing="2">
+                        <ToggleButton x:Name="TabTransfer"
+                                      Content="転送"
+                                      IsChecked="True"
+                                      Padding="16,5"
+                                      FontSize="13"
+                                      FontWeight="Medium"
+                                      Foreground="{StaticResource TahoeTextPrimaryBrush}"
+                                      CornerRadius="8"
+                                      BorderThickness="0"
+                                      Background="Transparent">
+                            <ToggleButton.Styles>
+                                <Style Selector="ToggleButton:checked">
+                                    <Setter Property="Background" Value="{StaticResource TahoeGlassBgBrush}" />
+                                </Style>
+                                <Style Selector="ToggleButton:checked /template/ ContentPresenter">
+                                    <Setter Property="Background" Value="{StaticResource TahoeGlassBgBrush}" />
+                                </Style>
+                                <Style Selector="ToggleButton:not(:checked)">
+                                    <Setter Property="Background" Value="Transparent" />
+                                </Style>
+                                <Style Selector="ToggleButton:not(:checked) /template/ ContentPresenter">
+                                    <Setter Property="Background" Value="Transparent" />
+                                </Style>
+                            </ToggleButton.Styles>
+                        </ToggleButton>
+                        <ToggleButton x:Name="TabSettings"
+                                      Content="設定"
+                                      Padding="16,5"
+                                      FontSize="13"
+                                      FontWeight="Medium"
+                                      Foreground="{StaticResource TahoeTextPrimaryBrush}"
+                                      CornerRadius="8"
+                                      BorderThickness="0"
+                                      Background="Transparent">
+                            <ToggleButton.Styles>
+                                <Style Selector="ToggleButton:checked">
+                                    <Setter Property="Background" Value="{StaticResource TahoeGlassBgBrush}" />
+                                </Style>
+                                <Style Selector="ToggleButton:checked /template/ ContentPresenter">
+                                    <Setter Property="Background" Value="{StaticResource TahoeGlassBgBrush}" />
+                                </Style>
+                                <Style Selector="ToggleButton:not(:checked)">
+                                    <Setter Property="Background" Value="Transparent" />
+                                </Style>
+                                <Style Selector="ToggleButton:not(:checked) /template/ ContentPresenter">
+                                    <Setter Property="Background" Value="Transparent" />
+                                </Style>
+                            </ToggleButton.Styles>
+                        </ToggleButton>
+                    </StackPanel>
+                </Border>
+
+                <!-- タブコンテンツ -->
+                <Grid Grid.Row="1">
+
+                    <!-- 転送タブ -->
+                    <DockPanel IsVisible="{Binding #TabTransfer.IsChecked}">
+                        <!-- 接続パネル（上部） -->
+                        <views:ConnectionPanel x:Name="ConnectionArea"
+                                               DockPanel.Dock="Top"
+                                               DataContext="{Binding Connection}"
+                                               Margin="0,0,0,12" />
+
+                        <!-- 転送パネル（QR コード表示中は非表示） -->
+                        <views:TransferPanel DataContext="{Binding Transfer}"
+                                             IsVisible="{Binding #ConnectionArea.((vm:ConnectionViewModel)DataContext).QrCodeImage, Converter={x:Static ObjectConverters.IsNull}}" />
+                    </DockPanel>
+
+                    <!-- 設定タブ -->
+                    <ScrollViewer IsVisible="{Binding #TabSettings.IsChecked}">
+                        <views:SettingsPanel DataContext="{Binding Settings}" />
+                    </ScrollViewer>
+
+                </Grid>
+
+            </Grid>
+
+        </Grid>
+
+        <!-- === ドラッグ＆ドロップオーバーレイ（ウィンドウ全体） === -->
+        <Border x:Name="DropOverlay"
+                IsVisible="False"
+                Background="#CC1A1A1E"
+                IsHitTestVisible="True"
+                DragDrop.AllowDrop="True"
+                ZIndex="100">
+            <Border Classes="glass-card"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Padding="48,32">
+                <StackPanel Spacing="16" HorizontalAlignment="Center">
+                    <!-- ドロップアイコン -->
+                    <Border Background="{StaticResource TahoeAccentMutedBrush}"
+                            CornerRadius="28"
+                            Width="56" Height="56"
+                            HorizontalAlignment="Center">
+                        <PathIcon Width="28" Height="28"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"
+                                  Foreground="{StaticResource TahoeAccentBrush}"
+                                  Data="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z" />
+                    </Border>
+                    <TextBlock Text="ファイルをドロップして転送"
+                               Classes="header"
+                               FontSize="16"
+                               HorizontalAlignment="Center" />
+                    <TextBlock Text="ドロップしたファイルを接続先に送信します"
+                               Classes="caption"
+                               HorizontalAlignment="Center" />
+                </StackPanel>
+            </Border>
+        </Border>
+
+    </Panel>
 
 </Window>

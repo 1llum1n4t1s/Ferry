@@ -1,105 +1,11 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Ferry.ViewModels"
-             xmlns:models="using:Ferry.Models"
              x:Class="Ferry.Views.TransferPanel"
              x:DataType="vm:TransferViewModel">
 
-    <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
-            BorderThickness="1"
-            CornerRadius="8"
-            Padding="16">
-        <DockPanel>
-
-            <!-- ヘッダー -->
-            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
-                <TextBlock Text="ファイル転送"
-                           FontSize="16"
-                           FontWeight="SemiBold"
-                           VerticalAlignment="Center" />
-                <Button Content="履歴クリア"
-                        Command="{Binding ClearHistoryCommand}"
-                        HorizontalAlignment="Right"
-                        VerticalAlignment="Center"
-                        FontSize="12" />
-            </DockPanel>
-
-            <!-- ドラッグ＆ドロップエリア -->
-            <Border DockPanel.Dock="Top"
-                    Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                    BorderThickness="2"
-                    CornerRadius="8"
-                    MinHeight="100"
-                    Margin="0,0,0,12"
-                    DragDrop.AllowDrop="True"
-                    Name="DropArea">
-                <StackPanel HorizontalAlignment="Center"
-                            VerticalAlignment="Center"
-                            Spacing="4">
-                    <TextBlock Text="&#xE8B7;"
-                               FontFamily="{StaticResource SymbolThemeFontFamily}"
-                               FontSize="32"
-                               HorizontalAlignment="Center"
-                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                    <TextBlock Text="ファイルをここにドロップ"
-                               FontSize="14"
-                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                               HorizontalAlignment="Center" />
-                </StackPanel>
-            </Border>
-
-            <!-- 転送リスト -->
-            <ListBox ItemsSource="{Binding Transfers}"
-                     x:DataType="vm:TransferViewModel">
-                <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="models:TransferItem">
-                        <DockPanel Margin="4">
-                            <!-- ファイル情報 -->
-                            <StackPanel DockPanel.Dock="Top" Spacing="2">
-                                <DockPanel>
-                                    <TextBlock Text="{Binding FileName}"
-                                               FontWeight="SemiBold"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{Binding State}"
-                                               HorizontalAlignment="Right"
-                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                                               FontSize="12" />
-                                </DockPanel>
-                                <ProgressBar Value="{Binding Progress}"
-                                             Minimum="0"
-                                             Maximum="1"
-                                             Height="4" />
-                                <DockPanel>
-                                    <TextBlock Text="{Binding Direction}"
-                                               FontSize="11"
-                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                    <TextBlock FontSize="11"
-                                               HorizontalAlignment="Right"
-                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}">
-                                        <TextBlock.Text>
-                                            <MultiBinding StringFormat="{}{0:N0} / {1:N0} bytes">
-                                                <Binding Path="TransferredBytes" />
-                                                <Binding Path="FileSize" />
-                                            </MultiBinding>
-                                        </TextBlock.Text>
-                                    </TextBlock>
-                                </DockPanel>
-                            </StackPanel>
-
-                            <!-- エラーメッセージ -->
-                            <TextBlock Text="{Binding ErrorMessage}"
-                                       Foreground="Red"
-                                       FontSize="11"
-                                       TextWrapping="Wrap"
-                                       IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                                       Margin="0,4,0,0" />
-                        </DockPanel>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
-
-        </DockPanel>
-    </Border>
+    <!-- 転送中のファイルリストのみ表示。
+         ドロップは MainWindow のフルウィンドウオーバーレイで処理する。
+         転送がなければこのパネルは空。 -->
 
 </UserControl>
