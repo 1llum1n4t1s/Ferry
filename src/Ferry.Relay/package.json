@@ -1,0 +1,13 @@
+{
+  "name": "ferry-relay",
+  "version": "1.0.0",
+  "description": "Ferry WebSocket リレーサーバー",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

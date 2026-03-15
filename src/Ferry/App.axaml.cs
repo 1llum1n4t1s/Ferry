@@ -32,6 +32,9 @@ public partial class App : Application
         {
             DisableAvaloniaDataAnnotationValidation();
 
+            // Windows ファイアウォールルールの確認・追加（初回のみ UAC ダイアログ表示）
+            FirewallHelper.EnsureFirewallRule();
+
             // サービス組み立て（コンストラクタで同期的に settings.json を読み込み、DeviceId を永続化）
             var settingsService = new SettingsService();
             var settings = settingsService.Settings;
@@ -47,7 +50,7 @@ public partial class App : Application
                 }, TaskScheduler.Default);
             }
             var connectionService = new ConnectionService(settings.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName);
-            var transferService = new StubTransferService();
+            var transferService = new TransferService(connectionService, settingsService);
             var qrCodeService = new QrCodeGenerator();
             var peerRegistry = new PeerRegistryService();
 

@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Ferry.Models;
@@ -26,6 +27,10 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private bool _isTransferring;
 
+    /// <summary>転送アイテムの一覧があるか。</summary>
+    [ObservableProperty]
+    private bool _hasTransfers;
+
     /// <summary>
     /// 転送アイテムの一覧。
     /// </summary>
@@ -43,11 +48,13 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         _transferService.ProgressChanged += OnProgressChanged;
         _transferService.FileReceived += OnFileReceived;
         _transferService.TransferError += OnTransferError;
+
+        Transfers.CollectionChanged += (_, _) => HasTransfers = Transfers.Count > 0;
     }
 
     /// <summary>
     /// ファイルパスの配列を受け取り、送信を開始する。
-    /// 未接続の場合はオンデマンドで WebRTC 接続を確立してから転送する。
+    /// 未接続の場合はオンデマンドで接続を確立してから転送する。
     /// </summary>
     [RelayCommand]
     private async Task SendFilesAsync(string[] filePaths)
@@ -93,14 +100,13 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 FileName = fileInfo.Name,
                 FileSize = fileInfo.Length,
                 Direction = TransferDirection.Send,
-                State = TransferState.Pending,
+                State = TransferState.InProgress,
             };
             Transfers.Add(item);
 
             IsTransferring = true;
             try
             {
-                item.State = TransferState.InProgress;
                 await _transferService.SendFileAsync(filePath);
                 item.State = TransferState.Completed;
                 item.TransferredBytes = item.FileSize;
@@ -169,29 +175,105 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         }
     }
 
+    /// <summary>
+    /// 進捗更新イベント。バックグラウンドスレッドから呼ばれるため UI スレッドにディスパッチ。
+    /// 送信: Direction + InProgress で照合（TransferId はサービス内部で別に生成されるため）。
+    /// 受信: 一致するアイテムがなければ追加。
+    /// </summary>
     private void OnProgressChanged(object? sender, TransferItem e)
     {
-        // TransferId で照合（同名ファイルが複数ある場合に誤動作を防ぐ）
-        var item = Transfers.FirstOrDefault(t => t.TransferId == e.TransferId && t.State == TransferState.InProgress);
-        if (item is not null)
+        Dispatcher.UIThread.Post(() =>
         {
-            item.TransferredBytes = e.TransferredBytes;
-        }
+            if (e.Direction == TransferDirection.Send)
+            {
+                // 送信中のアイテムを更新（逐次送信なので InProgress は 1 つだけ）
+                var item = Transfers.FirstOrDefault(t =>
+                    t.Direction == TransferDirection.Send && t.State == TransferState.InProgress);
+                if (item != null)
+                {
+                    item.TransferredBytes = e.TransferredBytes;
+                }
+            }
+            else
+            {
+                // 受信中: 既存アイテムを探す、なければ追加
+                var item = Transfers.FirstOrDefault(t =>
+                    t.Direction == TransferDirection.Receive && t.State == TransferState.InProgress);
+                if (item == null)
+                {
+                    item = new TransferItem
+                    {
+                        TransferId = e.TransferId,
+                        FileName = e.FileName,
+                        FileSize = e.FileSize,
+                        TotalChunks = e.TotalChunks,
+                        Direction = TransferDirection.Receive,
+                        State = TransferState.InProgress,
+                    };
+                    Transfers.Add(item);
+                    IsTransferring = true;
+                }
+                item.TransferredBytes = e.TransferredBytes;
+            }
+        });
     }
 
+    /// <summary>
+    /// ファイル受信完了イベント。
+    /// </summary>
     private void OnFileReceived(object? sender, TransferItem e)
     {
-        Transfers.Add(e);
+        Dispatcher.UIThread.Post(() =>
+        {
+            // 進捗表示中の受信アイテムを探す
+            var item = Transfers.FirstOrDefault(t =>
+                t.TransferId == e.TransferId && t.Direction == TransferDirection.Receive);
+
+            if (item == null)
+            {
+                // 進捗表示なしで完了した場合（小さいファイル等）
+                item = Transfers.FirstOrDefault(t =>
+                    t.Direction == TransferDirection.Receive && t.State == TransferState.InProgress);
+            }
+
+            if (item != null)
+            {
+                item.State = TransferState.Completed;
+                item.TransferredBytes = e.FileSize;
+                item.FileName = e.FileName;
+            }
+            else
+            {
+                // どこにも見つからない → 新規追加
+                Transfers.Add(e);
+            }
+
+            IsTransferring = Transfers.Any(t => t.State == TransferState.InProgress);
+        });
     }
 
+    /// <summary>
+    /// 転送エラーイベント。
+    /// </summary>
     private void OnTransferError(object? sender, TransferItem e)
     {
-        var item = Transfers.FirstOrDefault(t => t.TransferId == e.TransferId && t.State == TransferState.InProgress);
-        if (item is not null)
+        Dispatcher.UIThread.Post(() =>
         {
-            item.State = TransferState.Error;
-            item.ErrorMessage = e.ErrorMessage;
-        }
+            var item = Transfers.FirstOrDefault(t =>
+                t.Direction == e.Direction && t.State == TransferState.InProgress);
+            if (item != null)
+            {
+                item.State = TransferState.Error;
+                item.ErrorMessage = e.ErrorMessage;
+            }
+            else
+            {
+                e.State = TransferState.Error;
+                Transfers.Add(e);
+            }
+
+            IsTransferring = Transfers.Any(t => t.State == TransferState.InProgress);
+        });
     }
 
     public void Dispose()

@@ -42,11 +42,45 @@
                            RenderOptions.BitmapInterpolationMode="HighQuality" />
                 </Border>
 
-                <!-- セッション ID -->
-                <TextBlock Text="{Binding SessionId, StringFormat='Session: {0}'}"
-                           Classes="caption"
-                           HorizontalAlignment="Center"
-                           IsVisible="{Binding SessionId, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <!-- ペアリングリンク共有（Discord 風） -->
+                <StackPanel Spacing="6"
+                            IsVisible="{Binding PairingUrl, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                    <TextBlock Text="または、ペアリングリンクを送る。"
+                               Classes="caption"
+                               HorizontalAlignment="Center" />
+                    <Border Background="{StaticResource TahoeGlassHighBgBrush}"
+                            BorderBrush="{StaticResource TahoeGlassBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="4">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding PairingUrl}"
+                                       FontSize="11"
+                                       Foreground="{StaticResource TahoeTextSecondaryBrush}"
+                                       VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis"
+                                       Margin="8,0,4,0" />
+                            <Button Grid.Column="1"
+                                    Command="{Binding CopyPairingLinkCommand}"
+                                    Classes="tahoe-primary"
+                                    Padding="12,4"
+                                    FontSize="11"
+                                    MinWidth="56">
+                                <Button.Content>
+                                    <Panel>
+                                        <TextBlock Text="コピー"
+                                                   IsVisible="{Binding !IsLinkCopied}"
+                                                   HorizontalAlignment="Center" />
+                                        <TextBlock Text="コピー済み ✓"
+                                                   IsVisible="{Binding IsLinkCopied}"
+                                                   HorizontalAlignment="Center" />
+                                    </Panel>
+                                </Button.Content>
+                            </Button>
+                        </Grid>
+                    </Border>
+                </StackPanel>
 
                 <!-- 接続開始ボタン -->
                 <Button Content="接続開始"
@@ -74,10 +108,45 @@
                            RenderOptions.BitmapInterpolationMode="HighQuality" />
                 </Border>
 
-                <TextBlock Text="{Binding SessionId, StringFormat='Session: {0}'}"
-                           Classes="caption"
-                           HorizontalAlignment="Center"
-                           IsVisible="{Binding SessionId, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <!-- ペアリングリンク共有（Discord 風） -->
+                <StackPanel Spacing="6"
+                            IsVisible="{Binding PairingUrl, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                    <TextBlock Text="または、ペアリングリンクを送る。"
+                               Classes="caption"
+                               HorizontalAlignment="Center" />
+                    <Border Background="{StaticResource TahoeGlassHighBgBrush}"
+                            BorderBrush="{StaticResource TahoeGlassBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="4">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding PairingUrl}"
+                                       FontSize="11"
+                                       Foreground="{StaticResource TahoeTextSecondaryBrush}"
+                                       VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis"
+                                       Margin="8,0,4,0" />
+                            <Button Grid.Column="1"
+                                    Command="{Binding CopyPairingLinkCommand}"
+                                    Classes="tahoe-primary"
+                                    Padding="12,4"
+                                    FontSize="11"
+                                    MinWidth="56">
+                                <Button.Content>
+                                    <Panel>
+                                        <TextBlock Text="コピー"
+                                                   IsVisible="{Binding !IsLinkCopied}"
+                                                   HorizontalAlignment="Center" />
+                                        <TextBlock Text="コピー済み ✓"
+                                                   IsVisible="{Binding IsLinkCopied}"
+                                                   HorizontalAlignment="Center" />
+                                    </Panel>
+                                </Button.Content>
+                            </Button>
+                        </Grid>
+                    </Border>
+                </StackPanel>
 
                 <Button Content="キャンセル"
                         Classes="tahoe-secondary"

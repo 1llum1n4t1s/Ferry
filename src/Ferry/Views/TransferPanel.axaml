@@ -1,11 +1,121 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Ferry.ViewModels"
+             xmlns:models="using:Ferry.Models"
              x:Class="Ferry.Views.TransferPanel"
              x:DataType="vm:TransferViewModel">
 
-    <!-- 転送中のファイルリストのみ表示。
-         ドロップは MainWindow のフルウィンドウオーバーレイで処理する。
-         転送がなければこのパネルは空。 -->
+    <!-- 転送リスト表示パネル -->
+    <Grid RowDefinitions="*">
+
+        <!-- === 転送アイテムなし → ドロップヒント === -->
+        <StackPanel VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    Spacing="12"
+                    IsVisible="{Binding !HasTransfers}">
+            <!-- ドロップアイコン -->
+            <Border Background="{StaticResource TahoeGlassHighBgBrush}"
+                    CornerRadius="24"
+                    Width="48" Height="48"
+                    HorizontalAlignment="Center">
+                <PathIcon Width="22" Height="22"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center"
+                          Foreground="{StaticResource TahoeTextTertiaryBrush}"
+                          Data="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z" />
+            </Border>
+            <TextBlock Text="ファイルをドロップして転送"
+                       Classes="subheader"
+                       HorizontalAlignment="Center" />
+        </StackPanel>
+
+        <!-- === 転送リスト === -->
+        <DockPanel IsVisible="{Binding HasTransfers}">
+
+            <!-- ヘッダー -->
+            <DockPanel DockPanel.Dock="Top" Margin="4,0,4,8">
+                <TextBlock Text="転送履歴" Classes="section-label"
+                           VerticalAlignment="Center" />
+                <Button Content="クリア"
+                        Classes="tahoe-ghost"
+                        Command="{Binding ClearHistoryCommand}"
+                        HorizontalAlignment="Right"
+                        FontSize="11"
+                        Padding="8,4" />
+            </DockPanel>
+
+            <!-- アイテムリスト -->
+            <ScrollViewer>
+                <ItemsControl ItemsSource="{Binding Transfers}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="models:TransferItem">
+                            <Border Background="{StaticResource TahoeGlassHighBgBrush}"
+                                    BorderBrush="{StaticResource TahoeGlassBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="10"
+                                    Padding="14,10"
+                                    Margin="0,3">
+                                <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto">
+
+                                    <!-- 方向アイコン（↑送信 / ↓受信） -->
+                                    <Border Grid.RowSpan="2"
+                                            Width="32" Height="32"
+                                            CornerRadius="8"
+                                            VerticalAlignment="Center"
+                                            Margin="0,0,10,0">
+                                        <Border.Background>
+                                            <SolidColorBrush Color="{StaticResource TahoeAccentMuted}" />
+                                        </Border.Background>
+                                        <TextBlock Text="{Binding DirectionSymbol}"
+                                                   FontSize="14"
+                                                   FontWeight="Bold"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{StaticResource TahoeAccentBrush}" />
+                                    </Border>
+
+                                    <!-- ファイル名 -->
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding FileName}"
+                                               Classes="body"
+                                               FontWeight="Medium"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center" />
+
+                                    <!-- 状態テキスト -->
+                                    <TextBlock Grid.Column="2"
+                                               Text="{Binding StateText}"
+                                               FontSize="11"
+                                               FontWeight="Medium"
+                                               VerticalAlignment="Center"
+                                               Margin="8,0,0,0"
+                                               Foreground="{StaticResource TahoeTextSecondaryBrush}" />
+
+                                    <!-- 転送詳細テキスト -->
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+                                               Text="{Binding DisplayInfo}"
+                                               Classes="caption"
+                                               Margin="0,2,0,0" />
+
+                                    <!-- プログレスバー（転送中のみ表示） -->
+                                    <ProgressBar Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
+                                                 Minimum="0" Maximum="1"
+                                                 Value="{Binding Progress}"
+                                                 IsVisible="{Binding IsInProgress}"
+                                                 Height="3"
+                                                 Margin="0,6,0,0"
+                                                 Foreground="{StaticResource TahoeAccentBrush}"
+                                                 Background="{StaticResource TahoeGlassHighBgBrush}" />
+
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+        </DockPanel>
+
+    </Grid>
 
 </UserControl>

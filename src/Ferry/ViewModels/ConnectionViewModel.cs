@@ -2,6 +2,8 @@ using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Controls;
+using Avalonia.Input.Platform;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -35,6 +37,10 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private string _sessionId = string.Empty;
 
+    /// <summary>ペアリング用 URL（QR コード下に表示してコピー共有可能にする）。</summary>
+    [ObservableProperty]
+    private string _pairingUrl = string.Empty;
+
     [ObservableProperty]
     private string _peerName = string.Empty;
 
@@ -54,6 +60,10 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     /// <summary>接続経路の表示テキスト。</summary>
     [ObservableProperty]
     private string _connectionRouteText = string.Empty;
+
+    /// <summary>リンクコピー済みフラグ（一時的に「コピー済み」表示にする）。</summary>
+    [ObservableProperty]
+    private bool _isLinkCopied;
 
     public ConnectionViewModel(
         IConnectionService connectionService,
@@ -95,6 +105,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             // Bridge ページ URL に sessionId と PC 名を付与して QR コード生成
             var displayName = Uri.EscapeDataString(settings.DisplayName);
             var bridgeUrl = $"{settings.BridgePageUrl}?sid={SessionId}&name={displayName}";
+            PairingUrl = bridgeUrl;
             QrCodeImage = _qrCodeService.GenerateQrBitmap(bridgeUrl);
 
             ConnectionState = PeerState.WaitingForPairing;
@@ -146,6 +157,8 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         ClearQrCodeImage();
         PeerName = string.Empty;
         SessionId = string.Empty;
+        PairingUrl = string.Empty;
+        IsLinkCopied = false;
         ConnectionState = PeerState.Disconnected;
         StatusText = string.Empty;
 
@@ -165,6 +178,40 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     private async Task AddNewPeerAsync()
     {
         await StartSessionAsync();
+    }
+
+    /// <summary>
+    /// ペアリングリンクをクリップボードにコピーする。
+    /// </summary>
+    [RelayCommand]
+    private async Task CopyPairingLinkAsync()
+    {
+        if (string.IsNullOrEmpty(PairingUrl)) return;
+
+        try
+        {
+            // Avalonia のクリップボード API: TopLevel から取得
+            var topLevel = TopLevel.GetTopLevel(
+                Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                    ? desktop.MainWindow
+                    : null);
+            var clipboard = topLevel?.Clipboard;
+            if (clipboard != null)
+            {
+                await clipboard.SetTextAsync(PairingUrl);
+                IsLinkCopied = true;
+                Util.Logger.Log("ペアリングリンクをクリップボードにコピー");
+
+                // 2秒後に「コピー済み」表示をリセット
+                _ = Task.Delay(2000).ContinueWith(_ =>
+                    Dispatcher.UIThread.Post(() => IsLinkCopied = false),
+                    System.Threading.Tasks.TaskScheduler.Default);
+            }
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"クリップボードコピーエラー: {ex.Message}", Util.LogLevel.Warning);
+        }
     }
 
     /// <summary>
@@ -314,6 +361,8 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                 // QR コード表示をクリアし、宛先選択モードへ
                 ClearQrCodeImage();
                 SessionId = string.Empty;
+                PairingUrl = string.Empty;
+                IsLinkCopied = false;
                 SelectedPeer = peer;
             });
         }

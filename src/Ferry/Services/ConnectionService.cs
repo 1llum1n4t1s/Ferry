@@ -1,4 +1,6 @@
 using System;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Ferry.Infrastructure;
@@ -7,23 +9,29 @@ using Ferry.Models;
 namespace Ferry.Services;
 
 /// <summary>
-/// Firebase シグナリング + WebRTC DataChannel による接続サービスの本実装。
+/// Firebase シグナリング + TCP 直接接続 / WebSocket リレーによる接続サービス。
 /// ペアリング（Bridge ページ経由の自動マッチング）とオンデマンド接続を管理する。
 ///
 /// 接続モデル:
-///   - ファイル送信側が ConnectToPeerAsync を呼び WebRTC Offer を作成
-///   - 受信側は StartListeningForConnection で Offer を監視し、自動的に Answer を返す
-///   - ICE candidate フィールドは DeviceId 辞書順で決定論的に割り当て（A=小さい方, B=大きい方）
+///   - ファイル送信側（Offer 側）が ConnectToPeerAsync を呼び、TCP リスナーを起動して接続情報を送信
+///   - 受信側（Answer 側）は StartListeningForConnection で接続情報を監視し、TCP 接続を確立
+///   - TCP 直接接続失敗時は WebSocket リレーにフォールバック
 /// </summary>
 public sealed class ConnectionService : IConnectionService, IDisposable
 {
+    /// <summary>TCP 直接接続のタイムアウト（秒）。</summary>
+    private const int TcpConnectTimeoutSeconds = 5;
+
     private readonly string _databaseUrl;
     private readonly string _deviceId;
     private readonly string _displayName;
     private FirebaseSignaling? _signaling;
-    private WebRtcTransport? _transport;
+    private ITransport? _transport;
     private string? _currentPairId;
     private CancellationTokenSource? _listeningCts;
+
+    /// <summary>WebSocket リレーサーバーの URL。null の場合はリレーなし（TCP 直接のみ）。</summary>
+    public string? RelayUrl { get; set; }
 
     public PeerState State { get; private set; } = PeerState.Disconnected;
     public PeerInfo? ConnectedPeer { get; private set; }
@@ -46,17 +54,12 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     public async Task<string> StartPairingSessionAsync(CancellationToken ct = default)
     {
-        // 前回のシグナリングをクリーンアップ
         _signaling?.Dispose();
         _signaling = new FirebaseSignaling(_databaseUrl);
 
-        // セッション登録（DeviceId を安定したセッション ID として使用）
         var sessionId = await _signaling.RegisterSessionAsync(_deviceId, _displayName, ct);
 
-        // ペアリング検知イベントを登録
         _signaling.PairingDetected += OnPairingDetected;
-
-        // ペアリング監視開始
         _signaling.StartWatchingPairing();
 
         SetState(PeerState.WaitingForPairing);
@@ -81,13 +84,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
         Util.Logger.Log($"ペアリング検知: peer={info.PeerDisplayName}");
 
-        // ペアリング監視を停止
         _signaling.PairingDetected -= OnPairingDetected;
         _signaling.StopWatching();
 
         SetState(PeerState.WaitingForMatch);
 
-        // ペアリング完了を通知
         var peer = new PairedPeer
         {
             PeerId = info.PeerId,
@@ -95,17 +96,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         };
         PairingCompleted?.Invoke(this, peer);
 
-        // ペアリングデータとセッションを Firebase から削除（古いデータが残るとペアリング解除後に再検知される）
         await _signaling.CleanupAsync(info.PairingId, ct: default);
     }
 
     // === 着信接続監視 ===
 
-    /// <summary>
-    /// 指定ピアからの接続要求（Offer）をバックグラウンドで監視開始する。
-    /// Offer を検知したら自動的に Answer を返して WebRTC 接続を確立する。
-    /// ペアリング完了後またはピア選択後に呼び出す。
-    /// </summary>
     public void StartListeningForConnection(string peerId)
     {
         StopListeningForConnection();
@@ -114,9 +109,6 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         _ = ListenForIncomingConnectionAsync(peerId, _listeningCts.Token);
     }
 
-    /// <summary>
-    /// 着信接続監視を停止する。
-    /// </summary>
     public void StopListeningForConnection()
     {
         if (_listeningCts != null)
@@ -129,80 +121,79 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     }
 
     /// <summary>
-    /// バックグラウンドで Offer をポーリングし、検知したら Answer を返して接続を確立する。
-    /// WaitForSdpAsync が内部でポーリングするため、外側のループは接続完了→再待機のためだけに存在する。
+    /// バックグラウンドで Offer（接続情報）をポーリングし、
+    /// 検知したら TCP 接続 / WebSocket リレー接続を確立する。
     /// </summary>
     private async Task ListenForIncomingConnectionAsync(string peerId, CancellationToken ct)
     {
         var pairId = GeneratePairId(_deviceId, peerId);
-        var (myCandidateField, remoteCandidateField) = GetIceCandidateFields(peerId);
+        Util.Logger.Log($"着信接続ポーリング開始: pairId={pairId}");
 
-        Util.Logger.Log($"着信接続ポーリング開始: pairId={pairId}, myField={myCandidateField}, remoteField={remoteCandidateField}");
-
-        // 起動時点のタイムスタンプ（古い Offer をスキップするため）
         var minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
         while (!ct.IsCancellationRequested)
         {
             try
             {
-                // 接続中・接続済みの場合は待機
                 if (State is PeerState.Connected or PeerState.Connecting)
                 {
                     await Task.Delay(2000, ct);
                     continue;
                 }
 
-                // WaitForSdpAsync は内部でポーリングし、新しい Offer が来るまでブロックする
-                // FirebaseSignaling は Offer ポーリング専用
+                // Offer（接続情報 JSON）をポーリングで待つ
                 using var pollingSignaling = new FirebaseSignaling(_databaseUrl);
-                var offerSdp = await pollingSignaling.WaitForSdpAsync(pairId, "offer", minCreatedAt: minCreatedAt, ct: ct);
+                var offerJson = await pollingSignaling.WaitForSdpAsync(pairId, "offer", minCreatedAt: minCreatedAt, ct: ct);
 
-                // 接続中・接続済みの場合は Offer を無視
                 if (State is PeerState.Connected or PeerState.Connecting)
                 {
-                    Util.Logger.Log("着信 Offer を検知したが、既に接続中のためスキップ");
+                    Util.Logger.Log("着信接続情報を検知したが、既に接続中のためスキップ");
                     minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     continue;
                 }
 
-                Util.Logger.Log($"着信 Offer 検知！ Answer 側として接続開始: pairId={pairId}");
+                var offer = DeserializeConnectionInfo(offerJson);
+                if (offer == null)
+                {
+                    Util.Logger.Log("着信接続情報のパースに失敗", Util.LogLevel.Warning);
+                    minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    continue;
+                }
+
+                Util.Logger.Log($"着信接続情報検知！ Answer 側として接続開始: pairId={pairId}, ips=[{string.Join(", ", offer.Ips)}], port={offer.Port}");
                 SetState(PeerState.Connecting);
 
-                // 接続用の FirebaseSignaling（ICE 監視・Answer 送信用）
                 _signaling?.Dispose();
                 _signaling = new FirebaseSignaling(_databaseUrl);
-                DetachTransportEvents();
-                _transport?.Dispose();
-                _transport = new WebRtcTransport();
-                _transport.ChannelOpened += OnChannelOpened;
-                _transport.ChannelClosed += OnChannelClosed;
-                _transport.DataReceived += OnDataReceived;
-                _transport.RouteChanged += OnTransportRouteChanged;
                 _currentPairId = pairId;
 
-                // Answer 生成（Vanilla ICE: 全候補収集後に SDP を返す）
-                // 注意: ICE candidate 送信ハンドラは Answer 送信後に登録する。
-                // CreateAnswerAsync 中に候補が生成されるため、先に登録すると
-                // Firebase への同時書き込みが Answer 送信と競合してエラーになる。
-                var answerSdp = await _transport.CreateAnswerAsync(offerSdp, ct);
-                Util.Logger.Log("SDP Answer 生成完了");
+                // TCP 直接接続を試行
+                var connected = await TryTcpConnectAsync(offer.Ips, offer.Port, ct);
 
-                // Answer SDP を最優先で送信（全候補は SDP に含まれている）
-                Util.Logger.Log("SDP Answer 送信中…");
-                await _signaling.SendSdpAnswerAsync(pairId, answerSdp, ct);
-                Util.Logger.Log("SDP Answer 送信完了");
+                // TCP 失敗時: WebSocket リレーにフォールバック
+                if (!connected)
+                {
+                    connected = await TryRelayConnectAsync(pairId, "answer", ct);
+                }
 
-                // Answer 送信完了後に ICE candidate ハンドラを登録（補助的な trickle ICE）
-                SetupIceCandidateSendHandler(pairId, myCandidateField, ct);
+                if (!connected)
+                {
+                    Util.Logger.Log("全接続方法が失敗", Util.LogLevel.Error);
+                    SetState(PeerState.Disconnected);
+                    minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    try { await Task.Delay(3000, ct); } catch { break; }
+                    continue;
+                }
 
-                // remote description(offer) 設定済みなので ICE candidate 受信ハンドラを登録
-                SetupIceCandidateReceiveHandler(remoteCandidateField);
-                _signaling.StartWatchingIceCandidates(pairId, remoteCandidateField);
-                Util.Logger.Log("ICE candidate 監視開始");
-
-                // DataChannel 接続待ち
-                await WaitForDataChannelAsync(ct);
+                // 接続成功 → Answer（確認応答）を送信
+                var answerInfo = new ConnectionInfo
+                {
+                    Ips = TcpDirectTransport.GetLocalIpAddresses(),
+                    Port = 0, // Answer 側はリスナーを開かない
+                    Connected = true,
+                };
+                var answerJson = SerializeConnectionInfo(answerInfo);
+                await _signaling.SendSdpAnswerAsync(pairId, answerJson, ct);
 
                 ConnectedPeer = new PeerInfo
                 {
@@ -211,35 +202,27 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     State = PeerState.Connected,
                 };
                 SetState(PeerState.Connected);
-                Util.Logger.Log("着信接続完了！DataChannel 開通");
+                Util.Logger.Log($"着信接続完了！ 経路: {_transport?.Route}");
 
-                // 処理済みタイムスタンプを更新（次の Offer を待つ）
                 minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                // StopListeningForConnection() による正常なキャンセル
                 Util.Logger.Log("着信接続監視: 正常キャンセル");
                 break;
             }
             catch (OperationCanceledException)
             {
-                // DataChannel タイムアウト等 → 状態をリセットしてリトライ
-                Util.Logger.Log("着信接続: DataChannel タイムアウト、リトライ", Util.LogLevel.Warning);
+                Util.Logger.Log("着信接続: タイムアウト、リトライ", Util.LogLevel.Warning);
                 SetState(PeerState.Disconnected);
                 minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-
                 try { await Task.Delay(3000, ct); } catch { break; }
             }
             catch (Exception ex)
             {
                 Util.Logger.Log($"着信接続処理エラー: {ex.Message}", Util.LogLevel.Error);
                 SetState(PeerState.Disconnected);
-
-                // リトライ間隔
                 try { await Task.Delay(3000, ct); } catch { break; }
-
-                // 次回は新しい Offer のみ受け付ける
                 minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             }
         }
@@ -259,57 +242,69 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
         try
         {
-            // Firebase シグナリングを初期化
             _signaling?.Dispose();
             _signaling = new FirebaseSignaling(_databaseUrl);
 
-            // WebRTC トランスポートを初期化
             DetachTransportEvents();
             _transport?.Dispose();
-            _transport = new WebRtcTransport();
-            _transport.ChannelOpened += OnChannelOpened;
-            _transport.ChannelClosed += OnChannelClosed;
-            _transport.DataReceived += OnDataReceived;
-            _transport.RouteChanged += OnTransportRouteChanged;
+            _transport = null;
 
-            // pairId を両方の DeviceId からソートして一意に生成（両 PC で同じ値になる）
             var pairId = GeneratePairId(_deviceId, peerId);
             _currentPairId = pairId;
             Util.Logger.Log($"pairId 生成: {pairId}");
 
-            // ICE candidate フィールド割り当て（DeviceId 辞書順で決定）
-            var (myCandidateField, remoteCandidateField) = GetIceCandidateFields(peerId);
-            Util.Logger.Log($"ICE フィールド: my={myCandidateField}, remote={remoteCandidateField}");
-
-            // Initiator 側: 古いシグナリングデータを削除してから Offer を書き込む
+            // 古いシグナリングデータを削除
             await _signaling.CleanupSignalingDataAsync(pairId, ct);
 
-            // Offer 生成（Vanilla ICE: 全候補収集後に SDP を返す）
-            // 注意: ICE candidate 送信ハンドラは Offer 送信後に登録する。
-            // CreateOfferAsync 中に候補が生成されるため、先に登録すると
-            // Firebase への同時書き込みが Offer 送信と競合してエラーになる。
-            var offerSdp = await _transport.CreateOfferAsync(ct);
-            Util.Logger.Log("SDP Offer 生成完了、送信中…");
-            await _signaling.SendSdpOfferAsync(pairId, offerSdp, ct);
-            Util.Logger.Log("SDP Offer 送信完了、Answer 待機中…");
+            // TCP リスナーを起動して待ち受け
+            var tcpTransport = new TcpDirectTransport();
+            var port = tcpTransport.StartListener();
 
-            // Offer 送信完了後に ICE candidate ハンドラを登録（補助的な trickle ICE）
-            SetupIceCandidateSendHandler(pairId, myCandidateField, ct);
+            // 接続情報を Firebase に送信
+            var localIps = TcpDirectTransport.GetLocalIpAddresses();
+            var offerInfo = new ConnectionInfo
+            {
+                Ips = localIps,
+                Port = port,
+                RelayUrl = RelayUrl,
+            };
+            var offerJson = SerializeConnectionInfo(offerInfo);
+            Util.Logger.Log($"接続情報送信: ips=[{string.Join(", ", localIps)}], port={port}");
+            await _signaling.SendSdpOfferAsync(pairId, offerJson, ct);
+            Util.Logger.Log("接続情報送信完了、相手の接続待機中…");
 
-            // Answer をポーリングで待つ（remote description 設定前に ICE candidate を追加しない）
-            var answerSdp = await _signaling.WaitForSdpAsync(pairId, "answer", ct: ct);
-            Util.Logger.Log("SDP Answer 受信、リモート設定中…");
-            await _transport.SetRemoteAnswerAsync(answerSdp, ct);
-            Util.Logger.Log("リモート SDP Answer 設定完了");
+            // TCP 接続受入を待つ（タイムアウト付き）
+            var connected = false;
+            try
+            {
+                using var acceptCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                acceptCts.CancelAfter(TimeSpan.FromSeconds(TcpConnectTimeoutSeconds));
+                await tcpTransport.AcceptAsync(acceptCts.Token);
+                connected = true;
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                Util.Logger.Log("TCP 直接接続タイムアウト → リレーにフォールバック", Util.LogLevel.Warning);
+                tcpTransport.Dispose();
+            }
 
-            // Answer 設定後にリモート ICE candidate 監視を開始
-            // remote description が設定されている状態で addIceCandidate を呼ぶ必要がある
-            SetupIceCandidateReceiveHandler(remoteCandidateField);
-            _signaling.StartWatchingIceCandidates(pairId, remoteCandidateField);
-            Util.Logger.Log("ICE candidate 監視開始");
+            if (connected)
+            {
+                // TCP 直接接続成功
+                _transport = tcpTransport;
+                AttachTransportEvents();
+            }
+            else
+            {
+                // WebSocket リレーにフォールバック
+                var relayConnected = await TryRelayConnectAsync(pairId, "offer", ct);
+                if (!relayConnected)
+                    throw new InvalidOperationException("全ての接続方法が失敗しました");
+            }
 
-            // DataChannel 接続待ち
-            await WaitForDataChannelAsync(ct);
+            // Answer（確認応答）をポーリングで待つ
+            var answerJson = await _signaling.WaitForSdpAsync(pairId, "answer", ct: ct);
+            Util.Logger.Log($"接続確認応答受信");
 
             ConnectedPeer = new PeerInfo
             {
@@ -318,7 +313,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 State = PeerState.Connected,
             };
             SetState(PeerState.Connected);
-            Util.Logger.Log("オンデマンド接続完了！DataChannel 開通");
+            Util.Logger.Log($"オンデマンド接続完了！ 経路: {_transport?.Route}");
         }
         catch (Exception ex)
         {
@@ -359,88 +354,103 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         Util.Logger.Log("切断処理完了");
     }
 
-    // === 共通ヘルパー ===
+    // === 接続ヘルパー ===
 
     /// <summary>
-    /// 自分の ICE candidate を Firebase に送信するハンドラを登録する。
-    /// PeerConnection 初期化直後に呼ぶ。
+    /// TCP 直接接続を試行する（Answer 側が使用）。
     /// </summary>
-    private void SetupIceCandidateSendHandler(string pairId, string myCandidateField, CancellationToken ct)
+    private async Task<bool> TryTcpConnectAsync(string[] ips, int port, CancellationToken ct)
     {
-        _transport!.IceCandidateGenerated += async (_, candidate) =>
+        if (ips.Length == 0 || port <= 0)
         {
-            try
-            {
-                Util.Logger.Log($"ICE candidate 送信: type={candidate.type}, field={myCandidateField}, candidate={candidate.candidate}");
-                await _signaling!.SendIceCandidateAsync(pairId, myCandidateField, candidate.candidate, ct);
-            }
-            catch (Exception ex)
-            {
-                Util.Logger.Log($"ICE candidate 送信エラー: {ex.Message}", Util.LogLevel.Warning);
-            }
-        };
-    }
+            Util.Logger.Log("TCP 接続情報が不正（IP なしまたはポート 0）", Util.LogLevel.Warning);
+            return false;
+        }
 
-    /// <summary>
-    /// リモートの ICE candidate を受信して PeerConnection に追加するハンドラを登録する。
-    /// remote description 設定後に呼ぶこと（addIceCandidate は remote description が必要）。
-    /// </summary>
-    private void SetupIceCandidateReceiveHandler(string remoteCandidateField)
-    {
-        _signaling!.IceCandidateReceived += async (_, candidate) =>
-        {
-            try
-            {
-                Util.Logger.Log($"ICE candidate 受信・追加: field={remoteCandidateField}, candidate={candidate}");
-                await _transport!.AddIceCandidateAsync(candidate);
-            }
-            catch (Exception ex)
-            {
-                Util.Logger.Log($"ICE candidate 追加エラー: {ex.Message}", Util.LogLevel.Warning);
-            }
-        };
-    }
-
-    /// <summary>
-    /// DataChannel が開通するまでイベントベースで待機する（タイムアウト 30 秒）。
-    /// </summary>
-    private async Task WaitForDataChannelAsync(CancellationToken ct)
-    {
-        Util.Logger.Log("DataChannel 開通待機中…");
-        var channelOpenedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        void OnConnected(object? s, EventArgs e) => channelOpenedTcs.TrySetResult();
-        _transport!.ChannelOpened += OnConnected;
         try
         {
-            if (_transport.IsConnected)
-                channelOpenedTcs.TrySetResult();
+            var tcpTransport = new TcpDirectTransport();
 
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeoutCts.CancelAfter(TimeSpan.FromSeconds(30));
-            await using var _ = timeoutCts.Token.Register(() => channelOpenedTcs.TrySetCanceled(timeoutCts.Token));
-            await channelOpenedTcs.Task;
+            using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            connectCts.CancelAfter(TimeSpan.FromSeconds(TcpConnectTimeoutSeconds));
+
+            await tcpTransport.ConnectAsync(ips, port, connectCts.Token);
+
+            DetachTransportEvents();
+            _transport?.Dispose();
+            _transport = tcpTransport;
+            AttachTransportEvents();
+            return true;
         }
-        finally
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            _transport.ChannelOpened -= OnConnected;
+            Util.Logger.Log("TCP 直接接続タイムアウト", Util.LogLevel.Warning);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"TCP 直接接続失敗: {ex.Message}", Util.LogLevel.Warning);
+            return false;
         }
     }
 
     /// <summary>
-    /// DeviceId 辞書順で ICE candidate フィールドを決定する。
-    /// 小さい方 → candidatesA, 大きい方 → candidatesB。
+    /// WebSocket リレー接続を試行する。
     /// </summary>
-    private (string myCandidateField, string remoteCandidateField) GetIceCandidateFields(string peerId)
+    private async Task<bool> TryRelayConnectAsync(string pairId, string role, CancellationToken ct)
     {
-        var isSmallerDeviceId = string.Compare(_deviceId, peerId, StringComparison.Ordinal) < 0;
-        return isSmallerDeviceId
-            ? ("candidatesA", "candidatesB")
-            : ("candidatesB", "candidatesA");
+        if (string.IsNullOrEmpty(RelayUrl))
+        {
+            Util.Logger.Log("リレーURL 未設定のためフォールバック不可", Util.LogLevel.Warning);
+            return false;
+        }
+
+        try
+        {
+            Util.Logger.Log($"WebSocket リレー接続試行: role={role}");
+            var relayTransport = new WebSocketRelayTransport(RelayUrl, pairId, role);
+
+            using var relayCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            relayCts.CancelAfter(TimeSpan.FromSeconds(30));
+
+            await relayTransport.ConnectAsync(relayCts.Token);
+
+            DetachTransportEvents();
+            _transport?.Dispose();
+            _transport = relayTransport;
+            AttachTransportEvents();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"WebSocket リレー接続失敗: {ex.Message}", Util.LogLevel.Warning);
+            return false;
+        }
+    }
+
+    // === イベントハンドラ ===
+
+    private void AttachTransportEvents()
+    {
+        if (_transport == null) return;
+        _transport.ChannelOpened += OnChannelOpened;
+        _transport.ChannelClosed += OnChannelClosed;
+        _transport.DataReceived += OnDataReceived;
+        _transport.RouteChanged += OnTransportRouteChanged;
+    }
+
+    private void DetachTransportEvents()
+    {
+        if (_transport == null) return;
+        _transport.ChannelOpened -= OnChannelOpened;
+        _transport.ChannelClosed -= OnChannelClosed;
+        _transport.DataReceived -= OnDataReceived;
+        _transport.RouteChanged -= OnTransportRouteChanged;
     }
 
     private void OnChannelOpened(object? sender, EventArgs e)
     {
-        Util.Logger.Log("DataChannel 接続完了");
+        Util.Logger.Log("データチャネル接続完了");
     }
 
     private void OnTransportRouteChanged(object? sender, ConnectionRoute route)
@@ -452,7 +462,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     private void OnChannelClosed(object? sender, EventArgs e)
     {
-        Util.Logger.Log($"DataChannel 切断検知: currentState={State}", Util.LogLevel.Warning);
+        Util.Logger.Log($"データチャネル切断検知: currentState={State}", Util.LogLevel.Warning);
         if (State == PeerState.Connected)
         {
             ConnectionLost?.Invoke(this, EventArgs.Empty);
@@ -463,18 +473,6 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     private void OnDataReceived(object? sender, byte[] data)
     {
         DataReceived?.Invoke(this, data);
-    }
-
-    /// <summary>
-    /// _transport のイベントハンドラを安全に解除する（再接続時のハンドラ蓄積を防ぐ）。
-    /// </summary>
-    private void DetachTransportEvents()
-    {
-        if (_transport == null) return;
-        _transport.ChannelOpened -= OnChannelOpened;
-        _transport.ChannelClosed -= OnChannelClosed;
-        _transport.DataReceived -= OnDataReceived;
-        _transport.RouteChanged -= OnTransportRouteChanged;
     }
 
     private void SetState(PeerState state)
@@ -491,6 +489,26 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             : $"{b}_{a}";
     }
 
+    // === 接続情報のシリアライズ ===
+
+    private static string SerializeConnectionInfo(ConnectionInfo info)
+    {
+        return JsonSerializer.Serialize(info, ConnectionInfoJsonContext.Default.ConnectionInfo);
+    }
+
+    private static ConnectionInfo? DeserializeConnectionInfo(string json)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize(json, ConnectionInfoJsonContext.Default.ConnectionInfo);
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"接続情報 JSON パースエラー: {ex.Message}", Util.LogLevel.Warning);
+            return null;
+        }
+    }
+
     public void Dispose()
     {
         StopListeningForConnection();
@@ -498,3 +516,32 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         _signaling?.Dispose();
     }
 }
+
+/// <summary>
+/// Firebase 経由で交換する接続情報。
+/// SDP の代わりに IP:port 情報を交換する。
+/// </summary>
+public sealed class ConnectionInfo
+{
+    /// <summary>ローカル IP アドレス群（LAN 内の全 IPv4 アドレス）。</summary>
+    [JsonPropertyName("ips")]
+    public string[] Ips { get; set; } = [];
+
+    /// <summary>TCP リスナーのポート番号。</summary>
+    [JsonPropertyName("port")]
+    public int Port { get; set; }
+
+    /// <summary>WebSocket リレーサーバーの URL（NAT 越え用フォールバック）。</summary>
+    [JsonPropertyName("relayUrl")]
+    public string? RelayUrl { get; set; }
+
+    /// <summary>接続確認フラグ（Answer 側が true を返す）。</summary>
+    [JsonPropertyName("connected")]
+    public bool Connected { get; set; }
+}
+
+/// <summary>
+/// Native AOT 対応の JSON シリアライザコンテキスト。
+/// </summary>
+[JsonSerializable(typeof(ConnectionInfo))]
+internal sealed partial class ConnectionInfoJsonContext : JsonSerializerContext;
