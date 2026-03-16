@@ -42,13 +42,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           sparse-checkout: |
-            build/resources/app/App.icns
             build/resources/app/App.plist
             build/resources/_common/icons/ferry.png
-      - name: Prepare macOS app metadata
-        if: startsWith(matrix.runtime, 'osx-')
-        run: |
-          sed "s/FERRY_VERSION/${{ inputs.version }}/g" build/resources/app/App.plist > Info.plist
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
@@ -59,6 +54,15 @@ jobs:
         run: |
           tar -xf publish/ferry.${{ matrix.runtime }}.tar -C publish
           rm publish/ferry.${{ matrix.runtime }}.tar
+      - name: Extract generated resources
+        if: startsWith(matrix.runtime, 'osx-')
+        run: |
+          cp publish/_resources/App.icns build/resources/app/App.icns
+          rm -rf publish/_resources
+      - name: Prepare macOS app metadata
+        if: startsWith(matrix.runtime, 'osx-')
+        run: |
+          sed "s/FERRY_VERSION/${{ inputs.version }}/g" build/resources/app/App.plist > Info.plist
       - name: Install Velopack CLI
         run: dotnet tool install --global vpk
       - name: Create Velopack package (Windows)

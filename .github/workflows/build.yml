@@ -68,6 +68,11 @@ jobs:
       - name: Rename executable file
         if: startsWith(matrix.runtime, 'linux-')
         run: mv publish/Ferry publish/ferry
+      - name: Include generated resources in publish
+        if: startsWith(matrix.runtime, 'osx-')
+        run: |
+          mkdir -p publish/_resources
+          cp build/resources/app/App.icns publish/_resources/App.icns
       - name: Tar artifact
         if: startsWith(matrix.runtime, 'linux-') || startsWith(matrix.runtime, 'osx-')
         run: |

@@ -59,6 +59,9 @@ jobs:
         run: |
           mkdir build/Ferry
           tar -xf "build/ferry.${{ matrix.runtime }}.tar" -C build/Ferry
+          cp build/Ferry/_resources/App.icns build/resources/app/App.icns
+          rm -rf build/Ferry/_resources
+          chmod +x build/scripts/package.osx-app.sh
           ./build/scripts/package.osx-app.sh
       - name: Upload package artifact
         uses: actions/upload-artifact@v4
