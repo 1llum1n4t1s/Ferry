@@ -360,8 +360,9 @@ public sealed class TransferService : ITransferService
 
         Util.Logger.Log($"全チャンク受信完了: {state.FileName}, 検証中…");
 
-        // SHA-256 検証
-        var actualHash = FileChunker.ComputeSha256Hex(state.SavePath);
+        // SHA-256 検証（1回のハッシュ計算で検証と ACK 送信の両方に使用）
+        var sha256Bytes = FileChunker.ComputeSha256(state.SavePath);
+        var actualHash = Convert.ToHexString(sha256Bytes).ToLowerInvariant();
         var hashMatch = string.Equals(actualHash, state.ExpectedSha256, StringComparison.OrdinalIgnoreCase);
 
         if (hashMatch)
@@ -380,7 +381,6 @@ public sealed class TransferService : ITransferService
         // ACK を送信（送信側に結果を通知）
         try
         {
-            var sha256Bytes = FileChunker.ComputeSha256(state.SavePath);
             var ackMessage = FileChunker.CreateAckMessage(hashMatch, sha256Bytes);
             _connectionService.SendAsync(ackMessage).GetAwaiter().GetResult();
             Util.Logger.Log("ACK 送信完了");

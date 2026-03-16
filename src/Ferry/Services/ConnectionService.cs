@@ -25,6 +25,12 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// <summary>UDP ホールパンチのタイムアウト（秒）。</summary>
     private const int UdpHolePunchTimeoutSeconds = 8;
 
+    /// <summary>Answer 側が TCP 成功を通知する route 値。</summary>
+    private const string RouteDirect = "direct";
+
+    /// <summary>Answer 側が TCP 失敗を通知する route 値（STUN/リレーへ遷移）。</summary>
+    private const string RouteNeedRelay = "needRelay";
+
     private readonly string _databaseUrl;
     private readonly string _deviceId;
     private readonly string _displayName;
@@ -179,7 +185,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     Ips = TcpDirectTransport.GetLocalIpAddresses(),
                     Port = 0,
                     Connected = connected,
-                    Route = connected ? "direct" : "needRelay",
+                    Route = connected ? RouteDirect : RouteNeedRelay,
                 };
                 var answerJson = SerializeConnectionInfo(answerInfo);
                 await _signaling.SendSdpAnswerAsync(pairId, answerJson, ct);
@@ -320,52 +326,41 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
                 if (answerJson != null)
                 {
-                    var answerInfo = DeserializeConnectionInfo(answerJson);
+                    Util.Logger.Log("Answer が TCP 失敗報告 → STUN/UDP ホールパンチ試行");
 
-                    if (answerInfo?.Route == "direct")
+                    // ③ STUN + UDP ホールパンチを試行
+                    var udpTransport = new UdpHolePunchTransport();
+                    var stunResult = await udpTransport.GetExternalEndpointAsync(ct: ct);
+
+                    if (stunResult != null)
                     {
-                        // Answer が TCP 成功と言っているが、Offer 側の accept がまだ → 待つ
-                        Util.Logger.Log("Answer は TCP 成功報告、Offer 側 accept 待機中…");
-                        // 通常ここには来ない（TCP accept が先に完了するはず）
+                        Util.Logger.Log($"STUN 外部エンドポイント取得: {stunResult.Value.ip}:{stunResult.Value.port}");
+
+                        // 外部エンドポイントを offer に追加送信
+                        var updatedOffer = new ConnectionInfo
+                        {
+                            Ips = localIps,
+                            Port = port,
+                            ExternalIp = stunResult.Value.ip,
+                            ExternalPort = stunResult.Value.port,
+                            RelayUrl = RelayUrl,
+                        };
+                        await _signaling.SendSdpOfferAsync(pairId, SerializeConnectionInfo(updatedOffer), ct);
+
+                        connected = await TryUdpHolePunchOfferAsync(udpTransport, pairId, ct);
                     }
                     else
                     {
-                        Util.Logger.Log("Answer が TCP 失敗報告 → STUN/UDP ホールパンチ試行");
+                        Util.Logger.Log("STUN 外部エンドポイント取得失敗（UDP ホールパンチ不可）");
+                        udpTransport.Dispose();
+                    }
 
-                        // ③ STUN + UDP ホールパンチを試行
-                        var udpTransport = new UdpHolePunchTransport();
-                        var stunResult = await udpTransport.GetExternalEndpointAsync(ct: ct);
-
-                        if (stunResult != null)
-                        {
-                            Util.Logger.Log($"STUN 外部エンドポイント取得: {stunResult.Value.ip}:{stunResult.Value.port}");
-
-                            // 外部エンドポイントを offer に追加送信
-                            var updatedOffer = new ConnectionInfo
-                            {
-                                Ips = localIps,
-                                Port = port,
-                                ExternalIp = stunResult.Value.ip,
-                                ExternalPort = stunResult.Value.port,
-                                RelayUrl = RelayUrl,
-                            };
-                            await _signaling.SendSdpOfferAsync(pairId, SerializeConnectionInfo(updatedOffer), ct);
-
-                            connected = await TryUdpHolePunchOfferAsync(udpTransport, pairId, ct);
-                        }
-                        else
-                        {
-                            Util.Logger.Log("STUN 外部エンドポイント取得失敗（UDP ホールパンチ不可）");
-                            udpTransport.Dispose();
-                        }
-
-                        // ④ WebSocket リレーにフォールバック
-                        if (!connected)
-                        {
-                            var relayConnected = await TryRelayConnectAsync(pairId, "offer", ct);
-                            if (!relayConnected)
-                                throw new InvalidOperationException("全ての接続方法が失敗しました");
-                        }
+                    // ④ WebSocket リレーにフォールバック
+                    if (!connected)
+                    {
+                        var relayConnected = await TryRelayConnectAsync(pairId, "offer", ct);
+                        if (!relayConnected)
+                            throw new InvalidOperationException("全ての接続方法が失敗しました");
                     }
                 }
             }

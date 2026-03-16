@@ -1,6 +1,6 @@
 # Ferry
 
-QR コードでペアリングし、WebRTC DataChannel で PC 間のファイルを P2P 転送するデスクトップアプリケーション。
+QR コードでペアリングし、TCP 直接接続 / UDP ホールパンチ / WebSocket リレーで PC 間のファイルを P2P 転送するデスクトップアプリケーション。
 
 ## 技術スタック
 
@@ -9,11 +9,12 @@ QR コードでペアリングし、WebRTC DataChannel で PC 間のファイル
 | UI | Avalonia UI 11.3 (Fluent テーマ) |
 | アーキテクチャ | MVVM (CommunityToolkit.Mvvm) |
 | ランタイム | .NET 10 / Native AOT (win-x64) |
-| P2P 通信 | WebRTC DataChannel (SIPSorcery) |
+| P2P 通信 | TCP 直接接続 / UDP ホールパンチ (STUN) / WebSocket リレー |
 | シグナリング | Firebase Realtime Database (FirebaseDatabase.net) |
 | ペアリング | QR コード (QRCoder) → Firebase Hosting Bridge ページ |
 | 自動更新 | Velopack (GitHub Releases) |
 | ログ | NLog (ローリングファイル) |
+| テスト | xUnit v3 + NSubstitute |
 
 ## プロジェクト構成
 
@@ -25,13 +26,16 @@ Ferry/
 │   │   ├── ViewModels/           # MVVM ViewModel
 │   │   ├── Views/                # XAML ビュー
 │   │   ├── Services/             # サービスインターフェース & 実装
-│   │   ├── Infrastructure/       # WebRTC, Firebase, ファイルチャンカー
+│   │   ├── Infrastructure/       # TCP/UDP/WebSocket トランスポート, Firebase, STUN, ファイルチャンカー
 │   │   ├── Converters/           # XAML コンバーター
 │   │   └── Util/                 # ログユーティリティ
-│   └── Ferry.Bridge/             # Firebase Hosting (QR ペアリング用 Web ページ)
+│   ├── Ferry.Bridge/             # Firebase Hosting (QR ペアリング用 Web ページ)
+│   └── Ferry.Relay/              # Node.js WebSocket リレーサーバー (VPS デプロイ)
+├── tests/
+│   └── Ferry.Tests/              # ユニットテスト (xUnit v3 + NSubstitute)
 ├── .github/workflows/            # CI/CD
 │   ├── dotnet-build.yml          # PR ビルド
-│   ├── velopack-release.yml      # リリースパッケージ作成
+│   ├── release.yml               # リリースパッケージ作成
 │   └── firebase-cleanup.yml      # Firebase ゴミデータ定期削除
 └── docs/                         # 設計書
 ```
@@ -53,22 +57,32 @@ Ferry/
 「誰と繋がるか」(ペアリング) と「実際の通信」(接続) を分離:
 
 - **初回ペアリング**: QR スキャン → Firebase で一時ハンドシェイク → ペア情報をローカル保存 → Firebase 切断
-- **ファイル送信時**: オンデマンドで Firebase シグナリング → WebRTC 確立 → チャンク送信 → 転送完了後に切断
+- **ファイル送信時**: オンデマンドで Firebase シグナリング → 接続確立 → チャンク送信 → 転送完了後に切断
 - **PC 再起動後**: 保存済みペア一覧から選択するだけで再接続可能
+
+### 接続フロー（3 階層フォールバック）
+
+イベント駆動で固定タイムアウトに依存しない設計:
+
+1. **Offer 側** が TCP リスナー起動 → offer 送信 → TCP accept と Answer ポーリングを同時待機
+2. **Answer 側** が TCP 接続試行 → 結果を answer の `route` フィールドで通知
+3. TCP 成功 → 即完了（LAN 内、STUN 通信ゼロ）
+4. TCP 失敗 → STUN クエリ → UDP ホールパンチ（NAT 越え P2P、サーバー非経由）
+5. UDP 失敗 → WebSocket リレーにフォールバック（全データが VPS を経由）
 
 ### 接続経路の可視化
 
-WebRTC の ICE 候補タイプを追跡し、接続経路をピアごとに UI 表示:
+接続経路をピアごとに UI 表示:
 
 | 経路 | 表示 | 説明 |
 |------|------|------|
-| Direct | 🟢 LAN 直接 | ホスト候補による直接接続（最速） |
-| StunAssisted | 🟡 P2P（STUN） | NAT 越え P2P（サーバー非経由） |
-| Relay | 🔴 リレー（TURN） | TURN サーバー経由（サーバーがボトルネック） |
+| Direct | 🟢 LAN 直接 | TCP 直接接続（最速） |
+| StunAssisted | 🟡 P2P（STUN） | UDP ホールパンチによる NAT 越え P2P |
+| Relay | 🔴 リレー | WebSocket リレー経由（最終手段） |
 
 ### 転送プロトコル
 
-DataChannel 上のバイナリプロトコル:
+TCP / WebSocket ストリーム上の長さプレフィクス付きバイナリプロトコル:
 
 | メッセージ | コード | 内容 |
 |-----------|--------|------|
@@ -79,6 +93,8 @@ DataChannel 上のバイナリプロトコル:
 | Ping/Pong | `0x10/0x11` | キープアライブ |
 | ResumeRequest | `0x20` | 転送再開リクエスト |
 | ResumeResponse | `0x21` | 転送再開応答 |
+
+UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レイヤー（選択的 ACK・フラグメンテーション・スライディングウィンドウ）を提供。
 
 ### 転送レジューム
 
@@ -92,7 +108,7 @@ DataChannel 上のバイナリプロトコル:
 
 ### Firebase データのクリーンアップ
 
-- **正常時**: WebRTC 接続確立後に `sessions/`, `pairings/`, `signaling/` を即削除
+- **正常時**: 接続確立後に `sessions/`, `pairings/`, `signaling/` を即削除
 - **異常時**: GitHub Actions で毎時、`CreatedAt` が 1 時間超の古いデータを自動削除
 
 ## ビルド
@@ -104,6 +120,9 @@ dotnet build src/Ferry/Ferry.csproj
 # リリースビルド (Native AOT)
 dotnet publish src/Ferry/Ferry.csproj -c Release
 
+# テスト
+dotnet test tests/Ferry.Tests/Ferry.Tests.csproj
+
 # Bridge ページのデプロイ
 cd src/Ferry.Bridge && firebase deploy --only hosting
 ```
@@ -113,32 +132,6 @@ cd src/Ferry.Bridge && firebase deploy --only hosting
 - .NET 10 SDK
 - Windows 10/11 (x64)
 - Firebase CLI（Bridge ページデプロイ時のみ）
-
-## 開発状況
-
-未実装:
-
-- [ ] 設定の永続化 (`ISettingsService` のファイル実装)
-
-実装済み:
-
-- [x] MVVM アーキテクチャ (接続・転送・設定パネル)
-- [x] Firebase Realtime Database シグナリング (`FirebaseSignaling.cs`)
-- [x] WebRTC DataChannel (`WebRtcTransport.cs` / SIPSorcery)
-- [x] QR コード生成 & スマホ Bridge ペアリング
-- [x] Bridge ページ (html5-qrcode によるカメラスキャン)
-- [x] ペアリング情報の永続化 (`PeerRegistryService`)
-- [x] ファイルチャンキング & バイナリプロトコル
-- [x] 転送レジュームプロトコル
-- [x] オンデマンド接続マネージャー
-- [x] 接続経路表示（LAN 直接 / STUN P2P / TURN リレー）
-- [x] ドラッグ＆ドロップファイル送信 UI
-- [x] トレイアイコン & 最小化設定
-- [x] Velopack 自動更新
-- [x] NLog ローリングファイルログ
-- [x] GitHub Actions CI/CD
-- [x] Firebase ゴミデータ定期削除 (GitHub Actions)
-- [x] Firebase Hosting デプロイ済み
 
 ## ライセンス
 
