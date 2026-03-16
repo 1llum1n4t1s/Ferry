@@ -43,6 +43,7 @@ public partial class App : Application
             {
                 settings.FirebaseDatabaseUrl = "https://ferry-edf09-default-rtdb.firebaseio.com";
                 settings.BridgePageUrl = "https://ferry-edf09.web.app";
+                settings.RelayUrl = "wss://1llum1n4t1.net/ferry-relay";
                 _ = settingsService.SaveAsync().ContinueWith(t =>
                 {
                     if (t.IsFaulted)
@@ -50,6 +51,8 @@ public partial class App : Application
                 }, TaskScheduler.Default);
             }
             var connectionService = new ConnectionService(settings.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName);
+            if (!string.IsNullOrEmpty(settings.RelayUrl))
+                connectionService.RelayUrl = settings.RelayUrl;
             var transferService = new TransferService(connectionService, settingsService);
             var qrCodeService = new QrCodeGenerator();
             var peerRegistry = new PeerRegistryService();

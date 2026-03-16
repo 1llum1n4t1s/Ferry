@@ -25,6 +25,9 @@ public sealed class AppSettings
     /// <summary>Firebase Hosting の橋渡しページ URL（プレースホルダー）。</summary>
     public string BridgePageUrl { get; set; } = string.Empty;
 
+    /// <summary>WebSocket リレーサーバーの URL（NAT 越え用）。</summary>
+    public string RelayUrl { get; set; } = string.Empty;
+
     /// <summary>OS 起動時にアプリを自動起動するか。</summary>
     public bool RunAtStartup { get; set; }
 
