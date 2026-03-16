@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Ferry.Models;
 using Ferry.Services;
+using Xunit;
 
 namespace Ferry.Tests.Services;
 
@@ -18,7 +19,7 @@ public sealed class StubConnectionServiceTests
     public async Task StartPairingSessionAsync_セッションIDを返す()
     {
         var svc = new StubConnectionService();
-        var sessionId = await svc.StartPairingSessionAsync();
+        var sessionId = await svc.StartPairingSessionAsync(TestContext.Current.CancellationToken);
 
         Assert.NotNull(sessionId);
         Assert.Equal(8, sessionId.Length); // GUID先頭8文字
@@ -31,7 +32,7 @@ public sealed class StubConnectionServiceTests
         PeerState? receivedState = null;
         svc.StateChanged += (_, s) => receivedState = s;
 
-        await svc.StartPairingSessionAsync();
+        await svc.StartPairingSessionAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(PeerState.WaitingForPairing, svc.State);
         Assert.Equal(PeerState.WaitingForPairing, receivedState);
@@ -44,10 +45,10 @@ public sealed class StubConnectionServiceTests
         var tcs = new TaskCompletionSource<PairedPeer>();
         svc.PairingCompleted += (_, peer) => tcs.TrySetResult(peer);
 
-        await svc.StartPairingSessionAsync();
+        await svc.StartPairingSessionAsync(TestContext.Current.CancellationToken);
 
         // 3秒 (1.5s + 1.5s) + マージン
-        var peer = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var peer = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Assert.NotNull(peer);
         Assert.Equal("スタブPC", peer.DisplayName);
@@ -69,8 +70,8 @@ public sealed class StubConnectionServiceTests
             if (states.Count >= 3) tcs.TrySetResult();
         };
 
-        await svc.StartPairingSessionAsync();
-        await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await svc.StartPairingSessionAsync(TestContext.Current.CancellationToken);
+        await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         // 期待: WaitingForPairing → WaitingForMatch → Disconnected
         Assert.Equal(3, states.Count);
@@ -85,8 +86,8 @@ public sealed class StubConnectionServiceTests
     public async Task CancelPairingAsync_状態がDisconnectedに戻る()
     {
         var svc = new StubConnectionService();
-        await svc.StartPairingSessionAsync();
-        await svc.CancelPairingAsync();
+        await svc.StartPairingSessionAsync(TestContext.Current.CancellationToken);
+        await svc.CancelPairingAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(PeerState.Disconnected, svc.State);
     }
@@ -98,12 +99,12 @@ public sealed class StubConnectionServiceTests
         var fired = false;
         svc.PairingCompleted += (_, _) => fired = true;
 
-        await svc.StartPairingSessionAsync();
+        await svc.StartPairingSessionAsync(TestContext.Current.CancellationToken);
         // すぐキャンセル
-        await svc.CancelPairingAsync();
+        await svc.CancelPairingAsync(TestContext.Current.CancellationToken);
 
         // シミュレーション完了を待つ時間分待って、発火しないことを確認
-        await Task.Delay(4000);
+        await Task.Delay(4000, TestContext.Current.CancellationToken);
         Assert.False(fired);
     }
 
@@ -116,7 +117,7 @@ public sealed class StubConnectionServiceTests
         PeerState? receivedState = null;
         svc.StateChanged += (_, s) => receivedState = s;
 
-        await svc.ConnectToPeerAsync("test-peer");
+        await svc.ConnectToPeerAsync("test-peer", TestContext.Current.CancellationToken);
 
         Assert.Equal(PeerState.Connected, svc.State);
         Assert.Equal(PeerState.Connected, receivedState);
@@ -126,7 +127,7 @@ public sealed class StubConnectionServiceTests
     public async Task ConnectToPeerAsync_ConnectedPeerが設定される()
     {
         var svc = new StubConnectionService();
-        await svc.ConnectToPeerAsync("test-peer");
+        await svc.ConnectToPeerAsync("test-peer", TestContext.Current.CancellationToken);
 
         Assert.NotNull(svc.ConnectedPeer);
         Assert.Equal("test-peer", svc.ConnectedPeer.SessionId);
@@ -140,7 +141,7 @@ public sealed class StubConnectionServiceTests
         ConnectionRoute? receivedRoute = null;
         svc.RouteChanged += (_, r) => receivedRoute = r;
 
-        await svc.ConnectToPeerAsync("test-peer");
+        await svc.ConnectToPeerAsync("test-peer", TestContext.Current.CancellationToken);
 
         Assert.Equal(ConnectionRoute.Direct, svc.Route);
         Assert.Equal(ConnectionRoute.Direct, receivedRoute);
@@ -152,8 +153,8 @@ public sealed class StubConnectionServiceTests
     public async Task DisconnectAsync_状態がリセットされる()
     {
         var svc = new StubConnectionService();
-        await svc.ConnectToPeerAsync("test-peer");
-        await svc.DisconnectAsync();
+        await svc.ConnectToPeerAsync("test-peer", TestContext.Current.CancellationToken);
+        await svc.DisconnectAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(PeerState.Disconnected, svc.State);
         Assert.Null(svc.ConnectedPeer);
@@ -166,7 +167,7 @@ public sealed class StubConnectionServiceTests
     public async Task SendAsync_例外を投げない()
     {
         var svc = new StubConnectionService();
-        var ex = await Record.ExceptionAsync(() => svc.SendAsync(new byte[] { 1, 2, 3 }));
+        var ex = await Record.ExceptionAsync(() => svc.SendAsync(new byte[] { 1, 2, 3 }, TestContext.Current.CancellationToken));
         Assert.Null(ex);
     }
 }

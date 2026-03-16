@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Ferry.Models;
 using Ferry.Services;
+using Xunit;
 
 namespace Ferry.Tests.Services;
 
@@ -15,7 +16,7 @@ public sealed class StubTransferServiceTests
     public async Task SendFileAsync_例外を投げない()
     {
         var svc = new StubTransferService();
-        var ex = await Record.ExceptionAsync(() => svc.SendFileAsync("dummy.txt"));
+        var ex = await Record.ExceptionAsync(() => svc.SendFileAsync("dummy.txt", TestContext.Current.CancellationToken));
         Assert.Null(ex);
     }
 
@@ -23,7 +24,7 @@ public sealed class StubTransferServiceTests
     public async Task ResumeTransferAsync_falseを返す()
     {
         var svc = new StubTransferService();
-        var result = await svc.ResumeTransferAsync(Guid.NewGuid());
+        var result = await svc.ResumeTransferAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
         Assert.False(result);
     }
 

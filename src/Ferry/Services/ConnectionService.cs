@@ -9,18 +9,21 @@ using Ferry.Models;
 namespace Ferry.Services;
 
 /// <summary>
-/// Firebase シグナリング + TCP 直接接続 / WebSocket リレーによる接続サービス。
+/// Firebase シグナリング + TCP 直接接続 / UDP ホールパンチ / WebSocket リレーによる接続サービス。
 /// ペアリング（Bridge ページ経由の自動マッチング）とオンデマンド接続を管理する。
 ///
-/// 接続モデル:
-///   - ファイル送信側（Offer 側）が ConnectToPeerAsync を呼び、TCP リスナーを起動して接続情報を送信
-///   - 受信側（Answer 側）は StartListeningForConnection で接続情報を監視し、TCP 接続を確立
-///   - TCP 直接接続失敗時は WebSocket リレーにフォールバック
+/// 接続フロー（優先順位順）:
+///   1. TCP 直接接続（同一 LAN、最速）
+///   2. UDP ホールパンチ（STUN で NAT 越え P2P、サーバー非経由、成功率 ~80%）
+///   3. WebSocket リレー（最終手段、全データが VPS を経由）
 /// </summary>
 public sealed class ConnectionService : IConnectionService, IDisposable
 {
     /// <summary>TCP 直接接続のタイムアウト（秒）。</summary>
     private const int TcpConnectTimeoutSeconds = 5;
+
+    /// <summary>UDP ホールパンチのタイムアウト（秒）。</summary>
+    private const int UdpHolePunchTimeoutSeconds = 8;
 
     private readonly string _databaseUrl;
     private readonly string _deviceId;
@@ -167,10 +170,27 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 _signaling = new FirebaseSignaling(_databaseUrl);
                 _currentPairId = pairId;
 
-                // TCP 直接接続を試行
+                // ① TCP 直接接続を試行
                 var connected = await TryTcpConnectAsync(offer.Ips, offer.Port, ct);
 
-                // TCP 失敗時: WebSocket リレーにフォールバック
+                // TCP 結果を即座に Answer として送信（Offer 側が待機中）
+                var answerInfo = new ConnectionInfo
+                {
+                    Ips = TcpDirectTransport.GetLocalIpAddresses(),
+                    Port = 0,
+                    Connected = connected,
+                    Route = connected ? "direct" : "needRelay",
+                };
+                var answerJson = SerializeConnectionInfo(answerInfo);
+                await _signaling.SendSdpAnswerAsync(pairId, answerJson, ct);
+
+                // ② TCP 失敗時: UDP ホールパンチを試行
+                if (!connected && !string.IsNullOrEmpty(offer.ExternalIp) && offer.ExternalPort > 0)
+                {
+                    connected = await TryUdpHolePunchAnswerAsync(offer, pairId, ct);
+                }
+
+                // ③ UDP 失敗時: WebSocket リレーにフォールバック
                 if (!connected)
                 {
                     connected = await TryRelayConnectAsync(pairId, "answer", ct);
@@ -184,16 +204,6 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     try { await Task.Delay(3000, ct); } catch { break; }
                     continue;
                 }
-
-                // 接続成功 → Answer（確認応答）を送信
-                var answerInfo = new ConnectionInfo
-                {
-                    Ips = TcpDirectTransport.GetLocalIpAddresses(),
-                    Port = 0, // Answer 側はリスナーを開かない
-                    Connected = true,
-                };
-                var answerJson = SerializeConnectionInfo(answerInfo);
-                await _signaling.SendSdpAnswerAsync(pairId, answerJson, ct);
 
                 ConnectedPeer = new PeerInfo
                 {
@@ -256,11 +266,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             // 古いシグナリングデータを削除
             await _signaling.CleanupSignalingDataAsync(pairId, ct);
 
-            // TCP リスナーを起動して待ち受け
+            // ① TCP リスナー起動 → offer 送信（STUN なし）
             var tcpTransport = new TcpDirectTransport();
             var port = tcpTransport.StartListener();
 
-            // 接続情報を Firebase に送信
             var localIps = TcpDirectTransport.GetLocalIpAddresses();
             var offerInfo = new ConnectionInfo
             {
@@ -271,40 +280,95 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             var offerJson = SerializeConnectionInfo(offerInfo);
             Util.Logger.Log($"接続情報送信: ips=[{string.Join(", ", localIps)}], port={port}");
             await _signaling.SendSdpOfferAsync(pairId, offerJson, ct);
-            Util.Logger.Log("接続情報送信完了、相手の接続待機中…");
 
-            // TCP 接続受入を待つ（タイムアウト付き）
+            // ② TCP accept + Answer ポーリングを同時待機
+            //    Answer が TCP 結果を通知してくるので、固定タイムアウト不要
+            var tcpAcceptTask = tcpTransport.AcceptAsync(ct);
+            var answerTask = _signaling.WaitForSdpAsync(pairId, "answer", ct: ct);
+
+            // どちらか先に完了した方で判断
+            var completedTask = await Task.WhenAny(tcpAcceptTask, answerTask);
+
             var connected = false;
-            try
-            {
-                using var acceptCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                acceptCts.CancelAfter(TimeSpan.FromSeconds(TcpConnectTimeoutSeconds));
-                await tcpTransport.AcceptAsync(acceptCts.Token);
-                connected = true;
-            }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-            {
-                Util.Logger.Log("TCP 直接接続タイムアウト → リレーにフォールバック", Util.LogLevel.Warning);
-                tcpTransport.Dispose();
-            }
 
-            if (connected)
+            if (completedTask == tcpAcceptTask && tcpAcceptTask.IsCompletedSuccessfully)
             {
-                // TCP 直接接続成功
+                // TCP 接続成功（LAN 内）
+                Util.Logger.Log("TCP 直接接続成功");
+                connected = true;
                 _transport = tcpTransport;
                 AttachTransportEvents();
+
+                // Answer ポーリングも完了を待つ（確認応答）
+                await answerTask;
+                Util.Logger.Log("接続確認応答受信");
             }
             else
             {
-                // WebSocket リレーにフォールバック
-                var relayConnected = await TryRelayConnectAsync(pairId, "offer", ct);
-                if (!relayConnected)
-                    throw new InvalidOperationException("全ての接続方法が失敗しました");
-            }
+                // Answer が先に到着 → route を確認
+                string? answerJson = null;
+                try
+                {
+                    answerJson = await answerTask;
+                }
+                catch (Exception ex)
+                {
+                    Util.Logger.Log($"Answer 受信エラー: {ex.Message}", Util.LogLevel.Error);
+                }
 
-            // Answer（確認応答）をポーリングで待つ
-            var answerJson = await _signaling.WaitForSdpAsync(pairId, "answer", ct: ct);
-            Util.Logger.Log($"接続確認応答受信");
+                tcpTransport.Dispose(); // TCP は不要
+
+                if (answerJson != null)
+                {
+                    var answerInfo = DeserializeConnectionInfo(answerJson);
+
+                    if (answerInfo?.Route == "direct")
+                    {
+                        // Answer が TCP 成功と言っているが、Offer 側の accept がまだ → 待つ
+                        Util.Logger.Log("Answer は TCP 成功報告、Offer 側 accept 待機中…");
+                        // 通常ここには来ない（TCP accept が先に完了するはず）
+                    }
+                    else
+                    {
+                        Util.Logger.Log("Answer が TCP 失敗報告 → STUN/UDP ホールパンチ試行");
+
+                        // ③ STUN + UDP ホールパンチを試行
+                        var udpTransport = new UdpHolePunchTransport();
+                        var stunResult = await udpTransport.GetExternalEndpointAsync(ct: ct);
+
+                        if (stunResult != null)
+                        {
+                            Util.Logger.Log($"STUN 外部エンドポイント取得: {stunResult.Value.ip}:{stunResult.Value.port}");
+
+                            // 外部エンドポイントを offer に追加送信
+                            var updatedOffer = new ConnectionInfo
+                            {
+                                Ips = localIps,
+                                Port = port,
+                                ExternalIp = stunResult.Value.ip,
+                                ExternalPort = stunResult.Value.port,
+                                RelayUrl = RelayUrl,
+                            };
+                            await _signaling.SendSdpOfferAsync(pairId, SerializeConnectionInfo(updatedOffer), ct);
+
+                            connected = await TryUdpHolePunchOfferAsync(udpTransport, pairId, ct);
+                        }
+                        else
+                        {
+                            Util.Logger.Log("STUN 外部エンドポイント取得失敗（UDP ホールパンチ不可）");
+                            udpTransport.Dispose();
+                        }
+
+                        // ④ WebSocket リレーにフォールバック
+                        if (!connected)
+                        {
+                            var relayConnected = await TryRelayConnectAsync(pairId, "offer", ct);
+                            if (!relayConnected)
+                                throw new InvalidOperationException("全ての接続方法が失敗しました");
+                        }
+                    }
+                }
+            }
 
             ConnectedPeer = new PeerInfo
             {
@@ -390,6 +454,117 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         catch (Exception ex)
         {
             Util.Logger.Log($"TCP 直接接続失敗: {ex.Message}", Util.LogLevel.Warning);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// UDP ホールパンチを試行する（Offer 側）。
+    /// Answer 側の外部エンドポイントを Firebase からポーリングし、取得後にホールパンチを実行する。
+    /// </summary>
+    private async Task<bool> TryUdpHolePunchOfferAsync(UdpHolePunchTransport udpTransport, string pairId, CancellationToken ct)
+    {
+        try
+        {
+            Util.Logger.Log("UDP ホールパンチ（Offer 側）: Answer の外部エンドポイント待機中…");
+
+            // Answer 側の外部エンドポイントをポーリング（最大 10 秒待機）
+            using var epCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            epCts.CancelAfter(TimeSpan.FromSeconds(10));
+
+            string endpointStr;
+            try
+            {
+                endpointStr = await _signaling!.WaitForEndpointAsync(pairId, "answer", epCts.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                Util.Logger.Log("Answer の外部エンドポイント取得タイムアウト", Util.LogLevel.Warning);
+                udpTransport.Dispose();
+                return false;
+            }
+
+            var parts = endpointStr.Split(':');
+            if (parts.Length != 2 || !int.TryParse(parts[1], out var remotePort))
+            {
+                Util.Logger.Log($"Answer エンドポイントのパース失敗: {endpointStr}", Util.LogLevel.Warning);
+                udpTransport.Dispose();
+                return false;
+            }
+
+            // ホールパンチ実行
+            using var punchCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            punchCts.CancelAfter(TimeSpan.FromSeconds(UdpHolePunchTimeoutSeconds));
+
+            await udpTransport.HolePunchAsync(parts[0], remotePort, punchCts.Token);
+
+            DetachTransportEvents();
+            _transport?.Dispose();
+            _transport = udpTransport;
+            AttachTransportEvents();
+            return true;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            Util.Logger.Log("UDP ホールパンチ（Offer 側）タイムアウト", Util.LogLevel.Warning);
+            udpTransport.Dispose();
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"UDP ホールパンチ（Offer 側）失敗: {ex.Message}", Util.LogLevel.Warning);
+            udpTransport.Dispose();
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// UDP ホールパンチを試行する（Answer 側）。
+    /// STUN で自身の外部エンドポイントを取得し、Firebase に書き込んでからホールパンチを実行する。
+    /// </summary>
+    private async Task<bool> TryUdpHolePunchAnswerAsync(ConnectionInfo offer, string pairId, CancellationToken ct)
+    {
+        UdpHolePunchTransport? udpTransport = null;
+        try
+        {
+            Util.Logger.Log("UDP ホールパンチ（Answer 側）開始: STUN クエリ実行中…");
+            udpTransport = new UdpHolePunchTransport();
+            var stunResult = await udpTransport.GetExternalEndpointAsync(ct: ct);
+
+            if (stunResult == null)
+            {
+                Util.Logger.Log("STUN 外部エンドポイント取得失敗", Util.LogLevel.Warning);
+                udpTransport.Dispose();
+                return false;
+            }
+
+            Util.Logger.Log($"STUN 外部エンドポイント取得: {stunResult.Value.ip}:{stunResult.Value.port}");
+
+            // 自身の外部エンドポイントを Firebase に書き込み（Offer 側が読む）
+            await _signaling!.SendEndpointAsync(pairId, "answer", $"{stunResult.Value.ip}:{stunResult.Value.port}", ct);
+
+            // Offer 側の外部エンドポイントに向けてホールパンチ実行
+            using var punchCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            punchCts.CancelAfter(TimeSpan.FromSeconds(UdpHolePunchTimeoutSeconds));
+
+            await udpTransport.HolePunchAsync(offer.ExternalIp!, offer.ExternalPort, punchCts.Token);
+
+            DetachTransportEvents();
+            _transport?.Dispose();
+            _transport = udpTransport;
+            AttachTransportEvents();
+            return true;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            Util.Logger.Log("UDP ホールパンチ（Answer 側）タイムアウト", Util.LogLevel.Warning);
+            udpTransport?.Dispose();
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"UDP ホールパンチ（Answer 側）失敗: {ex.Message}", Util.LogLevel.Warning);
+            udpTransport?.Dispose();
             return false;
         }
     }
@@ -531,6 +706,14 @@ public sealed class ConnectionInfo
     [JsonPropertyName("port")]
     public int Port { get; set; }
 
+    /// <summary>STUN で取得した外部 IP アドレス（UDP ホールパンチ用）。</summary>
+    [JsonPropertyName("externalIp")]
+    public string? ExternalIp { get; set; }
+
+    /// <summary>STUN で取得した外部ポート番号（UDP ホールパンチ用）。</summary>
+    [JsonPropertyName("externalPort")]
+    public int ExternalPort { get; set; }
+
     /// <summary>WebSocket リレーサーバーの URL（NAT 越え用フォールバック）。</summary>
     [JsonPropertyName("relayUrl")]
     public string? RelayUrl { get; set; }
@@ -538,6 +721,13 @@ public sealed class ConnectionInfo
     /// <summary>接続確認フラグ（Answer 側が true を返す）。</summary>
     [JsonPropertyName("connected")]
     public bool Connected { get; set; }
+
+    /// <summary>
+    /// Answer 側が TCP 接続結果を通知するフィールド。
+    /// "direct" = TCP 成功、"needRelay" = TCP 失敗（Offer 側は STUN/リレーへ遷移）。
+    /// </summary>
+    [JsonPropertyName("route")]
+    public string? Route { get; set; }
 }
 
 /// <summary>

@@ -424,7 +424,7 @@ public class ConnectionViewModelTests : IDisposable
         vm.SelectedPeer = peer;
 
         // 少し待つ（fire-and-forget のため）
-        await Task.Delay(100);
+        await Task.Delay(100, TestContext.Current.CancellationToken);
 
         // ConnectToPeerAsync は呼ばれない
         await _connectionService.DidNotReceive().ConnectToPeerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());

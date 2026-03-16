@@ -254,6 +254,56 @@ public sealed class FirebaseSignaling : IDisposable
     }
 
     /// <summary>
+    /// UDP ホールパンチ用の外部エンドポイントを Firebase に書き込む。
+    /// </summary>
+    /// <param name="pairId">ペアリング ID。</param>
+    /// <param name="role">"offer" または "answer"。</param>
+    /// <param name="endpoint">"ip:port" 形式の文字列。</param>
+    public async Task SendEndpointAsync(string pairId, string role, string endpoint, CancellationToken ct = default)
+    {
+        var encoded = EncodeBase64(endpoint);
+        await _client
+            .Child("signaling")
+            .Child(pairId)
+            .Child($"{role}Endpoint")
+            .PutAsync(new SignalingValue { Data = encoded });
+        Util.Logger.Log($"外部エンドポイント送信 ({role}): {endpoint}");
+    }
+
+    /// <summary>
+    /// UDP ホールパンチ用の外部エンドポイントをポーリングで待機して取得する。
+    /// </summary>
+    public async Task<string> WaitForEndpointAsync(string pairId, string role, CancellationToken ct = default)
+    {
+        Util.Logger.Log($"外部エンドポイント待機開始 ({role}): pairId={pairId}");
+
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                var value = await _client
+                    .Child("signaling")
+                    .Child(pairId)
+                    .Child($"{role}Endpoint")
+                    .OnceSingleAsync<SignalingValue>();
+
+                if (value?.Data != null)
+                {
+                    var decoded = DecodeBase64(value.Data);
+                    Util.Logger.Log($"外部エンドポイント受信 ({role}): {decoded}");
+                    return decoded;
+                }
+            }
+            catch (OperationCanceledException) { throw; }
+            catch { }
+
+            await Task.Delay(500, ct);
+        }
+
+        throw new OperationCanceledException(ct);
+    }
+
+    /// <summary>
     /// 指定した pairId のシグナリングデータのみを Firebase から削除する。
     /// 再接続時に古い offer/answer/candidates が残っていると接続失敗するため。
     /// </summary>

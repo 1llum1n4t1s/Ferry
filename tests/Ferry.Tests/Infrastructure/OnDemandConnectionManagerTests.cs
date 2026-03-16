@@ -5,6 +5,7 @@ using Ferry.Infrastructure;
 using Ferry.Models;
 using Ferry.Services;
 using NSubstitute;
+using Xunit;
 
 namespace Ferry.Tests.Infrastructure;
 
@@ -34,7 +35,7 @@ public sealed class OnDemandConnectionManagerTests : IDisposable
     {
         _connectionService.State.Returns(PeerState.Disconnected);
 
-        await _manager.EnsureConnectedAsync("peer1");
+        await _manager.EnsureConnectedAsync("peer1", TestContext.Current.CancellationToken);
 
         await _connectionService.Received(1).ConnectToPeerAsync("peer1", Arg.Any<CancellationToken>());
     }
@@ -45,7 +46,7 @@ public sealed class OnDemandConnectionManagerTests : IDisposable
         _connectionService.State.Returns(PeerState.Connected);
         _connectionService.ConnectedPeer.Returns(new PeerInfo { SessionId = "peer1" });
 
-        await _manager.EnsureConnectedAsync("peer1");
+        await _manager.EnsureConnectedAsync("peer1", TestContext.Current.CancellationToken);
 
         // ConnectToPeerAsync は呼ばれない
         await _connectionService.DidNotReceive().ConnectToPeerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
@@ -59,7 +60,7 @@ public sealed class OnDemandConnectionManagerTests : IDisposable
         _connectionService.State.Returns(PeerState.Connected);
         _connectionService.ConnectedPeer.Returns(new PeerInfo { SessionId = "peer1" });
 
-        await _manager.EnsureConnectedAsync("peer2");
+        await _manager.EnsureConnectedAsync("peer2", TestContext.Current.CancellationToken);
 
         // 旧接続を切断
         Received.InOrder(() =>
@@ -77,12 +78,12 @@ public sealed class OnDemandConnectionManagerTests : IDisposable
         _connectionService.State.Returns(PeerState.Disconnected);
         _manager.IdleTimeoutSeconds = 1; // テスト用に1秒に短縮
 
-        await _manager.EnsureConnectedAsync("peer1");
+        await _manager.EnsureConnectedAsync("peer1", TestContext.Current.CancellationToken);
         _manager.NotifyTransferStarted();
         _manager.NotifyTransferCompleted();
 
         // アイドルタイマーが発火するまで待つ
-        await Task.Delay(1500);
+        await Task.Delay(1500, TestContext.Current.CancellationToken);
 
         await _connectionService.Received().DisconnectAsync(Arg.Any<CancellationToken>());
     }
@@ -93,11 +94,11 @@ public sealed class OnDemandConnectionManagerTests : IDisposable
         _connectionService.State.Returns(PeerState.Disconnected);
         _manager.IdleTimeoutSeconds = 1;
 
-        await _manager.EnsureConnectedAsync("peer1");
+        await _manager.EnsureConnectedAsync("peer1", TestContext.Current.CancellationToken);
         _manager.NotifyTransferStarted();
 
         // 転送中に待つ → 切断されないはず
-        await Task.Delay(1500);
+        await Task.Delay(1500, TestContext.Current.CancellationToken);
 
         // ConnectToPeerAsync の1回分のみで、DisconnectAsync は呼ばれない
         await _connectionService.DidNotReceive().DisconnectAsync(Arg.Any<CancellationToken>());
@@ -111,7 +112,7 @@ public sealed class OnDemandConnectionManagerTests : IDisposable
         _connectionService.State.Returns(PeerState.Disconnected);
         _manager.MaxReconnectAttempts = 1;
 
-        await _manager.EnsureConnectedAsync("peer1");
+        await _manager.EnsureConnectedAsync("peer1", TestContext.Current.CancellationToken);
         _manager.NotifyTransferStarted();
 
         // 再接続成功をシミュレート
@@ -124,7 +125,7 @@ public sealed class OnDemandConnectionManagerTests : IDisposable
         _connectionService.ConnectionLost += Raise.Event();
 
         // 指数バックオフ (1秒) + マージン
-        await Task.Delay(2000);
+        await Task.Delay(2000, TestContext.Current.CancellationToken);
 
         await _connectionService.Received().ConnectToPeerAsync("peer1", Arg.Any<CancellationToken>());
         Assert.True(reconnectedFired);
@@ -135,7 +136,7 @@ public sealed class OnDemandConnectionManagerTests : IDisposable
     {
         _connectionService.State.Returns(PeerState.Disconnected);
 
-        await _manager.EnsureConnectedAsync("peer1");
+        await _manager.EnsureConnectedAsync("peer1", TestContext.Current.CancellationToken);
         // NotifyTransferStarted を呼ばない → _isTransferring = false
 
         // 接続呼び出しカウンタをリセット
@@ -144,7 +145,7 @@ public sealed class OnDemandConnectionManagerTests : IDisposable
         // ConnectionLost を発火
         _connectionService.ConnectionLost += Raise.Event();
 
-        await Task.Delay(500);
+        await Task.Delay(500, TestContext.Current.CancellationToken);
 
         // 再接続は呼ばれない
         await _connectionService.DidNotReceive().ConnectToPeerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
@@ -156,7 +157,7 @@ public sealed class OnDemandConnectionManagerTests : IDisposable
         _connectionService.State.Returns(PeerState.Disconnected);
         _manager.MaxReconnectAttempts = 2;
 
-        await _manager.EnsureConnectedAsync("peer1");
+        await _manager.EnsureConnectedAsync("peer1", TestContext.Current.CancellationToken);
         _manager.NotifyTransferStarted();
 
         // 再接続は常に失敗（State が Connected にならない）
@@ -168,7 +169,7 @@ public sealed class OnDemandConnectionManagerTests : IDisposable
         _connectionService.ConnectionLost += Raise.Event();
 
         // 指数バックオフ: 1s + 2s + マージン
-        await Task.Delay(5000);
+        await Task.Delay(5000, TestContext.Current.CancellationToken);
 
         Assert.True(failedFired);
     }
@@ -179,7 +180,7 @@ public sealed class OnDemandConnectionManagerTests : IDisposable
         _connectionService.State.Returns(PeerState.Disconnected);
         _manager.MaxReconnectAttempts = 2;
 
-        await _manager.EnsureConnectedAsync("peer1");
+        await _manager.EnsureConnectedAsync("peer1", TestContext.Current.CancellationToken);
         _manager.NotifyTransferStarted();
 
         // ConnectToPeerAsync が例外を投げる
@@ -192,7 +193,7 @@ public sealed class OnDemandConnectionManagerTests : IDisposable
         _connectionService.ConnectionLost += Raise.Event();
 
         // 指数バックオフ: 1s + 2s + マージン
-        await Task.Delay(5000);
+        await Task.Delay(5000, TestContext.Current.CancellationToken);
 
         Assert.True(failedFired);
     }
@@ -205,7 +206,7 @@ public sealed class OnDemandConnectionManagerTests : IDisposable
         // Dispose 後に ConnectionLost を発火しても再接続されない
         _connectionService.State.Returns(PeerState.Disconnected);
 
-        await _manager.EnsureConnectedAsync("peer1");
+        await _manager.EnsureConnectedAsync("peer1", TestContext.Current.CancellationToken);
         _manager.NotifyTransferStarted();
         _manager.Dispose();
 
@@ -217,6 +218,6 @@ public sealed class OnDemandConnectionManagerTests : IDisposable
         _connectionService.ConnectionLost += Raise.Event();
 
         // 再接続は試行されない（ハンドラ解除済み）
-        _connectionService.DidNotReceive().ConnectToPeerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _connectionService.DidNotReceive().ConnectToPeerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 }
