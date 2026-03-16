@@ -21,10 +21,11 @@ cd src/Ferry.Bridge && firebase deploy --only hosting
 
 ### 全体構造
 
-Ferry は QR コードでペアリングし、WebRTC DataChannel で PC 間ファイルを P2P 転送するデスクトップアプリ。
+Ferry は QR コードでペアリングし、TCP 直接接続（LAN）または WebSocket リレー（NAT 越え）で PC 間ファイルを P2P 転送するデスクトップアプリ。
 
 - **`src/Ferry/`** — .NET 10 Avalonia UI デスクトップアプリ（Native AOT、win-x64）
 - **`src/Ferry.Bridge/`** — Firebase Hosting にデプロイする Web ページ（スマホでQRスキャン→2台のPCをペアリング）
+- **`src/Ferry.Relay/`** — Node.js WebSocket リレーサーバー（NAT 越え用、VPS にデプロイ）
 
 ### MVVM + サービス層
 
@@ -32,15 +33,21 @@ Ferry は QR コードでペアリングし、WebRTC DataChannel で PC 間フ�
 
 ```
 ViewModels/          → CommunityToolkit.Mvvm の ObservableObject / ObservableProperty
-Services/            → インターフェース (I*Service) + 実装 + Stub 実装
-Infrastructure/      → FirebaseSignaling, WebRtcTransport, FileChunker, QrCodeGenerator
+Services/            → インターフェース (I*Service) + 実装
+Infrastructure/      → FirebaseSignaling, TcpDirectTransport, WebSocketRelayTransport, FileChunker, QrCodeGenerator
 ```
 
 主要サービスインターフェース:
-- `IConnectionService` — ペアリング（QR）とオンデマンド接続（WebRTC）を分離管理
-- `ITransferService` — ファイルチャンク転送とレジューム
+- `IConnectionService` — ペアリング（QR）とオンデマンド接続（TCP 直接 / WebSocket リレー）を管理
+- `ITransferService` — ファイルチャンク転送（SHA-256 検証・レジューム対応）
 - `IPeerRegistryService` — ペア情報の永続化（`%APPDATA%\Ferry\peers.json`）
-- `ISettingsService` — アプリ設定（現在 Stub 実装のみ）
+- `ISettingsService` — アプリ設定（`%APPDATA%\Ferry\settings.json`）
+
+### 接続フロー
+
+1. Offer 側が TCP リスナーを起動 → IP:port を Firebase 経由で送信
+2. Answer 側が TCP 直接接続を試行（LAN 内、5秒タイムアウト）
+3. TCP 失敗時 → WebSocket リレーにフォールバック（`wss://1llum1n4t1.net/ferry-relay`）
 
 ### ペアリングフロー
 
@@ -55,10 +62,8 @@ Infrastructure/      → FirebaseSignaling, WebRtcTransport, FileChunker, QrCode
 ```
 sessions/{sessionId}                    = { DisplayName, CreatedAt }
 pairings/{pairingId}                    = { SidA, SidB, NameA, NameB, CreatedAt }
-signaling/{pairId}/offer                = SDP 文字列
-signaling/{pairId}/answer               = SDP 文字列
-signaling/{pairId}/candidatesA/{key}    = ICE candidate
-signaling/{pairId}/candidatesB/{key}    = ICE candidate
+signaling/{pairId}/offer                = ConnectionInfo JSON (ips, port, relayUrl)
+signaling/{pairId}/answer               = ConnectionInfo JSON
 signaling/{pairId}/createdAt            = タイムスタンプ
 ```
 
@@ -66,12 +71,16 @@ signaling/{pairId}/createdAt            = タイムスタンプ
 
 ### Native AOT 制約
 
-- JSON シリアライズは Source Generator 必須（`FileMetaJsonContext`, `PeerRegistryJsonContext`）
+- JSON シリアライズは Source Generator 必須（`FileMetaJsonContext`, `PeerRegistryJsonContext`, `ConnectionInfoJsonContext`, `AppSettingsJsonContext`）
 - リフレクションベースのシリアライズは使用不可
 
 ### 転送プロトコル
 
-DataChannel 上のバイナリプロトコル（`TransferProtocol.cs` + `FileChunker.cs`）。チャンクサイズ 16KB。転送中断時はチャンクレベルでレジューム可能。
+TCP ストリーム上の長さプレフィクス付きバイナリプロトコル（`TransferProtocol.cs` + `FileChunker.cs` + `LengthPrefixedStream.cs`）。チャンクサイズ 16KB。転送中断時はチャンクレベルでレジューム可能。SHA-256 によるファイル整合性検証。
+
+## サーバー接続情報
+
+WebSocket リレーサーバー・TURN/STUN サーバーの接続情報・認証方式・デプロイ手順は **`C:\Users\szk\Work\1llum1n4t1.net` リポジトリの `docs/server.md`** を参照。
 
 ## 言語
 
