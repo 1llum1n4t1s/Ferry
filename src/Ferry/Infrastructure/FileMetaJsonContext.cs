@@ -20,4 +20,7 @@ public sealed class FileMeta
 
     /// <summary>転送セッション ID（レジューム照合用）。</summary>
     public string TransferId { get; set; } = string.Empty;
+
+    /// <summary>フォルダ送信時の相対パス（例: "photos/2024/img.jpg"）。null またはファイル名のみの場合は単独ファイル。</summary>
+    public string? RelativePath { get; set; }
 }

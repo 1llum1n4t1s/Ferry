@@ -17,7 +17,7 @@ public static class FileChunker
     /// <summary>
     /// ファイルメタデータの JSON メッセージを生成する。
     /// </summary>
-    public static byte[] CreateFileMetaMessage(string fileName, long fileSize, int totalChunks, string sha256, Guid transferId = default)
+    public static byte[] CreateFileMetaMessage(string fileName, long fileSize, int totalChunks, string sha256, Guid transferId = default, string? relativePath = null)
     {
         var meta = new FileMeta
         {
@@ -26,6 +26,7 @@ public static class FileChunker
             TotalChunks = totalChunks,
             Sha256 = sha256,
             TransferId = transferId == default ? Guid.NewGuid().ToString() : transferId.ToString(),
+            RelativePath = relativePath,
         };
         var json = JsonSerializer.SerializeToUtf8Bytes(meta, FileMetaJsonContext.Default.FileMeta);
         var message = new byte[1 + json.Length];

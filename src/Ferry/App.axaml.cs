@@ -1,6 +1,8 @@
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
+using Avalonia.Platform;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Data.Core;
@@ -76,6 +78,7 @@ public partial class App : Application
             {
                 ToolTipText = "Ferry",
                 IsVisible = true,
+                Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://Ferry/icon/app.ico"))),
             };
             trayIcon.Clicked += (_, _) =>
             {

@@ -73,7 +73,7 @@ public class TransferViewModelTests : IDisposable
         await vm.SendFilesCommand.ExecuteAsync(new[] { filePath });
 
         Assert.Empty(vm.Transfers);
-        await _transferService.DidNotReceive().SendFileAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _transferService.DidNotReceive().SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public class TransferViewModelTests : IDisposable
         await vm.SendFilesCommand.ExecuteAsync(new[] { @"C:\nonexistent\file.txt" });
 
         Assert.Empty(vm.Transfers);
-        await _transferService.DidNotReceive().SendFileAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _transferService.DidNotReceive().SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -122,7 +122,7 @@ public class TransferViewModelTests : IDisposable
     {
         _connectionService.State.Returns(PeerState.Connected);
         var filePath = CreateTempFile("error.txt");
-        _transferService.SendFileAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _transferService.SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new IOException("ディスクエラー"));
 
         using var vm = CreateViewModel(withSelectedPeer: true);
@@ -180,7 +180,7 @@ public class TransferViewModelTests : IDisposable
     {
         _connectionService.State.Returns(PeerState.Connected);
         var filePath = CreateTempFile();
-        _transferService.SendFileAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _transferService.SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new Exception("err"));
 
         using var vm = CreateViewModel(withSelectedPeer: true);

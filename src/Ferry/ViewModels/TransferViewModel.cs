@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -53,19 +54,30 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// ファイルパスの配列を受け取り、送信を開始する。
+    /// ファイル/フォルダパスの配列を受け取り、送信を開始する。
+    /// フォルダの場合は中のファイルを再帰的に列挙し、フォルダ構造を保持して送信する。
     /// 未接続の場合はオンデマンドで接続を確立してから転送する。
     /// </summary>
     [RelayCommand]
     private async Task SendFilesAsync(string[] filePaths)
     {
-        Util.Logger.Log($"SendFilesAsync 開始: {filePaths.Length} ファイル, SelectedPeer={_connectionViewModel.SelectedPeer?.DisplayName ?? "null"}, State={_connectionService.State}");
+        Util.Logger.Log($"SendFilesAsync 開始: {filePaths.Length} パス, SelectedPeer={_connectionViewModel.SelectedPeer?.DisplayName ?? "null"}, State={_connectionService.State}");
 
         if (filePaths.Length == 0 || _connectionViewModel.SelectedPeer == null)
         {
             Util.Logger.Log($"送信スキップ: filePaths={filePaths.Length}, peer={_connectionViewModel.SelectedPeer?.DisplayName ?? "null"}");
             return;
         }
+
+        // パスをファイルに展開（フォルダは再帰列挙、相対パス付き）
+        var entries = ExpandPaths(filePaths);
+        if (entries.Count == 0)
+        {
+            Util.Logger.Log("送信対象のファイルがありません", Util.LogLevel.Warning);
+            return;
+        }
+
+        Util.Logger.Log($"送信対象: {entries.Count} ファイル");
 
         // 未接続ならオンデマンド接続
         if (_connectionService.State != PeerState.Connected)
@@ -89,15 +101,13 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        foreach (var filePath in filePaths)
+        foreach (var (absolutePath, relativePath) in entries)
         {
-            if (!File.Exists(filePath))
-                continue;
-
-            var fileInfo = new FileInfo(filePath);
+            var fileInfo = new FileInfo(absolutePath);
+            var displayName = relativePath ?? fileInfo.Name;
             var item = new TransferItem
             {
-                FileName = fileInfo.Name,
+                FileName = displayName,
                 FileSize = fileInfo.Length,
                 Direction = TransferDirection.Send,
                 State = TransferState.InProgress,
@@ -107,19 +117,52 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             IsTransferring = true;
             try
             {
-                await _transferService.SendFileAsync(filePath);
+                await _transferService.SendFileAsync(absolutePath, relativePath);
                 item.State = TransferState.Completed;
                 item.TransferredBytes = item.FileSize;
             }
             catch (Exception ex)
             {
-                Util.Logger.Log($"ファイル送信エラー ({filePath}): {ex.Message}", Util.LogLevel.Error);
+                Util.Logger.Log($"ファイル送信エラー ({displayName}): {ex.Message}", Util.LogLevel.Error);
                 item.State = TransferState.Error;
                 item.ErrorMessage = ex.Message;
             }
         }
 
         IsTransferring = Transfers.Any(t => t.State == TransferState.InProgress);
+    }
+
+    /// <summary>
+    /// ファイル/フォルダパスの配列を、(絶対パス, 相対パス) のリストに展開する。
+    /// フォルダの場合はフォルダ名をルートとした相対パスを生成する。
+    /// 単独ファイルの場合は relativePath = null。
+    /// </summary>
+    private static List<(string AbsolutePath, string? RelativePath)> ExpandPaths(string[] paths)
+    {
+        var result = new List<(string, string?)>();
+
+        foreach (var path in paths)
+        {
+            if (File.Exists(path))
+            {
+                result.Add((path, null));
+            }
+            else if (Directory.Exists(path))
+            {
+                var dirInfo = new DirectoryInfo(path);
+                var rootName = dirInfo.Name;
+                foreach (var file in dirInfo.EnumerateFiles("*", SearchOption.AllDirectories))
+                {
+                    // "フォルダ名/サブ/ファイル.txt" の形式
+                    var relative = Path.Combine(rootName, Path.GetRelativePath(path, file.FullName));
+                    // パス区切りを / に統一（クロスプラットフォーム）
+                    relative = relative.Replace('\\', '/');
+                    result.Add((file.FullName, relative));
+                }
+            }
+        }
+
+        return result;
     }
 
     /// <summary>

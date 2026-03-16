@@ -28,6 +28,9 @@ public sealed class TransferService : ITransferService
     /// <summary>受信中の転送状態。TransferId → 受信状態。</summary>
     private readonly ConcurrentDictionary<string, ReceiveState> _receiveStates = new();
 
+    /// <summary>フォルダ受信時のルートフォルダ名マッピング（元の名前 → リネーム後の名前）。同一フォルダの全ファイルを同じ先に保存するため。</summary>
+    private readonly ConcurrentDictionary<string, string> _folderMappings = new();
+
     public event EventHandler<TransferItem>? ProgressChanged;
     public event EventHandler<TransferItem>? FileReceived;
     public event EventHandler<TransferItem>? TransferError;
@@ -44,7 +47,10 @@ public sealed class TransferService : ITransferService
     /// <summary>
     /// ファイルを送信する。チャンク分割→メタデータ送信→チャンク順次送信→ACK 待ち。
     /// </summary>
-    public async Task SendFileAsync(string filePath, CancellationToken ct = default)
+    /// <param name="filePath">送信するファイルの絶対パス。</param>
+    /// <param name="relativePath">フォルダ送信時の相対パス（例: "フォルダ名/サブフォルダ/ファイル名"）。null で単独ファイル。</param>
+    /// <param name="ct">キャンセルトークン。</param>
+    public async Task SendFileAsync(string filePath, string? relativePath = null, CancellationToken ct = default)
     {
         var fileInfo = new FileInfo(filePath);
         if (!fileInfo.Exists)
@@ -54,12 +60,13 @@ public sealed class TransferService : ITransferService
         var sha256Hex = FileChunker.ComputeSha256Hex(filePath);
         var transferId = Guid.NewGuid();
 
-        Util.Logger.Log($"ファイル送信開始: {fileInfo.Name}, サイズ={fileInfo.Length}, チャンク数={totalChunks}, SHA256={sha256Hex[..16]}…");
+        var displayName = relativePath ?? fileInfo.Name;
+        Util.Logger.Log($"ファイル送信開始: {displayName}, サイズ={fileInfo.Length}, チャンク数={totalChunks}, SHA256={sha256Hex[..16]}…");
 
         var item = new TransferItem
         {
             TransferId = transferId,
-            FileName = fileInfo.Name,
+            FileName = displayName,
             FileSize = fileInfo.Length,
             TotalChunks = totalChunks,
             Direction = TransferDirection.Send,
@@ -73,14 +80,14 @@ public sealed class TransferService : ITransferService
         {
             // 1. メタデータを送信
             var metaMessage = FileChunker.CreateFileMetaMessage(
-                fileInfo.Name, fileInfo.Length, totalChunks, sha256Hex, transferId);
+                fileInfo.Name, fileInfo.Length, totalChunks, sha256Hex, transferId, relativePath);
             await _connectionService.SendAsync(metaMessage, ct);
             Util.Logger.Log("ファイルメタデータ送信完了");
 
             // 2. チャンクを順次送信
             await SendChunksAsync(filePath, transferId, startChunk: 0, item, ct);
 
-            Util.Logger.Log($"ファイル送信完了: {fileInfo.Name}");
+            Util.Logger.Log($"ファイル送信完了: {displayName}");
         }
         catch (Exception ex)
         {
@@ -252,12 +259,62 @@ public sealed class TransferService : ITransferService
             return;
         }
 
-        Util.Logger.Log($"ファイル受信開始: {meta.FileName}, サイズ={meta.FileSize}, チャンク数={meta.TotalChunks}, TransferId={meta.TransferId}");
+        var displayName = meta.RelativePath ?? meta.FileName;
+        Util.Logger.Log($"ファイル受信開始: {displayName}, サイズ={meta.FileSize}, チャンク数={meta.TotalChunks}, TransferId={meta.TransferId}");
 
         var saveDir = _settingsService.Settings.SaveDirectory;
-        if (!Directory.Exists(saveDir))
+
+        // RelativePath がある場合はフォルダ構造を再現
+        string savePath;
+        if (!string.IsNullOrEmpty(meta.RelativePath))
         {
-            try { Directory.CreateDirectory(saveDir); }
+            // パストラバーサル防止
+            var normalized = meta.RelativePath.Replace('\\', '/');
+            if (normalized.Contains(".."))
+            {
+                Util.Logger.Log($"不正な RelativePath を検出: {meta.RelativePath}", Util.LogLevel.Warning);
+                return;
+            }
+
+            // ルートフォルダ名を取得（例: "photos/sub/file.jpg" → "photos"）
+            var parts = normalized.Split('/');
+            var rootFolder = parts[0];
+
+            // 同名フォルダ/ファイルが存在する場合、ルートフォルダ名をリネーム
+            // 同一フォルダの全ファイルが同じリネーム先になるようキャッシュ
+            var actualRoot = _folderMappings.GetOrAdd(rootFolder, key =>
+            {
+                var candidatePath = Path.Combine(saveDir, key);
+                if (!Directory.Exists(candidatePath) && !File.Exists(candidatePath))
+                    return key;
+
+                // "フォルダ名 (2)" のように連番リネーム
+                for (var i = 2; i < 10000; i++)
+                {
+                    var renamed = $"{key} ({i})";
+                    var renamedPath = Path.Combine(saveDir, renamed);
+                    if (!Directory.Exists(renamedPath) && !File.Exists(renamedPath))
+                        return renamed;
+                }
+                return $"{key}_{Guid.NewGuid():N}";
+            });
+
+            // ルートフォルダ名を置換して保存パスを組み立て
+            parts[0] = actualRoot;
+            savePath = Path.Combine(saveDir, Path.Combine(parts));
+        }
+        else
+        {
+            savePath = Path.Combine(saveDir, meta.FileName);
+            // 単独ファイルの同名リネーム
+            savePath = GetUniquePath(savePath);
+        }
+
+        // 保存先ディレクトリを作成
+        var saveFileDir = Path.GetDirectoryName(savePath) ?? saveDir;
+        if (!Directory.Exists(saveFileDir))
+        {
+            try { Directory.CreateDirectory(saveFileDir); }
             catch (Exception ex)
             {
                 Util.Logger.Log($"保存先ディレクトリ作成失敗: {ex.Message}", Util.LogLevel.Error);
@@ -265,13 +322,14 @@ public sealed class TransferService : ITransferService
             }
         }
 
-        // 同名ファイルがある場合はリネーム
-        var savePath = GetUniquePath(Path.Combine(saveDir, meta.FileName));
+        // フォルダ内の個別ファイルも重複チェック
+        if (!string.IsNullOrEmpty(meta.RelativePath))
+            savePath = GetUniquePath(savePath);
 
         var state = new ReceiveState
         {
             TransferId = meta.TransferId,
-            FileName = meta.FileName,
+            FileName = displayName,
             FileSize = meta.FileSize,
             TotalChunks = meta.TotalChunks,
             ExpectedSha256 = meta.Sha256,
@@ -280,7 +338,7 @@ public sealed class TransferService : ITransferService
             Item = new TransferItem
             {
                 TransferId = Guid.TryParse(meta.TransferId, out var tid) ? tid : Guid.NewGuid(),
-                FileName = meta.FileName,
+                FileName = displayName,
                 FileSize = meta.FileSize,
                 TotalChunks = meta.TotalChunks,
                 Direction = TransferDirection.Receive,
@@ -403,6 +461,10 @@ public sealed class TransferService : ITransferService
         }
 
         _receiveStates.TryRemove(state.TransferId, out _);
+
+        // 全受信完了時にフォルダマッピングキャッシュをクリア
+        if (_receiveStates.IsEmpty)
+            _folderMappings.Clear();
     }
 
     private void HandleFileAck(byte[] data)

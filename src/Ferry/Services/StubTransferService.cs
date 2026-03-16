@@ -16,7 +16,7 @@ public sealed class StubTransferService : ITransferService
     public event EventHandler<TransferItem>? FileReceived;
     public event EventHandler<TransferItem>? TransferError;
 
-    public Task SendFileAsync(string filePath, CancellationToken ct = default) => Task.CompletedTask;
+    public Task SendFileAsync(string filePath, string? relativePath = null, CancellationToken ct = default) => Task.CompletedTask;
     public Task<bool> ResumeTransferAsync(Guid transferId, CancellationToken ct = default) => Task.FromResult(false);
     public void HandleReceivedData(byte[] data) { }
     public IReadOnlyList<TransferItem> GetResumableTransfers() => [];

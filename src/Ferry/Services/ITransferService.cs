@@ -24,8 +24,9 @@ public interface ITransferService
     /// 指定したファイルをピアに送信する。
     /// </summary>
     /// <param name="filePath">送信するファイルのパス。</param>
+    /// <param name="relativePath">フォルダ送信時の相対パス（フォルダ名/サブフォルダ/ファイル名）。null で単独ファイル扱い。</param>
     /// <param name="ct">キャンセルトークン。</param>
-    Task SendFileAsync(string filePath, CancellationToken ct = default);
+    Task SendFileAsync(string filePath, string? relativePath = null, CancellationToken ct = default);
 
     /// <summary>
     /// 中断された転送を再開する。
