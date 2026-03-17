@@ -7,7 +7,7 @@
   <!-- Tabs -->
   <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 Miembros</x:String>
   <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ Añadir miembro</x:String>
-  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 Historial de transferencias</x:String>
+  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 Transferencia</x:String>
   <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ Configuración</x:String>
   <x:String x:Key="Text.Drop.Message" xml:space="preserve">Suelta archivos para transferir</x:String>
   <x:String x:Key="Text.Drop.Description" xml:space="preserve">Los archivos soltados se enviarán al dispositivo conectado</x:String>
@@ -73,5 +73,6 @@
   <x:String x:Key="Text.Update.Unknown" xml:space="preserve">Desconocido</x:String>
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Transferencia rechazada</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Error al reanudar</x:String>
+  <x:String x:Key="Text.Close" xml:space="preserve">Cerrar</x:String>
 
 </ResourceDictionary>

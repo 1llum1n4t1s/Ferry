@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -52,6 +53,37 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         _transferService.ApprovalRequested += OnApprovalRequested;
 
         Transfers.CollectionChanged += (_, _) => HasTransfers = Transfers.Count > 0;
+    }
+
+    /// <summary>
+    /// ファイル選択ダイアログを開き、選択されたファイルを送信する。
+    /// </summary>
+    [RelayCommand]
+    private async Task BrowseAndSendFilesAsync()
+    {
+        var mainWindow = App.Current is App app
+            ? (app as Avalonia.Application)?.ApplicationLifetime is
+                Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                ? desktop.MainWindow : null
+            : null;
+        if (mainWindow == null) return;
+
+        var storageProvider = mainWindow.StorageProvider;
+        var files = await storageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            AllowMultiple = true,
+            Title = "転送するファイルを選択",
+        });
+
+        if (files.Count == 0) return;
+
+        var paths = files
+            .Select(f => f.TryGetLocalPath())
+            .Where(p => p != null)
+            .ToArray();
+
+        if (paths.Length > 0)
+            await SendFilesAsync(paths!);
     }
 
     /// <summary>

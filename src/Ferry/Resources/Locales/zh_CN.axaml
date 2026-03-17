@@ -7,7 +7,7 @@
   <!-- Tabs -->
   <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 成员列表</x:String>
   <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ 添加成员</x:String>
-  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 传输历史</x:String>
+  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 传输</x:String>
   <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ 设置</x:String>
   <x:String x:Key="Text.Drop.Message" xml:space="preserve">拖放文件进行传输</x:String>
   <x:String x:Key="Text.Drop.Description" xml:space="preserve">拖放的文件将发送到已连接的设备</x:String>
@@ -73,5 +73,6 @@
   <x:String x:Key="Text.Update.Unknown" xml:space="preserve">未知</x:String>
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">已拒绝接收</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">恢复失败</x:String>
+  <x:String x:Key="Text.Close" xml:space="preserve">关闭</x:String>
 
 </ResourceDictionary>

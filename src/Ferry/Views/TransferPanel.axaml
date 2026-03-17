@@ -8,26 +8,33 @@
     <!-- 転送リスト表示パネル -->
     <Grid RowDefinitions="*">
 
-        <!-- === 転送アイテムなし → ドロップヒント === -->
-        <StackPanel VerticalAlignment="Center"
-                    HorizontalAlignment="Center"
-                    Spacing="12"
-                    IsVisible="{Binding !HasTransfers}">
-            <!-- ドロップアイコン -->
-            <Border Background="{StaticResource TahoeGlassHighBgBrush}"
-                    CornerRadius="24"
-                    Width="48" Height="48"
-                    HorizontalAlignment="Center">
-                <PathIcon Width="22" Height="22"
-                          HorizontalAlignment="Center"
-                          VerticalAlignment="Center"
-                          Foreground="{StaticResource TahoeTextTertiaryBrush}"
-                          Data="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z" />
-            </Border>
-            <TextBlock Text="{DynamicResource Text.Transfer.DropHint}"
-                       Classes="subheader"
-                       HorizontalAlignment="Center" />
-        </StackPanel>
+        <!-- === 転送アイテムなし → ドロップヒント（クリックでファイル選択） === -->
+        <Button Command="{Binding BrowseAndSendFilesCommand}"
+                Background="Transparent"
+                BorderThickness="0"
+                Cursor="Hand"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch"
+                HorizontalContentAlignment="Center"
+                VerticalContentAlignment="Center"
+                IsVisible="{Binding !HasTransfers}">
+            <StackPanel Spacing="12">
+                <!-- ドロップアイコン -->
+                <Border Background="{StaticResource TahoeGlassHighBgBrush}"
+                        CornerRadius="24"
+                        Width="48" Height="48"
+                        HorizontalAlignment="Center">
+                    <PathIcon Width="22" Height="22"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              Foreground="{StaticResource TahoeTextTertiaryBrush}"
+                              Data="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z" />
+                </Border>
+                <TextBlock Text="{DynamicResource Text.Transfer.DropHint}"
+                           Classes="subheader"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
+        </Button>
 
         <!-- === 転送リスト === -->
         <DockPanel IsVisible="{Binding HasTransfers}">

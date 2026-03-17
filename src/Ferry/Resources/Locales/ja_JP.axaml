@@ -7,7 +7,7 @@
   <!-- Tabs -->
   <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 メンバーリスト</x:String>
   <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ メンバー追加</x:String>
-  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 転送履歴</x:String>
+  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 転送</x:String>
   <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ 設定</x:String>
 
   <!-- Drop Overlay -->

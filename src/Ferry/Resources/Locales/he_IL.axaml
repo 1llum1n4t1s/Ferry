@@ -7,7 +7,7 @@
   <!-- Tabs -->
   <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 חברים</x:String>
   <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ הוסף חבר</x:String>
-  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 תולדות ההעברה</x:String>
+  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 העברה</x:String>
   <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ הגדרות</x:String>
 
   <!-- Drop Overlay -->
@@ -91,5 +91,6 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">ההעברה נדחתה</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">החידוש נכשל</x:String>
+  <x:String x:Key="Text.Close" xml:space="preserve">סגור</x:String>
 
 </ResourceDictionary>

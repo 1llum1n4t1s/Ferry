@@ -7,7 +7,7 @@
   <!-- Tabs -->
   <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 உறுப்பினர்கள்</x:String>
   <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ உறுப்பினர் சேர்</x:String>
-  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 பரிமாற்ற வரலாறு</x:String>
+  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 பரிமாற்றம்</x:String>
   <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ அமைப்புகள்</x:String>
 
   <!-- Drop Overlay -->
@@ -91,5 +91,6 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">பரிமாற்றம் நிராகரிக்கப்பட்டது</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">மீண்டும் தொடங்குவது தோல்வியடைந்தது</x:String>
+  <x:String x:Key="Text.Close" xml:space="preserve">மூடு</x:String>
 
 </ResourceDictionary>

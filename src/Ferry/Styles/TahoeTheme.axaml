@@ -11,12 +11,12 @@
         <!-- === カラーパレット === -->
 
         <!-- ダークモード基本色（macOS Tahoe ダークモード準拠） -->
-        <Color x:Key="TahoeWindowBg">#1C1C1E</Color>
-        <Color x:Key="TahoeSurfaceBg">#2C2C2E</Color>
-        <Color x:Key="TahoeGlassBg">#14FFFFFF</Color>
-        <Color x:Key="TahoeGlassHighBg">#0AFFFFFF</Color>
-        <Color x:Key="TahoeGlassBorder">#1AFFFFFF</Color>
-        <Color x:Key="TahoeGlassActiveBorder">#33FFFFFF</Color>
+        <Color x:Key="TahoeWindowBg">#161618</Color>
+        <Color x:Key="TahoeSurfaceBg">#222224</Color>
+        <Color x:Key="TahoeGlassBg">#0CFFFFFF</Color>
+        <Color x:Key="TahoeGlassHighBg">#08FFFFFF</Color>
+        <Color x:Key="TahoeGlassBorder">#12FFFFFF</Color>
+        <Color x:Key="TahoeGlassActiveBorder">#26FFFFFF</Color>
 
         <!-- テキスト色 -->
         <Color x:Key="TahoeTextPrimary">#F5F5F7</Color>
@@ -34,7 +34,7 @@
         <Color x:Key="TahoeRed">#FF453A</Color>
 
         <!-- セパレータ -->
-        <Color x:Key="TahoeSeparator">#1AFFFFFF</Color>
+        <Color x:Key="TahoeSeparator">#12FFFFFF</Color>
 
         <!-- === ブラシ === -->
         <SolidColorBrush x:Key="TahoeWindowBgBrush" Color="{StaticResource TahoeWindowBg}" />
@@ -264,8 +264,16 @@
         <Setter Property="BorderBrush" Value="{StaticResource TahoeGlassBorderBrush}" />
         <Setter Property="CornerRadius" Value="{StaticResource TahoeRadiusSmall}" />
         <Setter Property="Foreground" Value="{StaticResource TahoeTextPrimaryBrush}" />
-        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="Padding" Value="12,0" />
         <Setter Property="FontSize" Value="13" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="MinHeight" Value="34" />
+    </Style>
+
+    <!-- === ComboBox スタイル（垂直中央揃え） === -->
+    <Style Selector="ComboBox">
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="MinHeight" Value="34" />
     </Style>
 
     <!-- === ToggleSwitch スタイル === -->

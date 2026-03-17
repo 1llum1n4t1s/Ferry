@@ -7,7 +7,7 @@
   <!-- Tabs -->
   <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 Sodales</x:String>
   <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ Sodalem Addere</x:String>
-  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 Historia Translationum</x:String>
+  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 Translatio</x:String>
   <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ Dispositiones</x:String>
 
   <!-- Drop Overlay -->
@@ -91,5 +91,6 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Translatio reiecta</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Resumptio defecit</x:String>
+  <x:String x:Key="Text.Close" xml:space="preserve">Claude</x:String>
 
 </ResourceDictionary>

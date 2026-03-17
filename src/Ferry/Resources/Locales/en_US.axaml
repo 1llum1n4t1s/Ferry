@@ -4,7 +4,7 @@
   <!-- Tabs -->
   <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 Members</x:String>
   <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ Add Member</x:String>
-  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 Transfer History</x:String>
+  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 Transfer</x:String>
   <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ Settings</x:String>
 
   <!-- Drop Overlay -->

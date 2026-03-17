@@ -7,7 +7,7 @@
   <!-- Tabs -->
   <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 멤버 목록</x:String>
   <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ 멤버 추가</x:String>
-  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 전송 기록</x:String>
+  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 전송</x:String>
   <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ 설정</x:String>
   <x:String x:Key="Text.Drop.Message" xml:space="preserve">파일을 드롭하여 전송</x:String>
   <x:String x:Key="Text.Drop.Description" xml:space="preserve">드롭한 파일이 연결된 장치로 전송됩니다</x:String>
@@ -73,5 +73,6 @@
   <x:String x:Key="Text.Update.Unknown" xml:space="preserve">알 수 없음</x:String>
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">수신이 거부되었습니다</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">재개 실패</x:String>
+  <x:String x:Key="Text.Close" xml:space="preserve">닫기</x:String>
 
 </ResourceDictionary>
