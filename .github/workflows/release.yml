@@ -43,16 +43,13 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
-      - name: Delete existing releases
+      - name: Delete existing release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.version.outputs.tag }}
         run: |
           if gh release view "$TAG" > /dev/null 2>&1; then
             gh release delete "$TAG" --yes --cleanup-tag
-          fi
-          if gh release view "velopack-$TAG" > /dev/null 2>&1; then
-            gh release delete "velopack-$TAG" --yes --cleanup-tag
           fi
       - name: Download package artifacts
         uses: actions/download-artifact@v4
@@ -66,17 +63,6 @@ jobs:
           pattern: velopack.*
           path: velopack-packages
           merge-multiple: true
-      - name: Create Velopack release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.version.outputs.tag }}
-          VERSION: ${{ needs.version.outputs.version }}
-        run: |
-          gh release create "velopack-$TAG" \
-            -t "Velopack $VERSION" \
-            --latest=false \
-            --notes "Auto-update packages for Velopack."
-          gh release upload "velopack-$TAG" velopack-packages/*
       - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -86,7 +72,7 @@ jobs:
           gh release create "$TAG" -t "$VERSION" --generate-notes
           gh release upload "$TAG" packages/*
           gh release upload "$TAG" velopack-packages/*-Setup.exe velopack-packages/*-Setup.pkg
-      - name: Mirror Velopack release to Ferry-releases (public)
+      - name: Publish Velopack to Ferry-releases (public)
         env:
           GH_TOKEN: ${{ secrets.RELEASES_PAT }}
           TAG: ${{ needs.version.outputs.tag }}
