@@ -172,8 +172,8 @@ public partial class App : Application
                     sidebarTabs.SelectedIndex = 1; // メンバー追加タブ
             }
 
-            // 起動時の自動更新チェック（1日1回、更新がある場合のみダイアログ表示）
-            if (ShouldCheck4UpdateOnStartup())
+            // 起動時の自動更新チェック（更新がある場合のみダイアログ表示）
+            if (_settingsService!.Settings.Check4UpdatesOnStartup)
                 Check4Update(false);
         }
 
@@ -254,15 +254,6 @@ public partial class App : Application
     }
 
     // === 自動更新チェック（Komorebi パターン） ===
-
-    /// <summary>
-    /// 起動時に更新チェックを行うべきかどうかを判定する。
-    /// </summary>
-    private bool ShouldCheck4UpdateOnStartup()
-    {
-        var s = _settingsService?.Settings;
-        return s != null && s.Check4UpdatesOnStartup;
-    }
 
     /// <summary>
     /// 更新チェックを実行する。更新がある場合はダイアログを表示する。

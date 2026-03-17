@@ -61,12 +61,8 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private async Task BrowseAndSendFilesAsync()
     {
-        var mainWindow = App.Current is App app
-            ? (app as Avalonia.Application)?.ApplicationLifetime is
-                Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
-                ? desktop.MainWindow : null
-            : null;
-        if (mainWindow == null) return;
+        if ((App.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?.MainWindow is not { } mainWindow)
+            return;
 
         var storageProvider = mainWindow.StorageProvider;
         var files = await storageProvider.OpenFilePickerAsync(new FilePickerOpenOptions

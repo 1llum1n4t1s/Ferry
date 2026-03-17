@@ -42,7 +42,6 @@ public partial class SelfUpdateWindow : Window
     protected override void OnClosing(WindowClosingEventArgs e)
     {
         base.OnClosing(e);
-        if (DataContext is SelfUpdateViewModel vm)
-            vm.CancelDownload();
+        (DataContext as SelfUpdateViewModel)?.Dispose();
     }
 }

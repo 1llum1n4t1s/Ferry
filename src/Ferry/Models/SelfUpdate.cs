@@ -33,7 +33,12 @@ public sealed class VelopackUpdate(UpdateManager manager, UpdateInfo updateInfo)
 public sealed class AlreadyUpToDate;
 
 /// <summary>更新チェックに失敗した。</summary>
-public sealed class SelfUpdateFailed(Exception exception)
+public sealed class SelfUpdateFailed
 {
-    public string Reason => exception.InnerException?.Message ?? exception.Message;
+    public string Reason { get; }
+
+    public SelfUpdateFailed(Exception exception)
+    {
+        Reason = exception.InnerException?.Message ?? exception.Message;
+    }
 }

@@ -11,7 +11,7 @@ namespace Ferry.ViewModels;
 /// アプリケーションの自動アップデートを管理する ViewModel。
 /// Velopack を使用してアップデートのダウンロードと適用を行う。
 /// </summary>
-public sealed partial class SelfUpdateViewModel : ViewModelBase
+public sealed partial class SelfUpdateViewModel : ViewModelBase, IDisposable
 {
     /// <summary>表示するデータ（VelopackUpdate / AlreadyUpToDate / SelfUpdateFailed）。</summary>
     [ObservableProperty]
@@ -71,5 +71,11 @@ public sealed partial class SelfUpdateViewModel : ViewModelBase
     public void CancelDownload()
     {
         _cts?.Cancel();
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
     }
 }
