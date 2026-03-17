@@ -86,3 +86,18 @@ jobs:
           gh release create "$TAG" -t "$VERSION" --generate-notes
           gh release upload "$TAG" packages/*
           gh release upload "$TAG" velopack-packages/*-Setup.exe velopack-packages/*-Setup.pkg
+      - name: Mirror Velopack release to Ferry-releases (public)
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_PAT }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          REPO="1llum1n4t1s/Ferry-releases"
+          if gh release view "$TAG" --repo "$REPO" > /dev/null 2>&1; then
+            gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag
+          fi
+          gh release create "$TAG" \
+            --repo "$REPO" \
+            -t "Ferry $VERSION" \
+            --notes "Auto-update packages for Ferry $VERSION."
+          gh release upload "$TAG" --repo "$REPO" velopack-packages/*

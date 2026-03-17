@@ -27,8 +27,8 @@ public partial class App : Application
     private ResourceDictionary? _activeLocale;
     private ISettingsService? _settingsService;
 
-    /// <summary>GitHub Releases の更新元リポジトリ URL。</summary>
-    private const string GitHubRepoUrl = "https://github.com/1llum1n4t1s/Ferry";
+    /// <summary>GitHub Releases の更新元リポジトリ URL（public リポジトリ経由）。</summary>
+    private const string GitHubRepoUrl = "https://github.com/1llum1n4t1s/Ferry-releases";
 
     /// <summary>サポートされているロケール一覧。</summary>
     public static readonly string[] SupportedLocales =
