@@ -22,6 +22,10 @@
     </Design.DataContext>
 
     <Panel>
+        <!-- === 半透明ダーク背景（リリースビルドで透過が効かない場合のフォールバック） === -->
+        <Border Background="{StaticResource TahoeWindowBgBrush}" Opacity="0.92"
+                IsHitTestVisible="False" />
+
         <!-- === メインコンテンツ === -->
         <Grid RowDefinitions="36,*">
 
