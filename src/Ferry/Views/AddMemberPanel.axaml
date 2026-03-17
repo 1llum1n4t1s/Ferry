@@ -1,0 +1,70 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Ferry.ViewModels"
+             x:Class="Ferry.Views.AddMemberPanel"
+             x:DataType="vm:ConnectionViewModel">
+
+    <!-- メンバー追加（QR コードペアリング）パネル -->
+    <StackPanel Spacing="16">
+
+        <!-- ステータステキスト -->
+        <TextBlock Text="{Binding StatusText}"
+                   Classes="subheader"
+                   HorizontalAlignment="Center"
+                   TextWrapping="Wrap"
+                   IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+        <!-- QR コード画像 -->
+        <Border Classes="glass-inner"
+                HorizontalAlignment="Center"
+                Padding="24"
+                IsVisible="{Binding QrCodeImage, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <Image Source="{Binding QrCodeImage}"
+                   Width="180"
+                   Height="180"
+                   RenderOptions.BitmapInterpolationMode="HighQuality" />
+        </Border>
+
+        <!-- ペアリングリンク共有 -->
+        <StackPanel Spacing="6"
+                    IsVisible="{Binding PairingUrl, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+            <TextBlock Text="{DynamicResource Text.Connection.PairingLink}"
+                       Classes="caption"
+                       HorizontalAlignment="Center" />
+            <Border Background="{StaticResource TahoeGlassHighBgBrush}"
+                    BorderBrush="{StaticResource TahoeGlassBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="4">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding PairingUrl}"
+                               FontSize="11"
+                               Foreground="{StaticResource TahoeTextSecondaryBrush}"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               Margin="8,0,4,0" />
+                    <Button Grid.Column="1"
+                            Command="{Binding CopyPairingLinkCommand}"
+                            Classes="tahoe-primary"
+                            Padding="12,4"
+                            FontSize="11"
+                            MinWidth="56">
+                        <Button.Content>
+                            <Panel>
+                                <TextBlock Text="{DynamicResource Text.Connection.Copy}"
+                                           IsVisible="{Binding !IsLinkCopied}"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock Text="{DynamicResource Text.Connection.Copied}"
+                                           IsVisible="{Binding IsLinkCopied}"
+                                           HorizontalAlignment="Center" />
+                            </Panel>
+                        </Button.Content>
+                    </Button>
+                </Grid>
+            </Border>
+        </StackPanel>
+
+    </StackPanel>
+
+</UserControl>

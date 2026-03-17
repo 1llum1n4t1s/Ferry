@@ -161,7 +161,10 @@ public class ConnectionViewModelTests : IDisposable
         await vm.StartSessionCommand.ExecuteAsync(null);
 
         Assert.Equal(PeerState.WaitingForPairing, vm.ConnectionState);
-        Assert.Contains("QR コード", vm.StatusText);
+        // ローカライズ後: テスト環境ではリソースが未ロードのため App.Text() はキーを返す
+        Assert.True(
+            vm.StatusText.Contains("QR コード") || vm.StatusText.Contains("Text.Status.ScanQR"),
+            $"StatusText should contain QR code text, but was: {vm.StatusText}");
     }
 
     [Fact]
@@ -174,7 +177,10 @@ public class ConnectionViewModelTests : IDisposable
         await vm.StartSessionCommand.ExecuteAsync(null);
 
         Assert.Equal(PeerState.Error, vm.ConnectionState);
-        Assert.Contains("テストエラー", vm.StatusText);
+        // ローカライズ後: テスト環境では App.Text("Status.Error", msg) がキーを返す場合がある
+        Assert.True(
+            vm.StatusText.Contains("テストエラー") || vm.StatusText.Contains("Text.Status.Error"),
+            $"StatusText should contain error info, but was: {vm.StatusText}");
     }
 
     [Fact]
@@ -446,7 +452,7 @@ public class ConnectionViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task ConnectToSelectedPeerAsync_オンデマンド接続で例外発生時にオフライン表示になること()
+    public async Task ConnectToSelectedPeerAsync_オンデマンド接続で例外発生時にステータスがクリアされること()
     {
         var peer = new PairedPeer { PeerId = "peer1", DisplayName = "PC-1" };
         var peers = new List<PairedPeer> { peer };
@@ -461,7 +467,7 @@ public class ConnectionViewModelTests : IDisposable
         // オンデマンド接続を明示的に呼び出す
         await Assert.ThrowsAsync<Exception>(() => vm.ConnectToSelectedPeerAsync());
 
-        Assert.Equal("オフライン", peer.ConnectionStatusText);
+        Assert.Equal(string.Empty, peer.ConnectionStatusText);
         Assert.Equal(PeerState.Disconnected, vm.ConnectionState);
         Assert.False(vm.IsConnecting);
     }

@@ -37,6 +37,15 @@ public sealed class AppSettings
     /// <summary>閉じるボタンでタスクトレイに格納するか。</summary>
     public bool MinimizeToTray { get; set; }
 
-    /// <summary>テーマモード。"Dark" または "Light"。</summary>
-    public string ThemeMode { get; set; } = "Dark";
+    /// <summary>テーマモード。"System"（OS 追従）/ "Light" / "Dark"。</summary>
+    public string ThemeMode { get; set; } = "System";
+
+    /// <summary>表示言語ロケール（"ja_JP", "en_US" など）。空の場合はシステムロケールを自動検出。</summary>
+    public string Locale { get; set; } = string.Empty;
+
+    // ウィンドウ位置・サイズ（前回終了時の状態を復元）
+    public double? WindowLeft { get; set; }
+    public double? WindowTop { get; set; }
+    public double? WindowWidth { get; set; }
+    public double? WindowHeight { get; set; }
 }

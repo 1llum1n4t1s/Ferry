@@ -1,0 +1,95 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceInclude Source="avares://Ferry/Resources/Locales/en_US.axaml"/>
+  </ResourceDictionary.MergedDictionaries>
+
+  <!-- Tabs -->
+  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 Mga Miyembro</x:String>
+  <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ Magdagdag ng Miyembro</x:String>
+  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 Kasaysayan ng Paglipat</x:String>
+  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ Mga Setting</x:String>
+
+  <!-- Drop Overlay -->
+  <x:String x:Key="Text.Drop.Message" xml:space="preserve">I-drop ang mga file para ilipat</x:String>
+  <x:String x:Key="Text.Drop.Description" xml:space="preserve">Ang mga na-drop na file ay ipapadala sa nakakonektang device</x:String>
+
+  <!-- Connection Panel -->
+  <x:String x:Key="Text.Connection.Header" xml:space="preserve">Destinasyon</x:String>
+  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">O ibahagi ang pairing link.</x:String>
+  <x:String x:Key="Text.Connection.Copy" xml:space="preserve">Kopyahin</x:String>
+  <x:String x:Key="Text.Connection.Copied" xml:space="preserve">Nakopya</x:String>
+  <x:String x:Key="Text.Connection.Start" xml:space="preserve">Simulan ang Koneksyon</x:String>
+  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">Kanselahin</x:String>
+  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">Magdagdag ng Bagong Device</x:String>
+  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">Alisin ang Pairing</x:String>
+  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">Umalis sa Network</x:String>
+
+  <!-- Transfer Panel -->
+  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">Kasaysayan ng Paglipat</x:String>
+  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">I-clear</x:String>
+  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">I-drop ang mga file para ilipat</x:String>
+  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">Aprubahan</x:String>
+  <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">Tanggihan</x:String>
+
+  <!-- Settings Panel -->
+  <x:String x:Key="Text.Settings.General" xml:space="preserve">Pangkalahatan</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">Display Name ng PC</x:String>
+  <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">Ilagay ang pangalan ng PC</x:String>
+  <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">Hitsura</x:String>
+  <x:String x:Key="Text.Settings.Theme" xml:space="preserve">Tema</x:String>
+  <x:String x:Key="Text.Settings.Theme.System" xml:space="preserve">System (Sundin ang OS)</x:String>
+  <x:String x:Key="Text.Settings.Theme.Light" xml:space="preserve">Maliwanag</x:String>
+  <x:String x:Key="Text.Settings.Theme.Dark" xml:space="preserve">Madilim</x:String>
+  <x:String x:Key="Text.Settings.Language" xml:space="preserve">Wika</x:String>
+  <x:String x:Key="Text.Settings.File" xml:space="preserve">File</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">Lokasyon ng pag-save ng natanggap na file</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">Mag-browse</x:String>
+  <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">Pag-uugali</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">Buksan ang Ferry sa startup</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">Awtomatikong nag-lulunsad kapag binuksan ang computer</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">Magsimula nang naka-minimize</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">Nag-lulunsad sa background</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">I-minimize sa tray kapag isinara</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">Ang close button ay nagpapadala sa system tray</x:String>
+  <x:String x:Key="Text.Settings.Version" xml:space="preserve">Bersyon</x:String>
+  <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">Tingnan ang mga Update</x:String>
+
+  <!-- Transfer States -->
+  <x:String x:Key="Text.State.Pending" xml:space="preserve">Naghihintay...</x:String>
+  <x:String x:Key="Text.State.Sending" xml:space="preserve">Nagpapadala</x:String>
+  <x:String x:Key="Text.State.Receiving" xml:space="preserve">Tumatanggap</x:String>
+  <x:String x:Key="Text.State.Completed" xml:space="preserve">Tapos na</x:String>
+  <x:String x:Key="Text.State.Error" xml:space="preserve">Error</x:String>
+  <x:String x:Key="Text.State.Cancelled" xml:space="preserve">Nakansela</x:String>
+  <x:String x:Key="Text.State.Suspended" xml:space="preserve">Pansamantalang itinigil</x:String>
+  <x:String x:Key="Text.State.WaitingApproval" xml:space="preserve">Naghihintay ng Pag-apruba</x:String>
+
+  <!-- Connection Status -->
+  <x:String x:Key="Text.Status.Starting" xml:space="preserve">Sinisimulan ang sesyon...</x:String>
+  <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">I-scan ang QR code gamit ang iyong smartphone</x:String>
+  <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">I-scan ang QR code ng kabilang PC...</x:String>
+  <x:String x:Key="Text.Status.Error" xml:space="preserve">Error: {0}</x:String>
+  <x:String x:Key="Text.Status.Connected" xml:space="preserve">Nakakonekta</x:String>
+  <x:String x:Key="Text.Status.Connecting" xml:space="preserve">Kumokonekta...</x:String>
+  <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">Muling kumokonekta...</x:String>
+
+  <!-- Connection Routes -->
+  <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN Direkta</x:String>
+  <x:String x:Key="Text.Route.Stun" xml:space="preserve">Internet P2P (STUN)</x:String>
+  <x:String x:Key="Text.Route.Relay" xml:space="preserve">Server Relay (TURN)</x:String>
+
+  <!-- Update Messages -->
+  <x:String x:Key="Text.Update.Checking" xml:space="preserve">Tinitingnan ang mga update...</x:String>
+  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">Hindi maaring tingnan ang mga update sa development</x:String>
+  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">Dina-download ang v{0}...</x:String>
+  <x:String x:Key="Text.Update.Applying" xml:space="preserve">Ina-apply ang update... Nire-restart</x:String>
+  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">Na-update na</x:String>
+  <x:String x:Key="Text.Update.Error" xml:space="preserve">Nabigo ang pag-check ng update: {0}</x:String>
+  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">Hindi alam</x:String>
+
+  <!-- Transfer Messages -->
+  <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Tinanggihan ang paglipat</x:String>
+  <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Nabigong ipagpatuloy</x:String>
+
+</ResourceDictionary>

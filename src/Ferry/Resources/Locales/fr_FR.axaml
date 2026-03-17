@@ -1,0 +1,77 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceInclude Source="avares://Ferry/Resources/Locales/en_US.axaml"/>
+  </ResourceDictionary.MergedDictionaries>
+
+  <!-- Tabs -->
+  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 Membres</x:String>
+  <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ Ajouter un membre</x:String>
+  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 Historique des transferts</x:String>
+  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ Paramètres</x:String>
+  <x:String x:Key="Text.Drop.Message" xml:space="preserve">Déposez des fichiers pour transférer</x:String>
+  <x:String x:Key="Text.Drop.Description" xml:space="preserve">Les fichiers déposés seront envoyés à l'appareil connecté</x:String>
+  <x:String x:Key="Text.Connection.Header" xml:space="preserve">Destination</x:String>
+  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">Ou partagez le lien d'appairage.</x:String>
+  <x:String x:Key="Text.Connection.Copy" xml:space="preserve">Copier</x:String>
+  <x:String x:Key="Text.Connection.Copied" xml:space="preserve">Copié ✓</x:String>
+  <x:String x:Key="Text.Connection.Start" xml:space="preserve">Démarrer la connexion</x:String>
+  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">Annuler</x:String>
+  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">Ajouter un nouvel appareil</x:String>
+  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">Supprimer l'appairage</x:String>
+  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">Quitter le réseau</x:String>
+  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">Historique des transferts</x:String>
+  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">Effacer</x:String>
+  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">Déposez des fichiers pour transférer</x:String>
+  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">Approuver</x:String>
+  <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">Rejeter</x:String>
+  <x:String x:Key="Text.Settings.General" xml:space="preserve">Général</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">Nom d'affichage du PC</x:String>
+  <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">Entrez le nom du PC</x:String>
+  <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">Apparence</x:String>
+  <x:String x:Key="Text.Settings.Theme" xml:space="preserve">Thème</x:String>
+  <x:String x:Key="Text.Settings.Theme.System" xml:space="preserve">Système (suivre l'OS)</x:String>
+  <x:String x:Key="Text.Settings.Theme.Light" xml:space="preserve">Clair</x:String>
+  <x:String x:Key="Text.Settings.Theme.Dark" xml:space="preserve">Sombre</x:String>
+  <x:String x:Key="Text.Settings.Language" xml:space="preserve">Langue</x:String>
+  <x:String x:Key="Text.Settings.File" xml:space="preserve">Fichier</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">Emplacement de sauvegarde des fichiers reçus</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">Parcourir</x:String>
+  <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">Comportement</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">Ouvrir Ferry au démarrage</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">Se lance automatiquement au démarrage de l'ordinateur</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">Démarrer réduit</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">Démarre en arrière-plan</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">Réduire dans la barre à la fermeture</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">Le bouton fermer envoie dans la barre système</x:String>
+  <x:String x:Key="Text.Settings.Version" xml:space="preserve">Version</x:String>
+  <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">Vérifier les mises à jour</x:String>
+  <x:String x:Key="Text.State.Pending" xml:space="preserve">En attente…</x:String>
+  <x:String x:Key="Text.State.Sending" xml:space="preserve">Envoi</x:String>
+  <x:String x:Key="Text.State.Receiving" xml:space="preserve">Réception</x:String>
+  <x:String x:Key="Text.State.Completed" xml:space="preserve">Terminé</x:String>
+  <x:String x:Key="Text.State.Error" xml:space="preserve">Erreur</x:String>
+  <x:String x:Key="Text.State.Cancelled" xml:space="preserve">Annulé</x:String>
+  <x:String x:Key="Text.State.Suspended" xml:space="preserve">Suspendu</x:String>
+  <x:String x:Key="Text.State.WaitingApproval" xml:space="preserve">En attente d'approbation</x:String>
+  <x:String x:Key="Text.Status.Starting" xml:space="preserve">Démarrage de la session…</x:String>
+  <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">Scannez le code QR avec votre smartphone</x:String>
+  <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">Scannez le code QR de l'autre PC…</x:String>
+  <x:String x:Key="Text.Status.Error" xml:space="preserve">Erreur : {0}</x:String>
+  <x:String x:Key="Text.Status.Connected" xml:space="preserve">Connecté</x:String>
+  <x:String x:Key="Text.Status.Connecting" xml:space="preserve">Connexion…</x:String>
+  <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">Reconnexion…</x:String>
+  <x:String x:Key="Text.Route.Direct" xml:space="preserve">Connexion directe LAN</x:String>
+  <x:String x:Key="Text.Route.Stun" xml:space="preserve">Internet P2P (STUN)</x:String>
+  <x:String x:Key="Text.Route.Relay" xml:space="preserve">Relais serveur (TURN)</x:String>
+  <x:String x:Key="Text.Update.Checking" xml:space="preserve">Vérification des mises à jour…</x:String>
+  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">Impossible de vérifier les mises à jour en développement</x:String>
+  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">Téléchargement v{0}…</x:String>
+  <x:String x:Key="Text.Update.Applying" xml:space="preserve">Application de la mise à jour… Redémarrage</x:String>
+  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">À jour ✓</x:String>
+  <x:String x:Key="Text.Update.Error" xml:space="preserve">Échec de la vérification : {0}</x:String>
+  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">Inconnu</x:String>
+  <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Transfert rejeté</x:String>
+  <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Échec de la reprise</x:String>
+
+</ResourceDictionary>

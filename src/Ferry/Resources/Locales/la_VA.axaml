@@ -1,0 +1,95 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceInclude Source="avares://Ferry/Resources/Locales/en_US.axaml"/>
+  </ResourceDictionary.MergedDictionaries>
+
+  <!-- Tabs -->
+  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 Sodales</x:String>
+  <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ Sodalem Addere</x:String>
+  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 Historia Translationum</x:String>
+  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ Dispositiones</x:String>
+
+  <!-- Drop Overlay -->
+  <x:String x:Key="Text.Drop.Message" xml:space="preserve">Demitte fasciculos ad transferendum</x:String>
+  <x:String x:Key="Text.Drop.Description" xml:space="preserve">Fasciculi demissi ad instrumentum coniunctum mittentur</x:String>
+
+  <!-- Connection Panel -->
+  <x:String x:Key="Text.Connection.Header" xml:space="preserve">Destinatio</x:String>
+  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">Vel nexum coniunctionis communica.</x:String>
+  <x:String x:Key="Text.Connection.Copy" xml:space="preserve">Exscribe</x:String>
+  <x:String x:Key="Text.Connection.Copied" xml:space="preserve">Exscriptum</x:String>
+  <x:String x:Key="Text.Connection.Start" xml:space="preserve">Incipe Conexionem</x:String>
+  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">Abroga</x:String>
+  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">Adde Novum Instrumentum</x:String>
+  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">Remove Coniunctionem</x:String>
+  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">Discede a Rete</x:String>
+
+  <!-- Transfer Panel -->
+  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">Historia Translationum</x:String>
+  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">Purga</x:String>
+  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">Demitte fasciculos ad transferendum</x:String>
+  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">Approba</x:String>
+  <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">Reice</x:String>
+
+  <!-- Settings Panel -->
+  <x:String x:Key="Text.Settings.General" xml:space="preserve">Generalia</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">Nomen Ostentationis PC</x:String>
+  <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">Inscribe nomen PC</x:String>
+  <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">Aspectus</x:String>
+  <x:String x:Key="Text.Settings.Theme" xml:space="preserve">Thema</x:String>
+  <x:String x:Key="Text.Settings.Theme.System" xml:space="preserve">Systema (Sequere OS)</x:String>
+  <x:String x:Key="Text.Settings.Theme.Light" xml:space="preserve">Lucidum</x:String>
+  <x:String x:Key="Text.Settings.Theme.Dark" xml:space="preserve">Obscurum</x:String>
+  <x:String x:Key="Text.Settings.Language" xml:space="preserve">Lingua</x:String>
+  <x:String x:Key="Text.Settings.File" xml:space="preserve">Fasciculus</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">Locus servandi fasciculos acceptos</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">Perspice</x:String>
+  <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">Modus Agendi</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">Aperi Ferry initio</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">Automatice inchoatur cum computatrum accenditur</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">Incipe imminutum</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">In occulto inchoatur</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">Imminue ad lancem claudendo</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">Clavis clausurae ad lancem systematis mittit</x:String>
+  <x:String x:Key="Text.Settings.Version" xml:space="preserve">Versio</x:String>
+  <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">Inspice Renovationes</x:String>
+
+  <!-- Transfer States -->
+  <x:String x:Key="Text.State.Pending" xml:space="preserve">Exspectans...</x:String>
+  <x:String x:Key="Text.State.Sending" xml:space="preserve">Mittens</x:String>
+  <x:String x:Key="Text.State.Receiving" xml:space="preserve">Accipiens</x:String>
+  <x:String x:Key="Text.State.Completed" xml:space="preserve">Perfectum</x:String>
+  <x:String x:Key="Text.State.Error" xml:space="preserve">Error</x:String>
+  <x:String x:Key="Text.State.Cancelled" xml:space="preserve">Abrogatum</x:String>
+  <x:String x:Key="Text.State.Suspended" xml:space="preserve">Suspensum</x:String>
+  <x:String x:Key="Text.State.WaitingApproval" xml:space="preserve">Approbationem Exspectans</x:String>
+
+  <!-- Connection Status -->
+  <x:String x:Key="Text.Status.Starting" xml:space="preserve">Sessio inchoatur...</x:String>
+  <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">Scande codicem QR telephonio intelligenti</x:String>
+  <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">Scande codicem QR alterius PC...</x:String>
+  <x:String x:Key="Text.Status.Error" xml:space="preserve">Error: {0}</x:String>
+  <x:String x:Key="Text.Status.Connected" xml:space="preserve">Coniunctum</x:String>
+  <x:String x:Key="Text.Status.Connecting" xml:space="preserve">Coniungens...</x:String>
+  <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">Reconiungens...</x:String>
+
+  <!-- Connection Routes -->
+  <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN Directum</x:String>
+  <x:String x:Key="Text.Route.Stun" xml:space="preserve">Interrete P2P (STUN)</x:String>
+  <x:String x:Key="Text.Route.Relay" xml:space="preserve">Relay Servitoris (TURN)</x:String>
+
+  <!-- Update Messages -->
+  <x:String x:Key="Text.Update.Checking" xml:space="preserve">Renovationes inspiciuntur...</x:String>
+  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">In ambitu progressionis renovationes inspici non possunt</x:String>
+  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">v{0} deponens...</x:String>
+  <x:String x:Key="Text.Update.Applying" xml:space="preserve">Renovatio applicatur... Restituitur</x:String>
+  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">Novissimum</x:String>
+  <x:String x:Key="Text.Update.Error" xml:space="preserve">Inspectio renovationis defecit: {0}</x:String>
+  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">Ignotum</x:String>
+
+  <!-- Transfer Messages -->
+  <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Translatio reiecta</x:String>
+  <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Resumptio defecit</x:String>
+
+</ResourceDictionary>

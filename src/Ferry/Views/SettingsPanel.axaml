@@ -1,27 +1,28 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:Ferry.ViewModels"
+             xmlns:local="using:Ferry"
              x:Class="Ferry.Views.SettingsPanel"
              x:DataType="vm:SettingsViewModel">
 
     <StackPanel Spacing="12">
 
         <!-- === 一般設定セクション === -->
-        <TextBlock Text="一般" Classes="section-label" />
+        <TextBlock Text="{DynamicResource Text.Settings.General}" Classes="section-label" />
 
         <Border Classes="glass-card">
             <StackPanel Spacing="0">
 
                 <!-- PC 名 -->
                 <DockPanel MinHeight="40">
-                    <TextBlock Text="PC の表示名"
+                    <TextBlock Text="{DynamicResource Text.Settings.DisplayName}"
                                Classes="body"
                                FontWeight="Medium"
                                VerticalAlignment="Center"
                                DockPanel.Dock="Left" />
                     <TextBox Text="{Binding DisplayName}"
                              Classes="tahoe-input"
-                             Watermark="PC 名を入力"
+                             Watermark="{DynamicResource Text.Settings.DisplayName.Placeholder}"
                              HorizontalAlignment="Right"
                              Width="180" />
                 </DockPanel>
@@ -30,43 +31,64 @@
         </Border>
 
         <!-- === 外観セクション === -->
-        <TextBlock Text="外観" Classes="section-label" />
+        <TextBlock Text="{DynamicResource Text.Settings.Appearance}" Classes="section-label" />
 
         <Border Classes="glass-card">
             <StackPanel Spacing="0">
 
-                <!-- ダークモード切替 -->
+                <!-- テーマ選択 -->
                 <DockPanel MinHeight="44">
-                    <ToggleSwitch IsChecked="{Binding IsDarkMode}"
-                                  Classes="tahoe-toggle"
-                                  DockPanel.Dock="Right"
-                                  VerticalAlignment="Center" />
-                    <StackPanel Spacing="2" VerticalAlignment="Center">
-                        <TextBlock Text="ダークモード"
-                                   Classes="body"
-                                   FontWeight="Medium" />
-                        <TextBlock Text="オフにするとライトモードになります"
-                                   Classes="caption"
-                                   TextWrapping="Wrap" />
-                    </StackPanel>
+                    <ComboBox ItemsSource="{Binding ThemeOptions}"
+                              SelectedIndex="{Binding SelectedThemeIndex}"
+                              DockPanel.Dock="Right"
+                              VerticalAlignment="Center"
+                              MinWidth="140"
+                              FontSize="13" />
+                    <TextBlock Text="{DynamicResource Text.Settings.Theme}"
+                               Classes="body"
+                               FontWeight="Medium"
+                               VerticalAlignment="Center" />
+                </DockPanel>
+
+                <Separator Classes="tahoe-sep" />
+
+                <!-- 言語選択 -->
+                <DockPanel MinHeight="44">
+                    <ComboBox ItemsSource="{x:Static local:App.LocaleOptions}"
+                              SelectedValue="{Binding SelectedLocale}"
+                              SelectedValueBinding="{Binding Key, DataType=local:LocaleItem}"
+                              DockPanel.Dock="Right"
+                              VerticalAlignment="Center"
+                              MinWidth="140"
+                              FontSize="13">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="local:LocaleItem">
+                                <TextBlock Text="{Binding DisplayName}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <TextBlock Text="{DynamicResource Text.Settings.Language}"
+                               Classes="body"
+                               FontWeight="Medium"
+                               VerticalAlignment="Center" />
                 </DockPanel>
 
             </StackPanel>
         </Border>
 
         <!-- === ファイル保存セクション === -->
-        <TextBlock Text="ファイル" Classes="section-label" />
+        <TextBlock Text="{DynamicResource Text.Settings.File}" Classes="section-label" />
 
         <Border Classes="glass-card">
             <StackPanel Spacing="0">
 
                 <!-- 保存先ディレクトリ -->
                 <StackPanel Spacing="8">
-                    <TextBlock Text="受信ファイルの保存先"
+                    <TextBlock Text="{DynamicResource Text.Settings.SaveDirectory}"
                                Classes="body"
                                FontWeight="Medium" />
                     <DockPanel>
-                        <Button Content="変更"
+                        <Button Content="{DynamicResource Text.Settings.SaveDirectory.Browse}"
                                 Classes="tahoe-secondary"
                                 Command="{Binding BrowseSaveDirectoryCommand}"
                                 DockPanel.Dock="Right"
@@ -83,7 +105,7 @@
         </Border>
 
         <!-- === 動作セクション === -->
-        <TextBlock Text="動作" Classes="section-label" />
+        <TextBlock Text="{DynamicResource Text.Settings.Behavior}" Classes="section-label" />
 
         <Border Classes="glass-card">
             <StackPanel Spacing="0">
@@ -95,10 +117,10 @@
                                   DockPanel.Dock="Right"
                                   VerticalAlignment="Center" />
                     <StackPanel Spacing="2" VerticalAlignment="Center">
-                        <TextBlock Text="起動時に Ferry を開く"
+                        <TextBlock Text="{DynamicResource Text.Settings.RunAtStartup}"
                                    Classes="body"
                                    FontWeight="Medium" />
-                        <TextBlock Text="パソコンの起動時に自動で立ち上がります"
+                        <TextBlock Text="{DynamicResource Text.Settings.RunAtStartup.Desc}"
                                    Classes="caption"
                                    TextWrapping="Wrap" />
                     </StackPanel>
@@ -113,10 +135,10 @@
                                   DockPanel.Dock="Right"
                                   VerticalAlignment="Center" />
                     <StackPanel Spacing="2" VerticalAlignment="Center">
-                        <TextBlock Text="最小化した状態で起動"
+                        <TextBlock Text="{DynamicResource Text.Settings.StartMinimized}"
                                    Classes="body"
                                    FontWeight="Medium" />
-                        <TextBlock Text="バックグラウンドで起動します"
+                        <TextBlock Text="{DynamicResource Text.Settings.StartMinimized.Desc}"
                                    Classes="caption"
                                    TextWrapping="Wrap" />
                     </StackPanel>
@@ -131,14 +153,50 @@
                                   DockPanel.Dock="Right"
                                   VerticalAlignment="Center" />
                     <StackPanel Spacing="2" VerticalAlignment="Center">
-                        <TextBlock Text="閉じるボタンでトレイに最小化"
+                        <TextBlock Text="{DynamicResource Text.Settings.MinimizeToTray}"
                                    Classes="body"
                                    FontWeight="Medium" />
-                        <TextBlock Text="×ボタンでシステムトレイに格納されます"
+                        <TextBlock Text="{DynamicResource Text.Settings.MinimizeToTray.Desc}"
                                    Classes="caption"
                                    TextWrapping="Wrap" />
                     </StackPanel>
                 </DockPanel>
+
+            </StackPanel>
+        </Border>
+
+        <!-- === バージョンセクション === -->
+        <TextBlock Text="{DynamicResource Text.Settings.Version}" Classes="section-label" />
+
+        <Border Classes="glass-card">
+            <StackPanel Spacing="0">
+
+                <!-- バージョン番号 -->
+                <DockPanel MinHeight="44">
+                    <StackPanel Orientation="Horizontal" Spacing="8"
+                                DockPanel.Dock="Right" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding VersionText}"
+                                   Classes="body"
+                                   VerticalAlignment="Center" />
+                        <Button Content="{DynamicResource Text.Settings.CheckUpdate}"
+                                Classes="tahoe-secondary"
+                                Command="{Binding CheckForUpdateCommand}"
+                                IsEnabled="{Binding !IsCheckingUpdate}"
+                                Padding="12,4"
+                                FontSize="11" />
+                    </StackPanel>
+                    <TextBlock Text="Ferry"
+                               Classes="body"
+                               FontWeight="Medium"
+                               VerticalAlignment="Center" />
+                </DockPanel>
+
+                <!-- 更新ステータス -->
+                <TextBlock Text="{Binding UpdateStatusText}"
+                           Classes="caption"
+                           TextWrapping="Wrap"
+                           Margin="0,4,0,0"
+                           IsVisible="{Binding UpdateStatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
             </StackPanel>
         </Border>

@@ -5,231 +5,87 @@
              x:Class="Ferry.Views.ConnectionPanel"
              x:DataType="vm:ConnectionViewModel">
 
-    <Border Classes="glass-card">
-        <StackPanel Spacing="16">
+    <!-- メンバーリスト表示パネル -->
+    <StackPanel Spacing="16">
 
-            <!-- === セクションヘッダー === -->
-            <DockPanel>
-                <TextBlock Text="宛先" Classes="section-label"
-                           VerticalAlignment="Center" />
-                <!-- 接続経路（接続中のみ右端に表示） -->
-                <TextBlock Text="{Binding ConnectionRouteText}"
-                           Classes="caption"
-                           HorizontalAlignment="Right"
-                           VerticalAlignment="Center"
-                           IsVisible="{Binding ConnectionRouteText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-            </DockPanel>
+        <!-- セクションヘッダー -->
+        <DockPanel>
+            <TextBlock Text="{DynamicResource Text.Connection.Header}" Classes="section-label"
+                       VerticalAlignment="Center" />
+            <!-- 接続経路（接続中のみ右端に表示） -->
+            <TextBlock Text="{Binding ConnectionRouteText}"
+                       Classes="caption"
+                       HorizontalAlignment="Right"
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding ConnectionRouteText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        </DockPanel>
 
-            <!-- QR ペアリング中のステータステキスト -->
-            <TextBlock Text="{Binding StatusText}"
-                       Classes="subheader"
-                       HorizontalAlignment="Center"
-                       TextWrapping="Wrap"
-                       IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <!-- ステータステキスト -->
+        <TextBlock Text="{Binding StatusText}"
+                   Classes="subheader"
+                   HorizontalAlignment="Center"
+                   TextWrapping="Wrap"
+                   IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-            <!-- === QR コードペアリング表示 (ペアリング済みピアがない) === -->
-            <StackPanel Spacing="16"
-                        IsVisible="{Binding !HasPairedPeers}">
+        <!-- 宛先選択リスト -->
+        <StackPanel Spacing="8"
+                    IsVisible="{Binding HasPairedPeers}">
 
-                <!-- QR コード画像（Glass カード内にネスト） -->
-                <Border Classes="glass-inner"
-                        HorizontalAlignment="Center"
-                        Padding="24"
-                        IsVisible="{Binding QrCodeImage, Converter={x:Static ObjectConverters.IsNotNull}}">
-                    <Image Source="{Binding QrCodeImage}"
-                           Width="180"
-                           Height="180"
-                           RenderOptions.BitmapInterpolationMode="HighQuality" />
-                </Border>
-
-                <!-- ペアリングリンク共有（Discord 風） -->
-                <StackPanel Spacing="6"
-                            IsVisible="{Binding PairingUrl, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                    <TextBlock Text="または、ペアリングリンクを送る。"
-                               Classes="caption"
-                               HorizontalAlignment="Center" />
-                    <Border Background="{StaticResource TahoeGlassHighBgBrush}"
-                            BorderBrush="{StaticResource TahoeGlassBorderBrush}"
-                            BorderThickness="1"
-                            CornerRadius="8"
-                            Padding="4">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Grid.Column="0"
-                                       Text="{Binding PairingUrl}"
-                                       FontSize="11"
-                                       Foreground="{StaticResource TahoeTextSecondaryBrush}"
-                                       VerticalAlignment="Center"
-                                       TextTrimming="CharacterEllipsis"
-                                       Margin="8,0,4,0" />
-                            <Button Grid.Column="1"
-                                    Command="{Binding CopyPairingLinkCommand}"
-                                    Classes="tahoe-primary"
-                                    Padding="12,4"
-                                    FontSize="11"
-                                    MinWidth="56">
-                                <Button.Content>
-                                    <Panel>
-                                        <TextBlock Text="コピー"
-                                                   IsVisible="{Binding !IsLinkCopied}"
-                                                   HorizontalAlignment="Center" />
-                                        <TextBlock Text="コピー済み ✓"
-                                                   IsVisible="{Binding IsLinkCopied}"
-                                                   HorizontalAlignment="Center" />
-                                    </Panel>
-                                </Button.Content>
+            <ListBox ItemsSource="{Binding PairedPeers}"
+                     SelectedItem="{Binding SelectedPeer}"
+                     Classes="tahoe-list"
+                     x:DataType="vm:ConnectionViewModel">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="models:PairedPeer">
+                        <DockPanel>
+                            <!-- 削除ボタン -->
+                            <Button Command="{Binding $parent[ListBox].((vm:ConnectionViewModel)DataContext).RemovePeerCommand}"
+                                    CommandParameter="{Binding PeerId}"
+                                    Classes="tahoe-ghost"
+                                    DockPanel.Dock="Right"
+                                    VerticalAlignment="Center"
+                                    ToolTip.Tip="{DynamicResource Text.Connection.RemovePeer}">
+                                <PathIcon Width="12" Height="12"
+                                          Foreground="{StaticResource TahoeTextTertiaryBrush}"
+                                          Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
                             </Button>
-                        </Grid>
-                    </Border>
-                </StackPanel>
 
-                <!-- 接続開始ボタン -->
-                <Button Content="接続開始"
-                        Classes="tahoe-primary"
-                        Command="{Binding StartSessionCommand}"
-                        HorizontalAlignment="Center"
-                        IsVisible="{Binding ConnectionState, Converter={StaticResource EqualConverter}, ConverterParameter=Disconnected}" />
-            </StackPanel>
-
-            <!-- === QR ペアリング中（追加ペアリング） === -->
-            <StackPanel Spacing="16">
-                <StackPanel.IsVisible>
-                    <MultiBinding Converter="{x:Static BoolConverters.And}">
-                        <Binding Path="HasPairedPeers" />
-                        <Binding Path="QrCodeImage" Converter="{x:Static ObjectConverters.IsNotNull}" />
-                    </MultiBinding>
-                </StackPanel.IsVisible>
-
-                <Border Classes="glass-inner"
-                        HorizontalAlignment="Center"
-                        Padding="24">
-                    <Image Source="{Binding QrCodeImage}"
-                           Width="180"
-                           Height="180"
-                           RenderOptions.BitmapInterpolationMode="HighQuality" />
-                </Border>
-
-                <!-- ペアリングリンク共有（Discord 風） -->
-                <StackPanel Spacing="6"
-                            IsVisible="{Binding PairingUrl, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                    <TextBlock Text="または、ペアリングリンクを送る。"
-                               Classes="caption"
-                               HorizontalAlignment="Center" />
-                    <Border Background="{StaticResource TahoeGlassHighBgBrush}"
-                            BorderBrush="{StaticResource TahoeGlassBorderBrush}"
-                            BorderThickness="1"
-                            CornerRadius="8"
-                            Padding="4">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Grid.Column="0"
-                                       Text="{Binding PairingUrl}"
-                                       FontSize="11"
-                                       Foreground="{StaticResource TahoeTextSecondaryBrush}"
-                                       VerticalAlignment="Center"
-                                       TextTrimming="CharacterEllipsis"
-                                       Margin="8,0,4,0" />
-                            <Button Grid.Column="1"
-                                    Command="{Binding CopyPairingLinkCommand}"
-                                    Classes="tahoe-primary"
-                                    Padding="12,4"
-                                    FontSize="11"
-                                    MinWidth="56">
-                                <Button.Content>
-                                    <Panel>
-                                        <TextBlock Text="コピー"
-                                                   IsVisible="{Binding !IsLinkCopied}"
-                                                   HorizontalAlignment="Center" />
-                                        <TextBlock Text="コピー済み ✓"
-                                                   IsVisible="{Binding IsLinkCopied}"
-                                                   HorizontalAlignment="Center" />
+                            <!-- ピア情報 -->
+                            <StackPanel Spacing="2">
+                                <DockPanel>
+                                    <!-- オンライン/オフライン信号アイコン -->
+                                    <Panel Width="10" Height="10" Margin="0,0,8,0" VerticalAlignment="Center">
+                                        <Ellipse Width="10" Height="10" Fill="#007AFF" IsVisible="{Binding IsOnline}" />
+                                        <Ellipse Width="10" Height="10" Fill="#FF3B30" IsVisible="{Binding !IsOnline}" />
                                     </Panel>
-                                </Button.Content>
-                            </Button>
-                        </Grid>
-                    </Border>
-                </StackPanel>
-
-                <Button Content="キャンセル"
-                        Classes="tahoe-secondary"
-                        Command="{Binding DisconnectCommand}"
-                        HorizontalAlignment="Center" />
-            </StackPanel>
-
-            <!-- === 宛先選択リスト === -->
-            <StackPanel Spacing="8">
-                <StackPanel.IsVisible>
-                    <MultiBinding Converter="{x:Static BoolConverters.And}">
-                        <Binding Path="HasPairedPeers" />
-                        <Binding Path="QrCodeImage" Converter="{x:Static ObjectConverters.IsNull}" />
-                    </MultiBinding>
-                </StackPanel.IsVisible>
-
-                <ListBox ItemsSource="{Binding PairedPeers}"
-                         SelectedItem="{Binding SelectedPeer}"
-                         Classes="tahoe-list"
-                         x:DataType="vm:ConnectionViewModel">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="models:PairedPeer">
-                            <DockPanel>
-                                <!-- 削除ボタン -->
-                                <Button Command="{Binding $parent[ListBox].((vm:ConnectionViewModel)DataContext).RemovePeerCommand}"
-                                        CommandParameter="{Binding PeerId}"
-                                        Classes="tahoe-ghost"
-                                        DockPanel.Dock="Right"
-                                        VerticalAlignment="Center"
-                                        ToolTip.Tip="ペアリング解除">
-                                    <PathIcon Width="12" Height="12"
-                                              Foreground="{StaticResource TahoeTextTertiaryBrush}"
-                                              Data="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
-                                </Button>
-
-                                <!-- ピア情報 -->
-                                <StackPanel Spacing="2">
-                                    <DockPanel>
-                                        <!-- デバイス名 -->
-                                        <TextBlock Text="{Binding DisplayName}"
-                                                   Classes="body"
-                                                   FontWeight="Medium" />
-                                        <!-- 接続ステータス -->
-                                        <TextBlock Text="{Binding ConnectionStatusText}"
-                                                   Classes="caption"
-                                                   HorizontalAlignment="Right"
-                                                   VerticalAlignment="Center"
-                                                   IsVisible="{Binding ConnectionStatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                                    </DockPanel>
-                                    <!-- 接続経路（接続中のみ） -->
-                                    <TextBlock Text="{Binding RouteText}"
-                                               FontSize="11"
-                                               IsVisible="{Binding RouteText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                                </StackPanel>
-                            </DockPanel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-
-                <!-- 新しいデバイスを追加ボタン -->
-                <Button Command="{Binding AddNewPeerCommand}"
-                        Classes="tahoe-secondary"
-                        HorizontalAlignment="Stretch"
-                        Margin="0,4,0,0">
-                    <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                        <PathIcon Width="12" Height="12"
-                                  Foreground="{StaticResource TahoeTextSecondaryBrush}"
-                                  Data="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-                        <TextBlock Text="新しいデバイスを追加"
-                                   FontSize="13"
-                                   Foreground="{StaticResource TahoeTextSecondaryBrush}" />
-                    </StackPanel>
-                </Button>
-            </StackPanel>
-
-            <!-- ネットワーク退出ボタン（ペアリング済みピアが1件以上ある場合に表示） -->
-            <Button Content="ネットワークを退出"
-                    Classes="tahoe-secondary"
-                    Command="{Binding DisconnectCommand}"
-                    HorizontalAlignment="Center"
-                    IsVisible="{Binding HasPairedPeers}" />
-
+                                    <!-- デバイス名 -->
+                                    <TextBlock Text="{Binding DisplayName}"
+                                               Classes="body"
+                                               FontWeight="Medium" />
+                                    <!-- 転送中のステータス -->
+                                    <TextBlock Text="{Binding ConnectionStatusText}"
+                                               Classes="caption"
+                                               HorizontalAlignment="Right"
+                                               VerticalAlignment="Center"
+                                               IsVisible="{Binding ConnectionStatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                </DockPanel>
+                                <!-- 接続経路 -->
+                                <TextBlock Text="{Binding RouteText}"
+                                           FontSize="11"
+                                           IsVisible="{Binding RouteText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            </StackPanel>
+                        </DockPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
         </StackPanel>
-    </Border>
+
+        <!-- ペアリング済みピアがない場合のヒント -->
+        <TextBlock Text="{DynamicResource Text.Connection.NoMembers}"
+                   Classes="caption"
+                   HorizontalAlignment="Center"
+                   IsVisible="{Binding !HasPairedPeers}" />
+
+    </StackPanel>
 
 </UserControl>

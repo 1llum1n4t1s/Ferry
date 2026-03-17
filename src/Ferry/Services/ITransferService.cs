@@ -20,6 +20,9 @@ public interface ITransferService
     /// <summary>転送でエラーが発生したときに発火するイベント。</summary>
     event EventHandler<TransferItem>? TransferError;
 
+    /// <summary>ファイル受信の承認が要求されたときに発火するイベント。UI で承認/拒否を表示する。</summary>
+    event EventHandler<TransferItem>? ApprovalRequested;
+
     /// <summary>
     /// 指定したファイルをピアに送信する。
     /// </summary>
@@ -46,4 +49,14 @@ public interface ITransferService
     /// レジューム可能な転送の一覧を取得する。
     /// </summary>
     IReadOnlyList<TransferItem> GetResumableTransfers();
+
+    /// <summary>
+    /// 受信承認待ちの転送を承認する。
+    /// </summary>
+    void ApproveTransfer(string transferId);
+
+    /// <summary>
+    /// 受信承認待ちの転送を拒否する。
+    /// </summary>
+    void RejectTransfer(string transferId);
 }

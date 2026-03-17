@@ -254,7 +254,10 @@ public class TransferViewModelTests : IDisposable
         await vm.ResumeTransferCommand.ExecuteAsync(item.TransferId);
 
         Assert.Equal(TransferState.Error, item.State);
-        Assert.Equal("レジュームに失敗しました", item.ErrorMessage);
+        // ローカライズ後: テスト環境では App.Text() がキーを返す場合がある
+        Assert.True(
+            item.ErrorMessage == "レジュームに失敗しました" || item.ErrorMessage == "Text.Transfer.ResumeFailed",
+            $"ErrorMessage should be resume failed text, but was: {item.ErrorMessage}");
     }
 
     [Fact]

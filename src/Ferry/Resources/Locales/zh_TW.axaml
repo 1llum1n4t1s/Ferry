@@ -1,0 +1,77 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceInclude Source="avares://Ferry/Resources/Locales/en_US.axaml"/>
+  </ResourceDictionary.MergedDictionaries>
+
+  <!-- Tabs -->
+  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 成員列表</x:String>
+  <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ 新增成員</x:String>
+  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 傳輸歷史</x:String>
+  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ 設定</x:String>
+  <x:String x:Key="Text.Drop.Message" xml:space="preserve">拖放檔案進行傳輸</x:String>
+  <x:String x:Key="Text.Drop.Description" xml:space="preserve">拖放的檔案將傳送到已連接的裝置</x:String>
+  <x:String x:Key="Text.Connection.Header" xml:space="preserve">目標</x:String>
+  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">或分享配對連結。</x:String>
+  <x:String x:Key="Text.Connection.Copy" xml:space="preserve">複製</x:String>
+  <x:String x:Key="Text.Connection.Copied" xml:space="preserve">已複製 ✓</x:String>
+  <x:String x:Key="Text.Connection.Start" xml:space="preserve">開始連線</x:String>
+  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">取消</x:String>
+  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">新增裝置</x:String>
+  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">解除配對</x:String>
+  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">離開網路</x:String>
+  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">傳輸歷史</x:String>
+  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">清除</x:String>
+  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">拖放檔案進行傳輸</x:String>
+  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">核准</x:String>
+  <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">拒絕</x:String>
+  <x:String x:Key="Text.Settings.General" xml:space="preserve">一般</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">電腦顯示名稱</x:String>
+  <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">輸入電腦名稱</x:String>
+  <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">外觀</x:String>
+  <x:String x:Key="Text.Settings.Theme" xml:space="preserve">主題</x:String>
+  <x:String x:Key="Text.Settings.Theme.System" xml:space="preserve">系統（跟隨作業系統）</x:String>
+  <x:String x:Key="Text.Settings.Theme.Light" xml:space="preserve">淺色</x:String>
+  <x:String x:Key="Text.Settings.Theme.Dark" xml:space="preserve">深色</x:String>
+  <x:String x:Key="Text.Settings.Language" xml:space="preserve">語言</x:String>
+  <x:String x:Key="Text.Settings.File" xml:space="preserve">檔案</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">接收檔案儲存位置</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">瀏覽</x:String>
+  <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">行為</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">開機時啟動 Ferry</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">電腦啟動時自動執行</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">最小化啟動</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">在背景啟動</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">關閉時最小化至系統匣</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">關閉按鈕將應用程式傳送至系統匣</x:String>
+  <x:String x:Key="Text.Settings.Version" xml:space="preserve">版本</x:String>
+  <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">檢查更新</x:String>
+  <x:String x:Key="Text.State.Pending" xml:space="preserve">等待中…</x:String>
+  <x:String x:Key="Text.State.Sending" xml:space="preserve">傳送中</x:String>
+  <x:String x:Key="Text.State.Receiving" xml:space="preserve">接收中</x:String>
+  <x:String x:Key="Text.State.Completed" xml:space="preserve">完成</x:String>
+  <x:String x:Key="Text.State.Error" xml:space="preserve">錯誤</x:String>
+  <x:String x:Key="Text.State.Cancelled" xml:space="preserve">已取消</x:String>
+  <x:String x:Key="Text.State.Suspended" xml:space="preserve">已暫停</x:String>
+  <x:String x:Key="Text.State.WaitingApproval" xml:space="preserve">等待核准</x:String>
+  <x:String x:Key="Text.Status.Starting" xml:space="preserve">正在啟動工作階段…</x:String>
+  <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">請用智慧型手機掃描 QR 碼</x:String>
+  <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">請掃描另一台電腦的 QR 碼…</x:String>
+  <x:String x:Key="Text.Status.Error" xml:space="preserve">錯誤: {0}</x:String>
+  <x:String x:Key="Text.Status.Connected" xml:space="preserve">已連線</x:String>
+  <x:String x:Key="Text.Status.Connecting" xml:space="preserve">連線中…</x:String>
+  <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">重新連線中…</x:String>
+  <x:String x:Key="Text.Route.Direct" xml:space="preserve">區域網路直連</x:String>
+  <x:String x:Key="Text.Route.Stun" xml:space="preserve">網際網路 P2P（STUN）</x:String>
+  <x:String x:Key="Text.Route.Relay" xml:space="preserve">伺服器中繼（TURN）</x:String>
+  <x:String x:Key="Text.Update.Checking" xml:space="preserve">正在檢查更新…</x:String>
+  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">開發環境無法檢查更新</x:String>
+  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">正在下載 v{0}…</x:String>
+  <x:String x:Key="Text.Update.Applying" xml:space="preserve">正在套用更新…即將重新啟動</x:String>
+  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">已是最新版本 ✓</x:String>
+  <x:String x:Key="Text.Update.Error" xml:space="preserve">更新檢查失敗: {0}</x:String>
+  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">未知</x:String>
+  <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">已拒絕接收</x:String>
+  <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">恢復失敗</x:String>
+
+</ResourceDictionary>

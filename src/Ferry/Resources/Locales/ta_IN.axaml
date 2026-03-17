@@ -1,0 +1,95 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceInclude Source="avares://Ferry/Resources/Locales/en_US.axaml"/>
+  </ResourceDictionary.MergedDictionaries>
+
+  <!-- Tabs -->
+  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 உறுப்பினர்கள்</x:String>
+  <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ உறுப்பினர் சேர்</x:String>
+  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 பரிமாற்ற வரலாறு</x:String>
+  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ அமைப்புகள்</x:String>
+
+  <!-- Drop Overlay -->
+  <x:String x:Key="Text.Drop.Message" xml:space="preserve">பரிமாற்ற கோப்புகளை இங்கே விடுங்கள்</x:String>
+  <x:String x:Key="Text.Drop.Description" xml:space="preserve">விடப்பட்ட கோப்புகள் இணைக்கப்பட்ட சாதனத்திற்கு அனுப்பப்படும்</x:String>
+
+  <!-- Connection Panel -->
+  <x:String x:Key="Text.Connection.Header" xml:space="preserve">இலக்கு</x:String>
+  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">அல்லது இணைப்பு இணைப்பைப் பகிரவும்.</x:String>
+  <x:String x:Key="Text.Connection.Copy" xml:space="preserve">நகலெடு</x:String>
+  <x:String x:Key="Text.Connection.Copied" xml:space="preserve">நகலெடுக்கப்பட்டது</x:String>
+  <x:String x:Key="Text.Connection.Start" xml:space="preserve">இணைப்பைத் தொடங்கு</x:String>
+  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">ரத்துசெய்</x:String>
+  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">புதிய சாதனம் சேர்</x:String>
+  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">இணைப்பை நீக்கு</x:String>
+  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">நெட்வொர்க்கை விட்டு வெளியேறு</x:String>
+
+  <!-- Transfer Panel -->
+  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">பரிமாற்ற வரலாறு</x:String>
+  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">அழி</x:String>
+  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">பரிமாற்ற கோப்புகளை இங்கே விடுங்கள்</x:String>
+  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">ஏற்கவும்</x:String>
+  <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">நிராகரி</x:String>
+
+  <!-- Settings Panel -->
+  <x:String x:Key="Text.Settings.General" xml:space="preserve">பொது</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">PC காட்சிப் பெயர்</x:String>
+  <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">PC பெயரை உள்ளிடுங்கள்</x:String>
+  <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">தோற்றம்</x:String>
+  <x:String x:Key="Text.Settings.Theme" xml:space="preserve">தீம்</x:String>
+  <x:String x:Key="Text.Settings.Theme.System" xml:space="preserve">கணினி (OS ஐப் பின்பற்று)</x:String>
+  <x:String x:Key="Text.Settings.Theme.Light" xml:space="preserve">ஒளிர்</x:String>
+  <x:String x:Key="Text.Settings.Theme.Dark" xml:space="preserve">இருள்</x:String>
+  <x:String x:Key="Text.Settings.Language" xml:space="preserve">மொழி</x:String>
+  <x:String x:Key="Text.Settings.File" xml:space="preserve">கோப்பு</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">பெறப்பட்ட கோப்பு சேமிப்பிடம்</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">உலாவு</x:String>
+  <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">நடத்தை</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">தொடக்கத்தில் Ferry ஐத் திற</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">கணினி தொடங்கும்போது தானாகவே துவங்கும்</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">சிறிதாக்கப்பட்ட நிலையில் தொடங்கு</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">பின்னணியில் துவங்கும்</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">மூடும்போது ட்ரேக்கு சிறிதாக்கு</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">மூடு பொத்தான் கணினி ட்ரேக்கு அனுப்பும்</x:String>
+  <x:String x:Key="Text.Settings.Version" xml:space="preserve">பதிப்பு</x:String>
+  <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">புதுப்பிப்புகளைச் சரிபார்</x:String>
+
+  <!-- Transfer States -->
+  <x:String x:Key="Text.State.Pending" xml:space="preserve">காத்திருக்கிறது...</x:String>
+  <x:String x:Key="Text.State.Sending" xml:space="preserve">அனுப்புகிறது</x:String>
+  <x:String x:Key="Text.State.Receiving" xml:space="preserve">பெறுகிறது</x:String>
+  <x:String x:Key="Text.State.Completed" xml:space="preserve">முடிந்தது</x:String>
+  <x:String x:Key="Text.State.Error" xml:space="preserve">பிழை</x:String>
+  <x:String x:Key="Text.State.Cancelled" xml:space="preserve">ரத்துசெய்யப்பட்டது</x:String>
+  <x:String x:Key="Text.State.Suspended" xml:space="preserve">இடைநிறுத்தப்பட்டது</x:String>
+  <x:String x:Key="Text.State.WaitingApproval" xml:space="preserve">ஒப்புதலுக்காகக் காத்திருக்கிறது</x:String>
+
+  <!-- Connection Status -->
+  <x:String x:Key="Text.Status.Starting" xml:space="preserve">அமர்வைத் தொடங்குகிறது...</x:String>
+  <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">உங்கள் ஸ்மார்ட்போனில் QR குறியீட்டை ஸ்கேன் செய்யுங்கள்</x:String>
+  <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">மற்ற PC இன் QR குறியீட்டை ஸ்கேன் செய்யுங்கள்...</x:String>
+  <x:String x:Key="Text.Status.Error" xml:space="preserve">பிழை: {0}</x:String>
+  <x:String x:Key="Text.Status.Connected" xml:space="preserve">இணைக்கப்பட்டது</x:String>
+  <x:String x:Key="Text.Status.Connecting" xml:space="preserve">இணைக்கிறது...</x:String>
+  <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">மீண்டும் இணைக்கிறது...</x:String>
+
+  <!-- Connection Routes -->
+  <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN நேரடி</x:String>
+  <x:String x:Key="Text.Route.Stun" xml:space="preserve">இணையம் P2P (STUN)</x:String>
+  <x:String x:Key="Text.Route.Relay" xml:space="preserve">சர்வர் ரிலே (TURN)</x:String>
+
+  <!-- Update Messages -->
+  <x:String x:Key="Text.Update.Checking" xml:space="preserve">புதுப்பிப்புகளைச் சரிபார்க்கிறது...</x:String>
+  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">மேம்பாட்டு சூழலில் புதுப்பிப்புகளைச் சரிபார்க்க முடியாது</x:String>
+  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">v{0} பதிவிறக்குகிறது...</x:String>
+  <x:String x:Key="Text.Update.Applying" xml:space="preserve">புதுப்பிப்பைப் பயன்படுத்துகிறது... மறுதொடக்கம்</x:String>
+  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">புதுப்பித்தநிலையில்</x:String>
+  <x:String x:Key="Text.Update.Error" xml:space="preserve">புதுப்பிப்பு சரிபார்ப்பு தோல்வி: {0}</x:String>
+  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">தெரியாது</x:String>
+
+  <!-- Transfer Messages -->
+  <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">பரிமாற்றம் நிராகரிக்கப்பட்டது</x:String>
+  <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">மீண்டும் தொடங்குவது தோல்வியடைந்தது</x:String>
+
+</ResourceDictionary>

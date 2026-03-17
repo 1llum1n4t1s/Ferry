@@ -1,0 +1,95 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceInclude Source="avares://Ferry/Resources/Locales/en_US.axaml"/>
+  </ResourceDictionary.MergedDictionaries>
+
+  <!-- Tabs -->
+  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 Учасники</x:String>
+  <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ Додати учасника</x:String>
+  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 Історія передач</x:String>
+  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ Налаштування</x:String>
+
+  <!-- Drop Overlay -->
+  <x:String x:Key="Text.Drop.Message" xml:space="preserve">Перетягніть файли для передачі</x:String>
+  <x:String x:Key="Text.Drop.Description" xml:space="preserve">Перетягнуті файли будуть надіслані на підключений пристрій</x:String>
+
+  <!-- Connection Panel -->
+  <x:String x:Key="Text.Connection.Header" xml:space="preserve">Призначення</x:String>
+  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">Або поділіться посиланням для з'єднання.</x:String>
+  <x:String x:Key="Text.Connection.Copy" xml:space="preserve">Копіювати</x:String>
+  <x:String x:Key="Text.Connection.Copied" xml:space="preserve">Скопійовано</x:String>
+  <x:String x:Key="Text.Connection.Start" xml:space="preserve">Почати з'єднання</x:String>
+  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">Скасувати</x:String>
+  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">Додати новий пристрій</x:String>
+  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">Видалити з'єднання</x:String>
+  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">Покинути мережу</x:String>
+
+  <!-- Transfer Panel -->
+  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">Історія передач</x:String>
+  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">Очистити</x:String>
+  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">Перетягніть файли для передачі</x:String>
+  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">Прийняти</x:String>
+  <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">Відхилити</x:String>
+
+  <!-- Settings Panel -->
+  <x:String x:Key="Text.Settings.General" xml:space="preserve">Загальні</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">Відображуване ім'я ПК</x:String>
+  <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">Введіть ім'я ПК</x:String>
+  <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">Зовнішній вигляд</x:String>
+  <x:String x:Key="Text.Settings.Theme" xml:space="preserve">Тема</x:String>
+  <x:String x:Key="Text.Settings.Theme.System" xml:space="preserve">Системна (за ОС)</x:String>
+  <x:String x:Key="Text.Settings.Theme.Light" xml:space="preserve">Світла</x:String>
+  <x:String x:Key="Text.Settings.Theme.Dark" xml:space="preserve">Темна</x:String>
+  <x:String x:Key="Text.Settings.Language" xml:space="preserve">Мова</x:String>
+  <x:String x:Key="Text.Settings.File" xml:space="preserve">Файл</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">Місце збереження отриманих файлів</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">Огляд</x:String>
+  <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">Поведінка</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">Запускати Ferry при старті</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">Автоматично запускається при увімкненні комп'ютера</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">Запускати згорнутим</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">Запускається у фоновому режимі</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">Згортати в трей при закритті</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">Кнопка закриття згортає в системний трей</x:String>
+  <x:String x:Key="Text.Settings.Version" xml:space="preserve">Версія</x:String>
+  <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">Перевірити оновлення</x:String>
+
+  <!-- Transfer States -->
+  <x:String x:Key="Text.State.Pending" xml:space="preserve">Очікування...</x:String>
+  <x:String x:Key="Text.State.Sending" xml:space="preserve">Надсилання</x:String>
+  <x:String x:Key="Text.State.Receiving" xml:space="preserve">Отримання</x:String>
+  <x:String x:Key="Text.State.Completed" xml:space="preserve">Завершено</x:String>
+  <x:String x:Key="Text.State.Error" xml:space="preserve">Помилка</x:String>
+  <x:String x:Key="Text.State.Cancelled" xml:space="preserve">Скасовано</x:String>
+  <x:String x:Key="Text.State.Suspended" xml:space="preserve">Призупинено</x:String>
+  <x:String x:Key="Text.State.WaitingApproval" xml:space="preserve">Очікування підтвердження</x:String>
+
+  <!-- Connection Status -->
+  <x:String x:Key="Text.Status.Starting" xml:space="preserve">Запуск сесії...</x:String>
+  <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">Відскануйте QR-код смартфоном</x:String>
+  <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">Відскануйте QR-код іншого ПК...</x:String>
+  <x:String x:Key="Text.Status.Error" xml:space="preserve">Помилка: {0}</x:String>
+  <x:String x:Key="Text.Status.Connected" xml:space="preserve">Підключено</x:String>
+  <x:String x:Key="Text.Status.Connecting" xml:space="preserve">Підключення...</x:String>
+  <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">Перепідключення...</x:String>
+
+  <!-- Connection Routes -->
+  <x:String x:Key="Text.Route.Direct" xml:space="preserve">Пряме LAN-з'єднання</x:String>
+  <x:String x:Key="Text.Route.Stun" xml:space="preserve">Інтернет P2P (STUN)</x:String>
+  <x:String x:Key="Text.Route.Relay" xml:space="preserve">Серверний ретранслятор (TURN)</x:String>
+
+  <!-- Update Messages -->
+  <x:String x:Key="Text.Update.Checking" xml:space="preserve">Перевірка оновлень...</x:String>
+  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">Неможливо перевірити оновлення в середовищі розробки</x:String>
+  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">Завантаження v{0}...</x:String>
+  <x:String x:Key="Text.Update.Applying" xml:space="preserve">Застосування оновлення... Перезапуск</x:String>
+  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">Оновлень немає</x:String>
+  <x:String x:Key="Text.Update.Error" xml:space="preserve">Помилка перевірки оновлень: {0}</x:String>
+  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">Невідомо</x:String>
+
+  <!-- Transfer Messages -->
+  <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Передачу відхилено</x:String>
+  <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Не вдалося відновити</x:String>
+
+</ResourceDictionary>

@@ -49,6 +49,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         _transferService.ProgressChanged += OnProgressChanged;
         _transferService.FileReceived += OnFileReceived;
         _transferService.TransferError += OnTransferError;
+        _transferService.ApprovalRequested += OnApprovalRequested;
 
         Transfers.CollectionChanged += (_, _) => HasTransfers = Transfers.Count > 0;
     }
@@ -188,7 +189,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             else
             {
                 item.State = TransferState.Error;
-                item.ErrorMessage = "レジュームに失敗しました";
+                item.ErrorMessage = App.Text("Transfer.ResumeFailed");
             }
         }
         catch (Exception ex)
@@ -319,10 +320,51 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         });
     }
 
+    /// <summary>
+    /// ファイル受信承認要求イベント。承認待ちアイテムを UI に追加する。
+    /// </summary>
+    private void OnApprovalRequested(object? sender, TransferItem e)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            Transfers.Add(e);
+            HasTransfers = Transfers.Count > 0;
+        });
+    }
+
+    /// <summary>
+    /// 受信を承認する。
+    /// </summary>
+    [RelayCommand]
+    private void ApproveTransfer(Guid transferId)
+    {
+        var item = Transfers.FirstOrDefault(t => t.TransferId == transferId && t.State == TransferState.WaitingApproval);
+        if (item == null) return;
+
+        _transferService.ApproveTransfer(transferId.ToString());
+        // State は TransferService 側で InProgress に変わる
+        IsTransferring = true;
+    }
+
+    /// <summary>
+    /// 受信を拒否する。
+    /// </summary>
+    [RelayCommand]
+    private void RejectTransfer(Guid transferId)
+    {
+        var item = Transfers.FirstOrDefault(t => t.TransferId == transferId && t.State == TransferState.WaitingApproval);
+        if (item == null) return;
+
+        _transferService.RejectTransfer(transferId.ToString());
+        item.State = TransferState.Cancelled;
+        item.ErrorMessage = App.Text("Transfer.Rejected");
+    }
+
     public void Dispose()
     {
         _transferService.ProgressChanged -= OnProgressChanged;
         _transferService.FileReceived -= OnFileReceived;
         _transferService.TransferError -= OnTransferError;
+        _transferService.ApprovalRequested -= OnApprovalRequested;
     }
 }

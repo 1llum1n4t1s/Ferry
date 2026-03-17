@@ -31,9 +31,13 @@ public sealed class TransferService : ITransferService
     /// <summary>フォルダ受信時のルートフォルダ名マッピング（元の名前 → リネーム後の名前）。同一フォルダの全ファイルを同じ先に保存するため。</summary>
     private readonly ConcurrentDictionary<string, string> _folderMappings = new();
 
+    /// <summary>承認待ちの転送状態（TransferId → ReceiveState）。承認/拒否後に _receiveStates へ移動。</summary>
+    private readonly ConcurrentDictionary<string, ReceiveState> _pendingApprovals = new();
+
     public event EventHandler<TransferItem>? ProgressChanged;
     public event EventHandler<TransferItem>? FileReceived;
     public event EventHandler<TransferItem>? TransferError;
+    public event EventHandler<TransferItem>? ApprovalRequested;
 
     public TransferService(IConnectionService connectionService, ISettingsService settingsService)
     {
@@ -342,23 +346,15 @@ public sealed class TransferService : ITransferService
                 FileSize = meta.FileSize,
                 TotalChunks = meta.TotalChunks,
                 Direction = TransferDirection.Receive,
-                State = TransferState.InProgress,
+                State = TransferState.WaitingApproval,
                 Sha256Hash = meta.Sha256,
             },
         };
 
-        // 受信用ファイルストリームを開く
-        try
-        {
-            state.FileStream = new FileStream(savePath, FileMode.Create, FileAccess.Write, FileShare.None);
-        }
-        catch (Exception ex)
-        {
-            Util.Logger.Log($"受信ファイル作成エラー: {ex.Message}", Util.LogLevel.Error);
-            return;
-        }
-
-        _receiveStates[meta.TransferId] = state;
+        // 承認待ちキューに追加し、UI に通知
+        _pendingApprovals[meta.TransferId] = state;
+        Util.Logger.Log($"受信承認待ち: {displayName} ({FormatBytesStatic(meta.FileSize)})");
+        ApprovalRequested?.Invoke(this, state.Item);
     }
 
     private void HandleFileChunk(byte[] data)
@@ -487,6 +483,15 @@ public sealed class TransferService : ITransferService
             ? Encoding.UTF8.GetString(data, 1, data.Length - 1)
             : "不明な理由";
         Util.Logger.Log($"ファイル拒否: {reason}", Util.LogLevel.Warning);
+
+        // 送信中のアイテムにエラーを通知
+        var sendingItem = _activeTransfers.Values.FirstOrDefault(t => t.State == TransferState.InProgress);
+        if (sendingItem != null)
+        {
+            sendingItem.State = TransferState.Error;
+            sendingItem.ErrorMessage = $"相手が受信を拒否しました: {reason}";
+            TransferError?.Invoke(this, sendingItem);
+        }
     }
 
     private void HandlePing()
@@ -525,6 +530,62 @@ public sealed class TransferService : ITransferService
         Util.Logger.Log($"レジューム応答受信: transferId={transferId}, accepted={accepted}, lastChunk={lastChunkIndex}");
     }
 
+    // === 承認/拒否 ===
+
+    /// <summary>受信承認待ちの転送を承認する。ファイルストリームを開いて受信可能にする。</summary>
+    public void ApproveTransfer(string transferId)
+    {
+        if (!_pendingApprovals.TryRemove(transferId, out var state))
+        {
+            Util.Logger.Log($"承認対象が見つかりません: {transferId}", Util.LogLevel.Warning);
+            return;
+        }
+
+        Util.Logger.Log($"受信承認: {state.FileName}");
+
+        // 受信用ファイルストリームを開く
+        try
+        {
+            state.FileStream = new FileStream(state.SavePath, FileMode.Create, FileAccess.Write, FileShare.None);
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"受信ファイル作成エラー: {ex.Message}", Util.LogLevel.Error);
+            state.Item.State = TransferState.Error;
+            state.Item.ErrorMessage = ex.Message;
+            TransferError?.Invoke(this, state.Item);
+            return;
+        }
+
+        state.Item.State = TransferState.InProgress;
+        _receiveStates[transferId] = state;
+    }
+
+    /// <summary>受信承認待ちの転送を拒否する。送信側に FileReject を送信する。</summary>
+    public void RejectTransfer(string transferId)
+    {
+        if (!_pendingApprovals.TryRemove(transferId, out var state))
+        {
+            Util.Logger.Log($"拒否対象が見つかりません: {transferId}", Util.LogLevel.Warning);
+            return;
+        }
+
+        Util.Logger.Log($"受信拒否: {state.FileName}");
+        state.Item.State = TransferState.Cancelled;
+        state.Item.ErrorMessage = "受信を拒否しました";
+
+        // FileReject メッセージを送信側に通知
+        try
+        {
+            var rejectMessage = FileChunker.CreateRejectMessage("受信側が拒否しました");
+            _connectionService.SendAsync(rejectMessage).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"拒否メッセージ送信エラー: {ex.Message}", Util.LogLevel.Warning);
+        }
+    }
+
     // === ユーティリティ ===
 
     /// <summary>
@@ -549,6 +610,14 @@ public sealed class TransferService : ITransferService
         // 万が一のフォールバック
         return Path.Combine(dir, $"{name}_{Guid.NewGuid():N}{ext}");
     }
+
+    private static string FormatBytesStatic(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+        < 1024L * 1024 * 1024 => $"{bytes / (1024.0 * 1024):F1} MB",
+        _ => $"{bytes / (1024.0 * 1024 * 1024):F2} GB",
+    };
 
     private void CleanupReceiveState(ReceiveState state)
     {

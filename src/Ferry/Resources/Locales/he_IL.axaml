@@ -1,0 +1,95 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceInclude Source="avares://Ferry/Resources/Locales/en_US.axaml"/>
+  </ResourceDictionary.MergedDictionaries>
+
+  <!-- Tabs -->
+  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 חברים</x:String>
+  <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ הוסף חבר</x:String>
+  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 תולדות ההעברה</x:String>
+  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ הגדרות</x:String>
+
+  <!-- Drop Overlay -->
+  <x:String x:Key="Text.Drop.Message" xml:space="preserve">השלך קבצים להעברה</x:String>
+  <x:String x:Key="Text.Drop.Description" xml:space="preserve">הקבצים שהושלכו יישלחו אל ההתקן המחובר</x:String>
+
+  <!-- Connection Panel -->
+  <x:String x:Key="Text.Connection.Header" xml:space="preserve">יעד</x:String>
+  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">או שתף את קישור הצימוד.</x:String>
+  <x:String x:Key="Text.Connection.Copy" xml:space="preserve">העתק</x:String>
+  <x:String x:Key="Text.Connection.Copied" xml:space="preserve">הועתק</x:String>
+  <x:String x:Key="Text.Connection.Start" xml:space="preserve">התחל חיבור</x:String>
+  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">בטל</x:String>
+  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">הוסף התקן חדש</x:String>
+  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">הסר צימוד</x:String>
+  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">עזוב את הרשת</x:String>
+
+  <!-- Transfer Panel -->
+  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">תולדות ההעברה</x:String>
+  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">נקה</x:String>
+  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">השלך קבצים להעברה</x:String>
+  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">אשר</x:String>
+  <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">דחה</x:String>
+
+  <!-- Settings Panel -->
+  <x:String x:Key="Text.Settings.General" xml:space="preserve">כללי</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">שם תצוגת המחשב</x:String>
+  <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">הכנס שם מחשב</x:String>
+  <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">מראה</x:String>
+  <x:String x:Key="Text.Settings.Theme" xml:space="preserve">ערכת נושא</x:String>
+  <x:String x:Key="Text.Settings.Theme.System" xml:space="preserve">מערכת (עקוב אחר מערכת ההפעלה)</x:String>
+  <x:String x:Key="Text.Settings.Theme.Light" xml:space="preserve">בהיר</x:String>
+  <x:String x:Key="Text.Settings.Theme.Dark" xml:space="preserve">כהה</x:String>
+  <x:String x:Key="Text.Settings.Language" xml:space="preserve">לשון</x:String>
+  <x:String x:Key="Text.Settings.File" xml:space="preserve">קובץ</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">מיקום שמירת קבצים שהתקבלו</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">עיין</x:String>
+  <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">התנהגות</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">פתח את Ferry בהפעלה</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">מופעל אוטומטית כאשר המחשב נדלק</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">התחל ממוזער</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">מופעל ברקע</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">מזער למגש בעת סגירה</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">לחצן הסגירה שולח למגש המערכת</x:String>
+  <x:String x:Key="Text.Settings.Version" xml:space="preserve">גרסה</x:String>
+  <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">בדוק עדכונים</x:String>
+
+  <!-- Transfer States -->
+  <x:String x:Key="Text.State.Pending" xml:space="preserve">ממתין...</x:String>
+  <x:String x:Key="Text.State.Sending" xml:space="preserve">שולח</x:String>
+  <x:String x:Key="Text.State.Receiving" xml:space="preserve">מקבל</x:String>
+  <x:String x:Key="Text.State.Completed" xml:space="preserve">הושלם</x:String>
+  <x:String x:Key="Text.State.Error" xml:space="preserve">שגיאה</x:String>
+  <x:String x:Key="Text.State.Cancelled" xml:space="preserve">בוטל</x:String>
+  <x:String x:Key="Text.State.Suspended" xml:space="preserve">מושהה</x:String>
+  <x:String x:Key="Text.State.WaitingApproval" xml:space="preserve">ממתין לאישור</x:String>
+
+  <!-- Connection Status -->
+  <x:String x:Key="Text.Status.Starting" xml:space="preserve">מתחיל הפעלה...</x:String>
+  <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">סרוק את קוד ה-QR באמצעות הטלפון החכם</x:String>
+  <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">סרוק את קוד ה-QR של המחשב השני...</x:String>
+  <x:String x:Key="Text.Status.Error" xml:space="preserve">שגיאה: {0}</x:String>
+  <x:String x:Key="Text.Status.Connected" xml:space="preserve">מחובר</x:String>
+  <x:String x:Key="Text.Status.Connecting" xml:space="preserve">מתחבר...</x:String>
+  <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">מתחבר מחדש...</x:String>
+
+  <!-- Connection Routes -->
+  <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN ישיר</x:String>
+  <x:String x:Key="Text.Route.Stun" xml:space="preserve">אינטרנט P2P (STUN)</x:String>
+  <x:String x:Key="Text.Route.Relay" xml:space="preserve">ממסר שרת (TURN)</x:String>
+
+  <!-- Update Messages -->
+  <x:String x:Key="Text.Update.Checking" xml:space="preserve">בודק עדכונים...</x:String>
+  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">לא ניתן לבדוק עדכונים בסביבת פיתוח</x:String>
+  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">מוריד v{0}...</x:String>
+  <x:String x:Key="Text.Update.Applying" xml:space="preserve">מחיל עדכון... מפעיל מחדש</x:String>
+  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">מעודכן</x:String>
+  <x:String x:Key="Text.Update.Error" xml:space="preserve">בדיקת העדכון נכשלה: {0}</x:String>
+  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">לא ידוע</x:String>
+
+  <!-- Transfer Messages -->
+  <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">ההעברה נדחתה</x:String>
+  <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">החידוש נכשל</x:String>
+
+</ResourceDictionary>

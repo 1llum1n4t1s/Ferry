@@ -49,19 +49,27 @@ internal sealed class Program
     {
         try
         {
+            Logger.Log("更新チェック開始");
             var source = new GithubSource(GitHubRepoUrl, string.Empty, false);
             var options = new UpdateOptions { ExplicitChannel = "win" };
             var mgr = new UpdateManager(source, options);
             var newVersion = await mgr.CheckForUpdatesAsync();
             if (newVersion != null)
             {
+                Logger.Log($"新バージョン検出: {newVersion.TargetFullRelease.Version} → ダウンロード開始");
                 await mgr.DownloadUpdatesAsync(newVersion);
+                Logger.Log("更新適用・再起動");
                 mgr.ApplyUpdatesAndRestart(newVersion, args);
             }
+            else
+            {
+                Logger.Log("更新なし（最新版）");
+            }
         }
-        catch
+        catch (Exception ex)
         {
             // ネットワークエラーなどで更新チェックに失敗した場合はアプリを起動する
+            Logger.Log($"更新チェック失敗（続行）: {ex.Message}", LogLevel.Warning);
         }
     }
 

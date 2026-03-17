@@ -343,6 +343,56 @@ public sealed class FirebaseSignaling : IDisposable
         }
     }
 
+    // === プレゼンス（オンライン/オフライン検知） ===
+
+    /// <summary>
+    /// 自分のプレゼンス（lastSeen タイムスタンプ）を Firebase に書き込む。
+    /// </summary>
+    public async Task UpdatePresenceAsync(string deviceId, CancellationToken ct = default)
+    {
+        await _client
+            .Child("presence")
+            .Child(deviceId)
+            .PutAsync(new PresenceData
+            {
+                LastSeen = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            });
+    }
+
+    /// <summary>
+    /// 指定デバイスの lastSeen タイムスタンプを取得する。
+    /// </summary>
+    public async Task<long?> GetPresenceAsync(string deviceId, CancellationToken ct = default)
+    {
+        try
+        {
+            var data = await _client
+                .Child("presence")
+                .Child(deviceId)
+                .OnceSingleAsync<PresenceData>();
+            return data?.LastSeen;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 自分のプレゼンスを Firebase から削除する（アプリ終了時）。
+    /// </summary>
+    public async Task RemovePresenceAsync(string deviceId)
+    {
+        try
+        {
+            await _client.Child("presence").Child(deviceId).DeleteAsync();
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"プレゼンス削除エラー: {ex.Message}", Util.LogLevel.Warning);
+        }
+    }
+
     public void StopWatching()
     {
         _pairingSubscription?.Dispose();
@@ -387,6 +437,12 @@ public sealed class PairingData
 public sealed class SignalingValue
 {
     public string Data { get; set; } = string.Empty;
+}
+
+/// <summary>Firebase に書き込むプレゼンスデータ。</summary>
+public sealed class PresenceData
+{
+    public long LastSeen { get; set; }
 }
 
 /// <summary>ペアリング検知情報。</summary>

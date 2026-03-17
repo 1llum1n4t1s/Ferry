@@ -1,0 +1,77 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceInclude Source="avares://Ferry/Resources/Locales/en_US.axaml"/>
+  </ResourceDictionary.MergedDictionaries>
+
+  <!-- Tabs -->
+  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 멤버 목록</x:String>
+  <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ 멤버 추가</x:String>
+  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 전송 기록</x:String>
+  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ 설정</x:String>
+  <x:String x:Key="Text.Drop.Message" xml:space="preserve">파일을 드롭하여 전송</x:String>
+  <x:String x:Key="Text.Drop.Description" xml:space="preserve">드롭한 파일이 연결된 장치로 전송됩니다</x:String>
+  <x:String x:Key="Text.Connection.Header" xml:space="preserve">대상</x:String>
+  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">또는 페어링 링크를 공유하세요.</x:String>
+  <x:String x:Key="Text.Connection.Copy" xml:space="preserve">복사</x:String>
+  <x:String x:Key="Text.Connection.Copied" xml:space="preserve">복사됨 ✓</x:String>
+  <x:String x:Key="Text.Connection.Start" xml:space="preserve">연결 시작</x:String>
+  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">취소</x:String>
+  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">새 장치 추가</x:String>
+  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">페어링 해제</x:String>
+  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">네트워크 나가기</x:String>
+  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">전송 기록</x:String>
+  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">지우기</x:String>
+  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">파일을 드롭하여 전송</x:String>
+  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">승인</x:String>
+  <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">거부</x:String>
+  <x:String x:Key="Text.Settings.General" xml:space="preserve">일반</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">PC 표시 이름</x:String>
+  <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">PC 이름 입력</x:String>
+  <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">외관</x:String>
+  <x:String x:Key="Text.Settings.Theme" xml:space="preserve">테마</x:String>
+  <x:String x:Key="Text.Settings.Theme.System" xml:space="preserve">시스템 (OS 따름)</x:String>
+  <x:String x:Key="Text.Settings.Theme.Light" xml:space="preserve">라이트</x:String>
+  <x:String x:Key="Text.Settings.Theme.Dark" xml:space="preserve">다크</x:String>
+  <x:String x:Key="Text.Settings.Language" xml:space="preserve">언어</x:String>
+  <x:String x:Key="Text.Settings.File" xml:space="preserve">파일</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">수신 파일 저장 위치</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">변경</x:String>
+  <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">동작</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">시작 시 Ferry 열기</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">컴퓨터 시작 시 자동으로 실행됩니다</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">최소화 상태로 시작</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">백그라운드에서 시작됩니다</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">닫기 시 트레이로 최소화</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">닫기 버튼을 누르면 시스템 트레이로 이동합니다</x:String>
+  <x:String x:Key="Text.Settings.Version" xml:space="preserve">버전</x:String>
+  <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">업데이트 확인</x:String>
+  <x:String x:Key="Text.State.Pending" xml:space="preserve">대기 중…</x:String>
+  <x:String x:Key="Text.State.Sending" xml:space="preserve">전송 중</x:String>
+  <x:String x:Key="Text.State.Receiving" xml:space="preserve">수신 중</x:String>
+  <x:String x:Key="Text.State.Completed" xml:space="preserve">완료</x:String>
+  <x:String x:Key="Text.State.Error" xml:space="preserve">오류</x:String>
+  <x:String x:Key="Text.State.Cancelled" xml:space="preserve">취소됨</x:String>
+  <x:String x:Key="Text.State.Suspended" xml:space="preserve">일시 중단</x:String>
+  <x:String x:Key="Text.State.WaitingApproval" xml:space="preserve">승인 대기</x:String>
+  <x:String x:Key="Text.Status.Starting" xml:space="preserve">세션 시작 중…</x:String>
+  <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">스마트폰으로 QR 코드를 스캔하세요</x:String>
+  <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">다른 PC의 QR 코드를 스캔하세요…</x:String>
+  <x:String x:Key="Text.Status.Error" xml:space="preserve">오류: {0}</x:String>
+  <x:String x:Key="Text.Status.Connected" xml:space="preserve">연결됨</x:String>
+  <x:String x:Key="Text.Status.Connecting" xml:space="preserve">연결 중…</x:String>
+  <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">재연결 중…</x:String>
+  <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN 직접 연결</x:String>
+  <x:String x:Key="Text.Route.Stun" xml:space="preserve">인터넷 P2P (STUN)</x:String>
+  <x:String x:Key="Text.Route.Relay" xml:space="preserve">서버 중계 (TURN)</x:String>
+  <x:String x:Key="Text.Update.Checking" xml:space="preserve">업데이트 확인 중…</x:String>
+  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">개발 환경에서는 업데이트를 확인할 수 없습니다</x:String>
+  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">v{0} 다운로드 중…</x:String>
+  <x:String x:Key="Text.Update.Applying" xml:space="preserve">업데이트 적용 중…재시작합니다</x:String>
+  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">최신 버전입니다 ✓</x:String>
+  <x:String x:Key="Text.Update.Error" xml:space="preserve">업데이트 확인 실패: {0}</x:String>
+  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">알 수 없음</x:String>
+  <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">수신이 거부되었습니다</x:String>
+  <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">재개 실패</x:String>
+
+</ResourceDictionary>

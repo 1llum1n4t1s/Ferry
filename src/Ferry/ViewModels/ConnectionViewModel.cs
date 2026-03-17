@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
@@ -8,6 +9,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Ferry.Infrastructure;
 using Ferry.Models;
 using Ferry.Services;
 
@@ -23,6 +25,13 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     private readonly IQrCodeService _qrCodeService;
     private readonly ISettingsService _settingsService;
     private readonly IPeerRegistryService _peerRegistry;
+
+    // プレゼンス監視（オンライン/オフライン検知）
+    private FirebaseSignaling? _presenceSignaling;
+    private CancellationTokenSource? _presenceCts;
+    private const int HeartbeatIntervalMs = 30_000;  // 30秒ごとに heartbeat 送信
+    private const int PollIntervalMs = 10_000;       // 10秒ごとにピアの状態をポーリング
+    private const long OfflineThresholdMs = 60_000;  // 60秒更新なしでオフライン判定
 
     [ObservableProperty]
     private PeerState _connectionState = PeerState.Disconnected;
@@ -86,6 +95,9 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             PairedPeers.Add(peer);
         }
         UpdateHasPairedPeers();
+
+        // プレゼンス監視を開始（heartbeat 送信 + ピアのオンライン状態ポーリング）
+        StartPresenceMonitoring();
     }
 
     /// <summary>
@@ -95,7 +107,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     private async Task StartSessionAsync()
     {
         IsConnecting = true;
-        StatusText = "セッション開始中…";
+        StatusText = App.Text("Status.Starting");
 
         try
         {
@@ -109,13 +121,13 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             QrCodeImage = _qrCodeService.GenerateQrBitmap(bridgeUrl);
 
             ConnectionState = PeerState.WaitingForPairing;
-            StatusText = "QR コードをスマートフォンでスキャンしてください";
+            StatusText = App.Text("Status.ScanQR");
         }
         catch (Exception ex)
         {
             Util.Logger.Log($"セッション開始エラー: {ex.Message}", Util.LogLevel.Error);
             ConnectionState = PeerState.Error;
-            StatusText = $"エラー: {ex.Message}";
+            StatusText = App.Text("Status.Error", ex.Message);
         }
         finally
         {
@@ -165,7 +177,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         // 選択中ピアのステータスを更新し、着信監視を再開
         if (SelectedPeer != null)
         {
-            SelectedPeer.ConnectionStatusText = "待機中";
+            SelectedPeer.ConnectionStatusText = string.Empty;
             SelectedPeer.Route = ConnectionRoute.Unknown;
             _connectionService.StartListeningForConnection(SelectedPeer.PeerId);
         }
@@ -230,7 +242,6 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         if (newValue != null)
         {
             PeerName = newValue.DisplayName;
-            newValue.ConnectionStatusText = "待機中";
             // 着信接続監視を開始（相手からの Offer に自動応答できるようにする）
             _connectionService.StartListeningForConnection(newValue.PeerId);
             Util.Logger.Log($"ピア選択・着信監視開始: {newValue.DisplayName} ({newValue.PeerId})");
@@ -257,7 +268,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             await _connectionService.DisconnectAsync();
 
         IsConnecting = true;
-        peer.ConnectionStatusText = "接続中…";
+        peer.ConnectionStatusText = App.Text("Status.Connecting");
 
         try
         {
@@ -266,7 +277,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         catch (Exception ex)
         {
             Util.Logger.Log($"接続エラー ({peer.DisplayName}): {ex.Message}", Util.LogLevel.Warning);
-            peer.ConnectionStatusText = "オフライン";
+            peer.ConnectionStatusText = string.Empty;
             ConnectionState = PeerState.Disconnected;
             // 接続失敗後に着信監視を再開
             _connectionService.StartListeningForConnection(peer.PeerId);
@@ -290,8 +301,8 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             {
                 StatusText = state switch
                 {
-                    PeerState.WaitingForPairing => "QR コードをスマートフォンでスキャンしてください",
-                    PeerState.WaitingForMatch => "ペアリング先の PC の QR コードをスキャンしてください…",
+                    PeerState.WaitingForPairing => App.Text("Status.ScanQR"),
+                    PeerState.WaitingForMatch => App.Text("Status.ScanPeerQR"),
                     _ => string.Empty,
                 };
             }
@@ -300,16 +311,14 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                 StatusText = string.Empty;
             }
 
-            // 接続状態をピアのリスト項目に反映
+            // 接続状態をピアのリスト項目に反映（転送時のみ表示、待機中は非表示）
             if (SelectedPeer != null)
             {
                 SelectedPeer.ConnectionStatusText = state switch
                 {
-                    PeerState.Connected => "✅ 接続中",
-                    PeerState.Connecting => "🔄 接続中…",
-                    PeerState.Reconnecting => "🔄 再接続中…",
-                    PeerState.Error => "❌ オフライン",
-                    PeerState.Disconnected => "待機中",
+                    PeerState.Connected => "✅ " + App.Text("Status.Connected"),
+                    PeerState.Connecting => "🔄 " + App.Text("Status.Connecting"),
+                    PeerState.Reconnecting => "🔄 " + App.Text("Status.Reconnecting"),
                     _ => string.Empty,
                 };
             }
@@ -334,9 +343,9 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
 
             ConnectionRouteText = route switch
             {
-                ConnectionRoute.Direct => "🟢 LAN 直接接続",
-                ConnectionRoute.StunAssisted => "🟡 インターネット P2P（STUN）",
-                ConnectionRoute.Relay => "🔴 サーバー経由（TURN リレー）",
+                ConnectionRoute.Direct => "🟢 " + App.Text("Route.Direct"),
+                ConnectionRoute.StunAssisted => "🟡 " + App.Text("Route.Stun"),
+                ConnectionRoute.Relay => "🔴 " + App.Text("Route.Relay"),
                 _ => string.Empty,
             };
         });
@@ -374,6 +383,84 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
 
     private void UpdateHasPairedPeers() => HasPairedPeers = PairedPeers.Count > 0;
 
+    // === プレゼンス監視 ===
+
+    private void StartPresenceMonitoring()
+    {
+        var dbUrl = _settingsService.Settings.FirebaseDatabaseUrl;
+        if (string.IsNullOrEmpty(dbUrl)) return;
+
+        _presenceCts?.Cancel();
+        _presenceCts?.Dispose();
+        _presenceCts = new CancellationTokenSource();
+
+        _presenceSignaling?.Dispose();
+        _presenceSignaling = new FirebaseSignaling(dbUrl);
+
+        var deviceId = _settingsService.Settings.DeviceId;
+        var ct = _presenceCts.Token;
+
+        _ = HeartbeatLoopAsync(deviceId, ct);
+        _ = PresencePollLoopAsync(ct);
+    }
+
+    /// <summary>
+    /// 定期的に自分の lastSeen を Firebase に書き込む。
+    /// </summary>
+    private async Task HeartbeatLoopAsync(string deviceId, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await _presenceSignaling!.UpdatePresenceAsync(deviceId, ct);
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex)
+            {
+                Util.Logger.Log($"Heartbeat 送信エラー: {ex.Message}", Util.LogLevel.Warning);
+            }
+
+            try { await Task.Delay(HeartbeatIntervalMs, ct); }
+            catch (OperationCanceledException) { break; }
+        }
+    }
+
+    /// <summary>
+    /// 定期的にペアリング済みピアの lastSeen をチェックし、IsOnline を更新する。
+    /// </summary>
+    private async Task PresencePollLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try { await Task.Delay(PollIntervalMs, ct); }
+            catch (OperationCanceledException) { break; }
+
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            foreach (var peer in PairedPeers.ToArray())
+            {
+                if (ct.IsCancellationRequested) break;
+
+                try
+                {
+                    var lastSeen = await _presenceSignaling!.GetPresenceAsync(peer.PeerId, ct);
+                    var isOnline = lastSeen.HasValue && (now - lastSeen.Value) < OfflineThresholdMs;
+
+                    if (peer.IsOnline != isOnline)
+                    {
+                        Dispatcher.UIThread.Post(() => peer.IsOnline = isOnline);
+                    }
+                }
+                catch (OperationCanceledException) { break; }
+                catch
+                {
+                    // 個別ピアのエラーは無視して次へ
+                }
+            }
+        }
+    }
+
     /// <summary>
     /// QrCodeImage を安全にクリアする。
     /// null 代入 → UI レイアウト完了後に Dispose することで
@@ -397,5 +484,15 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         _connectionService.RouteChanged -= OnRouteChanged;
         _connectionService.PairingCompleted -= OnPairingCompleted;
         ClearQrCodeImage();
+
+        // プレゼンス監視を停止し、自分のプレゼンスを削除
+        _presenceCts?.Cancel();
+        _presenceCts?.Dispose();
+        if (_presenceSignaling != null)
+        {
+            var deviceId = _settingsService.Settings.DeviceId;
+            _ = _presenceSignaling.RemovePresenceAsync(deviceId);
+            _presenceSignaling.Dispose();
+        }
     }
 }

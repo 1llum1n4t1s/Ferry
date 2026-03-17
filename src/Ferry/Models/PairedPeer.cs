@@ -32,6 +32,11 @@ public sealed partial class PairedPeer : ObservableObject
     [property: JsonIgnore]
     private string _connectionStatusText = string.Empty;
 
+    /// <summary>相手がオンライン（アプリ起動中）かどうか（ランタイム専用）。</summary>
+    [ObservableProperty]
+    [property: JsonIgnore]
+    private bool _isOnline;
+
     /// <summary>接続経路の表示テキスト。</summary>
     [JsonIgnore]
     public string RouteText => Route switch

@@ -1,0 +1,96 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceInclude Source="avares://Ferry/Resources/Locales/en_US.axaml"/>
+  </ResourceDictionary.MergedDictionaries>
+
+  <!-- Tabs -->
+  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 メンバーリスト</x:String>
+  <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ メンバー追加</x:String>
+  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 転送履歴</x:String>
+  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ 設定</x:String>
+
+  <!-- Drop Overlay -->
+  <x:String x:Key="Text.Drop.Message" xml:space="preserve">ファイルをドロップして転送</x:String>
+  <x:String x:Key="Text.Drop.Description" xml:space="preserve">ドロップしたファイルを接続先に送信します</x:String>
+
+  <!-- Connection Panel -->
+  <x:String x:Key="Text.Connection.Header" xml:space="preserve">宛先</x:String>
+  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">または、ペアリングリンクを送る。</x:String>
+  <x:String x:Key="Text.Connection.Copy" xml:space="preserve">コピー</x:String>
+  <x:String x:Key="Text.Connection.Copied" xml:space="preserve">コピー済み ✓</x:String>
+  <x:String x:Key="Text.Connection.Start" xml:space="preserve">接続開始</x:String>
+  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">キャンセル</x:String>
+  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">新しいデバイスを追加</x:String>
+  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">ペアリング解除</x:String>
+  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">ネットワークを退出</x:String>
+  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">ペアリング済みのデバイスはありません</x:String>
+
+  <!-- Transfer Panel -->
+  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">転送履歴</x:String>
+  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">クリア</x:String>
+  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">ファイルをドロップして転送</x:String>
+  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">承認</x:String>
+  <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">拒否</x:String>
+
+  <!-- Settings Panel -->
+  <x:String x:Key="Text.Settings.General" xml:space="preserve">一般</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">PC の表示名</x:String>
+  <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">PC 名を入力</x:String>
+  <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">外観</x:String>
+  <x:String x:Key="Text.Settings.Theme" xml:space="preserve">テーマ</x:String>
+  <x:String x:Key="Text.Settings.Theme.System" xml:space="preserve">システム(追従)</x:String>
+  <x:String x:Key="Text.Settings.Theme.Light" xml:space="preserve">ライト</x:String>
+  <x:String x:Key="Text.Settings.Theme.Dark" xml:space="preserve">ダーク</x:String>
+  <x:String x:Key="Text.Settings.Language" xml:space="preserve">言語</x:String>
+  <x:String x:Key="Text.Settings.File" xml:space="preserve">ファイル</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">受信ファイルの保存先</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">変更</x:String>
+  <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">動作</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">起動時に Ferry を開く</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">パソコンの起動時に自動で立ち上がります</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">最小化した状態で起動</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">バックグラウンドで起動します</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">閉じるボタンでトレイに最小化</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">×ボタンでシステムトレイに格納されます</x:String>
+  <x:String x:Key="Text.Settings.Version" xml:space="preserve">バージョン</x:String>
+  <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">アップデート確認</x:String>
+
+  <!-- Transfer States -->
+  <x:String x:Key="Text.State.Pending" xml:space="preserve">待機中…</x:String>
+  <x:String x:Key="Text.State.Sending" xml:space="preserve">送信中</x:String>
+  <x:String x:Key="Text.State.Receiving" xml:space="preserve">受信中</x:String>
+  <x:String x:Key="Text.State.Completed" xml:space="preserve">完了</x:String>
+  <x:String x:Key="Text.State.Error" xml:space="preserve">エラー</x:String>
+  <x:String x:Key="Text.State.Cancelled" xml:space="preserve">キャンセル</x:String>
+  <x:String x:Key="Text.State.Suspended" xml:space="preserve">中断</x:String>
+  <x:String x:Key="Text.State.WaitingApproval" xml:space="preserve">承認待ち</x:String>
+
+  <!-- Connection Status -->
+  <x:String x:Key="Text.Status.Starting" xml:space="preserve">セッション開始中…</x:String>
+  <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">QR コードをスマートフォンでスキャンしてください</x:String>
+  <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">ペアリング先の PC の QR コードをスキャンしてください…</x:String>
+  <x:String x:Key="Text.Status.Error" xml:space="preserve">エラー: {0}</x:String>
+  <x:String x:Key="Text.Status.Connected" xml:space="preserve">接続中</x:String>
+  <x:String x:Key="Text.Status.Connecting" xml:space="preserve">接続中…</x:String>
+  <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">再接続中…</x:String>
+
+  <!-- Connection Routes -->
+  <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN 直接接続</x:String>
+  <x:String x:Key="Text.Route.Stun" xml:space="preserve">インターネット P2P（STUN）</x:String>
+  <x:String x:Key="Text.Route.Relay" xml:space="preserve">サーバー経由（TURN リレー）</x:String>
+
+  <!-- Update Messages -->
+  <x:String x:Key="Text.Update.Checking" xml:space="preserve">更新を確認中…</x:String>
+  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">開発環境では更新チェックできません</x:String>
+  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">v{0} をダウンロード中…</x:String>
+  <x:String x:Key="Text.Update.Applying" xml:space="preserve">更新を適用中…再起動します</x:String>
+  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">最新バージョンです ✓</x:String>
+  <x:String x:Key="Text.Update.Error" xml:space="preserve">更新チェック失敗: {0}</x:String>
+  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">不明</x:String>
+
+  <!-- Transfer Messages -->
+  <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">受信を拒否しました</x:String>
+  <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">レジュームに失敗しました</x:String>
+
+</ResourceDictionary>

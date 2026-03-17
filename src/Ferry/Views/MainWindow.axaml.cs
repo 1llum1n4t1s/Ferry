@@ -3,10 +3,10 @@ using System.ComponentModel;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Ferry.Services;
 using Ferry.ViewModels;
 
 namespace Ferry.Views;
@@ -14,29 +14,13 @@ namespace Ferry.Views;
 public partial class MainWindow : Window
 {
     private Border? _dropOverlay;
+    private ISettingsService? _settingsService;
 
     public MainWindow()
     {
         InitializeComponent();
         Closing += OnClosing;
-
-        // ToggleButton の排他制御（セグメントコントロール）
-        var tabTransfer = this.FindControl<ToggleButton>("TabTransfer");
-        var tabSettings = this.FindControl<ToggleButton>("TabSettings");
-
-        if (tabTransfer != null && tabSettings != null)
-        {
-            tabTransfer.Click += (_, _) =>
-            {
-                tabTransfer.IsChecked = true;
-                tabSettings.IsChecked = false;
-            };
-            tabSettings.Click += (_, _) =>
-            {
-                tabSettings.IsChecked = true;
-                tabTransfer.IsChecked = false;
-            };
-        }
+        PositionChanged += OnPositionOrSizeChanged;
 
         // ドロップオーバーレイの参照を取得
         _dropOverlay = this.FindControl<Border>("DropOverlay");
@@ -47,45 +31,110 @@ public partial class MainWindow : Window
         AddHandler(DragDrop.DragOverEvent, OnDragOver, RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(DragDrop.DragLeaveEvent, OnDragLeave, RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(DragDrop.DropEvent, OnDrop, RoutingStrategies.Bubble, handledEventsToo: true);
+
+        // WindowState の変更を非同期監視（IRUZ パターン）
+        // OnPropertyChanged 内での Hide() はタイミング問題があるため GetObservable を使用
+        this.GetObservable(WindowStateProperty).Subscribe(new WindowStateObserver(state =>
+        {
+            if (state == WindowState.Minimized
+                && DataContext is MainWindowViewModel vm
+                && vm.Settings.MinimizeToTray)
+            {
+                ShowInTaskbar = false;
+                Hide();
+            }
+        }));
+
+        // 初期最小化起動の処理（Loaded 後に実行することでタスクバーから確実に消える）
+        Loaded += (_, _) =>
+        {
+            if (DataContext is MainWindowViewModel vm && vm.Settings.StartMinimized)
+            {
+                WindowState = WindowState.Minimized;
+                if (vm.Settings.MinimizeToTray)
+                {
+                    ShowInTaskbar = false;
+                    Hide();
+                }
+            }
+        };
     }
+
+    /// <summary>
+    /// 外部から ISettingsService を注入する（ウィンドウ位置の保存/復元用）。
+    /// </summary>
+    public void SetSettingsService(ISettingsService settingsService) => _settingsService = settingsService;
 
     protected override void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
 
-        // 最小化起動の設定が有効ならウィンドウを最小化→トレイに格納
-        if (DataContext is MainWindowViewModel vm && vm.Settings.StartMinimized)
-        {
-            WindowState = WindowState.Minimized;
-            if (vm.Settings.MinimizeToTray)
-                Hide();
-        }
+        // ウィンドウ位置・サイズの復元
+        RestoreWindowPosition();
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
 
-        // 最小化時にトレイ格納が有効ならタスクバーから隠す
-        if (change.Property == WindowStateProperty
-            && change.NewValue is WindowState newState
-            && newState == WindowState.Minimized
-            && DataContext is MainWindowViewModel vm
-            && vm.Settings.MinimizeToTray)
-        {
-            Hide();
-        }
+        // サイズ変更時も位置保存
+        if (change.Property == BoundsProperty)
+            SaveWindowPosition();
     }
 
     private void OnClosing(object? sender, CancelEventArgs e)
     {
-        // トレイ格納が有効なら閉じる代わりに最小化
+        // ウィンドウ位置を保存
+        SaveWindowPosition();
+
+        // トレイ格納が有効なら閉じる代わりにトレイに格納
         if (DataContext is MainWindowViewModel vm && vm.Settings.MinimizeToTray)
         {
             e.Cancel = true;
+            ShowInTaskbar = false;
             Hide();
         }
     }
+
+    /// <summary>
+    /// WindowState の変更を非同期で監視するオブザーバー。
+    /// </summary>
+    private sealed class WindowStateObserver(Action<WindowState> onNext) : IObserver<WindowState>
+    {
+        public void OnNext(WindowState value) => onNext(value);
+        public void OnCompleted() { }
+        public void OnError(Exception error) { }
+    }
+
+    // === ウィンドウ位置の保存/復元 ===
+
+    private void RestoreWindowPosition()
+    {
+        var s = _settingsService?.Settings;
+        if (s?.WindowWidth > 0 && s?.WindowHeight > 0)
+        {
+            Width = s.WindowWidth!.Value;
+            Height = s.WindowHeight!.Value;
+        }
+        if (s?.WindowLeft != null && s?.WindowTop != null)
+        {
+            Position = new PixelPoint((int)s.WindowLeft.Value, (int)s.WindowTop.Value);
+        }
+    }
+
+    private void SaveWindowPosition()
+    {
+        if (_settingsService == null || WindowState != WindowState.Normal) return;
+
+        var s = _settingsService.Settings;
+        s.WindowLeft = Position.X;
+        s.WindowTop = Position.Y;
+        s.WindowWidth = Width;
+        s.WindowHeight = Height;
+        _ = _settingsService.SaveAsync();
+    }
+
+    private void OnPositionOrSizeChanged(object? sender, EventArgs e) => SaveWindowPosition();
 
     // === ドラッグ＆ドロップ処理 ===
 

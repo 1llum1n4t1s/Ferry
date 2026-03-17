@@ -6,8 +6,30 @@
              RequestedThemeVariant="Dark">
 
     <Application.Resources>
-        <conv:EqualConverter x:Key="EqualConverter" />
-        <conv:NotEqualConverter x:Key="NotEqualConverter" />
+        <ResourceDictionary>
+            <conv:EqualConverter x:Key="EqualConverter" />
+            <conv:NotEqualConverter x:Key="NotEqualConverter" />
+
+            <!-- ロケールリソース（x:Key でコードから参照、SetLocale で動的に切り替え） -->
+            <ResourceInclude x:Key="en_US" Source="/Resources/Locales/en_US.axaml" />
+            <ResourceInclude x:Key="ja_JP" Source="/Resources/Locales/ja_JP.axaml" />
+            <ResourceInclude x:Key="zh_CN" Source="/Resources/Locales/zh_CN.axaml" />
+            <ResourceInclude x:Key="zh_TW" Source="/Resources/Locales/zh_TW.axaml" />
+            <ResourceInclude x:Key="de_DE" Source="/Resources/Locales/de_DE.axaml" />
+            <ResourceInclude x:Key="fr_FR" Source="/Resources/Locales/fr_FR.axaml" />
+            <ResourceInclude x:Key="es_ES" Source="/Resources/Locales/es_ES.axaml" />
+            <ResourceInclude x:Key="it_IT" Source="/Resources/Locales/it_IT.axaml" />
+            <ResourceInclude x:Key="pt_BR" Source="/Resources/Locales/pt_BR.axaml" />
+            <ResourceInclude x:Key="ru_RU" Source="/Resources/Locales/ru_RU.axaml" />
+            <ResourceInclude x:Key="uk_UA" Source="/Resources/Locales/uk_UA.axaml" />
+            <ResourceInclude x:Key="id_ID" Source="/Resources/Locales/id_ID.axaml" />
+            <ResourceInclude x:Key="fil_PH" Source="/Resources/Locales/fil_PH.axaml" />
+            <ResourceInclude x:Key="ta_IN" Source="/Resources/Locales/ta_IN.axaml" />
+            <ResourceInclude x:Key="ko_KR" Source="/Resources/Locales/ko_KR.axaml" />
+            <ResourceInclude x:Key="la_VA" Source="/Resources/Locales/la_VA.axaml" />
+            <ResourceInclude x:Key="sa_IN" Source="/Resources/Locales/sa_IN.axaml" />
+            <ResourceInclude x:Key="he_IL" Source="/Resources/Locales/he_IL.axaml" />
+        </ResourceDictionary>
     </Application.Resources>
 
     <Application.DataTemplates>

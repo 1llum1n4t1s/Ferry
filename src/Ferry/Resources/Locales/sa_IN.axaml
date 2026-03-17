@@ -1,0 +1,95 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <ResourceDictionary.MergedDictionaries>
+    <ResourceInclude Source="avares://Ferry/Resources/Locales/en_US.axaml"/>
+  </ResourceDictionary.MergedDictionaries>
+
+  <!-- Tabs -->
+  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 सदस्याः</x:String>
+  <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ सदस्यं योजय</x:String>
+  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 स्थानान्तरणस्य इतिहासः</x:String>
+  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ विन्यासाः</x:String>
+
+  <!-- Drop Overlay -->
+  <x:String x:Key="Text.Drop.Message" xml:space="preserve">स्थानान्तरणाय सञ्चिकाः अत्र त्यजन्तु</x:String>
+  <x:String x:Key="Text.Drop.Description" xml:space="preserve">त्यक्ताः सञ्चिकाः संयुक्तं यन्त्रं प्रति प्रेषयिष्यन्ते</x:String>
+
+  <!-- Connection Panel -->
+  <x:String x:Key="Text.Connection.Header" xml:space="preserve">गन्तव्यम्</x:String>
+  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">अथवा युग्मनसम्बन्धं विभजन्तु।</x:String>
+  <x:String x:Key="Text.Connection.Copy" xml:space="preserve">प्रतिलिपिः</x:String>
+  <x:String x:Key="Text.Connection.Copied" xml:space="preserve">प्रतिलिपिकृतम्</x:String>
+  <x:String x:Key="Text.Connection.Start" xml:space="preserve">संयोजनम् आरभताम्</x:String>
+  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">निरस्यताम्</x:String>
+  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">नवीनं यन्त्रं योजयतु</x:String>
+  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">युग्मनं निवर्तयतु</x:String>
+  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">जालात् निर्गच्छतु</x:String>
+
+  <!-- Transfer Panel -->
+  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">स्थानान्तरणस्य इतिहासः</x:String>
+  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">शोधयतु</x:String>
+  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">स्थानान्तरणाय सञ्चिकाः अत्र त्यजन्तु</x:String>
+  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">अनुमोदयतु</x:String>
+  <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">निराकरोतु</x:String>
+
+  <!-- Settings Panel -->
+  <x:String x:Key="Text.Settings.General" xml:space="preserve">सामान्यम्</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">PC प्रदर्शननाम</x:String>
+  <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">PC नाम लिखतु</x:String>
+  <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">रूपम्</x:String>
+  <x:String x:Key="Text.Settings.Theme" xml:space="preserve">विषयः</x:String>
+  <x:String x:Key="Text.Settings.Theme.System" xml:space="preserve">प्रणाली (OS अनुसरतु)</x:String>
+  <x:String x:Key="Text.Settings.Theme.Light" xml:space="preserve">प्रकाशः</x:String>
+  <x:String x:Key="Text.Settings.Theme.Dark" xml:space="preserve">अन्धकारः</x:String>
+  <x:String x:Key="Text.Settings.Language" xml:space="preserve">भाषा</x:String>
+  <x:String x:Key="Text.Settings.File" xml:space="preserve">सञ्चिका</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">प्राप्तसञ्चिकानां संरक्षणस्थानम्</x:String>
+  <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">अन्वेषयतु</x:String>
+  <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">व्यवहारः</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">आरम्भे Ferry उद्घाटयतु</x:String>
+  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">संगणकस्य आरम्भे स्वयमेव प्रारभते</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">लघूकृतम् आरभताम्</x:String>
+  <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">पृष्ठभूमौ प्रारभते</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">पिधाने ट्रे प्रति लघूकरोतु</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">पिधानबटनं प्रणालीट्रे प्रति प्रेषयति</x:String>
+  <x:String x:Key="Text.Settings.Version" xml:space="preserve">संस्करणम्</x:String>
+  <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">नवीकरणानि परीक्षयतु</x:String>
+
+  <!-- Transfer States -->
+  <x:String x:Key="Text.State.Pending" xml:space="preserve">प्रतीक्षमाणम्...</x:String>
+  <x:String x:Key="Text.State.Sending" xml:space="preserve">प्रेषयति</x:String>
+  <x:String x:Key="Text.State.Receiving" xml:space="preserve">प्राप्नोति</x:String>
+  <x:String x:Key="Text.State.Completed" xml:space="preserve">सम्पन्नम्</x:String>
+  <x:String x:Key="Text.State.Error" xml:space="preserve">दोषः</x:String>
+  <x:String x:Key="Text.State.Cancelled" xml:space="preserve">निरस्तम्</x:String>
+  <x:String x:Key="Text.State.Suspended" xml:space="preserve">स्थगितम्</x:String>
+  <x:String x:Key="Text.State.WaitingApproval" xml:space="preserve">अनुमोदनस्य प्रतीक्षा</x:String>
+
+  <!-- Connection Status -->
+  <x:String x:Key="Text.Status.Starting" xml:space="preserve">सत्रम् आरभते...</x:String>
+  <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">स्मार्टफोनेन QR सङ्केतं स्कैन् कुर्वन्तु</x:String>
+  <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">अन्यस्य PC इत्यस्य QR सङ्केतं स्कैन् कुर्वन्तु...</x:String>
+  <x:String x:Key="Text.Status.Error" xml:space="preserve">दोषः: {0}</x:String>
+  <x:String x:Key="Text.Status.Connected" xml:space="preserve">संयुक्तम्</x:String>
+  <x:String x:Key="Text.Status.Connecting" xml:space="preserve">संयोजयति...</x:String>
+  <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">पुनः संयोजयति...</x:String>
+
+  <!-- Connection Routes -->
+  <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN प्रत्यक्षम्</x:String>
+  <x:String x:Key="Text.Route.Stun" xml:space="preserve">अन्तर्जालं P2P (STUN)</x:String>
+  <x:String x:Key="Text.Route.Relay" xml:space="preserve">सेवकरिले (TURN)</x:String>
+
+  <!-- Update Messages -->
+  <x:String x:Key="Text.Update.Checking" xml:space="preserve">नवीकरणानि परीक्ष्यन्ते...</x:String>
+  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">विकासपरिवेशे नवीकरणानि परीक्षितुं न शक्यन्ते</x:String>
+  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">v{0} अवतारयति...</x:String>
+  <x:String x:Key="Text.Update.Applying" xml:space="preserve">नवीकरणं प्रयुज्यते... पुनरारम्भः</x:String>
+  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">नवीनतमम्</x:String>
+  <x:String x:Key="Text.Update.Error" xml:space="preserve">नवीकरणपरीक्षा विफला: {0}</x:String>
+  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">अज्ञातम्</x:String>
+
+  <!-- Transfer Messages -->
+  <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">स्थानान्तरणं निराकृतम्</x:String>
+  <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">पुनरारम्भः विफलः</x:String>
+
+</ResourceDictionary>

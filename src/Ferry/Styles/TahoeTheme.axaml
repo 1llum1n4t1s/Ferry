@@ -10,13 +10,13 @@
 
         <!-- === カラーパレット === -->
 
-        <!-- ダークモード基本色 -->
-        <Color x:Key="TahoeWindowBg">#1A1A1E</Color>
-        <Color x:Key="TahoeSurfaceBg">#2A2A2E</Color>
-        <Color x:Key="TahoeGlassBg">#33FFFFFF</Color>
-        <Color x:Key="TahoeGlassHighBg">#1AFFFFFF</Color>
-        <Color x:Key="TahoeGlassBorder">#33FFFFFF</Color>
-        <Color x:Key="TahoeGlassActiveBorder">#66FFFFFF</Color>
+        <!-- ダークモード基本色（macOS Tahoe ダークモード準拠） -->
+        <Color x:Key="TahoeWindowBg">#1C1C1E</Color>
+        <Color x:Key="TahoeSurfaceBg">#2C2C2E</Color>
+        <Color x:Key="TahoeGlassBg">#14FFFFFF</Color>
+        <Color x:Key="TahoeGlassHighBg">#0AFFFFFF</Color>
+        <Color x:Key="TahoeGlassBorder">#1AFFFFFF</Color>
+        <Color x:Key="TahoeGlassActiveBorder">#33FFFFFF</Color>
 
         <!-- テキスト色 -->
         <Color x:Key="TahoeTextPrimary">#F5F5F7</Color>
@@ -66,6 +66,81 @@
         <Thickness x:Key="TahoePaddingItem">12,10</Thickness>
 
     </Styles.Resources>
+
+    <!-- === サイドバー TabControl === -->
+    <Style Selector="TabControl.sidebar">
+        <Setter Property="TabStripPlacement" Value="Left" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Template">
+            <ControlTemplate TargetType="TabControl">
+                <Grid ColumnDefinitions="160,12,*">
+                    <!-- サイドバーパネル -->
+                    <Border Grid.Column="0"
+                            Padding="6"
+                            Background="{StaticResource TahoeGlassBgBrush}"
+                            BorderBrush="{StaticResource TahoeGlassBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="14">
+                        <ItemsPresenter Name="PART_ItemsPresenter"
+                                        ItemsPanel="{TemplateBinding ItemsPanel}" />
+                    </Border>
+                    <!-- コンテンツエリア -->
+                    <DockPanel Grid.Column="2">
+                        <!-- 選択中タブのタイトル -->
+                        <TextBlock DockPanel.Dock="Top"
+                                   Text="{ReflectionBinding SelectedItem.Header, RelativeSource={RelativeSource TemplatedParent}}"
+                                   FontSize="20"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TahoeTextPrimaryBrush}"
+                                   Margin="0,0,0,12" />
+                        <ContentPresenter Name="PART_SelectedContentHost"
+                                          Margin="0"
+                                          HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          Content="{TemplateBinding SelectedContent}"
+                                          ContentTemplate="{TemplateBinding SelectedContentTemplate}" />
+                    </DockPanel>
+                </Grid>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+
+    <!-- サイドバー タブ項目：デフォルト -->
+    <Style Selector="TabControl.sidebar > TabItem">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="Medium" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="0,1" />
+        <Setter Property="MinHeight" Value="28" />
+        <Setter Property="Foreground" Value="{StaticResource TahoeTextSecondaryBrush}" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="TabControl.sidebar > TabItem /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+    <Style Selector="TabControl.sidebar > TabItem /template/ Border#PART_LayoutRoot">
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="10,6" />
+    </Style>
+    <Style Selector="TabControl.sidebar > TabItem /template/ Border#PART_SelectedPipe">
+        <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <!-- macOS ではマウスオーバー時のエフェクトなし -->
+    <Style Selector="TabControl.sidebar > TabItem:selected">
+        <Setter Property="Foreground" Value="{StaticResource TahoeAccentBrush}" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="0,1" />
+        <Setter Property="MinHeight" Value="28" />
+    </Style>
+    <Style Selector="TabControl.sidebar > TabItem:selected /template/ Border#PART_LayoutRoot">
+        <Setter Property="Background" Value="{StaticResource TahoeAccentMutedBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="10,6" />
+        <Setter Property="CornerRadius" Value="8" />
+    </Style>
 
     <!-- === Glass Card スタイル === -->
     <Style Selector="Border.glass-card">

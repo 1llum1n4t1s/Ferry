@@ -45,6 +45,7 @@ public sealed partial class TransferItem : ObservableObject
     [NotifyPropertyChangedFor(nameof(StateText))]
     [NotifyPropertyChangedFor(nameof(StateColorHex))]
     [NotifyPropertyChangedFor(nameof(IsInProgress))]
+    [NotifyPropertyChangedFor(nameof(IsWaitingApproval))]
     [NotifyPropertyChangedFor(nameof(DisplayInfo))]
     private TransferState _state = TransferState.Pending;
 
@@ -64,6 +65,9 @@ public sealed partial class TransferItem : ObservableObject
     /// <summary>転送中かどうか。</summary>
     public bool IsInProgress => State == TransferState.InProgress;
 
+    /// <summary>承認待ちかどうか。</summary>
+    public bool IsWaitingApproval => State == TransferState.WaitingApproval;
+
     /// <summary>方向アイコン。</summary>
     public string DirectionSymbol => Direction == TransferDirection.Send ? "↑" : "↓";
 
@@ -73,18 +77,20 @@ public sealed partial class TransferItem : ObservableObject
         TransferState.Completed => "#30D158",   // TahoeGreen
         TransferState.Error => "#FF453A",       // TahoeRed
         TransferState.InProgress => "#007AFF",  // TahoeAccent
+        TransferState.WaitingApproval => "#FF9F0A", // TahoeOrange
         _ => "#99EBEBF5",                       // TahoeTextSecondary
     };
 
     /// <summary>状態表示テキスト。</summary>
     public string StateText => State switch
     {
-        TransferState.Pending => "待機中…",
-        TransferState.InProgress => Direction == TransferDirection.Send ? "送信中" : "受信中",
-        TransferState.Completed => "完了",
-        TransferState.Error => ErrorMessage ?? "エラー",
-        TransferState.Cancelled => "キャンセル",
-        TransferState.Suspended => "中断",
+        TransferState.Pending => App.Text("State.Pending"),
+        TransferState.InProgress => Direction == TransferDirection.Send ? App.Text("State.Sending") : App.Text("State.Receiving"),
+        TransferState.Completed => App.Text("State.Completed"),
+        TransferState.Error => ErrorMessage ?? App.Text("State.Error"),
+        TransferState.Cancelled => App.Text("State.Cancelled"),
+        TransferState.Suspended => App.Text("State.Suspended"),
+        TransferState.WaitingApproval => App.Text("State.WaitingApproval"),
         _ => "",
     };
 
@@ -144,4 +150,7 @@ public enum TransferState
 
     /// <summary>一時停止（接続断による中断、レジューム可能）。</summary>
     Suspended,
+
+    /// <summary>受信承認待ち。</summary>
+    WaitingApproval,
 }
