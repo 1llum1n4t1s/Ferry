@@ -23,6 +23,9 @@
 
     <Panel>
 
+        <!-- === 半透明ダーク背景（壁紙の透過を抑える） === -->
+        <Border Background="{StaticResource TahoeWindowBgBrush}" Opacity="0.92" />
+
         <!-- === メインコンテンツ === -->
         <Grid RowDefinitions="36,*">
 

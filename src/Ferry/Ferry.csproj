@@ -50,6 +50,7 @@
   <ItemGroup>
     <TrimmerRootAssembly Include="Ferry" />
     <TrimmerRootAssembly Include="Avalonia.Themes.Fluent" />
+    <TrimmerRootAssembly Include="Avalonia.Desktop" />
     <TrimmerRootAssembly Include="Velopack" />
   </ItemGroup>
 </Project>
