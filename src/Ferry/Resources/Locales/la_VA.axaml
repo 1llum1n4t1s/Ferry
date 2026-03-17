@@ -91,6 +91,6 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Translatio reiecta</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Resumptio defecit</x:String>
-  <x:String x:Key="Text.Close" xml:space="preserve">Claude</x:String>
+  <x:String x:Key="Text.Close" xml:space="preserve">Claudere</x:String>
 
 </ResourceDictionary>
