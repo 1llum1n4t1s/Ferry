@@ -34,6 +34,11 @@ public partial class SelfUpdateWindow : Window
         e.Handled = true;
     }
 
+    private void OnClose(object? sender, RoutedEventArgs e)
+    {
+        Close();
+    }
+
     protected override void OnClosing(WindowClosingEventArgs e)
     {
         base.OnClosing(e);

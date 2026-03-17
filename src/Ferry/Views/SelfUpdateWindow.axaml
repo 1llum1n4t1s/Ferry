@@ -4,84 +4,93 @@
         xmlns:m="using:Ferry.Models"
         x:Class="Ferry.Views.SelfUpdateWindow"
         x:DataType="vm:SelfUpdateViewModel"
+        x:Name="ThisWindow"
         Title="Ferry — Update"
         Width="420"
-        Height="200"
+        SizeToContent="Height"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource TahoeWindowBgBrush}">
 
     <Panel Margin="24">
 
-        <!-- === 更新あり === -->
-        <StackPanel IsVisible="{Binding Data, Converter={x:Static ObjectConverters.IsNotNull}}"
-                    VerticalAlignment="Center"
-                    Spacing="12">
+        <ContentControl Content="{Binding Data}">
+            <ContentControl.DataTemplates>
 
-            <!-- VelopackUpdate テンプレート -->
-            <ContentControl Content="{Binding Data}">
-                <ContentControl.DataTemplates>
-
-                    <DataTemplate DataType="m:VelopackUpdate">
-                        <StackPanel Spacing="12">
-                            <!-- タイトル + バージョンバッジ -->
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
-                                <TextBlock Text="{DynamicResource Text.Update.Available}"
-                                           FontWeight="Bold" FontSize="14"
-                                           Foreground="{StaticResource TahoeTextPrimaryBrush}"
-                                           VerticalAlignment="Center" />
-                                <Border CornerRadius="10" Background="{StaticResource TahoeAccentBrush}"
-                                        Padding="8,2">
-                                    <TextBlock Text="{Binding TagName}" FontSize="12" Foreground="White" />
-                                </Border>
-                            </StackPanel>
-
-                            <!-- プログレスバー -->
-                            <ProgressBar Minimum="0" Maximum="100"
-                                         Value="{ReflectionBinding DataContext.DownloadProgress, RelativeSource={RelativeSource FindAncestor, AncestorType=Window}}"
-                                         IsVisible="{ReflectionBinding DataContext.IsDownloading, RelativeSource={RelativeSource FindAncestor, AncestorType=Window}}"
-                                         Height="6" />
-
-                            <!-- ボタン -->
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
-                                <Button Classes="tahoe-primary"
-                                        Click="OnDownloadAndInstall"
-                                        IsVisible="{ReflectionBinding !IsDownloading, RelativeSource={RelativeSource FindAncestor, AncestorType=Window}}">
-                                    <TextBlock Text="{DynamicResource Text.Update.DownloadInstall}" />
-                                </Button>
-                                <Button Classes="tahoe-secondary"
-                                        Click="OnIgnoreVersion"
-                                        IsVisible="{ReflectionBinding !IsDownloading, RelativeSource={RelativeSource FindAncestor, AncestorType=Window}}">
-                                    <TextBlock Text="{DynamicResource Text.Update.IgnoreVersion}" />
-                                </Button>
-                            </StackPanel>
+                <!-- === 更新あり === -->
+                <DataTemplate DataType="m:VelopackUpdate">
+                    <StackPanel Spacing="12" Margin="0,8">
+                        <!-- タイトル + バージョンバッジ -->
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
+                            <TextBlock Text="{DynamicResource Text.Update.Available}"
+                                       FontWeight="Bold" FontSize="14"
+                                       Foreground="{StaticResource TahoeTextPrimaryBrush}"
+                                       VerticalAlignment="Center" />
+                            <Border CornerRadius="10" Background="{StaticResource TahoeAccentBrush}"
+                                    Padding="8,2">
+                                <TextBlock Text="{Binding TagName}" FontSize="12" Foreground="White" />
+                            </Border>
                         </StackPanel>
-                    </DataTemplate>
 
-                    <DataTemplate DataType="m:AlreadyUpToDate">
+                        <!-- プログレスバー -->
+                        <ProgressBar Minimum="0" Maximum="100"
+                                     Value="{Binding #ThisWindow.DataContext.DownloadProgress}"
+                                     IsVisible="{Binding #ThisWindow.DataContext.IsDownloading}"
+                                     Height="6" />
+
+                        <!-- ボタン -->
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
+                            <Button Classes="tahoe-primary"
+                                    Click="OnDownloadAndInstall"
+                                    IsVisible="{Binding !#ThisWindow.DataContext.IsDownloading}">
+                                <TextBlock Text="{DynamicResource Text.Update.DownloadInstall}" />
+                            </Button>
+                            <Button Classes="tahoe-secondary"
+                                    Click="OnIgnoreVersion"
+                                    IsVisible="{Binding !#ThisWindow.DataContext.IsDownloading}">
+                                <TextBlock Text="{DynamicResource Text.Update.IgnoreVersion}" />
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+                </DataTemplate>
+
+                <!-- === 最新版 === -->
+                <DataTemplate DataType="m:AlreadyUpToDate">
+                    <StackPanel Spacing="12" Margin="0,8">
                         <TextBlock Text="{DynamicResource Text.Update.UpToDate}"
                                    FontSize="14"
                                    Foreground="{StaticResource TahoeTextPrimaryBrush}"
                                    HorizontalAlignment="Center" />
-                    </DataTemplate>
+                        <Button Classes="tahoe-primary"
+                                Click="OnClose"
+                                Content="{DynamicResource Text.Close}"
+                                HorizontalAlignment="Center"
+                                Padding="24,6" />
+                    </StackPanel>
+                </DataTemplate>
 
-                    <DataTemplate DataType="m:SelfUpdateFailed">
-                        <StackPanel Spacing="8" HorizontalAlignment="Center">
-                            <TextBlock Text="{DynamicResource Text.Update.CheckFailed}"
-                                       FontWeight="Bold" FontSize="14"
-                                       Foreground="{StaticResource TahoeRedBrush}"
-                                       HorizontalAlignment="Center" />
-                            <TextBlock Text="{Binding Message}"
-                                       Classes="caption"
-                                       TextWrapping="Wrap"
-                                       HorizontalAlignment="Center" />
-                        </StackPanel>
-                    </DataTemplate>
+                <!-- === エラー === -->
+                <DataTemplate DataType="m:SelfUpdateFailed">
+                    <StackPanel Spacing="8" Margin="0,8">
+                        <TextBlock Text="{DynamicResource Text.Update.CheckFailed}"
+                                   FontWeight="Bold" FontSize="14"
+                                   Foreground="{StaticResource TahoeRedBrush}"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="{Binding Reason}"
+                                   Classes="caption"
+                                   TextWrapping="Wrap"
+                                   MaxWidth="360"
+                                   HorizontalAlignment="Center" />
+                        <Button Classes="tahoe-primary"
+                                Click="OnClose"
+                                Content="{DynamicResource Text.Close}"
+                                HorizontalAlignment="Center"
+                                Padding="24,6" />
+                    </StackPanel>
+                </DataTemplate>
 
-                </ContentControl.DataTemplates>
-            </ContentControl>
-
-        </StackPanel>
+            </ContentControl.DataTemplates>
+        </ContentControl>
 
     </Panel>
 

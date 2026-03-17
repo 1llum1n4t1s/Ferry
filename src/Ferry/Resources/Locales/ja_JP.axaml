@@ -92,6 +92,7 @@
   <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">ダウンロードしてインストール</x:String>
   <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">このバージョンを無視</x:String>
   <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">更新チェックに失敗しました</x:String>
+  <x:String x:Key="Text.Close" xml:space="preserve">閉じる</x:String>
 
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">受信を拒否しました</x:String>

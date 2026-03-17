@@ -89,6 +89,7 @@
   <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">Download &amp; Install</x:String>
   <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">Ignore This Version</x:String>
   <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">Update Check Failed</x:String>
+  <x:String x:Key="Text.Close" xml:space="preserve">Close</x:String>
 
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Transfer rejected</x:String>

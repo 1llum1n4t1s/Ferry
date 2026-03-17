@@ -257,23 +257,11 @@ public partial class App : Application
 
     /// <summary>
     /// 起動時に更新チェックを行うべきかどうかを判定する。
-    /// 同日中に既にチェック済みの場合は false を返す。
     /// </summary>
     private bool ShouldCheck4UpdateOnStartup()
     {
         var s = _settingsService?.Settings;
-        if (s == null || !s.Check4UpdatesOnStartup)
-            return false;
-
-        var lastCheck = DateTime.UnixEpoch.AddSeconds(s.LastCheckUpdateTime).ToLocalTime();
-        var now = DateTime.Now;
-
-        if (lastCheck.Year == now.Year && lastCheck.Month == now.Month && lastCheck.Day == now.Day)
-            return false;
-
-        s.LastCheckUpdateTime = now.Subtract(DateTime.UnixEpoch.ToLocalTime()).TotalSeconds;
-        _ = _settingsService!.SaveAsync();
-        return true;
+        return s != null && s.Check4UpdatesOnStartup;
     }
 
     /// <summary>

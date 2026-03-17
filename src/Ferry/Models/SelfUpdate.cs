@@ -35,5 +35,5 @@ public sealed class AlreadyUpToDate;
 /// <summary>更新チェックに失敗した。</summary>
 public sealed class SelfUpdateFailed(Exception exception)
 {
-    public string Message => exception.Message;
+    public string Reason => exception.InnerException?.Message ?? exception.Message;
 }
