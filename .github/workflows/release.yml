@@ -53,7 +53,7 @@ jobs:
           pattern: velopack.*
           path: velopack-packages
           merge-multiple: true
-      - name: Publish to Ferry-releases (public)
+      - name: Publish installers to Ferry-releases (public)
         env:
           GH_TOKEN: ${{ secrets.RELEASES_PAT }}
           TAG: ${{ needs.version.outputs.tag }}
@@ -66,6 +66,22 @@ jobs:
           gh release create "$TAG" \
             --repo "$REPO" \
             -t "Ferry $VERSION" \
-            --notes "Auto-update packages for Ferry $VERSION."
+            --notes "Ferry $VERSION のインストーラーです。"
           gh release upload "$TAG" --repo "$REPO" packages/*
-          gh release upload "$TAG" --repo "$REPO" velopack-packages/*
+          gh release upload "$TAG" --repo "$REPO" velopack-packages/*-Setup.exe velopack-packages/*-Setup.pkg
+      - name: Publish Velopack auto-update to Ferry-releases (public)
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_PAT }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          REPO="1llum1n4t1s/Ferry-releases"
+          VTAG="velopack-$TAG"
+          if gh release view "$VTAG" --repo "$REPO" > /dev/null 2>&1; then
+            gh release delete "$VTAG" --repo "$REPO" --yes --cleanup-tag
+          fi
+          gh release create "$VTAG" \
+            --repo "$REPO" \
+            -t "Velopack $VERSION" \
+            --notes "自動更新用パッケージ（ユーザーが直接ダウンロードする必要はありません）"
+          gh release upload "$VTAG" --repo "$REPO" velopack-packages/*
