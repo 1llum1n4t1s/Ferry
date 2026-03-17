@@ -88,6 +88,10 @@
   <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">最新バージョンです ✓</x:String>
   <x:String x:Key="Text.Update.Error" xml:space="preserve">更新チェック失敗: {0}</x:String>
   <x:String x:Key="Text.Update.Unknown" xml:space="preserve">不明</x:String>
+  <x:String x:Key="Text.Update.Available" xml:space="preserve">アップデートがあります</x:String>
+  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">ダウンロードしてインストール</x:String>
+  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">このバージョンを無視</x:String>
+  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">更新チェックに失敗しました</x:String>
 
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">受信を拒否しました</x:String>

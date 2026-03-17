@@ -85,6 +85,10 @@
   <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">Up to date</x:String>
   <x:String x:Key="Text.Update.Error" xml:space="preserve">Update check failed: {0}</x:String>
   <x:String x:Key="Text.Update.Unknown" xml:space="preserve">Unknown</x:String>
+  <x:String x:Key="Text.Update.Available" xml:space="preserve">Update Available</x:String>
+  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">Download &amp; Install</x:String>
+  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">Ignore This Version</x:String>
+  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">Update Check Failed</x:String>
 
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Transfer rejected</x:String>

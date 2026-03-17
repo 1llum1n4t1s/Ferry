@@ -6,8 +6,6 @@ using Avalonia.Styling;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Ferry.Services;
-using Velopack;
-using Velopack.Sources;
 
 namespace Ferry.ViewModels;
 
@@ -46,22 +44,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     private bool _minimizeToTray;
 
-    // === バージョン・更新 ===
+    // === バージョン ===
 
     /// <summary>バージョン表示テキスト。</summary>
     [ObservableProperty]
     private string _versionText = string.Empty;
-
-    /// <summary>更新チェック中かどうか。</summary>
-    [ObservableProperty]
-    private bool _isCheckingUpdate;
-
-    /// <summary>更新チェック結果のステータステキスト。</summary>
-    [ObservableProperty]
-    private string _updateStatusText = string.Empty;
-
-    /// <summary>GitHub Releases の更新元リポジトリ URL。</summary>
-    private const string GitHubRepoUrl = "https://github.com/1llum1n4t1s/Ferry";
 
     public SettingsViewModel(ISettingsService settingsService)
     {
@@ -131,6 +118,16 @@ public sealed partial class SettingsViewModel : ViewModelBase
     /// <summary>保存先フォルダ選択ダイアログを要求するイベント。</summary>
     public event EventHandler? BrowseSaveDirectoryRequested;
 
+    /// <summary>
+    /// 手動更新チェックを実行する。App の更新ダイアログを表示する。
+    /// </summary>
+    [RelayCommand]
+    private void CheckForUpdate()
+    {
+        if (Application.Current is App app)
+            app.Check4Update(true);
+    }
+
     partial void OnDisplayNameChanged(string value) => SaveSettingsCommand.Execute(null);
     partial void OnRunAtStartupChanged(bool value) => SaveSettingsCommand.Execute(null);
     partial void OnStartMinimizedChanged(bool value) => SaveSettingsCommand.Execute(null);
@@ -151,50 +148,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "1.0.0";
         // ビルドメタデータ（'+' 以降）を除去
         VersionText = raw.Contains('+') ? raw.Split('+')[0] : raw;
-    }
-
-    [RelayCommand]
-    private async Task CheckForUpdateAsync()
-    {
-        if (IsCheckingUpdate) return;
-
-        IsCheckingUpdate = true;
-        UpdateStatusText = App.Text("Update.Checking");
-
-        try
-        {
-            var source = new GithubSource(GitHubRepoUrl, string.Empty, false);
-            var options = new UpdateOptions { ExplicitChannel = "win" };
-            var mgr = new UpdateManager(source, options);
-
-            if (!mgr.IsInstalled)
-            {
-                UpdateStatusText = App.Text("Update.DevEnvironment");
-                return;
-            }
-
-            var newVersion = await mgr.CheckForUpdatesAsync();
-            if (newVersion != null)
-            {
-                UpdateStatusText = App.Text("Update.Downloading", newVersion.TargetFullRelease.Version);
-                await mgr.DownloadUpdatesAsync(newVersion);
-                UpdateStatusText = App.Text("Update.Applying");
-                mgr.ApplyUpdatesAndRestart(newVersion);
-            }
-            else
-            {
-                UpdateStatusText = App.Text("Update.UpToDate");
-            }
-        }
-        catch (Exception ex)
-        {
-            UpdateStatusText = App.Text("Update.Error", ex.Message);
-            Util.Logger.Log($"手動更新チェック失敗: {ex.Message}", Util.LogLevel.Warning);
-        }
-        finally
-        {
-            IsCheckingUpdate = false;
-        }
     }
 
     partial void OnSelectedThemeIndexChanged(int value)

@@ -24,6 +24,8 @@
 
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
+    <AvaloniaResource Include="Styles\**" />
+    <AvaloniaResource Include="Resources\**" />
     <AvaloniaResource Include="..\..\icon\app.ico" Link="icon\app.ico" />
   </ItemGroup>
 

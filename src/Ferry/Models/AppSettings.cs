@@ -43,6 +43,15 @@ public sealed class AppSettings
     /// <summary>表示言語ロケール（"ja_JP", "en_US" など）。空の場合はシステムロケールを自動検出。</summary>
     public string Locale { get; set; } = string.Empty;
 
+    /// <summary>起動時に自動更新チェックを行うか。</summary>
+    public bool Check4UpdatesOnStartup { get; set; } = true;
+
+    /// <summary>無視する更新バージョンタグ（例: "v1.0.7"）。このバージョンの更新通知は表示されない。</summary>
+    public string IgnoreUpdateTag { get; set; } = string.Empty;
+
+    /// <summary>最後に更新チェックを行った時刻（Unix エポックからの秒数）。</summary>
+    public double LastCheckUpdateTime { get; set; }
+
     // ウィンドウ位置・サイズ（前回終了時の状態を復元）
     public double? WindowLeft { get; set; }
     public double? WindowTop { get; set; }

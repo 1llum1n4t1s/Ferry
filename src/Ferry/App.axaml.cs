@@ -25,6 +25,10 @@ public partial class App : Application
 {
     private MainWindow? _mainWindow;
     private ResourceDictionary? _activeLocale;
+    private ISettingsService? _settingsService;
+
+    /// <summary>GitHub Releases の更新元リポジトリ URL。</summary>
+    private const string GitHubRepoUrl = "https://github.com/1llum1n4t1s/Ferry";
 
     /// <summary>サポートされているロケール一覧。</summary>
     public static readonly string[] SupportedLocales =
@@ -80,7 +84,8 @@ public partial class App : Application
             FirewallHelper.EnsureFirewallRule();
 
             // サービス組み立て（コンストラクタで同期的に settings.json を読み込み、DeviceId を永続化）
-            var settingsService = new SettingsService();
+            _settingsService = new SettingsService();
+            var settingsService = (SettingsService)_settingsService;
             var settings = settingsService.Settings;
             // 各接続先 URL が未設定の場合はデフォルト値を設定して保存
             var needsSave = false;
@@ -166,6 +171,10 @@ public partial class App : Application
                 if (sidebarTabs != null)
                     sidebarTabs.SelectedIndex = 1; // メンバー追加タブ
             }
+
+            // 起動時の自動更新チェック（1日1回、更新がある場合のみダイアログ表示）
+            if (ShouldCheck4UpdateOnStartup())
+                Check4Update(false);
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -242,5 +251,98 @@ public partial class App : Application
         var lang = culture.TwoLetterISOLanguageName;
         var match = SupportedLocales.FirstOrDefault(l => l.StartsWith(lang + "_", StringComparison.OrdinalIgnoreCase));
         return match ?? "en_US";
+    }
+
+    // === 自動更新チェック（Komorebi パターン） ===
+
+    /// <summary>
+    /// 起動時に更新チェックを行うべきかどうかを判定する。
+    /// 同日中に既にチェック済みの場合は false を返す。
+    /// </summary>
+    private bool ShouldCheck4UpdateOnStartup()
+    {
+        var s = _settingsService?.Settings;
+        if (s == null || !s.Check4UpdatesOnStartup)
+            return false;
+
+        var lastCheck = DateTime.UnixEpoch.AddSeconds(s.LastCheckUpdateTime).ToLocalTime();
+        var now = DateTime.Now;
+
+        if (lastCheck.Year == now.Year && lastCheck.Month == now.Month && lastCheck.Day == now.Day)
+            return false;
+
+        s.LastCheckUpdateTime = now.Subtract(DateTime.UnixEpoch.ToLocalTime()).TotalSeconds;
+        _ = _settingsService!.SaveAsync();
+        return true;
+    }
+
+    /// <summary>
+    /// 更新チェックを実行する。更新がある場合はダイアログを表示する。
+    /// </summary>
+    /// <param name="manually">ユーザーが手動で実行した場合は true（結果を常に表示）。</param>
+    public void Check4Update(bool manually = false)
+    {
+        Task.Run(async () =>
+        {
+            try
+            {
+                var source = new Velopack.Sources.GithubSource(GitHubRepoUrl, string.Empty, false);
+                var mgr = new Velopack.UpdateManager(source);
+
+                if (!mgr.IsInstalled)
+                {
+                    if (manually)
+                        ShowSelfUpdateResult(new Models.AlreadyUpToDate());
+                    return;
+                }
+
+                var newVersion = await mgr.CheckForUpdatesAsync();
+                if (newVersion == null)
+                {
+                    if (manually)
+                        ShowSelfUpdateResult(new Models.AlreadyUpToDate());
+                    return;
+                }
+
+                // 自動チェック時はユーザーが無視指定したバージョンをスキップ
+                if (!manually)
+                {
+                    var s = _settingsService?.Settings;
+                    var newTag = $"v{newVersion.TargetFullRelease.Version}";
+                    if (s != null && newTag == s.IgnoreUpdateTag)
+                        return;
+                }
+
+                ShowSelfUpdateResult(new Models.VelopackUpdate(mgr, newVersion));
+            }
+            catch (Exception e)
+            {
+                Util.Logger.Log($"更新チェック失敗: {e.Message}", Util.LogLevel.Warning);
+                if (manually)
+                    ShowSelfUpdateResult(new Models.SelfUpdateFailed(e));
+            }
+        });
+    }
+
+    /// <summary>更新結果ダイアログを表示する。</summary>
+    private void ShowSelfUpdateResult(object data)
+    {
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (_mainWindow == null) return;
+
+            var vm = new ViewModels.SelfUpdateViewModel { Data = data };
+            var window = new Views.SelfUpdateWindow { DataContext = vm };
+            window.ShowDialog(_mainWindow);
+        });
+    }
+
+    /// <summary>指定バージョンの更新通知を無視するよう設定に記録する。</summary>
+    public void IgnoreUpdateVersion(string tag)
+    {
+        var s = _settingsService?.Settings;
+        if (s == null) return;
+        s.IgnoreUpdateTag = tag;
+        _ = _settingsService!.SaveAsync();
     }
 }

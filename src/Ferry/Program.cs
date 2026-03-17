@@ -1,23 +1,16 @@
 using System;
 using System.IO;
-using System.Threading.Tasks;
 using Avalonia;
 using Ferry.Util;
 using Velopack;
-using Velopack.Sources;
 
 namespace Ferry;
 
 internal sealed class Program
 {
     /// <summary>
-    /// GitHub Releases の更新元リポジトリ URL。Velopack がここから releases.win.json を取得する。
-    /// </summary>
-    private const string GitHubRepoUrl = "https://github.com/1llum1n4t1s/Ferry";
-
-    /// <summary>
     /// アプリケーションのエントリポイント。Velopack のブートストラップを最初に実行し、
-    /// GitHub Releases に最新版があれば強制更新してから Avalonia アプリを起動する。
+    /// Avalonia アプリを起動する。
     /// </summary>
     /// <remarks>
     /// 【重要】Main は void でなければならない。async Task にすると [STAThread] が無視され、
@@ -38,39 +31,7 @@ internal sealed class Program
         });
         Logger.LogStartup(args);
 
-        TryForceUpdateAsync(args).GetAwaiter().GetResult();
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
-    }
-
-    /// <summary>
-    /// GitHub Releases に最新版があればダウンロード・適用・再起動する。更新がなければ何もしない。
-    /// </summary>
-    private static async Task TryForceUpdateAsync(string[] args)
-    {
-        try
-        {
-            Logger.Log("更新チェック開始");
-            var source = new GithubSource(GitHubRepoUrl, string.Empty, false);
-            var options = new UpdateOptions { ExplicitChannel = "win" };
-            var mgr = new UpdateManager(source, options);
-            var newVersion = await mgr.CheckForUpdatesAsync();
-            if (newVersion != null)
-            {
-                Logger.Log($"新バージョン検出: {newVersion.TargetFullRelease.Version} → ダウンロード開始");
-                await mgr.DownloadUpdatesAsync(newVersion);
-                Logger.Log("更新適用・再起動");
-                mgr.ApplyUpdatesAndRestart(newVersion, args);
-            }
-            else
-            {
-                Logger.Log("更新なし（最新版）");
-            }
-        }
-        catch (Exception ex)
-        {
-            // ネットワークエラーなどで更新チェックに失敗した場合はアプリを起動する
-            Logger.Log($"更新チェック失敗（続行）: {ex.Message}", LogLevel.Warning);
-        }
     }
 
     public static AppBuilder BuildAvaloniaApp()

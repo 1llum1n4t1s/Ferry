@@ -181,7 +181,6 @@
                         <Button Content="{DynamicResource Text.Settings.CheckUpdate}"
                                 Classes="tahoe-secondary"
                                 Command="{Binding CheckForUpdateCommand}"
-                                IsEnabled="{Binding !IsCheckingUpdate}"
                                 Padding="12,4"
                                 FontSize="11" />
                     </StackPanel>
@@ -190,13 +189,6 @@
                                FontWeight="Medium"
                                VerticalAlignment="Center" />
                 </DockPanel>
-
-                <!-- 更新ステータス -->
-                <TextBlock Text="{Binding UpdateStatusText}"
-                           Classes="caption"
-                           TextWrapping="Wrap"
-                           Margin="0,4,0,0"
-                           IsVisible="{Binding UpdateStatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
             </StackPanel>
         </Border>
