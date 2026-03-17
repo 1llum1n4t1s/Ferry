@@ -86,4 +86,5 @@ jobs:
             --repo "$REPO" \
             -t "Ferry $VERSION" \
             --notes "Auto-update packages for Ferry $VERSION."
+          gh release upload "$TAG" --repo "$REPO" packages/*
           gh release upload "$TAG" --repo "$REPO" velopack-packages/*
