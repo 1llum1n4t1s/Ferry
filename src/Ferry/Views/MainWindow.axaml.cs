@@ -27,15 +27,7 @@ public partial class MainWindow : Window
 
         // タブ選択変更で転送タブの通知バッジをクリア
         var sidebarTabs = this.FindControl<TabControl>("SidebarTabs");
-        var transferTab = this.FindControl<TabItem>("TransferTab");
-        if (sidebarTabs != null && transferTab != null)
-        {
-            sidebarTabs.SelectionChanged += (_, _) =>
-            {
-                if (sidebarTabs.SelectedItem == transferTab && DataContext is MainWindowViewModel mainVm)
-                    mainVm.Transfer.ClearNotification();
-            };
-        }
+        // TransferTab の通知バッジは削除済み（受信通知はサイドバー下部パネルで表示）
 
         // ウィンドウ全体のドラッグ＆ドロップイベント
         // Bubble ルーティング（DragDrop イベントは Bubble のみ対応）+ handledEventsToo で確実にハンドリング

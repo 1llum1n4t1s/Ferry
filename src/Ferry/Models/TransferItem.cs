@@ -69,6 +69,9 @@ public sealed partial class TransferItem : ObservableObject
     /// <summary>送信元ファイルパス（送信側で保持、レジューム時に使用）。</summary>
     public string? SourceFilePath { get; set; }
 
+    /// <summary>ファイルサイズの表示テキスト。</summary>
+    public string FileSizeText => FormatBytes(FileSize);
+
     /// <summary>進捗率 (0.0〜1.0)。</summary>
     public double Progress => FileSize > 0 ? (double)TransferredBytes / FileSize : 0;
 

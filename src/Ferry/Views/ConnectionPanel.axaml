@@ -55,7 +55,7 @@
                                 <DockPanel>
                                     <!-- オンライン/オフライン信号アイコン -->
                                     <Panel Width="10" Height="10" Margin="0,0,8,0" VerticalAlignment="Center">
-                                        <Ellipse Width="10" Height="10" Fill="#007AFF" IsVisible="{Binding IsOnline}" />
+                                        <Ellipse Width="10" Height="10" Fill="#30D158" IsVisible="{Binding IsOnline}" />
                                         <Ellipse Width="10" Height="10" Fill="#FF3B30" IsVisible="{Binding !IsOnline}" />
                                     </Panel>
                                     <!-- デバイス名 -->

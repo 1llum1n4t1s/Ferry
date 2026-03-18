@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Ferry.ViewModels"
         xmlns:views="using:Ferry.Views"
+        xmlns:models="using:Ferry.Models"
         x:Class="Ferry.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="Ferry"
@@ -40,6 +41,58 @@
                         Background="Transparent"
                         DragDrop.AllowDrop="True">
 
+                <!-- === 受信通知パネル（サイドバー下部に表示、Tag経由） === -->
+                <TabControl.Tag>
+                    <Border Background="{StaticResource TahoeGlassHighBgBrush}"
+                            BorderBrush="{StaticResource TahoeGlassBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="10"
+                            Padding="10,8"
+                            Margin="0,8,0,0"
+                            IsVisible="{Binding Transfer.HasPendingApproval}">
+                        <ItemsControl ItemsSource="{Binding Transfer.PendingApprovals}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="models:TransferItem">
+                                    <StackPanel Spacing="6" Margin="0,2">
+                                        <!-- ファイル情報 -->
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="{Binding FileName}"
+                                                       FontSize="12"
+                                                       FontWeight="SemiBold"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Foreground="{StaticResource TahoeTextPrimaryBrush}" />
+                                            <TextBlock FontSize="10"
+                                                       Foreground="{StaticResource TahoeTextTertiaryBrush}">
+                                                <TextBlock.Text>
+                                                    <MultiBinding StringFormat="{}{0} • {1}">
+                                                        <Binding Path="FileSizeText" />
+                                                        <Binding Path="PeerName" />
+                                                    </MultiBinding>
+                                                </TextBlock.Text>
+                                            </TextBlock>
+                                        </StackPanel>
+                                        <!-- 承認/拒否ボタン -->
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <Button Content="{DynamicResource Text.Transfer.Approve}"
+                                                    Classes="tahoe-primary"
+                                                    Padding="12,3"
+                                                    FontSize="11"
+                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Transfer.ApproveTransferCommand}"
+                                                    CommandParameter="{Binding TransferId}" />
+                                            <Button Content="{DynamicResource Text.Transfer.Reject}"
+                                                    Classes="tahoe-secondary"
+                                                    Padding="12,3"
+                                                    FontSize="11"
+                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Transfer.RejectTransferCommand}"
+                                                    CommandParameter="{Binding TransferId}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+                </TabControl.Tag>
+
                 <!-- メンバーリスト -->
                 <TabItem Header="{DynamicResource Text.Tab.Members}">
                     <views:ConnectionPanel DataContext="{Binding Connection}" />
@@ -50,23 +103,8 @@
                     <views:AddMemberPanel DataContext="{Binding Connection}" />
                 </TabItem>
 
-                <!-- 転送 -->
-                <TabItem x:Name="TransferTab"
-                         Header="{DynamicResource Text.Tab.Transfer}">
-                    <TabItem.HeaderTemplate>
-                        <DataTemplate>
-                            <Panel>
-                                <TextBlock Text="{Binding}" />
-                                <!-- 通知バッジ（受信があると表示） -->
-                                <Ellipse Width="8" Height="8"
-                                         Fill="#FF3B30"
-                                         HorizontalAlignment="Right"
-                                         VerticalAlignment="Top"
-                                         Margin="0,-2,-10,0"
-                                         IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Transfer.HasPendingNotification}" />
-                            </Panel>
-                        </DataTemplate>
-                    </TabItem.HeaderTemplate>
+                <!-- 転送履歴 -->
+                <TabItem Header="{DynamicResource Text.Tab.Transfer}">
                     <views:TransferPanel DataContext="{Binding Transfer}" />
                 </TabItem>
 
@@ -93,7 +131,6 @@
                     VerticalAlignment="Center"
                     Padding="48,32">
                 <StackPanel Spacing="16" HorizontalAlignment="Center">
-                    <!-- ドロップアイコン -->
                     <Border Background="{StaticResource TahoeAccentMutedBrush}"
                             CornerRadius="28"
                             Width="56" Height="56"

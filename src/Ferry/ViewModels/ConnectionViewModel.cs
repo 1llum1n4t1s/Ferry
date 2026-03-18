@@ -317,7 +317,6 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             {
                 SelectedPeer.ConnectionStatusText = state switch
                 {
-                    PeerState.Connected => "✅ " + App.Text("Status.Connected"),
                     PeerState.Connecting => "🔄 " + App.Text("Status.Connecting"),
                     PeerState.Reconnecting => "🔄 " + App.Text("Status.Reconnecting"),
                     _ => string.Empty,

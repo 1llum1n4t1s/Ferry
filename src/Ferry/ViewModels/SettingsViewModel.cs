@@ -16,6 +16,7 @@ namespace Ferry.ViewModels;
 public sealed partial class SettingsViewModel : ViewModelBase
 {
     private readonly ISettingsService _settingsService;
+    private bool _isLoading;
 
     [ObservableProperty]
     private string _displayName = Environment.MachineName;
@@ -65,19 +66,29 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     private void LoadFromSettings()
     {
-        var s = _settingsService.Settings;
-        DisplayName = s.DisplayName;
-        SelectedThemeIndex = s.ThemeMode switch
+        _isLoading = true;
+        try
         {
-            "Light" => 1,
-            "Dark" => 2,
-            _ => 0, // "System" またはその他
-        };
-        SelectedLocale = string.IsNullOrEmpty(s.Locale) ? App.DetectDefaultLocale() : s.Locale;
-        SaveDirectory = s.SaveDirectory;
-        RunAtStartup = s.RunAtStartup;
-        StartMinimized = s.StartMinimized;
-        MinimizeToTray = s.MinimizeToTray;
+            var s = _settingsService.Settings;
+            DisplayName = s.DisplayName;
+            SelectedThemeIndex = s.ThemeMode switch
+            {
+                "Light" => 1,
+                "Dark" => 2,
+                _ => 0, // "System" またはその他
+            };
+            SelectedLocale = string.IsNullOrEmpty(s.Locale) ? App.DetectDefaultLocale() : s.Locale;
+            SaveDirectory = string.IsNullOrEmpty(s.SaveDirectory)
+                ? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads")
+                : s.SaveDirectory;
+            RunAtStartup = s.RunAtStartup;
+            StartMinimized = s.StartMinimized;
+            MinimizeToTray = s.MinimizeToTray;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
     }
 
     private static string ThemeIndexToMode(int index) => index switch
@@ -128,18 +139,18 @@ public sealed partial class SettingsViewModel : ViewModelBase
             app.Check4Update(true);
     }
 
-    partial void OnDisplayNameChanged(string value) => SaveSettingsCommand.Execute(null);
-    partial void OnRunAtStartupChanged(bool value) => SaveSettingsCommand.Execute(null);
-    partial void OnStartMinimizedChanged(bool value) => SaveSettingsCommand.Execute(null);
-    partial void OnMinimizeToTrayChanged(bool value) => SaveSettingsCommand.Execute(null);
-    partial void OnSaveDirectoryChanged(string value) => SaveSettingsCommand.Execute(null);
+    partial void OnDisplayNameChanged(string value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
+    partial void OnRunAtStartupChanged(bool value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
+    partial void OnStartMinimizedChanged(bool value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
+    partial void OnMinimizeToTrayChanged(bool value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
+    partial void OnSaveDirectoryChanged(string value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
 
     partial void OnSelectedLocaleChanged(string value)
     {
         App.SetLocale(value);
         // テーマ選択肢のテキストを再描画
         OnPropertyChanged(nameof(ThemeOptions));
-        SaveSettingsCommand.Execute(null);
+        if (!_isLoading) SaveSettingsCommand.Execute(null);
     }
 
     private void LoadVersionInfo()
@@ -162,6 +173,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 _ => ThemeVariant.Default, // OS 追従
             };
         }
-        SaveSettingsCommand.Execute(null);
+        if (!_isLoading) SaveSettingsCommand.Execute(null);
     }
 }

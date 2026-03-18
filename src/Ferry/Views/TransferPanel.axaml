@@ -5,144 +5,100 @@
              x:Class="Ferry.Views.TransferPanel"
              x:DataType="vm:TransferViewModel">
 
-    <!-- 転送リスト表示パネル -->
-    <Grid RowDefinitions="*">
+    <!-- 転送履歴パネル -->
+    <DockPanel>
 
-        <!-- === 転送アイテムなし → ドロップヒント（クリックでファイル選択） === -->
-        <Button Command="{Binding BrowseAndSendFilesCommand}"
-                Background="Transparent"
-                BorderThickness="0"
-                Cursor="Hand"
-                HorizontalAlignment="Stretch"
-                VerticalAlignment="Stretch"
-                HorizontalContentAlignment="Center"
-                VerticalContentAlignment="Center"
-                IsVisible="{Binding !HasTransfers}">
-            <StackPanel Spacing="12">
-                <!-- ドロップアイコン -->
-                <Border Background="{StaticResource TahoeGlassHighBgBrush}"
-                        CornerRadius="24"
-                        Width="48" Height="48"
-                        HorizontalAlignment="Center">
-                    <PathIcon Width="22" Height="22"
-                              HorizontalAlignment="Center"
-                              VerticalAlignment="Center"
-                              Foreground="{StaticResource TahoeTextTertiaryBrush}"
-                              Data="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z" />
-                </Border>
-                <TextBlock Text="{DynamicResource Text.Transfer.DropHint}"
-                           Classes="subheader"
-                           HorizontalAlignment="Center" />
-            </StackPanel>
-        </Button>
-
-        <!-- === 転送リスト === -->
-        <DockPanel IsVisible="{Binding HasTransfers}">
-
-            <!-- ヘッダー -->
-            <DockPanel DockPanel.Dock="Top" Margin="4,0,4,8">
-                <TextBlock Text="{DynamicResource Text.Transfer.Header}" Classes="section-label"
-                           VerticalAlignment="Center" />
-                <Button Content="{DynamicResource Text.Transfer.Clear}"
-                        Classes="tahoe-ghost"
-                        Command="{Binding ClearHistoryCommand}"
-                        HorizontalAlignment="Right"
-                        FontSize="11"
-                        Padding="8,4" />
-            </DockPanel>
-
-            <!-- アイテムリスト -->
-            <ScrollViewer Padding="0,0,4,0">
-                <ItemsControl ItemsSource="{Binding Transfers}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="models:TransferItem">
-                            <Border Background="{StaticResource TahoeGlassHighBgBrush}"
-                                    BorderBrush="{StaticResource TahoeGlassBorderBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="10"
-                                    Padding="14,10"
-                                    Margin="0,3">
-                                <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto">
-
-                                    <!-- 方向アイコン（↑送信 / ↓受信） -->
-                                    <Border Grid.RowSpan="2"
-                                            Width="32" Height="32"
-                                            CornerRadius="8"
-                                            VerticalAlignment="Center"
-                                            Margin="0,0,10,0">
-                                        <Border.Background>
-                                            <SolidColorBrush Color="{StaticResource TahoeAccentMuted}" />
-                                        </Border.Background>
-                                        <TextBlock Text="{Binding DirectionSymbol}"
-                                                   FontSize="14"
-                                                   FontWeight="Bold"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center"
-                                                   Foreground="{StaticResource TahoeAccentBrush}" />
-                                    </Border>
-
-                                    <!-- ファイル名 -->
-                                    <TextBlock Grid.Column="1"
-                                               Text="{Binding FileName}"
-                                               Classes="body"
-                                               FontWeight="Medium"
-                                               TextTrimming="CharacterEllipsis"
-                                               VerticalAlignment="Center" />
-
-                                    <!-- 状態テキスト -->
-                                    <TextBlock Grid.Column="2"
-                                               Text="{Binding StateText}"
-                                               FontSize="11"
-                                               FontWeight="Medium"
-                                               VerticalAlignment="Center"
-                                               Margin="8,0,0,0"
-                                               Foreground="{StaticResource TahoeTextSecondaryBrush}" />
-
-                                    <!-- 転送詳細テキスト -->
-                                    <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
-                                               Text="{Binding DisplayInfo}"
-                                               Classes="caption"
-                                               Margin="0,2,0,0" />
-
-                                    <!-- 承認/拒否ボタン（承認待ちのみ表示） -->
-                                    <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
-                                                Orientation="Horizontal"
-                                                Spacing="8"
-                                                Margin="0,6,0,0"
-                                                IsVisible="{Binding IsWaitingApproval}">
-                                        <Button Content="{DynamicResource Text.Transfer.Approve}"
-                                                Classes="tahoe-primary"
-                                                Padding="16,4"
-                                                FontSize="12"
-                                                Command="{Binding $parent[ItemsControl].((vm:TransferViewModel)DataContext).ApproveTransferCommand}"
-                                                CommandParameter="{Binding TransferId}" />
-                                        <Button Content="{DynamicResource Text.Transfer.Reject}"
-                                                Classes="tahoe-secondary"
-                                                Padding="16,4"
-                                                FontSize="12"
-                                                Command="{Binding $parent[ItemsControl].((vm:TransferViewModel)DataContext).RejectTransferCommand}"
-                                                CommandParameter="{Binding TransferId}" />
-                                    </StackPanel>
-
-                                    <!-- プログレスバー（転送中のみ表示） -->
-                                    <ProgressBar Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
-                                                 Minimum="0" Maximum="1"
-                                                 Value="{Binding Progress}"
-                                                 IsVisible="{Binding IsInProgress}"
-                                                 Height="3"
-                                                 Margin="0,6,0,0"
-                                                 Foreground="{StaticResource TahoeAccentBrush}"
-                                                 Background="{StaticResource TahoeGlassHighBgBrush}" />
-
-                                </Grid>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </ScrollViewer>
-
+        <!-- ヘッダー -->
+        <DockPanel DockPanel.Dock="Top" Margin="4,0,4,8">
+            <TextBlock Text="{DynamicResource Text.Transfer.Header}" Classes="section-label"
+                       VerticalAlignment="Center" />
+            <Button Content="{DynamicResource Text.Transfer.Clear}"
+                    Classes="tahoe-ghost"
+                    Command="{Binding ClearHistoryCommand}"
+                    HorizontalAlignment="Right"
+                    FontSize="11"
+                    Padding="8,4"
+                    IsVisible="{Binding HasTransfers}" />
         </DockPanel>
 
-    </Grid>
+        <!-- 履歴なし -->
+        <TextBlock Text="{DynamicResource Text.Transfer.Empty}"
+                   Classes="caption"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   IsVisible="{Binding !HasTransfers}" />
+
+        <!-- アイテムリスト -->
+        <ScrollViewer Padding="0,0,4,0"
+                      IsVisible="{Binding HasTransfers}">
+            <ItemsControl ItemsSource="{Binding Transfers}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="models:TransferItem">
+                        <Border Background="{StaticResource TahoeGlassHighBgBrush}"
+                                BorderBrush="{StaticResource TahoeGlassBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="10"
+                                Padding="14,10"
+                                Margin="0,3">
+                            <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto">
+
+                                <!-- 方向アイコン（↑送信 / ↓受信） -->
+                                <Border Grid.RowSpan="2"
+                                        Width="32" Height="32"
+                                        CornerRadius="8"
+                                        VerticalAlignment="Center"
+                                        Margin="0,0,10,0">
+                                    <Border.Background>
+                                        <SolidColorBrush Color="{StaticResource TahoeAccentMuted}" />
+                                    </Border.Background>
+                                    <TextBlock Text="{Binding DirectionSymbol}"
+                                               FontSize="14"
+                                               FontWeight="Bold"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               Foreground="{StaticResource TahoeAccentBrush}" />
+                                </Border>
+
+                                <!-- ファイル名 -->
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding FileName}"
+                                           Classes="body"
+                                           FontWeight="Medium"
+                                           TextTrimming="CharacterEllipsis"
+                                           VerticalAlignment="Center" />
+
+                                <!-- 状態テキスト -->
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding StateText}"
+                                           FontSize="11"
+                                           FontWeight="Medium"
+                                           VerticalAlignment="Center"
+                                           Margin="8,0,0,0"
+                                           Foreground="{StaticResource TahoeTextSecondaryBrush}" />
+
+                                <!-- 転送詳細テキスト -->
+                                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+                                           Text="{Binding DisplayInfo}"
+                                           Classes="caption"
+                                           Margin="0,2,0,0" />
+
+                                <!-- プログレスバー（転送中のみ表示） -->
+                                <ProgressBar Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
+                                             Minimum="0" Maximum="1"
+                                             Value="{Binding Progress}"
+                                             IsVisible="{Binding IsInProgress}"
+                                             Height="3"
+                                             Margin="0,6,0,0"
+                                             Foreground="{StaticResource TahoeAccentBrush}"
+                                             Background="{StaticResource TahoeGlassHighBgBrush}" />
+
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+    </DockPanel>
 
 </UserControl>

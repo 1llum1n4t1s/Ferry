@@ -33,14 +33,19 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private bool _hasTransfers;
 
-    /// <summary>未読の受信アイテムがあるか（サイドメニューのバッジ表示用）。</summary>
+    /// <summary>承認待ちの受信アイテムがあるか（サイドメニュー下部パネル表示用）。</summary>
     [ObservableProperty]
-    private bool _hasPendingNotification;
+    private bool _hasPendingApproval;
 
     /// <summary>
     /// 転送アイテムの一覧。
     /// </summary>
     public ObservableCollection<TransferItem> Transfers { get; } = [];
+
+    /// <summary>
+    /// 承認待ちの受信アイテム一覧（サイドバー下部パネルに表示）。
+    /// </summary>
+    public ObservableCollection<TransferItem> PendingApprovals { get; } = [];
 
     public TransferViewModel(
         IConnectionService connectionService,
@@ -58,11 +63,6 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
 
         Transfers.CollectionChanged += (_, _) => HasTransfers = Transfers.Count > 0;
     }
-
-    /// <summary>
-    /// 通知バッジをクリアする（転送タブが選択されたときに呼ばれる）。
-    /// </summary>
-    public void ClearNotification() => HasPendingNotification = false;
 
     /// <summary>
     /// ファイル選択ダイアログを開き、選択されたファイルを送信する。
@@ -260,7 +260,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             Transfers.Remove(item);
         }
 
-        HasPendingNotification = false;
+
     }
 
     /// <summary>
@@ -302,7 +302,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                     };
                     Transfers.Add(item);
                     IsTransferring = true;
-                    HasPendingNotification = true;
+                    // 通知はサイドバー下部パネルで表示
                 }
                 item.TransferredBytes = e.TransferredBytes;
             }
@@ -342,7 +342,6 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 Transfers.Add(e);
             }
 
-            HasPendingNotification = true;
             IsTransferring = Transfers.Any(t => t.State == TransferState.InProgress);
         });
     }
@@ -379,9 +378,8 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         Dispatcher.UIThread.Post(() =>
         {
             e.PeerName = _connectionViewModel.SelectedPeer?.DisplayName ?? string.Empty;
-            Transfers.Add(e);
-            HasTransfers = Transfers.Count > 0;
-            HasPendingNotification = true;
+            PendingApprovals.Add(e);
+            HasPendingApproval = PendingApprovals.Count > 0;
         });
     }
 
@@ -391,11 +389,15 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private void ApproveTransfer(Guid transferId)
     {
-        var item = Transfers.FirstOrDefault(t => t.TransferId == transferId && t.State == TransferState.WaitingApproval);
+        var item = PendingApprovals.FirstOrDefault(t => t.TransferId == transferId);
         if (item == null) return;
 
+        PendingApprovals.Remove(item);
+        HasPendingApproval = PendingApprovals.Count > 0;
+
+        item.State = TransferState.InProgress;
+        Transfers.Add(item);
         _transferService.ApproveTransfer(transferId.ToString());
-        // State は TransferService 側で InProgress に変わる
         IsTransferring = true;
     }
 
@@ -405,12 +407,16 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private void RejectTransfer(Guid transferId)
     {
-        var item = Transfers.FirstOrDefault(t => t.TransferId == transferId && t.State == TransferState.WaitingApproval);
+        var item = PendingApprovals.FirstOrDefault(t => t.TransferId == transferId);
         if (item == null) return;
+
+        PendingApprovals.Remove(item);
+        HasPendingApproval = PendingApprovals.Count > 0;
 
         _transferService.RejectTransfer(transferId.ToString());
         item.State = TransferState.Cancelled;
         item.ErrorMessage = App.Text("Transfer.Rejected");
+        Transfers.Add(item);
     }
 
     public void Dispose()

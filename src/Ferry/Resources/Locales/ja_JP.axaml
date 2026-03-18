@@ -7,7 +7,7 @@
   <!-- Tabs -->
   <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 メンバーリスト</x:String>
   <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ メンバー追加</x:String>
-  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 転送</x:String>
+  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 転送履歴</x:String>
   <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ 設定</x:String>
 
   <!-- Drop Overlay -->
@@ -30,6 +30,7 @@
   <x:String x:Key="Text.Transfer.Header" xml:space="preserve">転送履歴</x:String>
   <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">クリア</x:String>
   <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">ファイルをドロップして転送</x:String>
+  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">転送履歴はありません</x:String>
   <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">承認</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">拒否</x:String>
 
@@ -71,7 +72,7 @@
   <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">QR コードをスマートフォンでスキャンしてください</x:String>
   <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">ペアリング先の PC の QR コードをスキャンしてください…</x:String>
   <x:String x:Key="Text.Status.Error" xml:space="preserve">エラー: {0}</x:String>
-  <x:String x:Key="Text.Status.Connected" xml:space="preserve">接続中</x:String>
+  <x:String x:Key="Text.Status.Connected" xml:space="preserve">接続済み</x:String>
   <x:String x:Key="Text.Status.Connecting" xml:space="preserve">接続中…</x:String>
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">再接続中…</x:String>
 

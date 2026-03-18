@@ -82,8 +82,14 @@
                             BorderBrush="{StaticResource TahoeGlassBorderBrush}"
                             BorderThickness="1"
                             CornerRadius="14">
-                        <ItemsPresenter Name="PART_ItemsPresenter"
-                                        ItemsPanel="{TemplateBinding ItemsPanel}" />
+                        <DockPanel>
+                            <ItemsPresenter Name="PART_ItemsPresenter"
+                                            DockPanel.Dock="Top"
+                                            ItemsPanel="{TemplateBinding ItemsPanel}" />
+                            <!-- 受信通知パネル（サイドバー下部、Tag 経由） -->
+                            <ContentPresenter Content="{TemplateBinding Tag}"
+                                              VerticalAlignment="Bottom" />
+                        </DockPanel>
                     </Border>
                     <!-- コンテンツエリア -->
                     <DockPanel Grid.Column="2">

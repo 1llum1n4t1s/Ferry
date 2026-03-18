@@ -27,6 +27,7 @@
   <x:String x:Key="Text.Transfer.Header" xml:space="preserve">Transfer History</x:String>
   <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">Clear</x:String>
   <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">Drop files to transfer</x:String>
+  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">No transfer history</x:String>
   <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">Approve</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">Reject</x:String>
 
