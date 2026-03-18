@@ -348,7 +348,7 @@ public sealed class FirebaseSignaling : IDisposable
     /// <summary>
     /// 自分のプレゼンス（lastSeen タイムスタンプ）を Firebase に書き込む。
     /// </summary>
-    public async Task UpdatePresenceAsync(string deviceId, CancellationToken ct = default)
+    public async Task UpdatePresenceAsync(string deviceId, string displayName, CancellationToken ct = default)
     {
         await _client
             .Child("presence")
@@ -356,21 +356,21 @@ public sealed class FirebaseSignaling : IDisposable
             .PutAsync(new PresenceData
             {
                 LastSeen = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                DisplayName = displayName,
             });
     }
 
     /// <summary>
-    /// 指定デバイスの lastSeen タイムスタンプを取得する。
+    /// 指定デバイスのプレゼンスデータを取得する。
     /// </summary>
-    public async Task<long?> GetPresenceAsync(string deviceId, CancellationToken ct = default)
+    public async Task<PresenceData?> GetPresenceAsync(string deviceId, CancellationToken ct = default)
     {
         try
         {
-            var data = await _client
+            return await _client
                 .Child("presence")
                 .Child(deviceId)
                 .OnceSingleAsync<PresenceData>();
-            return data?.LastSeen;
         }
         catch
         {
@@ -443,6 +443,7 @@ public sealed class SignalingValue
 public sealed class PresenceData
 {
     public long LastSeen { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
 }
 
 /// <summary>ペアリング検知情報。</summary>

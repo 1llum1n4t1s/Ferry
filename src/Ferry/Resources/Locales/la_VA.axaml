@@ -34,7 +34,7 @@
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">Generalia</x:String>
-  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">Nomen Ostentationis PC</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">Nomen Aliis Visibile</x:String>
   <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">Inscribe nomen PC</x:String>
   <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">Aspectus</x:String>
   <x:String x:Key="Text.Settings.Theme" xml:space="preserve">Thema</x:String>
@@ -91,6 +91,18 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Translatio reiecta</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Resumptio defecit</x:String>
+
+  <!-- Connection Phase Status -->
+  <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">TCP auscultator praeparatur…</x:String>
+  <x:String x:Key="Text.Status.Phase.TcpConnecting" xml:space="preserve">TCP directum temptatur…</x:String>
+  <x:String x:Key="Text.Status.Phase.StunQuery" xml:space="preserve">STUN servitorem interrogat…</x:String>
+  <x:String x:Key="Text.Status.Phase.UdpHolePunch" xml:space="preserve">UDP foramen perforatio…</x:String>
+  <x:String x:Key="Text.Status.Phase.Relay" xml:space="preserve">Per relay coniungitur…</x:String>
+
+  <!-- Tray Menu -->
+  <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Fenestram Ostende</x:String>
+  <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Exi</x:String>
+
   <x:String x:Key="Text.Close" xml:space="preserve">Claudere</x:String>
 
 </ResourceDictionary>

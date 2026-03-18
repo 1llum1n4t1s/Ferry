@@ -26,7 +26,7 @@
   <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">Aprobar</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">Rechazar</x:String>
   <x:String x:Key="Text.Settings.General" xml:space="preserve">General</x:String>
-  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">Nombre de PC</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">Nombre visible para otros</x:String>
   <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">Ingrese el nombre del PC</x:String>
   <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">Apariencia</x:String>
   <x:String x:Key="Text.Settings.Theme" xml:space="preserve">Tema</x:String>
@@ -73,6 +73,18 @@
   <x:String x:Key="Text.Update.Unknown" xml:space="preserve">Desconocido</x:String>
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Transferencia rechazada</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Error al reanudar</x:String>
+
+  <!-- Connection Phase Status -->
+  <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">Preparando listener TCP…</x:String>
+  <x:String x:Key="Text.Status.Phase.TcpConnecting" xml:space="preserve">Intentando TCP directo…</x:String>
+  <x:String x:Key="Text.Status.Phase.StunQuery" xml:space="preserve">Consultando servidor STUN…</x:String>
+  <x:String x:Key="Text.Status.Phase.UdpHolePunch" xml:space="preserve">UDP hole punching…</x:String>
+  <x:String x:Key="Text.Status.Phase.Relay" xml:space="preserve">Conectando vía relay…</x:String>
+
+  <!-- Tray Menu -->
+  <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Mostrar ventana</x:String>
+  <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Salir</x:String>
+
   <x:String x:Key="Text.Close" xml:space="preserve">Cerrar</x:String>
 
 </ResourceDictionary>

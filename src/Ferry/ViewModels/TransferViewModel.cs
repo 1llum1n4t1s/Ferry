@@ -33,6 +33,10 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private bool _hasTransfers;
 
+    /// <summary>未読の受信アイテムがあるか（サイドメニューのバッジ表示用）。</summary>
+    [ObservableProperty]
+    private bool _hasPendingNotification;
+
     /// <summary>
     /// 転送アイテムの一覧。
     /// </summary>
@@ -54,6 +58,11 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
 
         Transfers.CollectionChanged += (_, _) => HasTransfers = Transfers.Count > 0;
     }
+
+    /// <summary>
+    /// 通知バッジをクリアする（転送タブが選択されたときに呼ばれる）。
+    /// </summary>
+    public void ClearNotification() => HasPendingNotification = false;
 
     /// <summary>
     /// ファイル選択ダイアログを開き、選択されたファイルを送信する。
@@ -98,6 +107,8 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        var peerName = _connectionViewModel.SelectedPeer.DisplayName;
+
         // パスをファイルに展開（フォルダは再帰列挙、相対パス付き）
         var entries = ExpandPaths(filePaths);
         if (entries.Count == 0)
@@ -140,6 +151,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 FileSize = fileInfo.Length,
                 Direction = TransferDirection.Send,
                 State = TransferState.InProgress,
+                PeerName = peerName,
             };
             Transfers.Add(item);
 
@@ -149,6 +161,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 await _transferService.SendFileAsync(absolutePath, relativePath);
                 item.State = TransferState.Completed;
                 item.TransferredBytes = item.FileSize;
+                item.CompletedAt = DateTime.UtcNow;
             }
             catch (Exception ex)
             {
@@ -213,6 +226,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             {
                 item.State = TransferState.Completed;
                 item.TransferredBytes = item.FileSize;
+                item.CompletedAt = DateTime.UtcNow;
             }
             else
             {
@@ -245,6 +259,8 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         {
             Transfers.Remove(item);
         }
+
+        HasPendingNotification = false;
     }
 
     /// <summary>
@@ -273,6 +289,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                     t.Direction == TransferDirection.Receive && t.State == TransferState.InProgress);
                 if (item == null)
                 {
+                    var peerName = _connectionViewModel.SelectedPeer?.DisplayName ?? string.Empty;
                     item = new TransferItem
                     {
                         TransferId = e.TransferId,
@@ -281,9 +298,11 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                         TotalChunks = e.TotalChunks,
                         Direction = TransferDirection.Receive,
                         State = TransferState.InProgress,
+                        PeerName = peerName,
                     };
                     Transfers.Add(item);
                     IsTransferring = true;
+                    HasPendingNotification = true;
                 }
                 item.TransferredBytes = e.TransferredBytes;
             }
@@ -313,13 +332,17 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 item.State = TransferState.Completed;
                 item.TransferredBytes = e.FileSize;
                 item.FileName = e.FileName;
+                item.CompletedAt = DateTime.UtcNow;
             }
             else
             {
                 // どこにも見つからない → 新規追加
+                e.CompletedAt = DateTime.UtcNow;
+                e.PeerName = _connectionViewModel.SelectedPeer?.DisplayName ?? string.Empty;
                 Transfers.Add(e);
             }
 
+            HasPendingNotification = true;
             IsTransferring = Transfers.Any(t => t.State == TransferState.InProgress);
         });
     }
@@ -355,8 +378,10 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     {
         Dispatcher.UIThread.Post(() =>
         {
+            e.PeerName = _connectionViewModel.SelectedPeer?.DisplayName ?? string.Empty;
             Transfers.Add(e);
             HasTransfers = Transfers.Count > 0;
+            HasPendingNotification = true;
         });
     }
 

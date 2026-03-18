@@ -88,6 +88,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         _connectionService.StateChanged += OnStateChanged;
         _connectionService.RouteChanged += OnRouteChanged;
         _connectionService.PairingCompleted += OnPairingCompleted;
+        _connectionService.StatusMessageChanged += OnStatusMessageChanged;
 
         // 保存済みピアを読み込み
         foreach (var peer in _peerRegistry.GetPairedPeers())
@@ -333,6 +334,17 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         });
     }
 
+    private void OnStatusMessageChanged(object? sender, string messageKey)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (SelectedPeer != null)
+            {
+                SelectedPeer.ConnectionStatusText = "🔄 " + App.Text(messageKey);
+            }
+        });
+    }
+
     private void OnRouteChanged(object? sender, ConnectionRoute route)
     {
         Dispatcher.UIThread.Post(() =>
@@ -398,22 +410,25 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         _presenceSignaling = new FirebaseSignaling(dbUrl);
 
         var deviceId = _settingsService.Settings.DeviceId;
+        var displayName = _settingsService.Settings.DisplayName;
         var ct = _presenceCts.Token;
 
-        _ = HeartbeatLoopAsync(deviceId, ct);
+        _ = HeartbeatLoopAsync(deviceId, displayName, ct);
         _ = PresencePollLoopAsync(ct);
     }
 
     /// <summary>
     /// 定期的に自分の lastSeen を Firebase に書き込む。
     /// </summary>
-    private async Task HeartbeatLoopAsync(string deviceId, CancellationToken ct)
+    private async Task HeartbeatLoopAsync(string deviceId, string displayName, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
             try
             {
-                await _presenceSignaling!.UpdatePresenceAsync(deviceId, ct);
+                // 設定変更に対応するため毎回最新の表示名を取得
+                var currentName = _settingsService.Settings.DisplayName;
+                await _presenceSignaling!.UpdatePresenceAsync(deviceId, currentName, ct);
             }
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
@@ -433,9 +448,6 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     {
         while (!ct.IsCancellationRequested)
         {
-            try { await Task.Delay(PollIntervalMs, ct); }
-            catch (OperationCanceledException) { break; }
-
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
             foreach (var peer in PairedPeers.ToArray())
@@ -444,13 +456,23 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
 
                 try
                 {
-                    var lastSeen = await _presenceSignaling!.GetPresenceAsync(peer.PeerId, ct);
-                    var isOnline = lastSeen.HasValue && (now - lastSeen.Value) < OfflineThresholdMs;
+                    var presenceData = await _presenceSignaling!.GetPresenceAsync(peer.PeerId, ct);
+                    var isOnline = presenceData != null && (now - presenceData.LastSeen) < OfflineThresholdMs;
 
-                    if (peer.IsOnline != isOnline)
+                    Dispatcher.UIThread.Post(() =>
                     {
-                        Dispatcher.UIThread.Post(() => peer.IsOnline = isOnline);
-                    }
+                        if (peer.IsOnline != isOnline)
+                            peer.IsOnline = isOnline;
+
+                        // 相手の表示名が変わっていたら同期
+                        if (presenceData != null &&
+                            !string.IsNullOrEmpty(presenceData.DisplayName) &&
+                            presenceData.DisplayName != peer.DisplayName)
+                        {
+                            peer.DisplayName = presenceData.DisplayName;
+                            _ = _peerRegistry.AddOrUpdatePeerAsync(peer);
+                        }
+                    });
                 }
                 catch (OperationCanceledException) { break; }
                 catch
@@ -458,6 +480,10 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                     // 個別ピアのエラーは無視して次へ
                 }
             }
+
+            // ポーリング間隔（末尾に配置して初回は即座にチェック）
+            try { await Task.Delay(PollIntervalMs, ct); }
+            catch (OperationCanceledException) { break; }
         }
     }
 
@@ -483,6 +509,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         _connectionService.StateChanged -= OnStateChanged;
         _connectionService.RouteChanged -= OnRouteChanged;
         _connectionService.PairingCompleted -= OnPairingCompleted;
+        _connectionService.StatusMessageChanged -= OnStatusMessageChanged;
         ClearQrCodeImage();
 
         // プレゼンス監視を停止し、自分のプレゼンスを削除

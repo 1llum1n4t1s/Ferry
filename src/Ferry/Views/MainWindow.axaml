@@ -50,14 +50,29 @@
                     <views:AddMemberPanel DataContext="{Binding Connection}" />
                 </TabItem>
 
-                <!-- 送信履歴 -->
-                <TabItem Header="{DynamicResource Text.Tab.Transfer}">
+                <!-- 転送 -->
+                <TabItem x:Name="TransferTab"
+                         Header="{DynamicResource Text.Tab.Transfer}">
+                    <TabItem.HeaderTemplate>
+                        <DataTemplate>
+                            <Panel>
+                                <TextBlock Text="{Binding}" />
+                                <!-- 通知バッジ（受信があると表示） -->
+                                <Ellipse Width="8" Height="8"
+                                         Fill="#FF3B30"
+                                         HorizontalAlignment="Right"
+                                         VerticalAlignment="Top"
+                                         Margin="0,-2,-10,0"
+                                         IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Transfer.HasPendingNotification}" />
+                            </Panel>
+                        </DataTemplate>
+                    </TabItem.HeaderTemplate>
                     <views:TransferPanel DataContext="{Binding Transfer}" />
                 </TabItem>
 
                 <!-- 設定 -->
                 <TabItem Header="{DynamicResource Text.Tab.Settings}">
-                    <ScrollViewer>
+                    <ScrollViewer Padding="0,0,12,0">
                         <views:SettingsPanel DataContext="{Binding Settings}" />
                     </ScrollViewer>
                 </TabItem>

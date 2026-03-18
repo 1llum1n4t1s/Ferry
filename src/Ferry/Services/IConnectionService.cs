@@ -40,6 +40,9 @@ public interface IConnectionService
     /// <summary>接続が切断されたときに発火するイベント（転送中の切断検知用）。</summary>
     event EventHandler? ConnectionLost;
 
+    /// <summary>接続フェーズの詳細ステータスメッセージが更新されたときに発火するイベント。</summary>
+    event EventHandler<string>? StatusMessageChanged;
+
     // === ペアリング（QR スキャン → Bridge ページ経由） ===
 
     /// <summary>

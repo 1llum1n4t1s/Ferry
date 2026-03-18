@@ -26,7 +26,7 @@
   <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">Approuver</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">Rejeter</x:String>
   <x:String x:Key="Text.Settings.General" xml:space="preserve">Général</x:String>
-  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">Nom d'affichage du PC</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">Nom affiché aux autres</x:String>
   <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">Entrez le nom du PC</x:String>
   <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">Apparence</x:String>
   <x:String x:Key="Text.Settings.Theme" xml:space="preserve">Thème</x:String>
@@ -73,6 +73,18 @@
   <x:String x:Key="Text.Update.Unknown" xml:space="preserve">Inconnu</x:String>
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Transfert rejeté</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Échec de la reprise</x:String>
+
+  <!-- Connection Phase Status -->
+  <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">Préparation du listener TCP…</x:String>
+  <x:String x:Key="Text.Status.Phase.TcpConnecting" xml:space="preserve">Tentative de connexion TCP directe…</x:String>
+  <x:String x:Key="Text.Status.Phase.StunQuery" xml:space="preserve">Interrogation du serveur STUN…</x:String>
+  <x:String x:Key="Text.Status.Phase.UdpHolePunch" xml:space="preserve">UDP hole punching…</x:String>
+  <x:String x:Key="Text.Status.Phase.Relay" xml:space="preserve">Connexion via relais…</x:String>
+
+  <!-- Tray Menu -->
+  <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Afficher la fenêtre</x:String>
+  <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Quitter</x:String>
+
   <x:String x:Key="Text.Close" xml:space="preserve">Fermer</x:String>
 
 </ResourceDictionary>

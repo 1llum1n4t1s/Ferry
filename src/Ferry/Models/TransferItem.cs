@@ -53,6 +53,16 @@ public sealed partial class TransferItem : ObservableObject
     [ObservableProperty]
     private string? _errorMessage;
 
+    /// <summary>転送相手のピア名（送信先 or 送信元の表示名）。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayInfo))]
+    private string _peerName = string.Empty;
+
+    /// <summary>転送完了日時。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CompletedAtText))]
+    private DateTime? _completedAt;
+
     /// <summary>SHA-256 ハッシュ値（転送完了後の検証用）。</summary>
     public string? Sha256Hash { get; set; }
 
@@ -94,18 +104,25 @@ public sealed partial class TransferItem : ObservableObject
         _ => "",
     };
 
-    /// <summary>詳細情報テキスト（サイズ＋進捗）。</summary>
+    /// <summary>完了日時の表示テキスト。</summary>
+    public string CompletedAtText => CompletedAt?.ToLocalTime().ToString("yyyy/MM/dd HH:mm") ?? string.Empty;
+
+    /// <summary>詳細情報テキスト（サイズ＋進捗＋ピア名＋完了日時）。</summary>
     public string DisplayInfo
     {
         get
         {
             var sizeText = FormatBytes(FileSize);
+            var peerPart = !string.IsNullOrEmpty(PeerName)
+                ? (Direction == TransferDirection.Send ? $"→ {PeerName}" : $"← {PeerName}")
+                : string.Empty;
             return State switch
             {
                 TransferState.InProgress => $"{FormatBytes(TransferredBytes)} / {sizeText}  ({Progress * 100:F0}%)",
-                TransferState.Completed => sizeText,
-                TransferState.Error => sizeText,
-                _ => sizeText,
+                TransferState.Completed => string.IsNullOrEmpty(peerPart)
+                    ? $"{sizeText}  {CompletedAtText}"
+                    : $"{sizeText}  {peerPart}  {CompletedAtText}",
+                _ => string.IsNullOrEmpty(peerPart) ? sizeText : $"{sizeText}  {peerPart}",
             };
         }
     }

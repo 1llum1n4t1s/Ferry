@@ -34,7 +34,7 @@
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">כללי</x:String>
-  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">שם תצוגת המחשב</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">שם המוצג לאחרים</x:String>
   <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">הכנס שם מחשב</x:String>
   <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">מראה</x:String>
   <x:String x:Key="Text.Settings.Theme" xml:space="preserve">ערכת נושא</x:String>
@@ -91,6 +91,18 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">ההעברה נדחתה</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">החידוש נכשל</x:String>
+
+  <!-- Connection Phase Status -->
+  <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">מכין מאזין TCP…</x:String>
+  <x:String x:Key="Text.Status.Phase.TcpConnecting" xml:space="preserve">מנסה TCP ישיר…</x:String>
+  <x:String x:Key="Text.Status.Phase.StunQuery" xml:space="preserve">שולח שאילתה לשרת STUN…</x:String>
+  <x:String x:Key="Text.Status.Phase.UdpHolePunch" xml:space="preserve">UDP hole punching…</x:String>
+  <x:String x:Key="Text.Status.Phase.Relay" xml:space="preserve">מתחבר דרך ממסר…</x:String>
+
+  <!-- Tray Menu -->
+  <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">הצג חלון</x:String>
+  <x:String x:Key="Text.Tray.Exit" xml:space="preserve">יציאה</x:String>
+
   <x:String x:Key="Text.Close" xml:space="preserve">סגור</x:String>
 
 </ResourceDictionary>

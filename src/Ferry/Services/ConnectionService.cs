@@ -51,6 +51,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     public event EventHandler<PairedPeer>? PairingCompleted;
     public event EventHandler<byte[]>? DataReceived;
     public event EventHandler? ConnectionLost;
+    public event EventHandler<string>? StatusMessageChanged;
 
     public ConnectionService(string databaseUrl, string deviceId, string displayName)
     {
@@ -171,6 +172,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
                 Util.Logger.Log($"着信接続情報検知！ Answer 側として接続開始: pairId={pairId}, ips=[{string.Join(", ", offer.Ips)}], port={offer.Port}");
                 SetState(PeerState.Connecting);
+                StatusMessageChanged?.Invoke(this, "Status.Phase.TcpConnecting");
 
                 _signaling?.Dispose();
                 _signaling = new FirebaseSignaling(_databaseUrl);
@@ -193,12 +195,14 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 // ② TCP 失敗時: UDP ホールパンチを試行
                 if (!connected && !string.IsNullOrEmpty(offer.ExternalIp) && offer.ExternalPort > 0)
                 {
+                    StatusMessageChanged?.Invoke(this, "Status.Phase.UdpHolePunch");
                     connected = await TryUdpHolePunchAnswerAsync(offer, pairId, ct);
                 }
 
                 // ③ UDP 失敗時: WebSocket リレーにフォールバック
                 if (!connected)
                 {
+                    StatusMessageChanged?.Invoke(this, "Status.Phase.Relay");
                     connected = await TryRelayConnectAsync(pairId, "answer", ct);
                 }
 
@@ -273,6 +277,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             await _signaling.CleanupSignalingDataAsync(pairId, ct);
 
             // ① TCP リスナー起動 → offer 送信（STUN なし）
+            StatusMessageChanged?.Invoke(this, "Status.Phase.TcpPreparing");
             var tcpTransport = new TcpDirectTransport();
             var port = tcpTransport.StartListener();
 
@@ -288,6 +293,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             await _signaling.SendSdpOfferAsync(pairId, offerJson, ct);
 
             // ② TCP accept + Answer ポーリングを同時待機
+            StatusMessageChanged?.Invoke(this, "Status.Phase.TcpConnecting");
             //    Answer が TCP 結果を通知してくるので、固定タイムアウト不要
             var tcpAcceptTask = tcpTransport.AcceptAsync(ct);
             var answerTask = _signaling.WaitForSdpAsync(pairId, "answer", ct: ct);
@@ -327,6 +333,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 if (answerJson != null)
                 {
                     Util.Logger.Log("Answer が TCP 失敗報告 → STUN/UDP ホールパンチ試行");
+                    StatusMessageChanged?.Invoke(this, "Status.Phase.StunQuery");
 
                     // ③ STUN + UDP ホールパンチを試行
                     var udpTransport = new UdpHolePunchTransport();
@@ -347,6 +354,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                         };
                         await _signaling.SendSdpOfferAsync(pairId, SerializeConnectionInfo(updatedOffer), ct);
 
+                        StatusMessageChanged?.Invoke(this, "Status.Phase.UdpHolePunch");
                         connected = await TryUdpHolePunchOfferAsync(udpTransport, pairId, ct);
                     }
                     else
@@ -358,6 +366,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     // ④ WebSocket リレーにフォールバック
                     if (!connected)
                     {
+                        StatusMessageChanged?.Invoke(this, "Status.Phase.Relay");
                         var relayConnected = await TryRelayConnectAsync(pairId, "offer", ct);
                         if (!relayConnected)
                             throw new InvalidOperationException("全ての接続方法が失敗しました");

@@ -34,7 +34,7 @@
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">பொது</x:String>
-  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">PC காட்சிப் பெயர்</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">மற்றவர்களுக்குக் காட்டும் பெயர்</x:String>
   <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">PC பெயரை உள்ளிடுங்கள்</x:String>
   <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">தோற்றம்</x:String>
   <x:String x:Key="Text.Settings.Theme" xml:space="preserve">தீம்</x:String>
@@ -91,6 +91,18 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">பரிமாற்றம் நிராகரிக்கப்பட்டது</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">மீண்டும் தொடங்குவது தோல்வியடைந்தது</x:String>
+
+  <!-- Connection Phase Status -->
+  <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">TCP கேட்பி தயாராகிறது…</x:String>
+  <x:String x:Key="Text.Status.Phase.TcpConnecting" xml:space="preserve">TCP நேரடி இணைப்பு முயற்சி…</x:String>
+  <x:String x:Key="Text.Status.Phase.StunQuery" xml:space="preserve">STUN சர்வரை வினவுகிறது…</x:String>
+  <x:String x:Key="Text.Status.Phase.UdpHolePunch" xml:space="preserve">UDP ஹோல் பஞ்சிங்…</x:String>
+  <x:String x:Key="Text.Status.Phase.Relay" xml:space="preserve">ரிலே வழியாக இணைக்கிறது…</x:String>
+
+  <!-- Tray Menu -->
+  <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">சாளரத்தைக் காட்டு</x:String>
+  <x:String x:Key="Text.Tray.Exit" xml:space="preserve">வெளியேறு</x:String>
+
   <x:String x:Key="Text.Close" xml:space="preserve">மூடு</x:String>
 
 </ResourceDictionary>

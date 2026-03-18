@@ -52,7 +52,7 @@
             </DockPanel>
 
             <!-- アイテムリスト -->
-            <ScrollViewer>
+            <ScrollViewer Padding="0,0,4,0">
                 <ItemsControl ItemsSource="{Binding Transfers}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="models:TransferItem">

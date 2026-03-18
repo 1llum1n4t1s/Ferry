@@ -34,7 +34,7 @@
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">Geral</x:String>
-  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">Nome de exibição do PC</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">Nome exibido para outros</x:String>
   <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">Digite o nome do PC</x:String>
   <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">Aparência</x:String>
   <x:String x:Key="Text.Settings.Theme" xml:space="preserve">Tema</x:String>
@@ -91,6 +91,18 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Transferência rejeitada</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Falha ao retomar</x:String>
+
+  <!-- Connection Phase Status -->
+  <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">Preparando listener TCP…</x:String>
+  <x:String x:Key="Text.Status.Phase.TcpConnecting" xml:space="preserve">Tentando TCP direto…</x:String>
+  <x:String x:Key="Text.Status.Phase.StunQuery" xml:space="preserve">Consultando servidor STUN…</x:String>
+  <x:String x:Key="Text.Status.Phase.UdpHolePunch" xml:space="preserve">UDP hole punching…</x:String>
+  <x:String x:Key="Text.Status.Phase.Relay" xml:space="preserve">Conectando via relay…</x:String>
+
+  <!-- Tray Menu -->
+  <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Mostrar janela</x:String>
+  <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Sair</x:String>
+
   <x:String x:Key="Text.Close" xml:space="preserve">Fechar</x:String>
 
 </ResourceDictionary>

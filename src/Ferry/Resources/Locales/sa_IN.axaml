@@ -34,7 +34,7 @@
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">सामान्यम्</x:String>
-  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">PC प्रदर्शननाम</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">अपरेभ्यः दृश्यं नाम</x:String>
   <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">PC नाम लिखतु</x:String>
   <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">रूपम्</x:String>
   <x:String x:Key="Text.Settings.Theme" xml:space="preserve">विषयः</x:String>
@@ -91,6 +91,18 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">स्थानान्तरणं निराकृतम्</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">पुनरारम्भः विफलः</x:String>
+
+  <!-- Connection Phase Status -->
+  <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">TCP श्रोता सज्जीक्रियते…</x:String>
+  <x:String x:Key="Text.Status.Phase.TcpConnecting" xml:space="preserve">TCP प्रत्यक्षसंयोजनं प्रयत्यते…</x:String>
+  <x:String x:Key="Text.Status.Phase.StunQuery" xml:space="preserve">STUN सेवकं पृच्छति…</x:String>
+  <x:String x:Key="Text.Status.Phase.UdpHolePunch" xml:space="preserve">UDP छिद्रभेदनम्…</x:String>
+  <x:String x:Key="Text.Status.Phase.Relay" xml:space="preserve">रिले द्वारा संयोजयति…</x:String>
+
+  <!-- Tray Menu -->
+  <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">वातायनं दर्शयतु</x:String>
+  <x:String x:Key="Text.Tray.Exit" xml:space="preserve">निर्गमनम्</x:String>
+
   <x:String x:Key="Text.Close" xml:space="preserve">पिधत्ति</x:String>
 
 </ResourceDictionary>

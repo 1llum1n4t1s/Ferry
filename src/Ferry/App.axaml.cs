@@ -104,6 +104,12 @@ public partial class App : Application
                 settings.RelayUrl = "wss://1llum1n4t1.net/ferry-relay";
                 needsSave = true;
             }
+            if (string.IsNullOrEmpty(settings.SaveDirectory))
+            {
+                settings.SaveDirectory = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+                needsSave = true;
+            }
             if (needsSave)
             {
                 _ = settingsService.SaveAsync().ContinueWith(t =>
@@ -149,14 +155,9 @@ public partial class App : Application
                 ToolTipText = "Ferry",
                 IsVisible = true,
                 Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://Ferry/icon/app.ico"))),
+                Menu = CreateTrayMenu(),
             };
-            trayIcon.Clicked += (_, _) =>
-            {
-                _mainWindow.ShowInTaskbar = true;
-                _mainWindow.WindowState = WindowState.Normal;
-                _mainWindow.Show();
-                _mainWindow.Activate();
-            };
+            trayIcon.Clicked += (_, _) => ShowMainWindow();
             TrayIcon.SetIcons(this, [trayIcon]);
 
             // 起動時：ペアリング済みピアがあれば最初のピアを宛先として選択
@@ -251,6 +252,38 @@ public partial class App : Application
         var lang = culture.TwoLetterISOLanguageName;
         var match = SupportedLocales.FirstOrDefault(l => l.StartsWith(lang + "_", StringComparison.OrdinalIgnoreCase));
         return match ?? "en_US";
+    }
+
+    /// <summary>メインウィンドウを表示・復帰する。</summary>
+    private void ShowMainWindow()
+    {
+        if (_mainWindow == null) return;
+        _mainWindow.ShowInTaskbar = true;
+        _mainWindow.WindowState = WindowState.Normal;
+        _mainWindow.Show();
+        _mainWindow.Activate();
+    }
+
+    /// <summary>トレイアイコンの右クリックメニューを作成する。</summary>
+    private NativeMenu CreateTrayMenu()
+    {
+        var menu = new NativeMenu();
+
+        var showItem = new NativeMenuItem(Text("Tray.ShowWindow"));
+        showItem.Click += (_, _) => ShowMainWindow();
+        menu.Add(showItem);
+
+        menu.Add(new NativeMenuItemSeparator());
+
+        var exitItem = new NativeMenuItem(Text("Tray.Exit"));
+        exitItem.Click += (_, _) =>
+        {
+            if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+                desktop.Shutdown();
+        };
+        menu.Add(exitItem);
+
+        return menu;
     }
 
     // === 自動更新チェック（Komorebi パターン） ===

@@ -34,7 +34,7 @@
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">Umum</x:String>
-  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">Nama Tampilan PC</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">Nama yang Ditampilkan ke Lawan</x:String>
   <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">Masukkan nama PC</x:String>
   <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">Tampilan</x:String>
   <x:String x:Key="Text.Settings.Theme" xml:space="preserve">Tema</x:String>
@@ -91,6 +91,18 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Transfer ditolak</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Gagal melanjutkan</x:String>
+
+  <!-- Connection Phase Status -->
+  <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">Menyiapkan listener TCP…</x:String>
+  <x:String x:Key="Text.Status.Phase.TcpConnecting" xml:space="preserve">Mencoba TCP langsung…</x:String>
+  <x:String x:Key="Text.Status.Phase.StunQuery" xml:space="preserve">Mengkueri server STUN…</x:String>
+  <x:String x:Key="Text.Status.Phase.UdpHolePunch" xml:space="preserve">UDP hole punching…</x:String>
+  <x:String x:Key="Text.Status.Phase.Relay" xml:space="preserve">Menghubungkan via relay…</x:String>
+
+  <!-- Tray Menu -->
+  <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Tampilkan Jendela</x:String>
+  <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Keluar</x:String>
+
   <x:String x:Key="Text.Close" xml:space="preserve">Tutup</x:String>
 
 </ResourceDictionary>

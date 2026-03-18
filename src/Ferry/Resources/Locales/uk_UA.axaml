@@ -34,7 +34,7 @@
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">Загальні</x:String>
-  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">Відображуване ім'я ПК</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">Ім'я, видиме іншим</x:String>
   <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">Введіть ім'я ПК</x:String>
   <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">Зовнішній вигляд</x:String>
   <x:String x:Key="Text.Settings.Theme" xml:space="preserve">Тема</x:String>
@@ -91,6 +91,18 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Передачу відхилено</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Не вдалося відновити</x:String>
+
+  <!-- Connection Phase Status -->
+  <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">Підготовка TCP-слухача…</x:String>
+  <x:String x:Key="Text.Status.Phase.TcpConnecting" xml:space="preserve">Спроба прямого TCP-з'єднання…</x:String>
+  <x:String x:Key="Text.Status.Phase.StunQuery" xml:space="preserve">Запит до STUN-сервера…</x:String>
+  <x:String x:Key="Text.Status.Phase.UdpHolePunch" xml:space="preserve">UDP hole punching…</x:String>
+  <x:String x:Key="Text.Status.Phase.Relay" xml:space="preserve">Підключення через ретранслятор…</x:String>
+
+  <!-- Tray Menu -->
+  <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Показати вікно</x:String>
+  <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Вихід</x:String>
+
   <x:String x:Key="Text.Close" xml:space="preserve">Закрити</x:String>
 
 </ResourceDictionary>

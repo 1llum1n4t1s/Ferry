@@ -26,7 +26,7 @@
   <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">批准</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">拒绝</x:String>
   <x:String x:Key="Text.Settings.General" xml:space="preserve">常规</x:String>
-  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">电脑显示名称</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">对方看到的名称</x:String>
   <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">输入电脑名称</x:String>
   <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">外观</x:String>
   <x:String x:Key="Text.Settings.Theme" xml:space="preserve">主题</x:String>
@@ -73,6 +73,18 @@
   <x:String x:Key="Text.Update.Unknown" xml:space="preserve">未知</x:String>
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">已拒绝接收</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">恢复失败</x:String>
+
+  <!-- Connection Phase Status -->
+  <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">正在准备 TCP 监听…</x:String>
+  <x:String x:Key="Text.Status.Phase.TcpConnecting" xml:space="preserve">正在尝试 TCP 直连…</x:String>
+  <x:String x:Key="Text.Status.Phase.StunQuery" xml:space="preserve">正在查询 STUN 服务器…</x:String>
+  <x:String x:Key="Text.Status.Phase.UdpHolePunch" xml:space="preserve">UDP 打洞中…</x:String>
+  <x:String x:Key="Text.Status.Phase.Relay" xml:space="preserve">正在通过中继连接…</x:String>
+
+  <!-- Tray Menu -->
+  <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">显示窗口</x:String>
+  <x:String x:Key="Text.Tray.Exit" xml:space="preserve">退出</x:String>
+
   <x:String x:Key="Text.Close" xml:space="preserve">关闭</x:String>
 
 </ResourceDictionary>

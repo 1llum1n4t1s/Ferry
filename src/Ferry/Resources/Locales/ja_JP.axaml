@@ -35,7 +35,7 @@
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">一般</x:String>
-  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">PC の表示名</x:String>
+  <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">相手に表示する名前</x:String>
   <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">PC 名を入力</x:String>
   <x:String x:Key="Text.Settings.Appearance" xml:space="preserve">外観</x:String>
   <x:String x:Key="Text.Settings.Theme" xml:space="preserve">テーマ</x:String>
@@ -93,6 +93,17 @@
   <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">このバージョンを無視</x:String>
   <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">更新チェックに失敗しました</x:String>
   <x:String x:Key="Text.Close" xml:space="preserve">閉じる</x:String>
+
+  <!-- Connection Phase Status -->
+  <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">TCP リスナー準備中…</x:String>
+  <x:String x:Key="Text.Status.Phase.TcpConnecting" xml:space="preserve">TCP 直接接続を試行中…</x:String>
+  <x:String x:Key="Text.Status.Phase.StunQuery" xml:space="preserve">STUN サーバーに問い合わせ中…</x:String>
+  <x:String x:Key="Text.Status.Phase.UdpHolePunch" xml:space="preserve">UDP ホールパンチ中…</x:String>
+  <x:String x:Key="Text.Status.Phase.Relay" xml:space="preserve">リレーサーバーに接続中…</x:String>
+
+  <!-- Tray Menu -->
+  <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">ウィンドウを表示</x:String>
+  <x:String x:Key="Text.Tray.Exit" xml:space="preserve">終了</x:String>
 
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">受信を拒否しました</x:String>

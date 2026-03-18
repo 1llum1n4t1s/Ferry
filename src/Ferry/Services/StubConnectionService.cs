@@ -23,6 +23,7 @@ public sealed class StubConnectionService : IConnectionService
     public event EventHandler<PairedPeer>? PairingCompleted;
     public event EventHandler<byte[]>? DataReceived;
     public event EventHandler? ConnectionLost;
+    public event EventHandler<string>? StatusMessageChanged;
 
     public Task<string> StartPairingSessionAsync(CancellationToken ct = default)
     {
