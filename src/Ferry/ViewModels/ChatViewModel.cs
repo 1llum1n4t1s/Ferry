@@ -123,7 +123,11 @@ public sealed partial class ChatViewModel : ViewModelBase, IDisposable
         if (_connectionService.State != PeerState.Connected)
         {
             try { await _connectionViewModel.ConnectToSelectedPeerAsync(); }
-            catch { return; }
+            catch (Exception ex)
+            {
+                Util.Logger.Log($"メッセージ送信前の接続失敗: {ex.Message}", Util.LogLevel.Error);
+                return;
+            }
         }
 
         // テキストメッセージ送信
@@ -208,7 +212,11 @@ public sealed partial class ChatViewModel : ViewModelBase, IDisposable
         if (_connectionService.State != PeerState.Connected)
         {
             try { await _connectionViewModel.ConnectToSelectedPeerAsync(); }
-            catch { return; }
+            catch (Exception ex)
+            {
+                Util.Logger.Log($"ファイル送信前の接続失敗: {ex.Message}", Util.LogLevel.Error);
+                return;
+            }
         }
 
         foreach (var path in filePaths)

@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "docs",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "3456", "-d", "docs"],
-      "port": 3456
+      "name": "ferry",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/Ferry/Ferry.csproj"],
+      "port": 0
     }
   ]
 }

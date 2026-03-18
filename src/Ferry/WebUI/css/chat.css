@@ -1,0 +1,165 @@
+/* === チャットメッセージ === */
+#chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    /* レイアウト計算をコンテナ内に隔離 */
+    contain: layout style;
+    will-change: scroll-position;
+    /* GPU 合成レイヤー化（スクロールのちらつき防止） */
+    transform: translateZ(0);
+}
+
+#chat-messages::-webkit-scrollbar { width: 4px; }
+#chat-messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+/* === メッセージバブル === */
+.message {
+    display: flex;
+    flex-direction: column;
+    max-width: 400px;
+    /* 画面外のメッセージのレンダリングをスキップ */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 60px;
+}
+
+.message.mine {
+    margin-left: auto;
+    align-items: flex-end;
+}
+
+.message.peer {
+    margin-right: auto;
+    align-items: flex-start;
+}
+
+.bubble {
+    padding: 8px 12px;
+    border-radius: 16px;
+    word-wrap: break-word;
+    line-height: 1.4;
+}
+
+/* 自分のメッセージ: 青バブル */
+.message.mine .bubble {
+    background: var(--accent);
+    color: white;
+    border-bottom-right-radius: 4px;
+}
+
+/* 相手のメッセージ: ガラスバブル */
+.message.peer .bubble {
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    border-bottom-left-radius: 4px;
+}
+
+/* === タイムスタンプ === */
+.message-time {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+    padding: 0 4px;
+}
+
+/* === メッセージ状態 === */
+.message-state {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    margin-top: 1px;
+    padding: 0 4px;
+}
+
+/* === ファイルメッセージ === */
+.file-bubble {
+    padding: 10px 14px;
+    border-radius: 12px;
+    min-width: 200px;
+}
+
+.message.mine .file-bubble {
+    background: rgba(0,122,255,0.15);
+    border: 1px solid rgba(0,122,255,0.3);
+}
+
+.message.peer .file-bubble {
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+}
+
+.file-name {
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.file-icon { font-size: 16px; }
+
+.file-size {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+/* プログレスバー */
+.file-progress {
+    height: 3px;
+    background: var(--glass-border);
+    border-radius: 2px;
+    margin-top: 6px;
+    overflow: hidden;
+}
+.file-progress-bar {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.3s;
+}
+
+/* 承認/拒否ボタン */
+.file-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.approve-btn {
+    background: var(--green);
+    border: none;
+    color: white;
+    font-size: 12px;
+    padding: 4px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.approve-btn:hover { filter: brightness(1.1); }
+
+.reject-btn {
+    background: var(--red);
+    border: none;
+    color: white;
+    font-size: 12px;
+    padding: 4px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.reject-btn:hover { filter: brightness(1.1); }
+
+/* === システムメッセージ === */
+.message.system {
+    margin-left: auto;
+    margin-right: auto;
+    max-width: none;
+    align-items: center;
+}
+.message.system .bubble {
+    background: transparent;
+    color: var(--text-tertiary);
+    font-size: 11px;
+    padding: 4px 8px;
+}

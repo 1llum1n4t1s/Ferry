@@ -29,6 +29,11 @@
     <AvaloniaResource Include="..\..\icon\app.ico" Link="icon\app.ico" />
   </ItemGroup>
 
+  <!-- WebUI ファイルを出力ディレクトリにコピー -->
+  <ItemGroup>
+    <Content Include="WebUI\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <Target Name="GenerateIcon" BeforeTargets="BeforeBuild" Inputs="..\..\icon\app_icon.png" Outputs="..\..\icon\app.ico"
           Condition="$([MSBuild]::IsOSPlatform('Windows'))">
     <Exec Command="powershell -ExecutionPolicy Bypass -NoProfile -File &quot;$(ProjectDir)..\..\icon\generate_icon.ps1&quot;" />
@@ -45,6 +50,8 @@
 <PackageReference Include="QRCoder" Version="1.7.0" />
     <PackageReference Include="FirebaseDatabase.net" Version="5.0.0" />
     <PackageReference Include="NLog" Version="6.1.1" />
+    <PackageReference Include="WebView.Avalonia" Version="11.0.0.1" />
+    <PackageReference Include="WebView.Avalonia.Desktop" Version="11.0.0.1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -52,5 +59,7 @@
     <TrimmerRootAssembly Include="Avalonia.Themes.Fluent" />
     <TrimmerRootAssembly Include="Avalonia.Desktop" />
     <TrimmerRootAssembly Include="Velopack" />
+    <TrimmerRootAssembly Include="WebView.Avalonia" />
+    <TrimmerRootAssembly Include="WebView.Avalonia.Desktop" />
   </ItemGroup>
 </Project>

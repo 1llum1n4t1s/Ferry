@@ -1,10 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="using:Ferry.ViewModels"
-        xmlns:models="using:Ferry.Models"
-        xmlns:views="using:Ferry.Views"
+        xmlns:wv="using:AvaloniaWebView"
         x:Class="Ferry.Views.MainWindow"
-        x:DataType="vm:MainWindowViewModel"
         Title="Ferry"
         Width="800"
         Height="540"
@@ -18,156 +15,39 @@
         ExtendClientAreaTitleBarHeightHint="36"
         DragDrop.AllowDrop="True">
 
-    <Design.DataContext>
-        <vm:MainWindowViewModel />
-    </Design.DataContext>
-
     <Panel>
         <!-- ダーク背景フォールバック -->
-        <Border Background="{StaticResource TahoeWindowBgBrush}" Opacity="0.92"
+        <Border Background="#161618" Opacity="0.92"
                 IsHitTestVisible="False" />
 
         <Grid RowDefinitions="36,*">
-            <!-- タイトルバー -->
+            <!-- タイトルバー（ドラッグ領域） -->
             <Border Grid.Row="0" Background="Transparent" IsHitTestVisible="False" />
 
-            <!-- メインコンテンツ: 2カラム -->
-            <Grid Grid.Row="1" ColumnDefinitions="220,8,*" Margin="8,0,8,8">
-
-                <!-- === 左: サイドバー === -->
-                <Border Grid.Column="0" Classes="glass-card" Padding="0">
-                    <DockPanel>
-                        <!-- ツールバー（下部） -->
-                        <Border DockPanel.Dock="Bottom"
-                                BorderThickness="0,1,0,0"
-                                BorderBrush="{StaticResource TahoeGlassBorderBrush}"
-                                Padding="8">
-                            <Grid ColumnDefinitions="*,*">
-                                <Button Grid.Column="0"
-                                        Classes="tahoe-ghost"
-                                        FontSize="16"
-                                        HorizontalAlignment="Center"
-                                        x:Name="AddMemberButton"
-                                        ToolTip.Tip="{DynamicResource Text.Tab.AddMember}">
-                                    <TextBlock Text="＋" FontSize="16" />
-                                </Button>
-                                <Button Grid.Column="1"
-                                        Classes="tahoe-ghost"
-                                        FontSize="16"
-                                        HorizontalAlignment="Center"
-                                        Command="{Binding ToggleSettingsCommand}"
-                                        ToolTip.Tip="{DynamicResource Text.Tab.Settings}">
-                                    <TextBlock Text="⚙" FontSize="16" />
-                                </Button>
-                            </Grid>
-                        </Border>
-
-                        <!-- ピアリスト -->
-                        <ListBox ItemsSource="{Binding Connection.PairedPeers}"
-                                 SelectedItem="{Binding Connection.SelectedPeer}"
-                                 Classes="tahoe-list"
-                                 Padding="4"
-                                 x:Name="PeerListBox">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate x:DataType="models:PairedPeer">
-                                    <DockPanel Margin="4,6">
-                                        <!-- オンライン/オフラインインジケータ -->
-                                        <Panel Width="10" Height="10" Margin="0,0,10,0"
-                                               VerticalAlignment="Center" DockPanel.Dock="Left">
-                                            <Ellipse Width="10" Height="10" Fill="#30D158"
-                                                     IsVisible="{Binding IsOnline}" />
-                                            <Ellipse Width="10" Height="10" Fill="#FF3B30"
-                                                     IsVisible="{Binding !IsOnline}" />
-                                        </Panel>
-
-                                        <!-- バッジ（右端） -->
-                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
-                                                    Spacing="4" VerticalAlignment="Center">
-                                            <!-- ファイル着信 -->
-                                            <TextBlock Text="📦" FontSize="12"
-                                                       IsVisible="{Binding HasIncomingFile}" />
-                                            <!-- 未読バッジ -->
-                                            <Border Background="#FF453A" CornerRadius="9"
-                                                    MinWidth="18" Height="18" Padding="4,0"
-                                                    IsVisible="{Binding UnreadCount}"
-                                                    VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding UnreadCount}"
-                                                           Foreground="White" FontSize="10"
-                                                           FontWeight="Bold"
-                                                           HorizontalAlignment="Center"
-                                                           VerticalAlignment="Center" />
-                                            </Border>
-                                        </StackPanel>
-
-                                        <!-- ピア情報 -->
-                                        <StackPanel Spacing="2" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding DisplayName}"
-                                                       FontSize="13" FontWeight="SemiBold"
-                                                       Foreground="{StaticResource TahoeTextPrimaryBrush}"
-                                                       TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Text="{Binding LastMessagePreview}"
-                                                       FontSize="11"
-                                                       Foreground="{StaticResource TahoeTextSecondaryBrush}"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       MaxLines="1" />
-                                        </StackPanel>
-                                    </DockPanel>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </DockPanel>
-                </Border>
-
-                <!-- ギャップ -->
-                <Border Grid.Column="1" />
-
-                <!-- === 右: コンテンツエリア === -->
-                <Border Grid.Column="2" Classes="glass-card" Padding="0" ClipToBounds="True">
-                    <Panel x:DataType="vm:MainWindowViewModel">
-                        <!-- チャット画面（設定モードでない） -->
-                        <Panel IsVisible="{Binding !IsSettingsMode}">
-                            <views:ChatView DataContext="{Binding Chat}" />
-                        </Panel>
-
-                        <!-- 設定画面（設定モード時） -->
-                        <Panel IsVisible="{Binding IsSettingsMode}">
-                            <views:SettingsPanel DataContext="{Binding Settings}" />
-                        </Panel>
-                    </Panel>
-                </Border>
-            </Grid>
+            <!-- 全画面 WebView（Url 設定で初期化をトリガー） -->
+            <wv:WebView Grid.Row="1" x:Name="MainWebView" Margin="0"
+                        Url="about:blank" />
         </Grid>
 
         <!-- ドロップオーバーレイ -->
         <Border x:Name="DropOverlay" IsVisible="False" ZIndex="100"
                 Background="#80000000" IsHitTestVisible="True"
                 DragDrop.AllowDrop="True">
-            <Border Classes="glass-card"
+            <Border Background="#1E1E20" CornerRadius="16"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
-                    Padding="48,32">
+                    Padding="48,32"
+                    BorderBrush="#12FFFFFF" BorderThickness="1">
                 <StackPanel Spacing="16" HorizontalAlignment="Center">
-                    <Border Background="{StaticResource TahoeAccentMutedBrush}"
-                            CornerRadius="28"
-                            Width="56" Height="56"
-                            HorizontalAlignment="Center">
-                        <PathIcon Width="28" Height="28"
-                                  HorizontalAlignment="Center"
-                                  VerticalAlignment="Center"
-                                  Foreground="{StaticResource TahoeAccentBrush}"
-                                  Data="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z" />
-                    </Border>
-                    <TextBlock Text="{DynamicResource Text.Drop.Message}"
-                               Classes="header"
-                               FontSize="16"
+                    <TextBlock Text="Drop files to transfer"
+                               FontSize="16" Foreground="#F5F5F7"
                                HorizontalAlignment="Center" />
-                    <TextBlock Text="{DynamicResource Text.Drop.Description}"
-                               Classes="caption"
+                    <TextBlock Text="Dropped files will be sent to the connected device"
+                               FontSize="11" Foreground="#4DEBEBF5"
                                HorizontalAlignment="Center" />
                 </StackPanel>
             </Border>
         </Border>
-
     </Panel>
 
 </Window>

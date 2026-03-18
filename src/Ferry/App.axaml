@@ -1,15 +1,10 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="Ferry.App"
-             xmlns:local="using:Ferry"
-             xmlns:conv="using:Ferry.Converters"
              RequestedThemeVariant="Dark">
 
     <Application.Resources>
         <ResourceDictionary>
-            <conv:EqualConverter x:Key="EqualConverter" />
-            <conv:NotEqualConverter x:Key="NotEqualConverter" />
-
             <!-- ロケールリソース（x:Key でコードから参照、SetLocale で動的に切り替え） -->
             <ResourceInclude x:Key="en_US" Source="/Resources/Locales/en_US.axaml" />
             <ResourceInclude x:Key="ja_JP" Source="/Resources/Locales/ja_JP.axaml" />
@@ -32,12 +27,7 @@
         </ResourceDictionary>
     </Application.Resources>
 
-    <Application.DataTemplates>
-        <local:ViewLocator/>
-    </Application.DataTemplates>
-
     <Application.Styles>
         <FluentTheme />
-        <StyleInclude Source="/Styles/TahoeTheme.axaml" />
     </Application.Styles>
 </Application>

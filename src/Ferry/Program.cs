@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using Avalonia;
+using Avalonia.WebView.Desktop;
 using Ferry.Util;
 using Velopack;
 
@@ -38,5 +39,6 @@ internal sealed class Program
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
             .WithInterFont()
+            .UseDesktopWebView()
             .LogToTrace();
 }
