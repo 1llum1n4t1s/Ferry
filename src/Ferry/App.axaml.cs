@@ -137,10 +137,12 @@ public partial class App : Application
                 _ => ThemeVariant.Default, // "System" = OS 追従
             };
 
+            var chatService = new ChatService(connectionService, settingsService);
             var connectionVm = new ConnectionViewModel(connectionService, qrCodeService, settingsService, peerRegistry);
             var transferVm = new TransferViewModel(connectionService, transferService, connectionVm);
+            var chatVm = new ChatViewModel(chatService, connectionService, transferService, settingsService, connectionVm);
             var settingsVm = new SettingsViewModel(settingsService);
-            var mainVm = new MainWindowViewModel(connectionVm, transferVm, settingsVm);
+            var mainVm = new MainWindowViewModel(connectionVm, transferVm, chatVm, settingsVm);
 
             _mainWindow = new MainWindow
             {
@@ -161,16 +163,20 @@ public partial class App : Application
             TrayIcon.SetIcons(this, [trayIcon]);
 
             // 起動時：ペアリング済みピアがあれば最初のピアを宛先として選択
-            // ピアがいなければ「メンバー追加」タブを初期選択（自動で QR 表示開始）
+            // ピアがいなければ AddMemberWindow ダイアログを自動表示
             if (connectionVm.PairedPeers.Count > 0)
             {
                 connectionVm.SelectedPeer = connectionVm.PairedPeers[0];
             }
             else
             {
-                var sidebarTabs = _mainWindow.FindControl<TabControl>("SidebarTabs");
-                if (sidebarTabs != null)
-                    sidebarTabs.SelectedIndex = 1; // メンバー追加タブ
+                // ピア未登録時はメンバー追加ダイアログを自動表示
+                _mainWindow.Loaded += async (_, _) =>
+                {
+                    connectionVm.StartSessionCommand.Execute(null);
+                    var dialog = new AddMemberWindow { DataContext = connectionVm };
+                    await dialog.ShowDialog(_mainWindow);
+                };
             }
 
             // 起動時の自動更新チェック（更新がある場合のみダイアログ表示）

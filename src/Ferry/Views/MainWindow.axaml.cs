@@ -25,19 +25,23 @@ public partial class MainWindow : Window
         // ドロップオーバーレイの参照を取得
         _dropOverlay = this.FindControl<Border>("DropOverlay");
 
-        // タブ選択変更で転送タブの通知バッジをクリア
-        var sidebarTabs = this.FindControl<TabControl>("SidebarTabs");
-        // TransferTab の通知バッジは削除済み（受信通知はサイドバー下部パネルで表示）
+        // ＋ ボタンで AddMemberWindow ダイアログを開く
+        var addMemberButton = this.FindControl<Button>("AddMemberButton");
+        if (addMemberButton != null)
+            addMemberButton.Click += OnAddMemberClick;
+
+        // ピアリスト選択変更でチャットを読み込み
+        var peerListBox = this.FindControl<ListBox>("PeerListBox");
+        if (peerListBox != null)
+            peerListBox.SelectionChanged += OnPeerSelectionChanged;
 
         // ウィンドウ全体のドラッグ＆ドロップイベント
-        // Bubble ルーティング（DragDrop イベントは Bubble のみ対応）+ handledEventsToo で確実にハンドリング
         AddHandler(DragDrop.DragEnterEvent, OnDragEnter, RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(DragDrop.DragOverEvent, OnDragOver, RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(DragDrop.DragLeaveEvent, OnDragLeave, RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(DragDrop.DropEvent, OnDrop, RoutingStrategies.Bubble, handledEventsToo: true);
 
-        // WindowState の変更を非同期監視（IRUZ パターン）
-        // OnPropertyChanged 内での Hide() はタイミング問題があるため GetObservable を使用
+        // WindowState の変更を非同期監視
         this.GetObservable(WindowStateProperty).Subscribe(new WindowStateObserver(state =>
         {
             if (state == WindowState.Minimized
@@ -49,7 +53,7 @@ public partial class MainWindow : Window
             }
         }));
 
-        // 初期最小化起動の処理（Loaded 後に実行することでタスクバーから確実に消える）
+        // 初期最小化起動の処理
         Loaded += (_, _) =>
         {
             if (DataContext is MainWindowViewModel vm && vm.Settings.StartMinimized)
@@ -72,37 +76,23 @@ public partial class MainWindow : Window
     protected override void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
-
-        // ウィンドウ位置・サイズの復元
         RestoreWindowPosition();
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-
-        // サイズ変更時も位置保存
         if (change.Property == BoundsProperty)
             SaveWindowPosition();
     }
 
     private void OnClosing(object? sender, CancelEventArgs e)
     {
-        // ウィンドウ位置を保存
         SaveWindowPosition();
-
-        // トレイ格納が有効なら閉じる代わりにトレイに格納
-        if (DataContext is MainWindowViewModel vm && vm.Settings.MinimizeToTray)
-        {
-            e.Cancel = true;
-            ShowInTaskbar = false;
-            Hide();
-        }
+        // 閉じるボタンは常に通常の終了処理（トレイ格納しない）
     }
 
-    /// <summary>
-    /// WindowState の変更を非同期で監視するオブザーバー。
-    /// </summary>
+    /// <summary>WindowState の変更を非同期で監視するオブザーバー。</summary>
     private sealed class WindowStateObserver(Action<WindowState> onNext) : IObserver<WindowState>
     {
         public void OnNext(WindowState value) => onNext(value);
@@ -140,11 +130,42 @@ public partial class MainWindow : Window
 
     private void OnPositionOrSizeChanged(object? sender, EventArgs e) => SaveWindowPosition();
 
+    // === ＋ ボタン → AddMemberWindow ダイアログ ===
+
+    private async void OnAddMemberClick(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel mainVm) return;
+
+        // ペアリングセッションを開始
+        mainVm.Connection.StartSessionCommand.Execute(null);
+
+        var dialog = new AddMemberWindow
+        {
+            DataContext = mainVm.Connection,
+        };
+
+        await dialog.ShowDialog(this);
+    }
+
+    // === ピア選択変更 → チャット読み込み ===
+
+    private async void OnPeerSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel mainVm) return;
+
+        var selectedPeer = mainVm.Connection.SelectedPeer;
+        if (selectedPeer != null)
+        {
+            // 設定モードを解除してチャットを表示
+            mainVm.IsSettingsMode = false;
+            await mainVm.Chat.LoadChatAsync(selectedPeer.PeerId);
+        }
+    }
+
     // === ドラッグ＆ドロップ処理 ===
 
     private bool HasFiles(DragEventArgs e)
     {
-        // DataTransfer.Contains と TryGetFiles の両方を試行（Avalonia バージョン互換）
         try
         {
             if (e.DataTransfer.Contains(DataFormat.File))
@@ -193,7 +214,6 @@ public partial class MainWindow : Window
     {
         Util.Logger.Log("OnDrop 呼び出し", Util.LogLevel.Debug);
 
-        // オーバーレイを非表示に
         if (_dropOverlay != null)
             _dropOverlay.IsVisible = false;
 
@@ -202,8 +222,6 @@ public partial class MainWindow : Window
             Util.Logger.Log("OnDrop: DataContext が MainWindowViewModel ではない", Util.LogLevel.Warning);
             return;
         }
-
-        var transferVm = mainVm.Transfer;
 
         var files = e.DataTransfer.TryGetFiles();
         if (files is null)
@@ -218,12 +236,15 @@ public partial class MainWindow : Window
             .Where(p => System.IO.File.Exists(p) || System.IO.Directory.Exists(p))
             .ToArray();
 
-        Util.Logger.Log($"OnDrop: paths={paths.Length}, CanExecute={transferVm.SendFilesCommand.CanExecute(paths)}", Util.LogLevel.Debug);
-
-        if (paths.Length > 0 && transferVm.SendFilesCommand.CanExecute(paths))
+        if (paths.Length > 0)
         {
             Util.Logger.Log($"ドロップ: {paths.Length} パス");
-            transferVm.SendFilesCommand.Execute(paths);
+
+            // チャットが表示中なら入力エリアに添付
+            if (mainVm.Chat.IsChatVisible && mainVm.Chat.SelectedPeerId != null)
+            {
+                mainVm.Chat.AddAttachedFiles(paths);
+            }
         }
 
         e.Handled = true;

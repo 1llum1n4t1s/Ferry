@@ -84,6 +84,16 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Fenster anzeigen</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Beenden</x:String>
+  <x:String x:Key="Text.Chat.Placeholder">Nachricht eingeben...</x:String>
+  <x:String x:Key="Text.Chat.SelectMember">Mitglied auswählen, um den Chat zu starten</x:String>
+  <x:String x:Key="Text.Chat.AttachFile">Dateien zum Senden auswählen</x:String>
+
+  <!-- Settings: Chat Retention -->
+  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">Aufbewahrung des Chatverlaufs</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve"> Tage</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">Unbegrenzt</x:String>
+
+  <x:String x:Key="Text.Pairing.LinkLabel">Pairing-Link</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">Schließen</x:String>
 

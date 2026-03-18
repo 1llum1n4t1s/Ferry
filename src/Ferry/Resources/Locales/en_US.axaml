@@ -49,8 +49,8 @@
   <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">Automatically launches when the computer starts</x:String>
   <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">Start minimized</x:String>
   <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">Launches in the background</x:String>
-  <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">Minimize to tray on close</x:String>
-  <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">Close button sends to system tray</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">Minimize to system tray</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">When minimized, hide to system tray instead of taskbar</x:String>
   <x:String x:Key="Text.Settings.Version" xml:space="preserve">Version</x:String>
   <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">Check for Updates</x:String>
 
@@ -106,5 +106,18 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Transfer rejected</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Resume failed</x:String>
+
+  <!-- Chat -->
+  <x:String x:Key="Text.Chat.Placeholder" xml:space="preserve">Type a message...</x:String>
+  <x:String x:Key="Text.Chat.SelectMember" xml:space="preserve">Select a member to start chatting</x:String>
+  <x:String x:Key="Text.Chat.AttachFile" xml:space="preserve">Attach files</x:String>
+
+  <!-- Settings: Chat Retention -->
+  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">Chat history retention</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve"> days</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">Unlimited</x:String>
+
+  <!-- Pairing -->
+  <x:String x:Key="Text.Pairing.LinkLabel" xml:space="preserve">Or share the pairing link</x:String>
 
 </ResourceDictionary>

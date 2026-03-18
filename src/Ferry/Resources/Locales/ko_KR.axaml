@@ -84,6 +84,16 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">창 표시</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">종료</x:String>
+  <x:String x:Key="Text.Chat.Placeholder">메시지를 입력하세요...</x:String>
+  <x:String x:Key="Text.Chat.SelectMember">멤버를 선택하여 채팅 시작</x:String>
+  <x:String x:Key="Text.Chat.AttachFile">전송할 파일 선택</x:String>
+
+  <!-- Settings: Chat Retention -->
+  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">채팅 기록 보관</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve">일</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">무제한</x:String>
+
+  <x:String x:Key="Text.Pairing.LinkLabel">페어링 링크</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">닫기</x:String>
 

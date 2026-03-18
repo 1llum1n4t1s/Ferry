@@ -52,8 +52,8 @@
   <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">パソコンの起動時に自動で立ち上がります</x:String>
   <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">最小化した状態で起動</x:String>
   <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">バックグラウンドで起動します</x:String>
-  <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">閉じるボタンでトレイに最小化</x:String>
-  <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">×ボタンでシステムトレイに格納されます</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">最小化時にタスクトレイに格納</x:String>
+  <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">最小化するとタスクバーではなくシステムトレイに格納されます</x:String>
   <x:String x:Key="Text.Settings.Version" xml:space="preserve">バージョン</x:String>
   <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">アップデート確認</x:String>
 
@@ -109,5 +109,18 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">受信を拒否しました</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">レジュームに失敗しました</x:String>
+
+  <!-- Chat -->
+  <x:String x:Key="Text.Chat.Placeholder" xml:space="preserve">メッセージを入力...</x:String>
+  <x:String x:Key="Text.Chat.SelectMember" xml:space="preserve">メンバーを選択してチャットを開始</x:String>
+  <x:String x:Key="Text.Chat.AttachFile" xml:space="preserve">ファイルを添付</x:String>
+
+  <!-- Settings: Chat Retention -->
+  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">チャット履歴の保持期間</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve">日</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">無期限</x:String>
+
+  <!-- Pairing -->
+  <x:String x:Key="Text.Pairing.LinkLabel" xml:space="preserve">またはペアリングリンクを共有</x:String>
 
 </ResourceDictionary>

@@ -20,13 +20,6 @@
                        IsVisible="{Binding ConnectionRouteText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
         </DockPanel>
 
-        <!-- ステータステキスト -->
-        <TextBlock Text="{Binding StatusText}"
-                   Classes="subheader"
-                   HorizontalAlignment="Center"
-                   TextWrapping="Wrap"
-                   IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-
         <!-- 宛先選択リスト -->
         <StackPanel Spacing="8"
                     IsVisible="{Binding HasPairedPeers}">

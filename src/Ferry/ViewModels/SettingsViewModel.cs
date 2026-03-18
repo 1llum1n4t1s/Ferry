@@ -45,6 +45,13 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     private bool _minimizeToTray;
 
+    /// <summary>チャット履歴の保持日数（0=無期限）。</summary>
+    [ObservableProperty]
+    private int _chatHistoryRetentionDays = 30;
+
+    /// <summary>チャット履歴保持日数の選択肢。</summary>
+    public int[] ChatRetentionOptions => [7, 14, 30, 60, 90];
+
     // === バージョン ===
 
     /// <summary>バージョン表示テキスト。</summary>
@@ -84,6 +91,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
             RunAtStartup = s.RunAtStartup;
             StartMinimized = s.StartMinimized;
             MinimizeToTray = s.MinimizeToTray;
+            ChatHistoryRetentionDays = s.ChatHistoryRetentionDays;
         }
         finally
         {
@@ -112,6 +120,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         s.RunAtStartup = RunAtStartup;
         s.StartMinimized = StartMinimized;
         s.MinimizeToTray = MinimizeToTray;
+        s.ChatHistoryRetentionDays = ChatHistoryRetentionDays;
         await _settingsService.SaveAsync();
     }
 
@@ -144,6 +153,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     partial void OnStartMinimizedChanged(bool value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
     partial void OnMinimizeToTrayChanged(bool value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
     partial void OnSaveDirectoryChanged(string value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
+    partial void OnChatHistoryRetentionDaysChanged(int value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
 
     partial void OnSelectedLocaleChanged(string value)
     {

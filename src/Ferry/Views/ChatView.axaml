@@ -1,0 +1,242 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Ferry.ViewModels"
+             xmlns:models="using:Ferry.Models"
+             xmlns:local="using:Ferry"
+             x:Class="Ferry.Views.ChatView"
+             x:DataType="vm:ChatViewModel">
+
+    <DockPanel>
+        <!-- ヘッダー（ピア選択時のみ表示） -->
+        <Border DockPanel.Dock="Top"
+                BorderThickness="0,0,0,1"
+                BorderBrush="{StaticResource TahoeGlassBorderBrush}"
+                Padding="16,12"
+                IsVisible="{Binding IsChatVisible}">
+            <DockPanel>
+                <Panel Width="8" Height="8" Margin="0,0,10,0" VerticalAlignment="Center"
+                       DockPanel.Dock="Left">
+                    <Ellipse Width="8" Height="8" Fill="#30D158"
+                             IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.IsOnline}" />
+                    <Ellipse Width="8" Height="8" Fill="#FF3B30"
+                             IsVisible="{Binding !$parent[Window].((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.IsOnline}" />
+                </Panel>
+                <TextBlock DockPanel.Dock="Right"
+                           Text="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.RouteText}"
+                           FontSize="11"
+                           Foreground="{StaticResource TahoeTextTertiaryBrush}"
+                           VerticalAlignment="Center" />
+                <TextBlock Text="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.DisplayName}"
+                           FontSize="15" FontWeight="SemiBold"
+                           Foreground="{StaticResource TahoeTextPrimaryBrush}"
+                           VerticalAlignment="Center" />
+            </DockPanel>
+        </Border>
+
+        <!-- 入力エリア（下部） -->
+        <Border DockPanel.Dock="Bottom"
+                BorderThickness="0,1,0,0"
+                BorderBrush="{StaticResource TahoeGlassBorderBrush}"
+                Padding="12"
+                IsVisible="{Binding IsChatVisible}">
+            <StackPanel Spacing="8">
+                <!-- 添付ファイルプレビュー -->
+                <ItemsControl ItemsSource="{Binding AttachedFiles}"
+                              IsVisible="{Binding HasAttachedFiles}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <Border Background="{StaticResource TahoeGlassHighBgBrush}"
+                                    BorderBrush="{StaticResource TahoeGlassBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="8,4"
+                                    Margin="0,0,4,4">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="📄" FontSize="12" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding ., Converter={x:Static local:FileNameConverter.Instance}}"
+                                               FontSize="11" MaxWidth="120"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center"
+                                               Foreground="{StaticResource TahoeTextPrimaryBrush}" />
+                                    <Button Classes="tahoe-ghost" Padding="2"
+                                            Command="{Binding $parent[ListBox].((vm:ChatViewModel)DataContext).RemoveAttachedFileCommand}"
+                                            CommandParameter="{Binding .}">
+                                        <TextBlock Text="✕" FontSize="10"
+                                                   Foreground="{StaticResource TahoeTextSecondaryBrush}" />
+                                    </Button>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <!-- メッセージ入力行 -->
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <!-- 添付ボタン -->
+                <Button Grid.Column="0" Classes="tahoe-ghost"
+                        VerticalAlignment="Center"
+                        Command="{Binding AttachFileCommand}"
+                        Margin="0,0,8,0">
+                    <TextBlock Text="📎" FontSize="18" />
+                </Button>
+                <!-- メッセージ入力 -->
+                <TextBox Grid.Column="1"
+                         Text="{Binding MessageText, Mode=TwoWay}"
+                         Watermark="{DynamicResource Text.Chat.Placeholder}"
+                         Classes="tahoe-input"
+                         VerticalAlignment="Center"
+                         KeyDown="OnInputKeyDown" />
+                <!-- 送信ボタン -->
+                <Button Grid.Column="2" Classes="tahoe-primary"
+                        Width="34" Height="34"
+                        CornerRadius="17"
+                        Margin="8,0,0,0"
+                        VerticalAlignment="Center"
+                        Command="{Binding SendMessageCommand}">
+                    <PathIcon Width="16" Height="16"
+                              Foreground="White"
+                              Data="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                </Button>
+            </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- メッセージ一覧: ItemsControl + ScrollViewer で各アイテムをフル幅にストレッチ -->
+        <ScrollViewer x:Name="MessageScrollViewer"
+                      IsVisible="{Binding IsChatVisible}"
+                      HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto"
+                      Padding="16">
+            <ItemsControl ItemsSource="{Binding Messages}"
+                          HorizontalAlignment="Stretch">
+                <!-- 各アイテムコンテナ（ContentPresenter）を親の全幅にストレッチさせる -->
+                <ItemsControl.Styles>
+                    <Style Selector="ItemsControl > ContentPresenter">
+                        <Setter Property="HorizontalAlignment" Value="Stretch" />
+                    </Style>
+                </ItemsControl.Styles>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="models:ChatMessage">
+                        <!-- 各メッセージ: IsFromMe でアライメントを動的切替 -->
+                        <StackPanel Margin="0,2">
+
+                            <!-- テキストバブル -->
+                            <Border Padding="12,8" MaxWidth="400"
+                                    HorizontalAlignment="{Binding IsFromMe, Converter={x:Static local:BoolToAlignmentConverter.Instance}}"
+                                    IsVisible="{Binding IsTextMessage}"
+                                    Classes.mine="{Binding IsFromMe}"
+                                    Classes.peer="{Binding !IsFromMe}">
+                                <Border.Styles>
+                                    <Style Selector="Border.mine">
+                                        <Setter Property="Background" Value="{StaticResource TahoeAccentBrush}" />
+                                        <Setter Property="CornerRadius" Value="16,16,4,16" />
+                                    </Style>
+                                    <Style Selector="Border.peer">
+                                        <Setter Property="Background" Value="{StaticResource TahoeGlassHighBgBrush}" />
+                                        <Setter Property="BorderBrush" Value="{StaticResource TahoeGlassBorderBrush}" />
+                                        <Setter Property="BorderThickness" Value="1" />
+                                        <Setter Property="CornerRadius" Value="16,16,16,4" />
+                                    </Style>
+                                </Border.Styles>
+                                <TextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="13"
+                                           Classes.mine="{Binding IsFromMe}"
+                                           Classes.peer="{Binding !IsFromMe}">
+                                    <TextBlock.Styles>
+                                        <Style Selector="TextBlock.mine"><Setter Property="Foreground" Value="White" /></Style>
+                                        <Style Selector="TextBlock.peer"><Setter Property="Foreground" Value="{StaticResource TahoeTextPrimaryBrush}" /></Style>
+                                    </TextBlock.Styles>
+                                </TextBlock>
+                            </Border>
+
+                            <!-- ファイルバブル -->
+                            <Border CornerRadius="12" Padding="12" MaxWidth="400"
+                                    HorizontalAlignment="{Binding IsFromMe, Converter={x:Static local:BoolToAlignmentConverter.Instance}}"
+                                    IsVisible="{Binding IsFileMessage}"
+                                    Classes.mine="{Binding IsFromMe}"
+                                    Classes.peer="{Binding !IsFromMe}">
+                                <Border.Styles>
+                                    <Style Selector="Border.mine"><Setter Property="Background" Value="{StaticResource TahoeAccentBrush}" /></Style>
+                                    <Style Selector="Border.peer">
+                                        <Setter Property="Background" Value="{StaticResource TahoeGlassHighBgBrush}" />
+                                        <Setter Property="BorderBrush" Value="{StaticResource TahoeGlassBorderBrush}" />
+                                        <Setter Property="BorderThickness" Value="1" />
+                                    </Style>
+                                </Border.Styles>
+                                <StackPanel Spacing="6">
+                                    <DockPanel>
+                                        <Border Background="#19FFFFFF" CornerRadius="8" Width="36" Height="36"
+                                                Margin="0,0,10,0" VerticalAlignment="Center">
+                                            <TextBlock Text="📄" FontSize="16"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding FileName}" FontSize="13" FontWeight="Medium"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Foreground="{StaticResource TahoeTextPrimaryBrush}" />
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <TextBlock Text="{Binding FileSizeText}" FontSize="11"
+                                                           Foreground="{StaticResource TahoeTextSecondaryBrush}" />
+                                                <TextBlock Text="•" FontSize="11"
+                                                           Foreground="{StaticResource TahoeTextSecondaryBrush}" />
+                                                <TextBlock Text="{Binding StateText}" FontSize="11"
+                                                           Foreground="{StaticResource TahoeTextSecondaryBrush}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </DockPanel>
+                                    <!-- 承認/拒否ボタン（相手のファイルのみ） -->
+                                    <Grid ColumnDefinitions="*,8,*" IsVisible="{Binding IsWaitingApproval}">
+                                        <Button Grid.Column="0" Content="{DynamicResource Text.Transfer.Approve}"
+                                                Classes="tahoe-primary" HorizontalAlignment="Stretch"
+                                                HorizontalContentAlignment="Center"
+                                                Command="{Binding $parent[ItemsControl].((vm:ChatViewModel)DataContext).ApproveFileCommand}"
+                                                CommandParameter="{Binding TransferId}" />
+                                        <Button Grid.Column="2" Content="{DynamicResource Text.Transfer.Reject}"
+                                                Classes="tahoe-secondary" HorizontalAlignment="Stretch"
+                                                HorizontalContentAlignment="Center"
+                                                Command="{Binding $parent[ItemsControl].((vm:ChatViewModel)DataContext).RejectFileCommand}"
+                                                CommandParameter="{Binding TransferId}" />
+                                    </Grid>
+                                    <!-- プログレスバー -->
+                                    <Grid Height="3" IsVisible="{Binding IsTransferring}">
+                                        <Border Background="#19FFFFFF" CornerRadius="2" />
+                                        <Border Background="{StaticResource TahoeAccentBrush}" CornerRadius="2"
+                                                HorizontalAlignment="Left" Width="{Binding ProgressBarWidth}" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- システムメッセージ -->
+                            <TextBlock Text="{Binding Text}" FontSize="11"
+                                       Foreground="{StaticResource TahoeTextTertiaryBrush}"
+                                       HorizontalAlignment="Center"
+                                       IsVisible="{Binding IsSystemMessage}" />
+
+                            <!-- タイムスタンプ -->
+                            <TextBlock Text="{Binding SentAtText}" FontSize="10"
+                                       Foreground="{StaticResource TahoeTextTertiaryBrush}"
+                                       HorizontalAlignment="{Binding IsFromMe, Converter={x:Static local:BoolToAlignmentConverter.Instance}}"
+                                       Margin="4,3,4,0"
+                                       IsVisible="{Binding !IsSystemMessage}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- 空状態（ピア未選択） -->
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Spacing="12"
+                    IsVisible="{Binding !IsChatVisible}">
+            <TextBlock Text="💬" FontSize="48" Opacity="0.5"
+                       HorizontalAlignment="Center" />
+            <TextBlock Text="{DynamicResource Text.Chat.SelectMember}"
+                       FontSize="14"
+                       Foreground="{StaticResource TahoeTextTertiaryBrush}"
+                       HorizontalAlignment="Center" />
+        </StackPanel>
+    </DockPanel>
+</UserControl>

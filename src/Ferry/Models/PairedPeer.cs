@@ -37,6 +37,30 @@ public sealed partial class PairedPeer : ObservableObject
     [property: JsonIgnore]
     private bool _isOnline;
 
+    /// <summary>最新メッセージのプレビュー（サイドバー表示用、ランタイム専用）。</summary>
+    [ObservableProperty]
+    [property: JsonIgnore]
+    private string _lastMessagePreview = string.Empty;
+
+    /// <summary>最新メッセージの日時（サイドバー表示用、ランタイム専用）。</summary>
+    [ObservableProperty]
+    [property: JsonIgnore]
+    private DateTime? _lastMessageAt;
+
+    /// <summary>未読メッセージ数（サイドバー表示用、ランタイム専用）。</summary>
+    [ObservableProperty]
+    [property: JsonIgnore]
+    private int _unreadCount;
+
+    /// <summary>ファイル着信中かどうか（サイドバーの📦アイコン表示用、ランタイム専用）。</summary>
+    [ObservableProperty]
+    [property: JsonIgnore]
+    private bool _hasIncomingFile;
+
+    /// <summary>最新メッセージ日時の表示テキスト。</summary>
+    [JsonIgnore]
+    public string LastMessageAtText => LastMessageAt?.ToLocalTime().ToString("HH:mm") ?? string.Empty;
+
     /// <summary>接続経路の表示テキスト。</summary>
     [JsonIgnore]
     public string RouteText => Route switch
@@ -46,6 +70,11 @@ public sealed partial class PairedPeer : ObservableObject
         ConnectionRoute.Relay => "🔴 リレー（TURN）",
         _ => string.Empty,
     };
+
+    partial void OnLastMessageAtChanged(DateTime? value)
+    {
+        OnPropertyChanged(nameof(LastMessageAtText));
+    }
 
     partial void OnRouteChanged(ConnectionRoute value)
     {

@@ -102,6 +102,16 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">הצג חלון</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">יציאה</x:String>
+  <x:String x:Key="Text.Chat.Placeholder">הקלד הודעה...</x:String>
+  <x:String x:Key="Text.Chat.SelectMember">בחר חבר כדי להתחיל צ'אט</x:String>
+  <x:String x:Key="Text.Chat.AttachFile">בחר קבצים לשליחה</x:String>
+
+  <!-- Settings: Chat Retention -->
+  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">שמירת היסטוריית צ'אט</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve"> ימים</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">ללא הגבלה</x:String>
+
+  <x:String x:Key="Text.Pairing.LinkLabel">קישור התאמה</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">סגור</x:String>
 

@@ -49,6 +49,9 @@ public sealed class AppSettings
     /// <summary>無視する更新バージョンタグ（例: "v1.0.7"）。このバージョンの更新通知は表示されない。</summary>
     public string IgnoreUpdateTag { get; set; } = string.Empty;
 
+    /// <summary>チャット履歴の保持日数。この日数を超えた履歴は自動削除される。</summary>
+    public int ChatHistoryRetentionDays { get; set; } = 30;
+
     // ウィンドウ位置・サイズ（前回終了時の状態を復元）
     public double? WindowLeft { get; set; }
     public double? WindowTop { get; set; }

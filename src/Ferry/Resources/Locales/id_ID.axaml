@@ -102,6 +102,16 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Tampilkan Jendela</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Keluar</x:String>
+  <x:String x:Key="Text.Chat.Placeholder">Ketik pesan...</x:String>
+  <x:String x:Key="Text.Chat.SelectMember">Pilih anggota untuk memulai obrolan</x:String>
+  <x:String x:Key="Text.Chat.AttachFile">Pilih file untuk dikirim</x:String>
+
+  <!-- Settings: Chat Retention -->
+  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">Penyimpanan riwayat obrolan</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve"> hari</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">Tidak terbatas</x:String>
+
+  <x:String x:Key="Text.Pairing.LinkLabel">Tautan Pemasangan</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">Tutup</x:String>
 

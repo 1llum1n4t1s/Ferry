@@ -29,6 +29,12 @@ public static class TransferProtocol
     /// <summary>転送レジューム応答 [TransferId (16byte)] [Status (1byte)] [LastChunkIndex (4byte)]。</summary>
     public const byte ResumeResponse = 0x21;
 
+    /// <summary>テキストメッセージ [MessageId (16byte GUID)] [UTF-8 テキスト]。</summary>
+    public const byte ChatMessage = 0x30;
+
+    /// <summary>メッセージ配達確認 [MessageId (16byte GUID)]。</summary>
+    public const byte ChatAck = 0x31;
+
     /// <summary>チャンクサイズ (16KB)。</summary>
     public const int ChunkSize = 16_384;
 

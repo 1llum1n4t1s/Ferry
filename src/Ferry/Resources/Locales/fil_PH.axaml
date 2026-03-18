@@ -102,6 +102,16 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Ipakita ang Window</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Lumabas</x:String>
+  <x:String x:Key="Text.Chat.Placeholder">Mag-type ng mensahe...</x:String>
+  <x:String x:Key="Text.Chat.SelectMember">Pumili ng miyembro para magsimula ng chat</x:String>
+  <x:String x:Key="Text.Chat.AttachFile">Pumili ng mga file na ipapadala</x:String>
+
+  <!-- Settings: Chat Retention -->
+  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">Pagpapanatili ng kasaysayan ng chat</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve"> araw</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">Walang limitasyon</x:String>
+
+  <x:String x:Key="Text.Pairing.LinkLabel">Link ng Pagpapares</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">Isara</x:String>
 

@@ -102,6 +102,16 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Показати вікно</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Вихід</x:String>
+  <x:String x:Key="Text.Chat.Placeholder">Введіть повідомлення...</x:String>
+  <x:String x:Key="Text.Chat.SelectMember">Оберіть учасника, щоб почати чат</x:String>
+  <x:String x:Key="Text.Chat.AttachFile">Оберіть файли для надсилання</x:String>
+
+  <!-- Settings: Chat Retention -->
+  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">Збереження історії чату</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve"> днів</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">Без обмежень</x:String>
+
+  <x:String x:Key="Text.Pairing.LinkLabel">Посилання для з'єднання</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">Закрити</x:String>
 

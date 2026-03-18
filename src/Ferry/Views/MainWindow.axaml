@@ -1,15 +1,15 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Ferry.ViewModels"
-        xmlns:views="using:Ferry.Views"
         xmlns:models="using:Ferry.Models"
+        xmlns:views="using:Ferry.Views"
         x:Class="Ferry.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="Ferry"
-        Width="720"
-        Height="480"
-        MinWidth="560"
-        MinHeight="360"
+        Width="800"
+        Height="540"
+        MinWidth="600"
+        MinHeight="400"
         WindowStartupLocation="CenterScreen"
         Background="Transparent"
         TransparencyLevelHint="AcrylicBlur,Blur,None"
@@ -23,109 +23,125 @@
     </Design.DataContext>
 
     <Panel>
-        <!-- === 半透明ダーク背景（リリースビルドで透過が効かない場合のフォールバック） === -->
+        <!-- ダーク背景フォールバック -->
         <Border Background="{StaticResource TahoeWindowBgBrush}" Opacity="0.92"
                 IsHitTestVisible="False" />
 
-        <!-- === メインコンテンツ === -->
         <Grid RowDefinitions="36,*">
+            <!-- タイトルバー -->
+            <Border Grid.Row="0" Background="Transparent" IsHitTestVisible="False" />
 
-            <!-- タイトルバー領域 -->
-            <Border Grid.Row="0"
-                    Background="Transparent"
-                    IsHitTestVisible="False" />
+            <!-- メインコンテンツ: 2カラム -->
+            <Grid Grid.Row="1" ColumnDefinitions="220,8,*" Margin="8,0,8,8">
 
-            <!-- サイドバー＋コンテンツ -->
-            <TabControl x:Name="SidebarTabs" Grid.Row="1" Classes="sidebar"
-                        Margin="16,0,16,16"
-                        Background="Transparent"
-                        DragDrop.AllowDrop="True">
+                <!-- === 左: サイドバー === -->
+                <Border Grid.Column="0" Classes="glass-card" Padding="0">
+                    <DockPanel>
+                        <!-- ツールバー（下部） -->
+                        <Border DockPanel.Dock="Bottom"
+                                BorderThickness="0,1,0,0"
+                                BorderBrush="{StaticResource TahoeGlassBorderBrush}"
+                                Padding="8">
+                            <Grid ColumnDefinitions="*,*">
+                                <Button Grid.Column="0"
+                                        Classes="tahoe-ghost"
+                                        FontSize="16"
+                                        HorizontalAlignment="Center"
+                                        x:Name="AddMemberButton"
+                                        ToolTip.Tip="{DynamicResource Text.Tab.AddMember}">
+                                    <TextBlock Text="＋" FontSize="16" />
+                                </Button>
+                                <Button Grid.Column="1"
+                                        Classes="tahoe-ghost"
+                                        FontSize="16"
+                                        HorizontalAlignment="Center"
+                                        Command="{Binding ToggleSettingsCommand}"
+                                        ToolTip.Tip="{DynamicResource Text.Tab.Settings}">
+                                    <TextBlock Text="⚙" FontSize="16" />
+                                </Button>
+                            </Grid>
+                        </Border>
 
-                <!-- === 受信通知パネル（サイドバー下部に表示、Tag経由） === -->
-                <TabControl.Tag>
-                    <Border Background="{StaticResource TahoeGlassHighBgBrush}"
-                            BorderBrush="{StaticResource TahoeGlassBorderBrush}"
-                            BorderThickness="1"
-                            CornerRadius="10"
-                            Padding="10,8"
-                            Margin="0,8,0,0"
-                            IsVisible="{Binding Transfer.HasPendingApproval}">
-                        <ItemsControl ItemsSource="{Binding Transfer.PendingApprovals}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="models:TransferItem">
-                                    <StackPanel Spacing="6" Margin="0,2">
-                                        <!-- ファイル情報 -->
-                                        <StackPanel Spacing="2">
-                                            <TextBlock Text="{Binding FileName}"
-                                                       FontSize="12"
-                                                       FontWeight="SemiBold"
+                        <!-- ピアリスト -->
+                        <ListBox ItemsSource="{Binding Connection.PairedPeers}"
+                                 SelectedItem="{Binding Connection.SelectedPeer}"
+                                 Classes="tahoe-list"
+                                 Padding="4"
+                                 x:Name="PeerListBox">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="models:PairedPeer">
+                                    <DockPanel Margin="4,6">
+                                        <!-- オンライン/オフラインインジケータ -->
+                                        <Panel Width="10" Height="10" Margin="0,0,10,0"
+                                               VerticalAlignment="Center" DockPanel.Dock="Left">
+                                            <Ellipse Width="10" Height="10" Fill="#30D158"
+                                                     IsVisible="{Binding IsOnline}" />
+                                            <Ellipse Width="10" Height="10" Fill="#FF3B30"
+                                                     IsVisible="{Binding !IsOnline}" />
+                                        </Panel>
+
+                                        <!-- バッジ（右端） -->
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                                                    Spacing="4" VerticalAlignment="Center">
+                                            <!-- ファイル着信 -->
+                                            <TextBlock Text="📦" FontSize="12"
+                                                       IsVisible="{Binding HasIncomingFile}" />
+                                            <!-- 未読バッジ -->
+                                            <Border Background="#FF453A" CornerRadius="9"
+                                                    MinWidth="18" Height="18" Padding="4,0"
+                                                    IsVisible="{Binding UnreadCount}"
+                                                    VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding UnreadCount}"
+                                                           Foreground="White" FontSize="10"
+                                                           FontWeight="Bold"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center" />
+                                            </Border>
+                                        </StackPanel>
+
+                                        <!-- ピア情報 -->
+                                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       FontSize="13" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TahoeTextPrimaryBrush}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding LastMessagePreview}"
+                                                       FontSize="11"
+                                                       Foreground="{StaticResource TahoeTextSecondaryBrush}"
                                                        TextTrimming="CharacterEllipsis"
-                                                       Foreground="{StaticResource TahoeTextPrimaryBrush}" />
-                                            <TextBlock FontSize="10"
-                                                       Foreground="{StaticResource TahoeTextTertiaryBrush}">
-                                                <TextBlock.Text>
-                                                    <MultiBinding StringFormat="{}{0} • {1}">
-                                                        <Binding Path="FileSizeText" />
-                                                        <Binding Path="PeerName" />
-                                                    </MultiBinding>
-                                                </TextBlock.Text>
-                                            </TextBlock>
+                                                       MaxLines="1" />
                                         </StackPanel>
-                                        <!-- 承認/拒否ボタン -->
-                                        <StackPanel Orientation="Horizontal" Spacing="6">
-                                            <Button Content="{DynamicResource Text.Transfer.Approve}"
-                                                    Classes="tahoe-primary"
-                                                    Padding="12,3"
-                                                    FontSize="11"
-                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Transfer.ApproveTransferCommand}"
-                                                    CommandParameter="{Binding TransferId}" />
-                                            <Button Content="{DynamicResource Text.Transfer.Reject}"
-                                                    Classes="tahoe-secondary"
-                                                    Padding="12,3"
-                                                    FontSize="11"
-                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Transfer.RejectTransferCommand}"
-                                                    CommandParameter="{Binding TransferId}" />
-                                        </StackPanel>
-                                    </StackPanel>
+                                    </DockPanel>
                                 </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </Border>
-                </TabControl.Tag>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
+                </Border>
 
-                <!-- メンバーリスト -->
-                <TabItem Header="{DynamicResource Text.Tab.Members}">
-                    <views:ConnectionPanel DataContext="{Binding Connection}" />
-                </TabItem>
+                <!-- ギャップ -->
+                <Border Grid.Column="1" />
 
-                <!-- メンバー追加 -->
-                <TabItem Header="{DynamicResource Text.Tab.AddMember}">
-                    <views:AddMemberPanel DataContext="{Binding Connection}" />
-                </TabItem>
+                <!-- === 右: コンテンツエリア === -->
+                <Border Grid.Column="2" Classes="glass-card" Padding="0" ClipToBounds="True">
+                    <Panel x:DataType="vm:MainWindowViewModel">
+                        <!-- チャット画面（設定モードでない） -->
+                        <Panel IsVisible="{Binding !IsSettingsMode}">
+                            <views:ChatView DataContext="{Binding Chat}" />
+                        </Panel>
 
-                <!-- 転送履歴 -->
-                <TabItem Header="{DynamicResource Text.Tab.Transfer}">
-                    <views:TransferPanel DataContext="{Binding Transfer}" />
-                </TabItem>
-
-                <!-- 設定 -->
-                <TabItem Header="{DynamicResource Text.Tab.Settings}">
-                    <ScrollViewer Padding="0,0,12,0">
-                        <views:SettingsPanel DataContext="{Binding Settings}" />
-                    </ScrollViewer>
-                </TabItem>
-
-            </TabControl>
-
+                        <!-- 設定画面（設定モード時） -->
+                        <Panel IsVisible="{Binding IsSettingsMode}">
+                            <views:SettingsPanel DataContext="{Binding Settings}" />
+                        </Panel>
+                    </Panel>
+                </Border>
+            </Grid>
         </Grid>
 
-        <!-- === ドラッグ＆ドロップオーバーレイ（ウィンドウ全体） === -->
-        <Border x:Name="DropOverlay"
-                IsVisible="False"
-                Background="#CC1A1A1E"
-                IsHitTestVisible="True"
-                DragDrop.AllowDrop="True"
-                ZIndex="100">
+        <!-- ドロップオーバーレイ -->
+        <Border x:Name="DropOverlay" IsVisible="False" ZIndex="100"
+                Background="#80000000" IsHitTestVisible="True"
+                DragDrop.AllowDrop="True">
             <Border Classes="glass-card"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"

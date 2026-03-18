@@ -84,6 +84,16 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">显示窗口</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">退出</x:String>
+  <x:String x:Key="Text.Chat.Placeholder">输入消息...</x:String>
+  <x:String x:Key="Text.Chat.SelectMember">选择成员以开始聊天</x:String>
+  <x:String x:Key="Text.Chat.AttachFile">选择要发送的文件</x:String>
+
+  <!-- Settings: Chat Retention -->
+  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">聊天记录保留</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve">天</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">无限制</x:String>
+
+  <x:String x:Key="Text.Pairing.LinkLabel">配对链接</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">关闭</x:String>
 

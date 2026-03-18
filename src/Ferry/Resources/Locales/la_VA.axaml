@@ -102,6 +102,16 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Fenestram Ostende</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Exi</x:String>
+  <x:String x:Key="Text.Chat.Placeholder">Nuntium scribe...</x:String>
+  <x:String x:Key="Text.Chat.SelectMember">Sodalis elige ut colloquium incipias</x:String>
+  <x:String x:Key="Text.Chat.AttachFile">Fasciculos mittendos elige</x:String>
+
+  <!-- Settings: Chat Retention -->
+  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">Conservatio historiae colloquii</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve"> dies</x:String>
+  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">Infinitum</x:String>
+
+  <x:String x:Key="Text.Pairing.LinkLabel">Nexus Coniugationis</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">Claudere</x:String>
 

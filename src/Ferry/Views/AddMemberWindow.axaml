@@ -1,0 +1,78 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Ferry.ViewModels"
+        x:Class="Ferry.Views.AddMemberWindow"
+        x:DataType="vm:ConnectionViewModel"
+        Title="{DynamicResource Text.Tab.AddMember}"
+        Width="360"
+        Height="480"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="{StaticResource TahoeWindowBgBrush}"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="PreferSystemChrome"
+        ExtendClientAreaTitleBarHeightHint="36">
+
+    <Grid RowDefinitions="36,*">
+        <Border Grid.Row="0" Background="Transparent" IsHitTestVisible="False" />
+
+        <StackPanel Grid.Row="1" Spacing="16" Margin="24,0,24,24"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+            <!-- タイトル -->
+            <TextBlock Text="{DynamicResource Text.Tab.AddMember}"
+                       FontSize="18" FontWeight="SemiBold"
+                       HorizontalAlignment="Center"
+                       Foreground="{StaticResource TahoeTextPrimaryBrush}" />
+
+            <!-- ステータステキスト -->
+            <TextBlock Text="{Binding StatusText}"
+                       FontSize="13"
+                       HorizontalAlignment="Center"
+                       TextWrapping="Wrap"
+                       Foreground="{StaticResource TahoeTextSecondaryBrush}"
+                       IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+            <!-- QR コード表示 -->
+            <Border Classes="glass-inner" Padding="16"
+                    HorizontalAlignment="Center"
+                    IsVisible="{Binding QrCodeImage, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <Image Source="{Binding QrCodeImage}"
+                       Width="200" Height="200"
+                       RenderOptions.BitmapInterpolationMode="HighQuality" />
+            </Border>
+
+            <!-- ペアリングURL 共有 -->
+            <StackPanel Spacing="8"
+                        IsVisible="{Binding PairingUrl, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <TextBlock Text="{DynamicResource Text.Connection.PairingLink}"
+                           FontSize="11"
+                           Foreground="{StaticResource TahoeTextTertiaryBrush}"
+                           HorizontalAlignment="Center" />
+                <Border Classes="glass-inner" Padding="8,6">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0"
+                                   Text="{Binding PairingUrl}"
+                                   FontSize="10"
+                                   TextTrimming="CharacterEllipsis"
+                                   Foreground="{StaticResource TahoeTextSecondaryBrush}"
+                                   VerticalAlignment="Center" />
+                        <Button Grid.Column="1"
+                                Classes="tahoe-primary"
+                                FontSize="11"
+                                Margin="8,0,0,0"
+                                Command="{Binding CopyPairingLinkCommand}">
+                            <Panel>
+                                <TextBlock Text="{DynamicResource Text.Connection.Copy}"
+                                           IsVisible="{Binding !IsLinkCopied}"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock Text="{DynamicResource Text.Connection.Copied}"
+                                           IsVisible="{Binding IsLinkCopied}"
+                                           HorizontalAlignment="Center" />
+                            </Panel>
+                        </Button>
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</Window>
