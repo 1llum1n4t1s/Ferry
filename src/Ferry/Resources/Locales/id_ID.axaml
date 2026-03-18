@@ -31,6 +31,7 @@
   <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">Lepaskan file untuk mentransfer</x:String>
   <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">Setujui</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">Tolak</x:String>
+  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">Buka folder</x:String>
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">Umum</x:String>

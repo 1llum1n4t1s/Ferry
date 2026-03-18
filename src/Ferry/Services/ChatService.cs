@@ -22,6 +22,7 @@ public sealed class ChatService : IChatService
 {
     private readonly IConnectionService _connectionService;
     private readonly ISettingsService _settingsService;
+    private byte[]? _cachedKey;
 
     /// <summary>ピアごとの履歴キャッシュ。</summary>
     private readonly ConcurrentDictionary<string, List<ChatMessage>> _historyCache = new();
@@ -33,14 +34,31 @@ public sealed class ChatService : IChatService
     private static readonly byte[] EncryptionSalt =
         "Ferry-ChatHistory-2026"u8.ToArray();
 
+    /// <summary>オフライン時のメッセージキュー。</summary>
+    private readonly ConcurrentQueue<byte[]> _offlineQueue = new();
+
     public event EventHandler<ChatMessage>? MessageReceived;
     public event EventHandler<Guid>? MessageDelivered;
+    public event EventHandler<Guid>? MessageDeleted;
+    public event EventHandler<(Guid MessageId, string NewText)>? MessageEdited;
+    public event EventHandler<(Guid MessageId, string Emoji, string SenderName)>? ReactionReceived;
 
     public ChatService(IConnectionService connectionService, ISettingsService settingsService)
     {
         _connectionService = connectionService;
         _settingsService = settingsService;
+
+        // 接続確立時にオフラインキューをフラッシュする
+        _connectionService.StateChanged += async (_, state) =>
+        {
+            if (state == PeerState.Connected)
+                await FlushOfflineQueueAsync();
+        };
     }
+
+    // ==========================================================
+    //  送信メソッド
+    // ==========================================================
 
     /// <inheritdoc />
     public async Task SendMessageAsync(string peerId, string text, CancellationToken ct)
@@ -64,18 +82,133 @@ public sealed class ChatService : IChatService
         message.MessageId.TryWriteBytes(payload.AsSpan(1));
         textBytes.CopyTo(payload, 17);
 
+        await SendOrEnqueueAsync(payload, message);
+        await AppendMessageAsync(message);
+    }
+
+    /// <inheritdoc />
+    public async Task SendDeleteMessageAsync(string peerId, Guid messageId, CancellationToken ct)
+    {
+        // プロトコル: [0x32] [MessageId 16byte]
+        var payload = new byte[1 + 16];
+        payload[0] = TransferProtocol.ChatDeleteMessage;
+        messageId.TryWriteBytes(payload.AsSpan(1));
+
+        await SendOrEnqueueAsync(payload);
+
+        // ローカル履歴のメッセージを削除済みに更新
+        await MarkMessageDeletedAsync(peerId, messageId);
+    }
+
+    /// <inheritdoc />
+    public async Task SendEditMessageAsync(string peerId, Guid messageId, string newText, CancellationToken ct)
+    {
+        // プロトコル: [0x33] [MessageId 16byte] [UTF-8 新テキスト]
+        var textBytes = Encoding.UTF8.GetBytes(newText);
+        var payload = new byte[1 + 16 + textBytes.Length];
+        payload[0] = TransferProtocol.ChatEditMessage;
+        messageId.TryWriteBytes(payload.AsSpan(1));
+        textBytes.CopyTo(payload, 17);
+
+        await SendOrEnqueueAsync(payload);
+
+        // ローカル履歴のメッセージを編集済みに更新
+        await UpdateMessageTextAsync(peerId, messageId, newText);
+    }
+
+    /// <inheritdoc />
+    public async Task SendReactionAsync(string peerId, Guid messageId, string emoji, CancellationToken ct)
+    {
+        // プロトコル: [0x34] [MessageId 16byte] [UTF-8 絵文字]
+        var emojiBytes = Encoding.UTF8.GetBytes(emoji);
+        var payload = new byte[1 + 16 + emojiBytes.Length];
+        payload[0] = TransferProtocol.ChatReaction;
+        messageId.TryWriteBytes(payload.AsSpan(1));
+        emojiBytes.CopyTo(payload, 17);
+
+        await SendOrEnqueueAsync(payload);
+
+        // ローカル履歴にリアクションを追加
+        await AddReactionToMessageAsync(peerId, messageId, emoji, _settingsService.Settings.DisplayName);
+    }
+
+    /// <inheritdoc />
+    public async Task SendReplyMessageAsync(string peerId, string text, Guid replyToMessageId, string replyToText, CancellationToken ct)
+    {
+        var message = new ChatMessage
+        {
+            PeerId = peerId,
+            SenderDeviceId = _settingsService.Settings.DeviceId,
+            Type = ChatMessageType.Text,
+            Text = text,
+            IsFromMe = true,
+            State = ChatMessageState.Sending,
+            ReplyToMessageId = replyToMessageId,
+            ReplyToText = replyToText,
+            ReplyToSenderName = _settingsService.Settings.DisplayName,
+        };
+
+        // プロトコル: [0x35] [ReplyToMessageId 16byte] [NewMessageId 16byte] [ReplyToTextLength 4byte] [UTF-8 ReplyToText] [UTF-8 本文]
+        var replyToTextBytes = Encoding.UTF8.GetBytes(replyToText);
+        var textBytes = Encoding.UTF8.GetBytes(text);
+        var payload = new byte[1 + 16 + 16 + 4 + replyToTextBytes.Length + textBytes.Length];
+        var offset = 0;
+
+        payload[offset++] = TransferProtocol.ChatReplyMessage;
+        replyToMessageId.TryWriteBytes(payload.AsSpan(offset)); offset += 16;
+        message.MessageId.TryWriteBytes(payload.AsSpan(offset)); offset += 16;
+        BinaryPrimitives.WriteInt32BigEndian(payload.AsSpan(offset), replyToTextBytes.Length); offset += 4;
+        replyToTextBytes.CopyTo(payload, offset); offset += replyToTextBytes.Length;
+        textBytes.CopyTo(payload, offset);
+
+        await SendOrEnqueueAsync(payload, message);
+        await AppendMessageAsync(message);
+    }
+
+    // ==========================================================
+    //  オフラインキュー
+    // ==========================================================
+
+    /// <summary>データを送信する。接続されていない場合はキューに溜める。</summary>
+    private async Task SendOrEnqueueAsync(byte[] payload, ChatMessage? message = null)
+    {
         try
         {
             await _connectionService.SendAsync(payload);
-            message.State = ChatMessageState.Sent;
+            if (message != null)
+                message.State = ChatMessageState.Sent;
         }
         catch
         {
-            message.State = ChatMessageState.Failed;
+            // 接続されていない場合はキューに溜める
+            _offlineQueue.Enqueue(payload);
+            if (message != null)
+                message.State = ChatMessageState.Failed;
         }
-
-        await AppendMessageAsync(message);
     }
+
+    /// <inheritdoc />
+    public async Task FlushOfflineQueueAsync(CancellationToken ct = default)
+    {
+        while (_offlineQueue.TryDequeue(out var payload))
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                await _connectionService.SendAsync(payload, ct);
+            }
+            catch
+            {
+                // 送信失敗 — キューに戻す
+                _offlineQueue.Enqueue(payload);
+                break;
+            }
+        }
+    }
+
+    // ==========================================================
+    //  受信ハンドラ
+    // ==========================================================
 
     /// <inheritdoc />
     public void HandleReceivedData(byte[] data)
@@ -89,6 +222,18 @@ public sealed class ChatService : IChatService
                 break;
             case TransferProtocol.ChatAck when data.Length >= 17:
                 HandleChatAck(data);
+                break;
+            case TransferProtocol.ChatDeleteMessage when data.Length >= 17:
+                HandleChatDeleteMessage(data);
+                break;
+            case TransferProtocol.ChatEditMessage when data.Length >= 17:
+                HandleChatEditMessage(data);
+                break;
+            case TransferProtocol.ChatReaction when data.Length >= 17:
+                HandleChatReaction(data);
+                break;
+            case TransferProtocol.ChatReplyMessage when data.Length >= 37:
+                HandleChatReplyMessage(data);
                 break;
         }
     }
@@ -127,6 +272,128 @@ public sealed class ChatService : IChatService
         var messageId = new Guid(data.AsSpan(1, 16));
         MessageDelivered?.Invoke(this, messageId);
     }
+
+    private void HandleChatDeleteMessage(byte[] data)
+    {
+        var messageId = new Guid(data.AsSpan(1, 16));
+        var peerId = _connectionService.ConnectedPeer?.SessionId ?? string.Empty;
+
+        _ = MarkMessageDeletedAsync(peerId, messageId);
+        MessageDeleted?.Invoke(this, messageId);
+    }
+
+    private void HandleChatEditMessage(byte[] data)
+    {
+        var messageId = new Guid(data.AsSpan(1, 16));
+        var newText = Encoding.UTF8.GetString(data, 17, data.Length - 17);
+        var peerId = _connectionService.ConnectedPeer?.SessionId ?? string.Empty;
+
+        _ = UpdateMessageTextAsync(peerId, messageId, newText);
+        MessageEdited?.Invoke(this, (messageId, newText));
+    }
+
+    private void HandleChatReaction(byte[] data)
+    {
+        var messageId = new Guid(data.AsSpan(1, 16));
+        var emoji = Encoding.UTF8.GetString(data, 17, data.Length - 17);
+        var peerId = _connectionService.ConnectedPeer?.SessionId ?? string.Empty;
+        var senderName = _connectionService.ConnectedPeer?.DisplayName ?? string.Empty;
+
+        _ = AddReactionToMessageAsync(peerId, messageId, emoji, senderName);
+        ReactionReceived?.Invoke(this, (messageId, emoji, senderName));
+    }
+
+    private void HandleChatReplyMessage(byte[] data)
+    {
+        // プロトコル: [0x35] [ReplyToMessageId 16byte] [NewMessageId 16byte] [ReplyToTextLength 4byte] [UTF-8 ReplyToText] [UTF-8 本文]
+        var offset = 1;
+        var replyToMessageId = new Guid(data.AsSpan(offset, 16)); offset += 16;
+        var newMessageId = new Guid(data.AsSpan(offset, 16)); offset += 16;
+        var replyToTextLength = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(offset)); offset += 4;
+
+        if (data.Length < offset + replyToTextLength) return;
+
+        var replyToText = Encoding.UTF8.GetString(data, offset, replyToTextLength); offset += replyToTextLength;
+        var text = Encoding.UTF8.GetString(data, offset, data.Length - offset);
+
+        // 配達確認を送信（ACK）
+        var ack = new byte[17];
+        ack[0] = TransferProtocol.ChatAck;
+        newMessageId.TryWriteBytes(ack.AsSpan(1));
+        _ = _connectionService.SendAsync(ack);
+
+        var peerId = _connectionService.ConnectedPeer?.SessionId ?? string.Empty;
+        var senderName = _connectionService.ConnectedPeer?.DisplayName ?? string.Empty;
+
+        var message = new ChatMessage
+        {
+            MessageId = newMessageId,
+            PeerId = peerId,
+            SenderDeviceId = string.Empty,
+            Type = ChatMessageType.Text,
+            Text = text,
+            IsFromMe = false,
+            State = ChatMessageState.Delivered,
+            ReplyToMessageId = replyToMessageId,
+            ReplyToText = replyToText,
+            ReplyToSenderName = senderName,
+        };
+
+        _ = AppendMessageAsync(message);
+        MessageReceived?.Invoke(this, message);
+    }
+
+    // ==========================================================
+    //  履歴操作ヘルパー
+    // ==========================================================
+
+    /// <summary>指定メッセージを削除済みとしてマークする。</summary>
+    private async Task MarkMessageDeletedAsync(string peerId, Guid messageId)
+    {
+        var history = await LoadHistoryAsync(peerId);
+        var msg = history.FirstOrDefault(m => m.MessageId == messageId);
+        if (msg != null)
+        {
+            msg.IsDeleted = true;
+            msg.Text = string.Empty;
+            await SaveHistoryAsync(peerId, history);
+        }
+    }
+
+    /// <summary>指定メッセージのテキストを更新し、編集済みフラグを設定する。</summary>
+    private async Task UpdateMessageTextAsync(string peerId, Guid messageId, string newText)
+    {
+        var history = await LoadHistoryAsync(peerId);
+        var msg = history.FirstOrDefault(m => m.MessageId == messageId);
+        if (msg != null)
+        {
+            msg.Text = newText;
+            msg.IsEdited = true;
+            await SaveHistoryAsync(peerId, history);
+        }
+    }
+
+    /// <summary>指定メッセージにリアクションを追加する。</summary>
+    private async Task AddReactionToMessageAsync(string peerId, Guid messageId, string emoji, string senderName)
+    {
+        var history = await LoadHistoryAsync(peerId);
+        var msg = history.FirstOrDefault(m => m.MessageId == messageId);
+        if (msg != null)
+        {
+            if (!msg.Reactions.TryGetValue(emoji, out var senders))
+            {
+                senders = new List<string>();
+                msg.Reactions[emoji] = senders;
+            }
+            if (!senders.Contains(senderName))
+                senders.Add(senderName);
+            // Reactions は [JsonIgnore] なので永続化には含まれない
+        }
+    }
+
+    // ==========================================================
+    //  履歴管理
+    // ==========================================================
 
     /// <inheritdoc />
     public async Task<List<ChatMessage>> LoadHistoryAsync(string peerId)
@@ -214,12 +481,14 @@ public sealed class ChatService : IChatService
 
     // === 暗号化 ===
 
-    /// <summary>デバイスIDから暗号化キーを導出する。</summary>
+    /// <summary>デバイスIDから暗号化キーを導出する（結果をキャッシュ）。</summary>
     private byte[] DeriveKey()
     {
+        if (_cachedKey != null) return _cachedKey;
         var deviceId = _settingsService.Settings.DeviceId;
         var keyMaterial = Encoding.UTF8.GetBytes(deviceId);
-        return Rfc2898DeriveBytes.Pbkdf2(keyMaterial, EncryptionSalt, 100_000, HashAlgorithmName.SHA256, 32);
+        _cachedKey = Rfc2898DeriveBytes.Pbkdf2(keyMaterial, EncryptionSalt, 100_000, HashAlgorithmName.SHA256, 32);
+        return _cachedKey;
     }
 
     /// <summary>AES-256-GCM で暗号化する。</summary>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
@@ -21,6 +22,9 @@ public sealed partial class ChatViewModel : ViewModelBase, IDisposable
     private readonly ITransferService _transferService;
     private readonly ISettingsService _settingsService;
     private readonly ConnectionViewModel _connectionViewModel;
+
+    /// <summary>ピアリストの再描画が必要なときに発火するイベント。</summary>
+    public event Action? PeerListChanged;
 
     /// <summary>現在表示中の会話メッセージ。</summary>
     public ObservableCollection<ChatMessage> Messages { get; } = [];
@@ -61,6 +65,11 @@ public sealed partial class ChatViewModel : ViewModelBase, IDisposable
         _chatService.MessageReceived += OnMessageReceived;
         _chatService.MessageDelivered += OnMessageDelivered;
 
+        // メッセージ操作イベント（リモートピアからの通知）
+        _chatService.MessageDeleted += OnRemoteDeleted;
+        _chatService.MessageEdited += OnRemoteEdited;
+        _chatService.ReactionReceived += OnRemoteReaction;
+
         // 添付ファイル変更を監視
         AttachedFiles.CollectionChanged += (_, _) => HasAttachedFiles = AttachedFiles.Count > 0;
 
@@ -70,6 +79,13 @@ public sealed partial class ChatViewModel : ViewModelBase, IDisposable
         _transferService.FileReceived += OnFileReceived;
         _transferService.TransferError += OnFileTransferError;
     }
+
+    /// <summary>リモートからメッセージ削除通知を受けたときのイベント。</summary>
+    public event EventHandler<Guid>? OnRemoteMessageDeleted;
+    /// <summary>リモートからメッセージ編集通知を受けたときのイベント。</summary>
+    public event EventHandler<(Guid MessageId, string NewText)>? OnRemoteMessageEdited;
+    /// <summary>リモートからリアクション通知を受けたときのイベント。</summary>
+    public event EventHandler<(Guid MessageId, string Emoji, string SenderName)>? OnRemoteReactionReceived;
 
     /// <summary>ピア選択時にチャット履歴を読み込む。</summary>
     public async Task LoadChatAsync(string peerId)
@@ -105,6 +121,12 @@ public sealed partial class ChatViewModel : ViewModelBase, IDisposable
         }
     }
 
+    /// <summary>検索用にピアの履歴を読み込む（UI の Messages コレクションに影響しない）。</summary>
+    public async Task<List<ChatMessage>> LoadHistoryForSearchAsync(string peerId)
+    {
+        return await _chatService.LoadHistoryAsync(peerId);
+    }
+
     /// <summary>テキストメッセージを送信する。</summary>
     [RelayCommand]
     private async Task SendMessageAsync()
@@ -112,7 +134,11 @@ public sealed partial class ChatViewModel : ViewModelBase, IDisposable
         var hasText = !string.IsNullOrWhiteSpace(MessageText);
         var hasFiles = AttachedFiles.Count > 0;
 
-        if ((!hasText && !hasFiles) || SelectedPeerId == null) return;
+        if ((!hasText && !hasFiles) || SelectedPeerId == null)
+        {
+            Util.Logger.Log($"メッセージ送信スキップ: hasText={hasText}, hasFiles={hasFiles}, peerId={SelectedPeerId ?? "null"}", Util.LogLevel.Warning);
+            return;
+        }
 
         var text = MessageText.Trim();
         MessageText = string.Empty;
@@ -149,11 +175,14 @@ public sealed partial class ChatViewModel : ViewModelBase, IDisposable
                 await _chatService.SendMessageAsync(SelectedPeerId, text);
                 message.State = ChatMessageState.Sent;
             }
-            catch
+            catch (Exception ex)
             {
+                Util.Logger.Log($"メッセージ送信失敗: {ex.Message}", Util.LogLevel.Error);
                 message.State = ChatMessageState.Failed;
             }
 
+            // 送信結果を履歴に永続化
+            await _chatService.AppendMessageAsync(message);
             UpdatePeerPreview(SelectedPeerId, $"あなた: {text}");
         }
 
@@ -231,6 +260,7 @@ public sealed partial class ChatViewModel : ViewModelBase, IDisposable
                 Type = ChatMessageType.File,
                 FileName = fileInfo.Name,
                 FileSize = fileInfo.Length,
+                FilePath = path,
                 IsFromMe = true,
                 State = ChatMessageState.Transferring,
             };
@@ -358,6 +388,7 @@ public sealed partial class ChatViewModel : ViewModelBase, IDisposable
             {
                 msg.State = ChatMessageState.Completed;
                 msg.FileProgress = 1.0;
+                msg.FilePath = e.SavedFilePath;
             }
         });
     }
@@ -383,13 +414,93 @@ public sealed partial class ChatViewModel : ViewModelBase, IDisposable
         {
             peer.LastMessagePreview = preview;
             peer.LastMessageAt = DateTime.UtcNow;
+            PeerListChanged?.Invoke();
         }
+    }
+
+    // --- メッセージ操作パブリックメソッド ---
+
+    public async Task DeleteMessageAsync(Guid messageId)
+    {
+        if (SelectedPeerId == null) return;
+        await _chatService.SendDeleteMessageAsync(SelectedPeerId, messageId);
+        var msg = Messages.FirstOrDefault(m => m.MessageId == messageId);
+        if (msg != null) { msg.IsDeleted = true; msg.Text = string.Empty; }
+    }
+
+    public async Task EditMessageAsync(Guid messageId, string newText)
+    {
+        if (SelectedPeerId == null) return;
+        await _chatService.SendEditMessageAsync(SelectedPeerId, messageId, newText);
+        var msg = Messages.FirstOrDefault(m => m.MessageId == messageId);
+        if (msg != null) { msg.Text = newText; msg.IsEdited = true; }
+    }
+
+    public async Task SendReactionAsync(Guid messageId, string emoji)
+    {
+        if (SelectedPeerId == null) return;
+        await _chatService.SendReactionAsync(SelectedPeerId, messageId, emoji);
+    }
+
+    public async Task SendReplyAsync(string text, Guid replyToId, string replyToText)
+    {
+        if (SelectedPeerId == null) return;
+        if (_connectionService.State != PeerState.Connected)
+        {
+            try { await _connectionViewModel.ConnectToSelectedPeerAsync(); }
+            catch (Exception ex) { Util.Logger.Log($"リプライ送信前の接続失敗: {ex.Message}", Util.LogLevel.Error); return; }
+        }
+        await _chatService.SendReplyMessageAsync(SelectedPeerId, text, replyToId, replyToText);
+    }
+
+    public async Task RetryMessageAsync(Guid messageId)
+    {
+        if (SelectedPeerId == null) return;
+        var msg = Messages.FirstOrDefault(m => m.MessageId == messageId);
+        if (msg?.Text == null) return;
+        if (_connectionService.State != PeerState.Connected)
+            await _connectionViewModel.ConnectToSelectedPeerAsync();
+        try { await _chatService.SendMessageAsync(SelectedPeerId, msg.Text); msg.State = ChatMessageState.Sent; }
+        catch { msg.State = ChatMessageState.Failed; }
+    }
+
+    // --- リモートからのメッセージ操作イベントハンドラ ---
+
+    private void OnRemoteDeleted(object? sender, Guid messageId)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            var msg = Messages.FirstOrDefault(m => m.MessageId == messageId);
+            if (msg != null) { msg.IsDeleted = true; msg.Text = string.Empty; }
+            OnRemoteMessageDeleted?.Invoke(this, messageId);
+        });
+    }
+
+    private void OnRemoteEdited(object? sender, (Guid MessageId, string NewText) e)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            var msg = Messages.FirstOrDefault(m => m.MessageId == e.MessageId);
+            if (msg != null) { msg.Text = e.NewText; msg.IsEdited = true; }
+            OnRemoteMessageEdited?.Invoke(this, e);
+        });
+    }
+
+    private void OnRemoteReaction(object? sender, (Guid MessageId, string Emoji, string SenderName) e)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            OnRemoteReactionReceived?.Invoke(this, e);
+        });
     }
 
     public void Dispose()
     {
         _chatService.MessageReceived -= OnMessageReceived;
         _chatService.MessageDelivered -= OnMessageDelivered;
+        _chatService.MessageDeleted -= OnRemoteDeleted;
+        _chatService.MessageEdited -= OnRemoteEdited;
+        _chatService.ReactionReceived -= OnRemoteReaction;
         _transferService.ApprovalRequested -= OnApprovalRequested;
         _transferService.ProgressChanged -= OnFileProgressChanged;
         _transferService.FileReceived -= OnFileReceived;

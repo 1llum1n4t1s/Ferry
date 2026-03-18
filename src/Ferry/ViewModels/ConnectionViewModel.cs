@@ -259,7 +259,11 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     public async Task ConnectToSelectedPeerAsync()
     {
         var peer = SelectedPeer;
-        if (peer == null) return;
+        if (peer == null)
+        {
+            Util.Logger.Log("ConnectToSelectedPeerAsync: SelectedPeer が null のため接続スキップ", Util.LogLevel.Warning);
+            throw new InvalidOperationException("接続先のピアが選択されていません");
+        }
 
         if (ConnectionState == PeerState.Connected && _connectionService.ConnectedPeer?.SessionId == peer.PeerId)
             return; // 既に接続済み

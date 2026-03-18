@@ -31,6 +31,7 @@
   <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">பரிமாற்ற கோப்புகளை இங்கே விடுங்கள்</x:String>
   <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">ஏற்கவும்</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">நிராகரி</x:String>
+  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">கோப்புறையைத் திற</x:String>
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">பொது</x:String>

@@ -31,6 +31,7 @@
   <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">I-drop ang mga file para ilipat</x:String>
   <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">Aprubahan</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">Tanggihan</x:String>
+  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">Buksan ang folder</x:String>
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">Pangkalahatan</x:String>

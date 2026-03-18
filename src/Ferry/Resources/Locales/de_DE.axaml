@@ -25,6 +25,7 @@
   <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">Dateien zum Übertragen ablegen</x:String>
   <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">Genehmigen</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">Ablehnen</x:String>
+  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">Ordner öffnen</x:String>
   <x:String x:Key="Text.Settings.General" xml:space="preserve">Allgemein</x:String>
   <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">Anzeigename für andere</x:String>
   <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">PC-Name eingeben</x:String>

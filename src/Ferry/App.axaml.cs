@@ -28,6 +28,9 @@ public partial class App : Application
     private ResourceDictionary? _activeLocale;
     private ISettingsService? _settingsService;
 
+    /// <summary>TransferService のインスタンス（MainWindow からのアクセス用）。</summary>
+    public ITransferService? TransferService { get; private set; }
+
     /// <summary>GitHub Releases の更新元リポジトリ URL（public リポジトリ経由）。</summary>
     private const string GitHubRepoUrl = "https://github.com/1llum1n4t1s/Ferry-releases";
 
@@ -129,6 +132,7 @@ public partial class App : Application
             if (!string.IsNullOrEmpty(settings.RelayUrl))
                 connectionService.RelayUrl = settings.RelayUrl;
             var transferService = new TransferService(connectionService, settingsService);
+            TransferService = transferService;
             var qrCodeService = new QrCodeGenerator();
             var peerRegistry = new PeerRegistryService();
 
@@ -156,6 +160,7 @@ public partial class App : Application
                 DataContext = mainVm,
             };
             _mainWindow.SetSettingsService(settingsService);
+            _mainWindow.SetNotificationService(new NotificationService(settingsService));
             desktop.MainWindow = _mainWindow;
 
             // トレイアイコン設定（MinimizeToTray 有効時にウィンドウ復帰用）

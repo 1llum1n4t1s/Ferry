@@ -31,6 +31,7 @@
   <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">Solte os arquivos para transferir</x:String>
   <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">Aprovar</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">Rejeitar</x:String>
+  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">Abrir pasta</x:String>
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">Geral</x:String>

@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -9,7 +11,9 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using AvaloniaWebView;
+using Ferry.Infrastructure;
 using Ferry.Models;
 using Ferry.Services;
 using Ferry.ViewModels;
@@ -24,7 +28,11 @@ public partial class MainWindow : Window
 {
     private Border? _dropOverlay;
     private ISettingsService? _settingsService;
+    private INotificationService? _notificationService;
     private WebView? _webView;
+
+    // ドロップファイルのチャンク受信用
+    private readonly Dictionary<string, (string path, FileStream stream, string name)> _dropFiles = [];
 
     // ViewModel 群（ビジネスロジックの橋渡し）
     private MainWindowViewModel? _mainVm;
@@ -95,6 +103,7 @@ public partial class MainWindow : Window
     }
 
     public void SetSettingsService(ISettingsService settingsService) => _settingsService = settingsService;
+    public void SetNotificationService(INotificationService notificationService) => _notificationService = notificationService;
 
     // === WebView 初期化 ===
 
@@ -129,59 +138,139 @@ public partial class MainWindow : Window
         try
         {
             var json = e.Message;
-            using var doc = JsonDocument.Parse(json);
-            var action = doc.RootElement.GetProperty("action").GetString();
-            var data = doc.RootElement.TryGetProperty("data", out var d) ? d : default;
+
+            // using var doc はこのメソッドの終了時に dispose されるため、
+            // InvokeAsync のラムダ内で JsonElement を参照すると破壊される。
+            // 必要な値を事前に文字列として取り出す。
+            string? action;
+            string? dataStr = null;
+            string? settingJson = null;
+            using (var doc = JsonDocument.Parse(json))
+            {
+                action = doc.RootElement.GetProperty("action").GetString();
+                if (doc.RootElement.TryGetProperty("data", out var d))
+                {
+                    if (d.ValueKind == JsonValueKind.String)
+                        dataStr = d.GetString();
+                    else if (d.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
+                        settingJson = d.GetRawText();
+                }
+            }
 
             Util.Logger.Log($"JS→C#: {action}", Util.LogLevel.Debug);
 
             _ = Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
             {
-                switch (action)
+                try
                 {
-                    case "ready":
-                        await OnUiReady();
-                        break;
-                    case "selectPeer":
-                        await OnSelectPeer(data.GetString()!);
-                        break;
-                    case "sendMessage":
-                        await OnSendMessage(data.GetString()!);
-                        break;
-                    case "attachFile":
-                        await OnAttachFile();
-                        break;
-                    case "approveFile":
-                        OnApproveFile(data.GetString()!);
-                        break;
-                    case "rejectFile":
-                        OnRejectFile(data.GetString()!);
-                        break;
-                    case "addMember":
-                        await OnAddMember();
-                        break;
-                    case "toggleSettings":
-                        SendToJs("showView", "settings");
-                        await SendSettingsToJs();
-                        break;
-                    case "saveSetting":
-                        OnSaveSetting(data);
-                        break;
-                    case "checkUpdate":
-                        if (Avalonia.Application.Current is App app)
-                            app.Check4Update(true);
-                        break;
-                    case "removePeer":
-                        if (ConnectionVm != null)
-                            await ConnectionVm.RemovePeerCommand.ExecuteAsync(data.GetString()!);
-                        await SendPeersToJs();
-                        break;
-                    case "showChat":
-                        SendToJs("showView", "chat");
-                        break;
-                    case "browseSaveDir":
-                        await OnBrowseSaveDirectory();
-                        break;
+                    switch (action)
+                    {
+                        case "ready":
+                            await OnUiReady();
+                            break;
+                        case "selectPeer":
+                            await OnSelectPeer(dataStr!);
+                            break;
+                        case "sendMessage":
+                            await OnSendMessage(dataStr!);
+                            break;
+                        case "attachFile":
+                            await OnAttachFile();
+                            break;
+                        case "approveFile":
+                            OnApproveFile(dataStr!);
+                            break;
+                        case "rejectFile":
+                            OnRejectFile(dataStr!);
+                            break;
+                        case "addMember":
+                            await OnAddMember();
+                            break;
+                        case "toggleSettings":
+                            SendToJs("showView", "settings");
+                            await SendSettingsToJs();
+                            break;
+                        case "saveSetting":
+                            if (settingJson != null)
+                            {
+                                using var settingDoc = JsonDocument.Parse(settingJson);
+                                OnSaveSetting(settingDoc.RootElement);
+                            }
+                            break;
+                        case "checkUpdate":
+                            if (Avalonia.Application.Current is App app)
+                                app.Check4Update(true);
+                            break;
+                        case "removePeer":
+                            if (ConnectionVm != null)
+                                await ConnectionVm.RemovePeerCommand.ExecuteAsync(dataStr!);
+                            await SendPeersToJs();
+                            break;
+                        case "showChat":
+                            SendToJs("showView", "chat");
+                            break;
+                        case "browseSaveDir":
+                            await OnBrowseSaveDirectory();
+                            break;
+                        case "browseReceiveFileSavePath":
+                            await OnBrowseReceiveFileSavePath();
+                            break;
+                        case "openFile":
+                            OnOpenFile(data.GetString()!);
+                            break;
+                        case "openFolder":
+                            OnOpenFolder(data.GetString()!);
+                            break;
+                        case "cancelTransfer":
+                            OnCancelTransfer(data.GetString()!);
+                            break;
+                        case "pasteImage":
+                            await OnPasteImage(data.GetString()!);
+                            break;
+                        case "searchMessages":
+                            await OnSearchMessages(data.GetString()!);
+                            break;
+                        case "copyMessage":
+                            await OnCopyMessage(data.GetString()!);
+                            break;
+                        case "deleteMessage":
+                            await OnDeleteMessage(data.GetString()!);
+                            break;
+                        case "editMessage":
+                            SendToJsAsync("showEditDialog", dataStr);
+                            break;
+                        case "submitEdit":
+                            await OnSubmitEdit(data.GetString()!);
+                            break;
+                        case "replyMessage":
+                            OnReplyMessage(data.GetString()!);
+                            break;
+                        case "sendReply":
+                            await OnSendReply(data.GetString()!);
+                            break;
+                        case "reactMessage":
+                            SendToJsAsync("showReactionPicker", data.GetString());
+                            break;
+                        case "sendReaction":
+                            await OnSendReaction(data.GetString()!);
+                            break;
+                        case "retryMessage":
+                            await OnRetryMessage(data.GetString()!);
+                            break;
+                        case "dropFileStart":
+                            OnDropFileStart(dataStr!);
+                            break;
+                        case "dropFileChunk":
+                            OnDropFileChunk(dataStr!);
+                            break;
+                        case "dropFileEnd":
+                            OnDropFileEnd(dataStr!);
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Util.Logger.Log($"JS→C# アクション実行エラー ({action}): {ex}", Util.LogLevel.Error);
                 }
             });
         }
@@ -227,6 +316,7 @@ public partial class MainWindow : Window
 
         // 設定送信
         await SendSettingsToJs();
+        SendThemeToJs();
 
         // 最初のピアを自動選択
         if (ConnectionVm?.PairedPeers.Count > 0)
@@ -265,6 +355,8 @@ public partial class MainWindow : Window
             fileSize = m.FileSizeText,
             fileProgress = m.FileProgress,
             transferId = m.TransferId?.ToString(),
+            filePath = m.FilePath,
+            thumbnailData = BuildThumbnailData(m),
         }).ToArray());
 
         SendToJsAsync("peerSelected", new
@@ -342,6 +434,23 @@ public partial class MainWindow : Window
             case "chatRetentionDays":
                 SettingsVm.ChatHistoryRetentionDays = value.GetInt32();
                 break;
+            case "enableNotificationSound":
+                SettingsVm.EnableNotificationSound = value.GetBoolean();
+                break;
+            case "autoAcceptFileTransfer":
+                SettingsVm.AutoAcceptFileTransfer = value.GetBoolean();
+                break;
+            case "accentColor":
+                SettingsVm.AccentColor = value.GetString() ?? "#007AFF";
+                SendThemeToJs();
+                break;
+            case "fontSize":
+                SettingsVm.FontSize = value.GetString() ?? "medium";
+                SendThemeToJs();
+                break;
+            case "autoStartWithWindows":
+                SettingsVm.AutoStartWithWindows = value.GetBoolean();
+                break;
         }
     }
 
@@ -363,22 +472,159 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task OnBrowseReceiveFileSavePath()
+    {
+        var dirs = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            AllowMultiple = false,
+            Title = "受信ファイルの保存先フォルダを選択",
+        });
+        if (dirs.Count > 0)
+        {
+            var path = dirs[0].TryGetLocalPath();
+            if (path != null && SettingsVm != null)
+            {
+                SettingsVm.ReceiveFileSavePath = path;
+                await SendSettingsToJs();
+            }
+        }
+    }
+
+    // === メッセージ操作ハンドラ ===
+
+    private async Task OnCopyMessage(string msgId)
+    {
+        var msg = ChatVm?.Messages.FirstOrDefault(m => m.MessageId.ToString() == msgId);
+        if (msg?.Text == null) return;
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard != null) await clipboard.SetTextAsync(msg.Text);
+    }
+
+    private async Task OnDeleteMessage(string msgId)
+    {
+        if (!Guid.TryParse(msgId, out var id)) return;
+        try { await ChatVm!.DeleteMessageAsync(id); SendToJsAsync("messageDeleted", msgId); }
+        catch (Exception ex) { Util.Logger.Log($"メッセージ削除失敗: {ex.Message}", Util.LogLevel.Error); }
+    }
+
+    private async Task OnSubmitEdit(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var id = Guid.Parse(doc.RootElement.GetProperty("id").GetString()!);
+            var newText = doc.RootElement.GetProperty("newText").GetString()!;
+            await ChatVm!.EditMessageAsync(id, newText);
+            SendToJsAsync("messageEdited", new { id = id.ToString(), newText });
+        }
+        catch (Exception ex) { Util.Logger.Log($"メッセージ編集失敗: {ex.Message}", Util.LogLevel.Error); }
+    }
+
+    private void OnReplyMessage(string msgId)
+    {
+        var msg = ChatVm?.Messages.FirstOrDefault(m => m.MessageId.ToString() == msgId);
+        if (msg == null) return;
+        SendToJsAsync("showReplyBar", new { id = msgId, text = msg.Text ?? "", senderName = msg.IsFromMe ? "あなた" : (ConnectionVm?.SelectedPeer?.DisplayName ?? "") });
+    }
+
+    private async Task OnSendReply(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var text = doc.RootElement.GetProperty("text").GetString()!;
+            var replyToId = Guid.Parse(doc.RootElement.GetProperty("replyToId").GetString()!);
+            var replyToText = doc.RootElement.GetProperty("replyToText").GetString() ?? "";
+            await ChatVm!.SendReplyAsync(text, replyToId, replyToText);
+        }
+        catch (Exception ex) { Util.Logger.Log($"リプライ送信失敗: {ex.Message}", Util.LogLevel.Error); }
+    }
+
+    private async Task OnSendReaction(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var msgId = Guid.Parse(doc.RootElement.GetProperty("msgId").GetString()!);
+            var emoji = doc.RootElement.GetProperty("emoji").GetString()!;
+            await ChatVm!.SendReactionAsync(msgId, emoji);
+            SendToJsAsync("reactionReceived", new { id = msgId.ToString(), emoji, senderName = "あなた" });
+        }
+        catch (Exception ex) { Util.Logger.Log($"リアクション送信失敗: {ex.Message}", Util.LogLevel.Error); }
+    }
+
+    private async Task OnRetryMessage(string msgId)
+    {
+        if (!Guid.TryParse(msgId, out var id)) return;
+        try { await ChatVm!.RetryMessageAsync(id); }
+        catch (Exception ex) { Util.Logger.Log($"メッセージ再送失敗: {ex.Message}", Util.LogLevel.Error); }
+    }
+
+    // === テーマ送信 ===
+
+    private void SendThemeToJs()
+    {
+        if (SettingsVm == null) return;
+        var theme = SettingsVm.Theme;
+        if (string.Equals(theme, "system", StringComparison.OrdinalIgnoreCase))
+        {
+            var app = Avalonia.Application.Current;
+            theme = app?.ActualThemeVariant == Avalonia.Styling.ThemeVariant.Dark ? "dark" : "light";
+        }
+        else
+        {
+            theme = theme.ToLowerInvariant();
+        }
+        SendToJsAsync("applyTheme", new
+        {
+            theme,
+            accentColor = SettingsVm.AccentColor,
+            fontSize = SettingsVm.FontSize,
+        });
+    }
+
+    // === 全ピア横断メッセージ検索 ===
+
+    private async Task OnSearchMessages(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query) || ConnectionVm == null || ChatVm == null) return;
+        var results = new List<object>();
+        foreach (var peer in ConnectionVm.PairedPeers)
+        {
+            var history = await ChatVm.LoadHistoryForSearchAsync(peer.PeerId);
+            var matches = history
+                .Where(m => m.Text?.Contains(query, StringComparison.OrdinalIgnoreCase) == true)
+                .Select(m => new
+                {
+                    peerId = peer.PeerId,
+                    peerName = peer.DisplayName,
+                    text = m.Text,
+                    sentAt = m.SentAtText,
+                    messageId = m.MessageId.ToString(),
+                });
+            results.AddRange(matches);
+        }
+        SendToJsAsync("searchResults", results.Take(50).ToArray());
+    }
+
     // === データ送信ヘルパー ===
 
     private Task SendPeersToJs()
     {
         if (ConnectionVm == null) return Task.CompletedTask;
-        var peers = ConnectionVm.PairedPeers.Select(p => new
-        {
-            peerId = p.PeerId,
-            displayName = p.DisplayName,
-            isOnline = p.IsOnline,
-            unreadCount = p.UnreadCount,
-            hasIncomingFile = p.HasIncomingFile,
-            lastMessagePreview = p.LastMessagePreview,
-            connectionStatusText = p.ConnectionStatusText,
-            route = p.Route.ToString(),
-        }).ToArray();
+        var peers = ConnectionVm.PairedPeers
+            .OrderByDescending(p => p.LastMessageAt ?? DateTime.MinValue)
+            .Select(p => new
+            {
+                peerId = p.PeerId,
+                displayName = p.DisplayName,
+                isOnline = p.IsOnline,
+                unreadCount = p.UnreadCount,
+                hasIncomingFile = p.HasIncomingFile,
+                lastMessagePreview = p.LastMessagePreview,
+                connectionStatusText = p.ConnectionStatusText,
+                route = p.Route.ToString(),
+            }).ToArray();
         SendToJsAsync("loadPeers", peers);
         return Task.CompletedTask;
     }
@@ -399,6 +645,13 @@ public partial class MainWindow : Window
             versionText = SettingsVm.VersionText,
             localeOptions = App.LocaleOptions.Select(l => new { key = l.Key, displayName = l.DisplayName }).ToArray(),
             chatRetentionOptions = SettingsVm.ChatRetentionOptions,
+            enableNotificationSound = SettingsVm.EnableNotificationSound,
+            receiveFileSavePath = SettingsVm.ReceiveFileSavePath,
+            autoAcceptFileTransfer = SettingsVm.AutoAcceptFileTransfer,
+            theme = SettingsVm.Theme,
+            accentColor = SettingsVm.AccentColor,
+            fontSize = SettingsVm.FontSize,
+            autoStartWithWindows = SettingsVm.AutoStartWithWindows,
         });
         return Task.CompletedTask;
     }
@@ -420,11 +673,17 @@ public partial class MainWindow : Window
             "Settings.MinimizeToTray", "Settings.MinimizeToTray.Desc",
             "Settings.Version", "Settings.CheckUpdate",
             "Settings.ChatRetention", "Settings.ChatRetention.Days", "Settings.ChatRetention.Unlimited",
-            "Transfer.Approve", "Transfer.Reject",
+            "Transfer.Approve", "Transfer.Reject", "Transfer.OpenFolder",
             "State.Sending", "State.Sent", "State.Completed", "State.Error",
             "State.WaitingApproval", "State.Receiving",
             "Connection.RemovePeer",
             "Pairing.LinkLabel",
+            "Settings.Notification", "Settings.NotificationSound", "Settings.NotificationSound.Desc",
+            "Settings.FileTransfer", "Settings.ReceiveFileSavePath", "Settings.ReceiveFileSavePath.Default",
+            "Settings.AutoAcceptFile", "Settings.AutoAcceptFile.Desc",
+            "Settings.AccentColor",
+            "Settings.FontSize", "Settings.FontSize.Small", "Settings.FontSize.Medium", "Settings.FontSize.Large",
+            "Settings.AutoStartWithWindows", "Settings.AutoStartWithWindows.Desc",
         };
 
         var texts = keys.ToDictionary(k => k, k => App.Text(k));
@@ -437,6 +696,17 @@ public partial class MainWindow : Window
     private void SubscribeToServiceEvents()
     {
         if (ChatVm == null) return;
+
+        ChatVm.PeerListChanged += () => Dispatcher.UIThread.Post(() => SendPeersToJs());
+        ChatVm.OnRemoteMessageDeleted += (_, id) => SendToJsAsync("messageDeleted", id.ToString());
+        ChatVm.OnRemoteMessageEdited += (_, e) => SendToJsAsync("messageEdited", new { id = e.MessageId.ToString(), newText = e.NewText });
+        ChatVm.OnRemoteReactionReceived += (_, e) => SendToJsAsync("reactionReceived", new { id = e.MessageId.ToString(), emoji = e.Emoji, senderName = e.SenderName });
+
+        ChatVm.AttachedFiles.CollectionChanged += (_, args) =>
+        {
+            if (ChatVm.AttachedFiles.Count == 0)
+                SendToJsAsync("clearAttachments", null);
+        };
 
         ChatVm.Messages.CollectionChanged += (_, args) =>
         {
@@ -455,7 +725,21 @@ public partial class MainWindow : Window
                     fileSize = msg.FileSizeText,
                     fileProgress = msg.FileProgress,
                     transferId = msg.TransferId?.ToString(),
+                    filePath = msg.FilePath,
+                    thumbnailData = BuildThumbnailData(msg),
                 });
+
+                // 受信メッセージ かつ ウィンドウが非アクティブなら通知を発火
+                if (!msg.IsFromMe && !IsActive)
+                {
+                    var platformHandle = this.TryGetPlatformHandle();
+                    var hwnd = platformHandle?.Handle ?? IntPtr.Zero;
+                    WindowFlash.Flash(hwnd);
+
+                    var senderName = ConnectionVm?.SelectedPeer?.DisplayName ?? string.Empty;
+                    var preview = msg.Type == ChatMessageType.File ? msg.FileName ?? string.Empty : msg.Text;
+                    _notificationService?.NotifyMessageReceived(msg.PeerId, senderName, preview);
+                }
 
                 // ファイル転送のプログレス/状態変更を軽量にプッシュ
                 if (msg.Type == ChatMessageType.File)
@@ -466,7 +750,13 @@ public partial class MainWindow : Window
                         if (pe.PropertyName == nameof(msg.FileProgress))
                             SendToJsAsync("updateProgress", new { id, progress = msg.FileProgress });
                         else if (pe.PropertyName == nameof(msg.State))
-                            SendToJsAsync("updateState", new { id, state = msg.State.ToString() });
+                            SendToJsAsync("updateState", new
+                            {
+                                id,
+                                state = msg.State.ToString(),
+                                filePath = msg.FilePath,
+                                thumbnailData = BuildThumbnailData(msg),
+                            });
                     };
                 }
             }
@@ -509,27 +799,122 @@ public partial class MainWindow : Window
     private void RestoreWindowPosition()
     {
         var s = _settingsService?.Settings;
-        if (s?.WindowWidth > 0 && s?.WindowHeight > 0)
+        if (s == null) return;
+
+        if (s.WindowWidth > 0 && s.WindowHeight > 0)
         {
             Width = s.WindowWidth!.Value;
             Height = s.WindowHeight!.Value;
         }
-        if (s?.WindowLeft != null && s?.WindowTop != null)
+
+        if (s.WindowLeft != null && s.WindowTop != null)
+        {
             Position = new PixelPoint((int)s.WindowLeft.Value, (int)s.WindowTop.Value);
+        }
+        else if (!double.IsNaN(s.WindowX) && !double.IsNaN(s.WindowY))
+        {
+            Position = new PixelPoint((int)s.WindowX, (int)s.WindowY);
+        }
+
+        if (s.IsWindowMaximized)
+            WindowState = WindowState.Maximized;
     }
 
     private void SaveWindowPosition()
     {
-        if (_settingsService == null || WindowState != WindowState.Normal) return;
+        if (_settingsService == null) return;
         var s = _settingsService.Settings;
-        s.WindowLeft = Position.X;
-        s.WindowTop = Position.Y;
-        s.WindowWidth = Width;
-        s.WindowHeight = Height;
+
+        s.IsWindowMaximized = WindowState == WindowState.Maximized;
+
+        if (WindowState == WindowState.Normal)
+        {
+            s.WindowLeft = Position.X;
+            s.WindowTop = Position.Y;
+            s.WindowWidth = Width;
+            s.WindowHeight = Height;
+            s.WindowX = Position.X;
+            s.WindowY = Position.Y;
+        }
+
         _ = _settingsService.SaveAsync();
     }
 
     private void OnPositionOrSizeChanged(object? sender, EventArgs e) => SaveWindowPosition();
+
+    // === ファイル操作アクション ===
+
+    private void OnOpenFile(string path)
+    {
+        if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+        try { Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true }); }
+        catch (Exception ex) { Util.Logger.Log($"ファイルを開けませんでした: {ex.Message}", Util.LogLevel.Error); }
+    }
+
+    private void OnOpenFolder(string path)
+    {
+        if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+        try { Process.Start("explorer.exe", $"/select,\"{path}\""); }
+        catch (Exception ex) { Util.Logger.Log($"フォルダを開けませんでした: {ex.Message}", Util.LogLevel.Error); }
+    }
+
+    private void OnCancelTransfer(string transferId)
+    {
+        if (string.IsNullOrEmpty(transferId)) return;
+        if (Avalonia.Application.Current is App app)
+            app.TransferService?.CancelTransfer(transferId);
+        var msg = ChatVm?.Messages.FirstOrDefault(m => m.TransferId?.ToString() == transferId);
+        if (msg != null) msg.State = ChatMessageState.Failed;
+    }
+
+    private async Task OnPasteImage(string json)
+    {
+        if (ChatVm == null) return;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var base64Data = doc.RootElement.GetProperty("data").GetString();
+            var fileName = doc.RootElement.GetProperty("name").GetString() ?? "clipboard-image.png";
+            if (string.IsNullOrEmpty(base64Data)) return;
+
+            var base64 = base64Data.Contains(',') ? base64Data[(base64Data.IndexOf(',') + 1)..] : base64Data;
+            var bytes = Convert.FromBase64String(base64);
+            var tempDir = Path.Combine(Path.GetTempPath(), "Ferry");
+            if (!Directory.Exists(tempDir)) Directory.CreateDirectory(tempDir);
+
+            var tempPath = Path.Combine(tempDir, $"{Guid.NewGuid():N}_{fileName}");
+            await File.WriteAllBytesAsync(tempPath, bytes);
+            ChatVm.AddAttachedFiles([tempPath]);
+            SendToJsAsync("filesAttached", new[] { fileName });
+        }
+        catch (Exception ex) { Util.Logger.Log($"クリップボード画像処理エラー: {ex.Message}", Util.LogLevel.Error); }
+    }
+
+    // === 画像サムネイル ===
+
+    private static readonly string[] ImageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"];
+
+    private static string? BuildThumbnailData(ChatMessage msg)
+    {
+        if (msg.Type != ChatMessageType.File || string.IsNullOrEmpty(msg.FilePath)) return null;
+        var ext = Path.GetExtension(msg.FilePath).ToLowerInvariant();
+        if (!Array.Exists(ImageExtensions, e => e == ext)) return null;
+        if (!File.Exists(msg.FilePath)) return null;
+        try
+        {
+            var bytes = File.ReadAllBytes(msg.FilePath);
+            var mime = ext switch
+            {
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".png" => "image/png",
+                ".gif" => "image/gif",
+                ".webp" => "image/webp",
+                _ => "image/png",
+            };
+            return $"data:{mime};base64,{Convert.ToBase64String(bytes)}";
+        }
+        catch { return null; }
+    }
 
     // === ドラッグ＆ドロップ ===
 
@@ -587,6 +972,78 @@ public partial class MainWindow : Window
         }
 
         e.Handled = true;
+    }
+
+    // === WebView からのファイルドロップ受信（チャンク転送） ===
+
+    private void OnDropFileStart(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var id = doc.RootElement.GetProperty("id").GetString()!;
+            var name = doc.RootElement.GetProperty("name").GetString()!;
+
+            var tempDir = Path.Combine(Path.GetTempPath(), "Ferry", "drops");
+            Directory.CreateDirectory(tempDir);
+            var tempPath = Path.Combine(tempDir, $"{id}_{name}");
+
+            var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None);
+            _dropFiles[id] = (tempPath, stream, name);
+            Util.Logger.Log($"ドロップファイル受信開始: {name}", Util.LogLevel.Debug);
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"ドロップファイル開始エラー: {ex.Message}", Util.LogLevel.Error);
+        }
+    }
+
+    private void OnDropFileChunk(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var id = doc.RootElement.GetProperty("id").GetString()!;
+            var base64 = doc.RootElement.GetProperty("data").GetString()!;
+
+            if (_dropFiles.TryGetValue(id, out var entry))
+            {
+                var bytes = Convert.FromBase64String(base64);
+                entry.stream.Write(bytes, 0, bytes.Length);
+            }
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"ドロップファイルチャンクエラー: {ex.Message}", Util.LogLevel.Error);
+        }
+    }
+
+    private void OnDropFileEnd(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var id = doc.RootElement.GetProperty("id").GetString()!;
+
+            if (_dropFiles.TryGetValue(id, out var entry))
+            {
+                entry.stream.Flush();
+                entry.stream.Dispose();
+                _dropFiles.Remove(id);
+
+                Util.Logger.Log($"ドロップファイル受信完了: {entry.name} → {entry.path}");
+
+                if (ChatVm?.IsChatVisible == true && ChatVm.SelectedPeerId != null)
+                {
+                    ChatVm.AddAttachedFiles([entry.path]);
+                    SendToJsAsync("filesAttached", new[] { entry.name });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"ドロップファイル完了エラー: {ex.Message}", Util.LogLevel.Error);
+        }
     }
 
     // === HTML インライン化 ===

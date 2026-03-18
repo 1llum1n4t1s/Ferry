@@ -31,6 +31,7 @@
   <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">השלך קבצים להעברה</x:String>
   <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">אשר</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">דחה</x:String>
+  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">פתח תיקייה</x:String>
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">כללי</x:String>

@@ -1,9 +1,11 @@
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Ferry.Infrastructure;
 using Ferry.Models;
+using Microsoft.Win32;
 
 namespace Ferry.Services;
 
@@ -92,6 +94,54 @@ public sealed class SettingsService : ISettingsService
         catch (Exception ex)
         {
             Util.Logger.Log($"settings.json の保存に失敗: {ex.Message}", Util.LogLevel.Error);
+        }
+    }
+
+    // === Windows 自動起動（レジストリ） ===
+
+    private const string AutoStartRegistryKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string AutoStartValueName = "Ferry";
+
+    /// <summary>
+    /// Windows 起動時の自動起動をレジストリに登録/解除する。
+    /// </summary>
+    public void SetAutoStart(bool enable)
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            return;
+
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(AutoStartRegistryKey, writable: true);
+            if (key == null)
+            {
+                Util.Logger.Log("自動起動レジストリキーを開けませんでした", Util.LogLevel.Error);
+                return;
+            }
+
+            if (enable)
+            {
+                // 実行ファイルのパスを登録
+                var exePath = Environment.ProcessPath ?? System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+                if (!string.IsNullOrEmpty(exePath))
+                {
+                    key.SetValue(AutoStartValueName, $"\"{exePath}\"");
+                    Util.Logger.Log($"自動起動を登録: {exePath}");
+                }
+            }
+            else
+            {
+                // 登録を解除
+                if (key.GetValue(AutoStartValueName) != null)
+                {
+                    key.DeleteValue(AutoStartValueName, throwOnMissingValue: false);
+                    Util.Logger.Log("自動起動を解除");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"自動起動の設定に失敗: {ex.Message}", Util.LogLevel.Error);
         }
     }
 }

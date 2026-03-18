@@ -31,6 +31,7 @@
   <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">स्थानान्तरणाय सञ्चिकाः अत्र त्यजन्तु</x:String>
   <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">अनुमोदयतु</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">निराकरोतु</x:String>
+  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">सञ्चिकाकोशं उद्घाटयतु</x:String>
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">सामान्यम्</x:String>

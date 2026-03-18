@@ -25,6 +25,7 @@
   <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">Déposez des fichiers pour transférer</x:String>
   <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">Approuver</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">Rejeter</x:String>
+  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">Ouvrir le dossier</x:String>
   <x:String x:Key="Text.Settings.General" xml:space="preserve">Général</x:String>
   <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">Nom affiché aux autres</x:String>
   <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">Entrez le nom du PC</x:String>

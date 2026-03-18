@@ -69,8 +69,11 @@ public sealed partial class TransferItem : ObservableObject
     /// <summary>送信元ファイルパス（送信側で保持、レジューム時に使用）。</summary>
     public string? SourceFilePath { get; set; }
 
+    /// <summary>受信ファイルの保存先パス（受信完了後に設定）。</summary>
+    public string? SavedFilePath { get; set; }
+
     /// <summary>ファイルサイズの表示テキスト。</summary>
-    public string FileSizeText => FormatBytes(FileSize);
+    public string FileSizeText => Util.Formatting.FormatBytes(FileSize);
 
     /// <summary>進捗率 (0.0〜1.0)。</summary>
     public double Progress => FileSize > 0 ? (double)TransferredBytes / FileSize : 0;
@@ -115,13 +118,13 @@ public sealed partial class TransferItem : ObservableObject
     {
         get
         {
-            var sizeText = FormatBytes(FileSize);
+            var sizeText = Util.Formatting.FormatBytes(FileSize);
             var peerPart = !string.IsNullOrEmpty(PeerName)
                 ? (Direction == TransferDirection.Send ? $"→ {PeerName}" : $"← {PeerName}")
                 : string.Empty;
             return State switch
             {
-                TransferState.InProgress => $"{FormatBytes(TransferredBytes)} / {sizeText}  ({Progress * 100:F0}%)",
+                TransferState.InProgress => $"{Util.Formatting.FormatBytes(TransferredBytes)} / {sizeText}  ({Progress * 100:F0}%)",
                 TransferState.Completed => string.IsNullOrEmpty(peerPart)
                     ? $"{sizeText}  {CompletedAtText}"
                     : $"{sizeText}  {peerPart}  {CompletedAtText}",
@@ -130,14 +133,6 @@ public sealed partial class TransferItem : ObservableObject
         }
     }
 
-    /// <summary>バイト数を人間が読める形式にフォーマット。</summary>
-    private static string FormatBytes(long bytes) => bytes switch
-    {
-        < 1024 => $"{bytes} B",
-        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
-        < 1024L * 1024 * 1024 => $"{bytes / (1024.0 * 1024):F1} MB",
-        _ => $"{bytes / (1024.0 * 1024 * 1024):F2} GB",
-    };
 }
 
 /// <summary>転送方向。</summary>

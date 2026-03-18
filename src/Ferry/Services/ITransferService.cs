@@ -59,4 +59,10 @@ public interface ITransferService
     /// 受信承認待ちの転送を拒否する。
     /// </summary>
     void RejectTransfer(string transferId);
+
+    /// <summary>
+    /// 進行中の転送をキャンセルする。
+    /// </summary>
+    /// <param name="transferId">キャンセルする転送の ID。</param>
+    void CancelTransfer(string transferId);
 }

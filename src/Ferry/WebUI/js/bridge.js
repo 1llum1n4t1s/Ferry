@@ -46,6 +46,18 @@ if (window.chrome && window.chrome.webview) {
     });
 }
 
+// === テーマ・アクセントカラー・フォントサイズの動的適用 ===
+Bridge.on('applyTheme', (settings) => {
+    document.documentElement.setAttribute('data-theme', settings.theme || 'dark');
+    const accent = settings.accentColor || '#007AFF';
+    document.documentElement.style.setProperty('--custom-accent', accent);
+    const r = parseInt(accent.slice(1,3), 16);
+    const g = parseInt(accent.slice(3,5), 16);
+    const b = parseInt(accent.slice(5,7), 16);
+    document.documentElement.style.setProperty('--custom-accent-muted', `rgba(${r},${g},${b},0.2)`);
+    document.documentElement.setAttribute('data-font', settings.fontSize || 'medium');
+});
+
 // C# → JS: ExecuteScript 経由のフォールバック
 window.receiveBridgeMessage = function(json) {
     try {

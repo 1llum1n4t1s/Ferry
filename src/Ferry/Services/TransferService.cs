@@ -356,7 +356,7 @@ public sealed class TransferService : ITransferService
 
         // 承認待ちキューに追加し、UI に通知
         _pendingApprovals[meta.TransferId] = state;
-        Util.Logger.Log($"受信承認待ち: {displayName} ({FormatBytesStatic(meta.FileSize)})");
+        Util.Logger.Log($"受信承認待ち: {displayName} ({Util.Formatting.FormatBytes(meta.FileSize)})");
         ApprovalRequested?.Invoke(this, state.Item);
     }
 
@@ -427,6 +427,7 @@ public sealed class TransferService : ITransferService
             Util.Logger.Log($"SHA-256 検証成功: {state.FileName}");
             state.Item.State = TransferState.Completed;
             state.Item.TransferredBytes = state.FileSize;
+            state.Item.SavedFilePath = state.SavePath;
         }
         else
         {
@@ -589,6 +590,35 @@ public sealed class TransferService : ITransferService
         }
     }
 
+    /// <summary>進行中の転送をキャンセルする。</summary>
+    public void CancelTransfer(string transferId)
+    {
+        if (_receiveStates.TryRemove(transferId, out var receiveState))
+        {
+            Util.Logger.Log($"受信キャンセル: {receiveState.FileName}");
+            receiveState.Item.State = TransferState.Cancelled;
+            receiveState.Item.ErrorMessage = "キャンセルされました";
+            CleanupReceiveState(receiveState);
+            TransferError?.Invoke(this, receiveState.Item);
+            return;
+        }
+        if (_pendingApprovals.TryRemove(transferId, out var pendingState))
+        {
+            Util.Logger.Log($"承認待ちキャンセル: {pendingState.FileName}");
+            pendingState.Item.State = TransferState.Cancelled;
+            pendingState.Item.ErrorMessage = "キャンセルされました";
+            TransferError?.Invoke(this, pendingState.Item);
+            return;
+        }
+        if (Guid.TryParse(transferId, out var tid) && _activeTransfers.TryRemove(tid, out var sendItem))
+        {
+            Util.Logger.Log($"送信キャンセル: {sendItem.FileName}");
+            sendItem.State = TransferState.Cancelled;
+            sendItem.ErrorMessage = "キャンセルされました";
+            TransferError?.Invoke(this, sendItem);
+        }
+    }
+
     // === ユーティリティ ===
 
     /// <summary>
@@ -614,13 +644,6 @@ public sealed class TransferService : ITransferService
         return Path.Combine(dir, $"{name}_{Guid.NewGuid():N}{ext}");
     }
 
-    private static string FormatBytesStatic(long bytes) => bytes switch
-    {
-        < 1024 => $"{bytes} B",
-        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
-        < 1024L * 1024 * 1024 => $"{bytes / (1024.0 * 1024):F1} MB",
-        _ => $"{bytes / (1024.0 * 1024 * 1024):F2} GB",
-    };
 
     private void CleanupReceiveState(ReceiveState state)
     {

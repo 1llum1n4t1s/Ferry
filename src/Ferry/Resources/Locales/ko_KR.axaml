@@ -25,6 +25,7 @@
   <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">파일을 드롭하여 전송</x:String>
   <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">승인</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">거부</x:String>
+  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">폴더 열기</x:String>
   <x:String x:Key="Text.Settings.General" xml:space="preserve">일반</x:String>
   <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">상대에게 표시되는 이름</x:String>
   <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">PC 이름 입력</x:String>

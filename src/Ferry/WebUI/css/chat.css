@@ -78,6 +78,7 @@
     padding: 10px 14px;
     border-radius: 12px;
     min-width: 200px;
+    position: relative;
 }
 
 .message.mine .file-bubble {
@@ -150,6 +151,57 @@
 }
 .reject-btn:hover { filter: brightness(1.1); }
 
+/* === 画像サムネイル === */
+.message-image {
+    max-width: 280px;
+    max-height: 200px;
+    border-radius: 8px;
+    cursor: pointer;
+    object-fit: contain;
+    margin-top: 6px;
+    margin-bottom: 4px;
+    display: block;
+}
+.message-image:hover { opacity: 0.9; }
+
+/* === フォルダを開くボタン === */
+.open-folder-btn {
+    background: none;
+    border: 1px solid rgba(255,255,255,0.2);
+    color: rgba(235,235,245,0.6);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    margin-top: 4px;
+    display: inline-block;
+}
+.open-folder-btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+}
+
+/* === 転送キャンセルボタン === */
+.cancel-transfer-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: rgba(255,69,58,0.8);
+    border: none;
+    color: #fff;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    padding: 0;
+}
+.cancel-transfer-btn:hover { background: rgba(255,69,58,1); }
+
 /* === システムメッセージ === */
 .message.system {
     margin-left: auto;
@@ -163,3 +215,176 @@
     font-size: 11px;
     padding: 4px 8px;
 }
+
+/* === 日付区切り線 === */
+.date-separator {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 16px 0;
+    color: rgba(235, 235, 245, 0.4);
+    font-size: 12px;
+}
+.date-separator::before,
+.date-separator::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(235, 235, 245, 0.15);
+}
+
+/* === URL リンク === */
+.bubble a {
+    color: #64B5F6;
+    text-decoration: underline;
+    word-break: break-all;
+}
+.bubble a:hover {
+    color: #90CAF9;
+}
+.message.mine .bubble a {
+    color: #E3F2FD;
+}
+.message.mine .bubble a:hover {
+    color: #fff;
+}
+
+/* === Markdown スタイル === */
+.bubble code {
+    background: rgba(0,0,0,0.2);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 0.9em;
+}
+.bubble pre {
+    background: rgba(0,0,0,0.3);
+    padding: 8px 10px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 4px 0;
+}
+.bubble pre code {
+    background: transparent;
+    padding: 0;
+    font-size: 0.85em;
+}
+.bubble strong {
+    font-weight: 700;
+}
+.bubble em {
+    font-style: italic;
+}
+
+/* === コンテキストメニュー === */
+.context-menu {
+    position: fixed;
+    background: rgba(44, 44, 46, 0.95);
+    backdrop-filter: blur(20px);
+    border-radius: 12px;
+    padding: 4px 0;
+    min-width: 180px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    z-index: 1000;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+.context-menu-item {
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #fff;
+    user-select: none;
+}
+.context-menu-item:hover {
+    background: rgba(255,255,255,0.1);
+}
+.context-menu-item.danger {
+    color: #FF453A;
+}
+.context-menu-separator {
+    height: 1px;
+    background: rgba(255,255,255,0.1);
+    margin: 4px 0;
+}
+
+/* === 再送ボタン === */
+.retry-btn {
+    background: transparent;
+    border: none;
+    color: #FF453A;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 2px 6px;
+    margin-top: 2px;
+}
+.retry-btn:hover {
+    text-decoration: underline;
+}
+
+/* === 検索バー === */
+#search-bar { display: flex; align-items: center; padding: 8px 12px; background: rgba(0,0,0,0.2); gap: 8px; }
+#search-bar.hidden { display: none; }
+#search-input { flex: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px 10px; color: #fff; font-size: 13px; outline: none; }
+#search-input:focus { border-color: #007AFF; }
+#search-close { background: none; border: none; color: rgba(235,235,245,0.4); font-size: 16px; cursor: pointer; padding: 4px 8px; }
+
+/* === 検索結果 === */
+.search-results { max-height: 300px; overflow-y: auto; background: rgba(28,28,30,0.98); }
+.search-results.hidden { display: none; }
+.search-result-item { padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); cursor: pointer; }
+.search-result-item:hover { background: rgba(255,255,255,0.05); }
+.search-result-peer { font-size: 11px; color: #007AFF; margin-bottom: 2px; }
+.search-result-text { font-size: 13px; color: rgba(235,235,245,0.8); }
+.search-result-time { font-size: 10px; color: rgba(235,235,245,0.3); float: right; }
+
+/* === 検索ハイライト === */
+.message.highlight .bubble { animation: highlightPulse 2s ease-out; }
+@keyframes highlightPulse {
+    0% { box-shadow: 0 0 0 3px rgba(0,122,255,0.6); }
+    100% { box-shadow: 0 0 0 0 rgba(0,122,255,0); }
+}
+
+/* === チャットヘッダー === */
+#chat-header-info { flex: 1; display: flex; align-items: center; gap: 12px; }
+#btn-search { margin-left: auto; }
+
+/* === 絵文字ボタン === */
+#btn-emoji { background: none; border: none; font-size: 20px; cursor: pointer; padding: 4px 8px; }
+
+/* === 絵文字ピッカー === */
+.emoji-picker { position: fixed; width: 320px; height: 380px; background: rgba(28,28,30,0.98); backdrop-filter: blur(20px); border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); z-index: 1000; display: none; flex-direction: column; border: 1px solid rgba(255,255,255,0.1); }
+.emoji-search { padding: 8px; }
+.emoji-search input { width: 100%; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px 10px; color: #fff; font-size: 13px; outline: none; box-sizing: border-box; }
+.emoji-search input:focus { border-color: #007AFF; }
+.emoji-categories { display: flex; border-bottom: 1px solid rgba(255,255,255,0.1); padding: 0 4px; overflow-x: auto; }
+.emoji-categories::-webkit-scrollbar { height: 0; }
+.emoji-categories button { background: none; border: none; border-bottom: 2px solid transparent; padding: 6px 8px; font-size: 16px; cursor: pointer; opacity: 0.5; flex-shrink: 0; }
+.emoji-categories button.active { opacity: 1; border-bottom-color: #007AFF; }
+.emoji-grid { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; padding: 8px; }
+.emoji-grid::-webkit-scrollbar { width: 4px; }
+.emoji-grid::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+.emoji-grid button { background: none; border: none; font-size: 22px; cursor: pointer; padding: 4px; border-radius: 6px; }
+.emoji-grid button:hover { background: rgba(255,255,255,0.1); }
+
+/* === リプライバー === */
+#reply-bar { display: flex; align-items: center; padding: 6px 12px; background: rgba(255,255,255,0.05); border-left: 3px solid #007AFF; margin: 0 12px 4px 12px; border-radius: 4px; }
+#reply-bar.hidden { display: none; }
+.reply-preview { flex: 1; font-size: 12px; color: rgba(235,235,245,0.6); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reply-cancel { background: none; border: none; color: rgba(235,235,245,0.4); cursor: pointer; font-size: 14px; padding: 4px 8px; }
+
+/* === リアクションピッカー === */
+.reaction-picker { position: fixed; display: flex; gap: 4px; background: rgba(44,44,46,0.95); backdrop-filter: blur(20px); border-radius: 20px; padding: 6px 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.3); z-index: 1000; }
+.reaction-picker button { background: none; border: none; font-size: 20px; cursor: pointer; padding: 4px; border-radius: 50%; }
+.reaction-picker button:hover { background: rgba(255,255,255,0.1); }
+
+/* === リアクションバッジ === */
+.reactions { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+.reaction-badge { display: inline-flex; align-items: center; gap: 2px; padding: 2px 6px; border-radius: 10px; background: rgba(255,255,255,0.08); font-size: 12px; cursor: pointer; }
+.reaction-badge:hover { background: rgba(255,255,255,0.15); }
+.reaction-badge .count { font-size: 11px; color: rgba(235,235,245,0.6); }
+
+/* === 削除済みメッセージ === */
+.message.deleted .bubble { font-style: italic; color: rgba(235,235,245,0.3); }
+
+/* === 編集済みラベル === */
+.edited-label { font-size: 10px; color: rgba(235,235,245,0.3); margin-left: 4px; }

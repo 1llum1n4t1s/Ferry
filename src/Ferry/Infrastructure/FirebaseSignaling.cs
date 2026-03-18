@@ -27,13 +27,8 @@ public sealed class FirebaseSignaling : IDisposable
     private readonly FirebaseClient _client;
     private string _sessionId = string.Empty;
     private IDisposable? _pairingSubscription;
-    private IDisposable? _iceCandidateSubscription;
-
     /// <summary>ペアリング相手が見つかったときに発火するイベント。</summary>
     public event EventHandler<PairingInfo>? PairingDetected;
-
-    /// <summary>ICE Candidate を受信したときに発火するイベント。</summary>
-    public event EventHandler<string>? IceCandidateReceived;
 
     public FirebaseSignaling(string databaseUrl)
     {
@@ -190,21 +185,6 @@ public sealed class FirebaseSignaling : IDisposable
     /// </summary>
     /// <param name="pairId">ペアリング ID。</param>
     /// <param name="candidateField">"candidatesA" または "candidatesB"。</param>
-    public void StartWatchingIceCandidates(string pairId, string candidateField)
-    {
-        _iceCandidateSubscription?.Dispose();
-        _iceCandidateSubscription = _client
-            .Child("signaling")
-            .Child(pairId)
-            .Child(candidateField)
-            .AsObservable<SignalingValue>()
-            .Where(e => e.EventType == FirebaseEventType.InsertOrUpdate && e.Object != null && !string.IsNullOrEmpty(e.Object.Data))
-            .Subscribe(e =>
-            {
-                IceCandidateReceived?.Invoke(this, DecodeBase64(e.Object!.Data));
-            });
-    }
-
     /// <summary>
     /// SDP Offer を Firebase に書き込む。
     /// </summary>
@@ -238,19 +218,6 @@ public sealed class FirebaseSignaling : IDisposable
             .Child(pairId)
             .Child("answer")
             .PutAsync(new SignalingValue { Data = encoded });
-    }
-
-    /// <summary>
-    /// ICE Candidate を Firebase に書き込む。
-    /// </summary>
-    public async Task SendIceCandidateAsync(string pairId, string candidateField, string candidate, CancellationToken ct = default)
-    {
-        var encoded = EncodeBase64(candidate);
-        await _client
-            .Child("signaling")
-            .Child(pairId)
-            .Child(candidateField)
-            .PostAsync(new SignalingValue { Data = encoded });
     }
 
     /// <summary>
@@ -397,8 +364,6 @@ public sealed class FirebaseSignaling : IDisposable
     {
         _pairingSubscription?.Dispose();
         _pairingSubscription = null;
-        _iceCandidateSubscription?.Dispose();
-        _iceCandidateSubscription = null;
     }
 
     public void Dispose()

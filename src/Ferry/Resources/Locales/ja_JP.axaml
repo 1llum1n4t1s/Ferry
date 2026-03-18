@@ -33,6 +33,7 @@
   <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">転送履歴はありません</x:String>
   <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">承認</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">拒否</x:String>
+  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">フォルダを開く</x:String>
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">一般</x:String>
@@ -122,5 +123,31 @@
 
   <!-- Pairing -->
   <x:String x:Key="Text.Pairing.LinkLabel" xml:space="preserve">またはペアリングリンクを共有</x:String>
+
+  <!-- Transfer -->
+  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">フォルダを開く</x:String>
+
+  <!-- Settings: Notification -->
+  <x:String x:Key="Text.Settings.Notification" xml:space="preserve">通知</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">通知サウンド</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">メッセージ受信時にサウンドを再生する</x:String>
+
+  <!-- Settings: File Transfer -->
+  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">ファイル転送</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">受信ファイルの保存先</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">（ダウンロードフォルダ）</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">ファイル受信を自動承認</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">受信ファイルを自動的に承認する</x:String>
+
+  <!-- Settings: Appearance (extended) -->
+  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">アクセントカラー</x:String>
+  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">フォントサイズ</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">小</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">中</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">大</x:String>
+
+  <!-- Settings: Auto Start -->
+  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Windows と同時に起動</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Windows のスタートアップにレジストリ登録する</x:String>
 
 </ResourceDictionary>

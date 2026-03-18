@@ -13,6 +13,18 @@ const App = {
         document.getElementById('btn-settings').addEventListener('click', () =>
             Bridge.send('toggleSettings'));
 
+        // ピア検索フィルタ
+        document.getElementById('peer-search').addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            if (!query) {
+                this.renderPeers(this.peers);
+            } else {
+                const filtered = this.peers.filter(p =>
+                    p.displayName.toLowerCase().includes(query));
+                this.renderFilteredPeers(filtered);
+            }
+        });
+
         // C# からのピアリスト更新
         Bridge.on('loadPeers', (peers) => this.renderPeers(peers));
         Bridge.on('showView', (view) => this.showView(view));
@@ -35,6 +47,26 @@ const App = {
         this.peers = peers;
         const container = document.getElementById('peer-list');
         container.innerHTML = peers.map(p => `
+            <div class="peer-item ${p.peerId === this.selectedPeerId ? 'selected' : ''}"
+                 onclick="App.selectPeer('${p.peerId}')"
+                 data-peer-id="${p.peerId}">
+                <div class="peer-dot ${p.isOnline ? 'online' : 'offline'}"></div>
+                <div class="peer-info">
+                    <div class="peer-name">${Chat.escapeHtml(p.displayName)}</div>
+                    <div class="peer-preview">${Chat.escapeHtml(p.lastMessagePreview || '')}</div>
+                </div>
+                <div class="peer-badges">
+                    ${p.hasIncomingFile ? '<span class="badge-file">📦</span>' : ''}
+                    ${p.unreadCount > 0 ? `<span class="badge-unread">${p.unreadCount}</span>` : ''}
+                </div>
+            </div>
+        `).join('');
+    },
+
+    // フィルタ済みピアリスト描画（peers キャッシュを更新しない）
+    renderFilteredPeers(filteredPeers) {
+        const container = document.getElementById('peer-list');
+        container.innerHTML = filteredPeers.map(p => `
             <div class="peer-item ${p.peerId === this.selectedPeerId ? 'selected' : ''}"
                  onclick="App.selectPeer('${p.peerId}')"
                  data-peer-id="${p.peerId}">

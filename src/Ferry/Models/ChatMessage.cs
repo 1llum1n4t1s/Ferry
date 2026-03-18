@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -31,6 +32,9 @@ public sealed partial class ChatMessage : ObservableObject
     /// <summary>ファイル転送の TransferId（Type=File の場合）。</summary>
     public Guid? TransferId { get; set; }
 
+    /// <summary>ファイルの保存先パス（受信完了時）またはソースファイルパス（送信時）。</summary>
+    public string? FilePath { get; set; }
+
     /// <summary>送信日時 (UTC)。</summary>
     public DateTime SentAt { get; init; } = DateTime.UtcNow;
 
@@ -40,6 +44,29 @@ public sealed partial class ChatMessage : ObservableObject
 
     /// <summary>自分が送信したメッセージかどうか。</summary>
     public bool IsFromMe { get; init; }
+
+    /// <summary>リプライ先メッセージID（引用返信時）。</summary>
+    public Guid? ReplyToMessageId { get; set; }
+
+    /// <summary>リプライ先のテキストプレビュー（表示用）。</summary>
+    public string? ReplyToText { get; set; }
+
+    /// <summary>リプライ先の送信者名（表示用）。</summary>
+    public string? ReplyToSenderName { get; set; }
+
+    /// <summary>リアクション一覧。キーは絵文字、値は送信者リスト。</summary>
+    [JsonIgnore]
+    public Dictionary<string, List<string>> Reactions { get; set; } = [];
+
+    /// <summary>編集済みかどうか。</summary>
+    public bool IsEdited { get; set; }
+
+    /// <summary>削除済みかどうか。</summary>
+    public bool IsDeleted { get; set; }
+
+    /// <summary>削除済みメッセージの表示テキスト。</summary>
+    [JsonIgnore]
+    public string DeletedText => "このメッセージは削除されました";
 
     /// <summary>転送進捗率 (0.0〜1.0)。Type=File のとき使用。</summary>
     [ObservableProperty]

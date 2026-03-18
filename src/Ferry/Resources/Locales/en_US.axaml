@@ -30,6 +30,7 @@
   <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">No transfer history</x:String>
   <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">Approve</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">Reject</x:String>
+  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">Open folder</x:String>
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">General</x:String>
@@ -119,5 +120,31 @@
 
   <!-- Pairing -->
   <x:String x:Key="Text.Pairing.LinkLabel" xml:space="preserve">Or share the pairing link</x:String>
+
+  <!-- Transfer -->
+  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">Open Folder</x:String>
+
+  <!-- Settings: Notification -->
+  <x:String x:Key="Text.Settings.Notification" xml:space="preserve">Notifications</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">Notification Sound</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">Play sound when receiving messages</x:String>
+
+  <!-- Settings: File Transfer -->
+  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">File Transfer</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">Receive File Save Path</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">(Downloads folder)</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">Auto Accept Files</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">Automatically accept incoming files</x:String>
+
+  <!-- Settings: Appearance (extended) -->
+  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">Accent Color</x:String>
+  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">Font Size</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">Small</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">Medium</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">Large</x:String>
+
+  <!-- Settings: Auto Start -->
+  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Start with Windows</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Register in Windows startup via registry</x:String>
 
 </ResourceDictionary>

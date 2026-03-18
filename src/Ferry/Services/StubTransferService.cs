@@ -23,4 +23,5 @@ public sealed class StubTransferService : ITransferService
     public IReadOnlyList<TransferItem> GetResumableTransfers() => [];
     public void ApproveTransfer(string transferId) { }
     public void RejectTransfer(string transferId) { }
+    public void CancelTransfer(string transferId) { }
 }

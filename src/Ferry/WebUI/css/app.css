@@ -20,7 +20,41 @@
     --radius-md: 12px;
     --radius-lg: 16px;
     --radius-xl: 24px;
+    --custom-accent: #007AFF;
+    --custom-accent-muted: rgba(0,122,255,0.2);
 }
+
+/* ライトテーマ */
+[data-theme="light"] {
+    --bg: #f2f2f7;
+    --surface: #ffffff;
+    --glass: rgba(0,0,0,0.03);
+    --glass-high: rgba(0,0,0,0.02);
+    --glass-border: rgba(0,0,0,0.08);
+    --glass-border-active: rgba(0,0,0,0.15);
+    --accent: var(--custom-accent, #007AFF);
+    --accent-hover: var(--custom-accent, #0A84FF);
+    --accent-muted: var(--custom-accent-muted, rgba(0,122,255,0.15));
+    --text-primary: rgba(0,0,0,0.87);
+    --text-secondary: rgba(0,0,0,0.6);
+    --text-tertiary: rgba(0,0,0,0.35);
+    --green: #34C759;
+    --orange: #FF9500;
+    --red: #FF3B30;
+    --separator: rgba(0,0,0,0.1);
+}
+
+/* アクセントカラー上書き（ダークテーマ） */
+[data-theme="dark"] {
+    --accent: var(--custom-accent, #007AFF);
+    --accent-hover: var(--custom-accent, #0A84FF);
+    --accent-muted: var(--custom-accent-muted, rgba(0,122,255,0.2));
+}
+
+/* フォントサイズ */
+[data-font="small"] { --font-base: 13px; --font-small: 11px; }
+[data-font="medium"] { --font-base: 14px; --font-small: 12px; }
+[data-font="large"] { --font-base: 16px; --font-small: 14px; }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -28,7 +62,7 @@ body {
     background: transparent;
     color: var(--text-primary);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
-    font-size: 13px;
+    font-size: var(--font-base, 14px);
     overflow: hidden;
     user-select: none;
     height: 100vh;
@@ -52,6 +86,11 @@ body {
     border-radius: var(--radius-lg);
     overflow: hidden;
 }
+
+/* === ピア検索 === */
+#peer-search-container { padding: 8px 8px 0 8px; }
+#peer-search { width: 100%; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px 10px; color: #fff; font-size: 12px; outline: none; box-sizing: border-box; }
+#peer-search:focus { border-color: #007AFF; }
 
 #peer-list {
     flex: 1;
@@ -209,7 +248,7 @@ body {
     border-top: 1px solid var(--separator);
     display: flex;
     gap: 8px;
-    align-items: center;
+    align-items: flex-end;
 }
 
 #chat-input {
@@ -222,6 +261,11 @@ body {
     padding: 8px 12px;
     outline: none;
     font-family: inherit;
+    resize: none;
+    overflow-y: hidden;
+    min-height: 36px;
+    max-height: 72px; /* 約3行分 */
+    line-height: 1.4;
 }
 #chat-input:focus { border-color: var(--accent); }
 #chat-input::placeholder { color: var(--text-tertiary); }

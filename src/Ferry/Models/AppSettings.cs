@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace Ferry.Models;
@@ -52,9 +53,58 @@ public sealed class AppSettings
     /// <summary>チャット履歴の保持日数。この日数を超えた履歴は自動削除される。</summary>
     public int ChatHistoryRetentionDays { get; set; } = 30;
 
-    // ウィンドウ位置・サイズ（前回終了時の状態を復元）
+    // --- 通知設定 ---
+
+    /// <summary>受信サウンドを再生するか。</summary>
+    public bool EnableNotificationSound { get; set; } = true;
+
+    /// <summary>ピアごとの通知ミュート設定。キーは PeerId。</summary>
+    public HashSet<string> MutedPeerIds { get; set; } = [];
+
+    // --- ファイル転送設定 ---
+
+    /// <summary>受信ファイルの保存先フォルダ。空の場合はダウンロードフォルダ。</summary>
+    public string ReceiveFileSavePath { get; set; } = string.Empty;
+
+    /// <summary>ファイル受信を自動承認するか。</summary>
+    public bool AutoAcceptFileTransfer { get; set; } = true;
+
+    // --- 外観設定 ---
+
+    /// <summary>テーマ ("dark" / "light" / "system")。</summary>
+    public string Theme { get; set; } = "dark";
+
+    /// <summary>アクセントカラー (hex)。</summary>
+    public string AccentColor { get; set; } = "#007AFF";
+
+    /// <summary>フォントサイズ ("small" / "medium" / "large")。</summary>
+    public string FontSize { get; set; } = "medium";
+
+    // --- アプリ動作設定 ---
+
+    /// <summary>Windows 起動時に自動起動するか。</summary>
+    public bool AutoStartWithWindows { get; set; } = false;
+
+    // --- ウィンドウ状態 ---
+
+    /// <summary>ウィンドウ位置・サイズ（前回終了時の状態を復元）。</summary>
     public double? WindowLeft { get; set; }
+
+    /// <summary>ウィンドウ上端座標。</summary>
     public double? WindowTop { get; set; }
+
+    /// <summary>ウィンドウ幅。</summary>
     public double? WindowWidth { get; set; }
+
+    /// <summary>ウィンドウ高さ。</summary>
     public double? WindowHeight { get; set; }
+
+    /// <summary>ウィンドウ X 座標。</summary>
+    public double WindowX { get; set; } = double.NaN;
+
+    /// <summary>ウィンドウ Y 座標。</summary>
+    public double WindowY { get; set; } = double.NaN;
+
+    /// <summary>ウィンドウが最大化されているか。</summary>
+    public bool IsWindowMaximized { get; set; } = false;
 }

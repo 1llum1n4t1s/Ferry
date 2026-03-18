@@ -31,6 +31,7 @@
   <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">Demitte fasciculos ad transferendum</x:String>
   <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">Approba</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">Reice</x:String>
+  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">Aperi involucrum</x:String>
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">Generalia</x:String>

@@ -25,6 +25,7 @@
   <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">拖放文件进行传输</x:String>
   <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">批准</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">拒绝</x:String>
+  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">打开文件夹</x:String>
   <x:String x:Key="Text.Settings.General" xml:space="preserve">常规</x:String>
   <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">对方看到的名称</x:String>
   <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">输入电脑名称</x:String>

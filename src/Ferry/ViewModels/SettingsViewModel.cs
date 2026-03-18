@@ -52,6 +52,42 @@ public sealed partial class SettingsViewModel : ViewModelBase
     /// <summary>チャット履歴保持日数の選択肢。</summary>
     public int[] ChatRetentionOptions => [7, 14, 30, 60, 90];
 
+    // --- 通知設定 ---
+
+    /// <summary>受信サウンドを再生するか。</summary>
+    [ObservableProperty]
+    private bool _enableNotificationSound = true;
+
+    // --- ファイル転送設定 ---
+
+    /// <summary>受信ファイルの保存先フォルダ。空の場合はダウンロードフォルダ。</summary>
+    [ObservableProperty]
+    private string _receiveFileSavePath = string.Empty;
+
+    /// <summary>ファイル受信を自動承認するか。</summary>
+    [ObservableProperty]
+    private bool _autoAcceptFileTransfer = true;
+
+    // --- 外観設定 ---
+
+    /// <summary>テーマ ("dark" / "light" / "system")。</summary>
+    [ObservableProperty]
+    private string _theme = "dark";
+
+    /// <summary>アクセントカラー (hex)。</summary>
+    [ObservableProperty]
+    private string _accentColor = "#007AFF";
+
+    /// <summary>フォントサイズ ("small" / "medium" / "large")。</summary>
+    [ObservableProperty]
+    private string _fontSize = "medium";
+
+    // --- アプリ動作設定 ---
+
+    /// <summary>Windows 起動時に自動起動するか。</summary>
+    [ObservableProperty]
+    private bool _autoStartWithWindows;
+
     // === バージョン ===
 
     /// <summary>バージョン表示テキスト。</summary>
@@ -92,6 +128,13 @@ public sealed partial class SettingsViewModel : ViewModelBase
             StartMinimized = s.StartMinimized;
             MinimizeToTray = s.MinimizeToTray;
             ChatHistoryRetentionDays = s.ChatHistoryRetentionDays;
+            EnableNotificationSound = s.EnableNotificationSound;
+            ReceiveFileSavePath = s.ReceiveFileSavePath;
+            AutoAcceptFileTransfer = s.AutoAcceptFileTransfer;
+            Theme = s.Theme;
+            AccentColor = s.AccentColor;
+            FontSize = s.FontSize;
+            AutoStartWithWindows = s.AutoStartWithWindows;
         }
         finally
         {
@@ -121,6 +164,13 @@ public sealed partial class SettingsViewModel : ViewModelBase
         s.StartMinimized = StartMinimized;
         s.MinimizeToTray = MinimizeToTray;
         s.ChatHistoryRetentionDays = ChatHistoryRetentionDays;
+        s.EnableNotificationSound = EnableNotificationSound;
+        s.ReceiveFileSavePath = ReceiveFileSavePath;
+        s.AutoAcceptFileTransfer = AutoAcceptFileTransfer;
+        s.Theme = Theme;
+        s.AccentColor = AccentColor;
+        s.FontSize = FontSize;
+        s.AutoStartWithWindows = AutoStartWithWindows;
         await _settingsService.SaveAsync();
     }
 
@@ -154,6 +204,22 @@ public sealed partial class SettingsViewModel : ViewModelBase
     partial void OnMinimizeToTrayChanged(bool value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
     partial void OnSaveDirectoryChanged(string value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
     partial void OnChatHistoryRetentionDaysChanged(int value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
+    partial void OnEnableNotificationSoundChanged(bool value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
+    partial void OnReceiveFileSavePathChanged(string value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
+    partial void OnAutoAcceptFileTransferChanged(bool value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
+    partial void OnThemeChanged(string value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
+    partial void OnAccentColorChanged(string value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
+    partial void OnFontSizeChanged(string value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
+    partial void OnAutoStartWithWindowsChanged(bool value)
+    {
+        if (!_isLoading)
+        {
+            // レジストリに自動起動を登録/解除
+            if (_settingsService is Services.SettingsService ss)
+                ss.SetAutoStart(value);
+            SaveSettingsCommand.Execute(null);
+        }
+    }
 
     partial void OnSelectedLocaleChanged(string value)
     {
