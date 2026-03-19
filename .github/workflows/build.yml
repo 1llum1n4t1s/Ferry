@@ -34,7 +34,8 @@ jobs:
           ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime
           apt-get update
           apt-get install -y sudo
-          sudo apt-get install -y curl wget git unzip zip libicu66 tzdata clang
+          sudo apt-get install -y curl wget git unzip zip libicu66 tzdata clang \
+            libgtk-3-dev libwebkit2gtk-4.0-dev
       - name: Checkout sources
         uses: actions/checkout@v4
       - name: Setup .NET
