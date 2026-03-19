@@ -59,7 +59,7 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-    background: transparent;
+    background: var(--bg);
     color: var(--text-primary);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
     font-size: var(--font-base, 14px);
@@ -90,7 +90,7 @@ body {
 /* === ピア検索 === */
 #peer-search-container { padding: 8px 8px 0 8px; }
 #peer-search { width: 100%; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px 10px; color: #fff; font-size: 12px; outline: none; box-sizing: border-box; }
-#peer-search:focus { border-color: #007AFF; }
+#peer-search:focus { border-color: var(--accent); }
 
 #peer-list {
     flex: 1;
@@ -215,7 +215,7 @@ body {
 .secondary-btn:hover { background: var(--glass); }
 
 /* === 空ビュー === */
-#empty-view {
+#empty-view.active {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -331,7 +331,7 @@ body {
 .settings-input:focus { border-color: var(--accent); }
 
 .settings-select {
-    background: var(--glass-high);
+    background: var(--surface);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-sm);
     color: var(--text-primary);
@@ -340,6 +340,10 @@ body {
     outline: none;
     font-family: inherit;
     min-width: 160px;
+}
+.settings-select option {
+    background: var(--surface);
+    color: var(--text-primary);
 }
 
 /* トグルスイッチ */

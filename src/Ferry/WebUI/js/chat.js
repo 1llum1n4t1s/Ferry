@@ -82,15 +82,16 @@ const Chat = {
     sendMessage() {
         const input = document.getElementById('chat-input');
         const text = input.value.trim();
-        if (!text) return;
         input.value = '';
         input.style.height = 'auto';
         // リプライモードの場合
         if (this._replyToId) {
+            if (!text) return;
             Bridge.send('sendReply', JSON.stringify({ text, replyToId: this._replyToId, replyToText: this._replyToText || '' }));
             this.cancelReply();
         } else {
-            Bridge.send('sendMessage', text);
+            // テキストまたは添付ファイルがあれば送信（C#側で判定）
+            Bridge.send('sendMessage', text || '');
         }
     },
 
@@ -99,8 +100,11 @@ const Chat = {
         this.selectedPeerId = data.peerId;
         this.peerName = data.displayName;
         document.getElementById('chat-peer-name').textContent = data.displayName;
-        document.getElementById('chat-peer-status').textContent =
-            data.isOnline ? '🟢 Online' : '🔴 Offline';
+        // サイドバーの選択状態も同期
+        App.selectedPeerId = data.peerId;
+        document.querySelectorAll('.peer-item').forEach(el => {
+            el.classList.toggle('selected', el.dataset.peerId === data.peerId);
+        });
     },
 
     // チャット履歴の読み込み
@@ -282,10 +286,12 @@ const Chat = {
             const renderedText = this.renderText(msg.text);
             const retryHtml = msg.state === 'Failed' ?
                 `<button class="retry-btn" onclick="Chat.retryMessage('${msg.id}')">再送</button>` : '';
+            // 送信側のみ状態テキストを表示（受信側は不要）
+            const stateHtml = msg.isFromMe ? `<div class="message-state">${this.stateText(msg.state)}</div>` : '';
             div.innerHTML = `
                 <div class="bubble">${renderedText}</div>
                 <div class="message-time">${msg.sentAt || ''}</div>
-                <div class="message-state">${this.stateText(msg.state)}</div>
+                ${stateHtml}
                 ${retryHtml}
             `;
         } else if (type === 'file') {
@@ -336,24 +342,37 @@ const Chat = {
     },
 
     stateText(state) {
+        // i18n が未ロードの場合のフォールバック付き
+        const t = (key, fallback) => { const v = I18n.t(key); return v.startsWith('Text.') ? fallback : v; };
         const map = {
-            'Sending': I18n.t('State.Sending'),
-            'Sent': I18n.t('State.Sent'),
+            'Sending': t('State.Sending', '送信中...'),
+            'Sent': t('State.Sent', '✓'),
             'Delivered': '✓✓',
-            'Failed': '❌ ' + I18n.t('State.Error'),
-            'WaitingApproval': I18n.t('State.WaitingApproval'),
-            'Transferring': I18n.t('State.Receiving'),
-            'Completed': '✅ ' + I18n.t('State.Completed'),
+            'Failed': '❌ ' + t('State.Error', 'エラー'),
+            'WaitingApproval': t('State.WaitingApproval', '承認待ち'),
+            'Transferring': t('State.Receiving', '受信中...'),
+            'Completed': '✅ ' + t('State.Completed', '完了'),
         };
         return map[state] || state || '';
     },
 
     approve(transferId) {
         Bridge.send('approveFile', transferId);
+        // 承認/拒否ボタンを即座に非表示
+        this._hideFileActions(transferId);
     },
 
     reject(transferId) {
         Bridge.send('rejectFile', transferId);
+        this._hideFileActions(transferId);
+    },
+
+    _hideFileActions(transferId) {
+        document.querySelectorAll('.message').forEach(el => {
+            const actions = el.querySelector('.file-actions');
+            if (actions && el.querySelector(`[onclick*="${transferId}"]`))
+                actions.remove();
+        });
     },
 
     retryMessage(msgId) {
@@ -413,8 +432,11 @@ const Chat = {
 
     scrollToBottom() {
         const container = document.getElementById('chat-messages');
+        // 二重 rAF で DOM レイアウト確定後にスクロール
         requestAnimationFrame(() => {
-            container.scrollTop = container.scrollHeight;
+            requestAnimationFrame(() => {
+                container.scrollTop = container.scrollHeight;
+            });
         });
     },
 

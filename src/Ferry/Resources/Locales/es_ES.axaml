@@ -98,4 +98,39 @@
 
   <x:String x:Key="Text.Close" xml:space="preserve">Cerrar</x:String>
 
+  <!-- Connection: No Members -->
+  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">Aún no hay dispositivos emparejados</x:String>
+
+  <!-- Transfer: Empty -->
+  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">Sin transferencias</x:String>
+
+  <!-- Update -->
+  <x:String x:Key="Text.Update.Available" xml:space="preserve">Actualización disponible</x:String>
+  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">Error al buscar actualizaciones</x:String>
+  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">Descargar e instalar</x:String>
+  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">Ignorar esta versión</x:String>
+
+  <!-- Settings: Notification -->
+  <x:String x:Key="Text.Settings.Notification" xml:space="preserve">Notificaciones</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">Sonido de notificación</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">Reproducir sonido al recibir mensajes</x:String>
+
+  <!-- Settings: File Transfer -->
+  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">Transferencia de archivos</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">Ruta de guardado de archivos recibidos</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">(Carpeta de descargas)</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">Aceptar archivos automáticamente</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">Aceptar automáticamente los archivos entrantes</x:String>
+
+  <!-- Settings: Appearance (extended) -->
+  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">Color de acento</x:String>
+  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">Tamaño de fuente</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">Pequeño</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">Mediano</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">Grande</x:String>
+
+  <!-- Settings: Auto Start -->
+  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Iniciar con Windows</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Registrar en el inicio de Windows mediante el registro</x:String>
+
 </ResourceDictionary>

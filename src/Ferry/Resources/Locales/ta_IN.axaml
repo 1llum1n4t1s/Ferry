@@ -116,4 +116,39 @@
 
   <x:String x:Key="Text.Close" xml:space="preserve">மூடு</x:String>
 
+  <!-- Connection: No Members -->
+  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">இணைக்கப்பட்ட சாதனங்கள் இல்லை</x:String>
+
+  <!-- Transfer: Empty -->
+  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">பரிமாற்றங்கள் இல்லை</x:String>
+
+  <!-- Update -->
+  <x:String x:Key="Text.Update.Available" xml:space="preserve">புதுப்பிப்பு கிடைக்கிறது</x:String>
+  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">புதுப்பிப்பு சரிபார்ப்பு தோல்வி</x:String>
+  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">பதிவிறக்கி நிறுவு</x:String>
+  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">இந்தப் பதிப்பைப் புறக்கணி</x:String>
+
+  <!-- Settings: Notification -->
+  <x:String x:Key="Text.Settings.Notification" xml:space="preserve">அறிவிப்புகள்</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">அறிவிப்பு ஒலி</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">செய்திகளைப் பெறும்போது ஒலி எழுப்பு</x:String>
+
+  <!-- Settings: File Transfer -->
+  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">கோப்பு பரிமாற்றம்</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">பெறப்பட்ட கோப்பு சேமிப்பு பாதை</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">(பதிவிறக்கங்கள் கோப்புறை)</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">கோப்புகளைத் தானாக ஏற்கவும்</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">வரும் கோப்புகளைத் தானாகவே ஏற்றுக்கொள்</x:String>
+
+  <!-- Settings: Appearance (extended) -->
+  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">முக்கிய நிறம்</x:String>
+  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">எழுத்துரு அளவு</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">சிறியது</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">நடுத்தரம்</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">பெரியது</x:String>
+
+  <!-- Settings: Auto Start -->
+  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Windows உடன் தொடங்கு</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Windows பதிவேட்டின் மூலம் தொடக்கத்தில் பதிவுசெய்</x:String>
+
 </ResourceDictionary>

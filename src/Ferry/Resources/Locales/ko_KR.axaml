@@ -98,4 +98,39 @@
 
   <x:String x:Key="Text.Close" xml:space="preserve">닫기</x:String>
 
+  <!-- Connection: No Members -->
+  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">페어링된 장치가 없습니다</x:String>
+
+  <!-- Transfer: Empty -->
+  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">전송 내역 없음</x:String>
+
+  <!-- Update -->
+  <x:String x:Key="Text.Update.Available" xml:space="preserve">업데이트 사용 가능</x:String>
+  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">업데이트 확인 실패</x:String>
+  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">다운로드 및 설치</x:String>
+  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">이 버전 무시</x:String>
+
+  <!-- Settings: Notification -->
+  <x:String x:Key="Text.Settings.Notification" xml:space="preserve">알림</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">알림 소리</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">메시지 수신 시 소리 재생</x:String>
+
+  <!-- Settings: File Transfer -->
+  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">파일 전송</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">수신 파일 저장 경로</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">(다운로드 폴더)</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">파일 자동 수락</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">수신되는 파일을 자동으로 수락합니다</x:String>
+
+  <!-- Settings: Appearance (extended) -->
+  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">강조 색상</x:String>
+  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">글꼴 크기</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">작게</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">보통</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">크게</x:String>
+
+  <!-- Settings: Auto Start -->
+  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Windows와 함께 시작</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">레지스트리를 통해 Windows 시작 프로그램에 등록</x:String>
+
 </ResourceDictionary>

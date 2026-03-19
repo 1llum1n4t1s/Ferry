@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Platform.Storage;
@@ -145,21 +146,11 @@ public sealed partial class ChatViewModel : ViewModelBase, IDisposable
         var filesToSend = AttachedFiles.ToArray();
         AttachedFiles.Clear();
 
-        // 未接続ならオンデマンド接続
-        if (_connectionService.State != PeerState.Connected)
-        {
-            try { await _connectionViewModel.ConnectToSelectedPeerAsync(); }
-            catch (Exception ex)
-            {
-                Util.Logger.Log($"メッセージ送信前の接続失敗: {ex.Message}", Util.LogLevel.Error);
-                return;
-            }
-        }
-
-        // テキストメッセージ送信
+        // テキストメッセージを即座に UI に表示（接続前）
+        ChatMessage? message = null;
         if (hasText)
         {
-            var message = new ChatMessage
+            message = new ChatMessage
             {
                 PeerId = SelectedPeerId,
                 SenderDeviceId = _settingsService.Settings.DeviceId,
@@ -169,7 +160,19 @@ public sealed partial class ChatViewModel : ViewModelBase, IDisposable
                 State = ChatMessageState.Sending,
             };
             Messages.Add(message);
+            UpdatePeerPreview(SelectedPeerId, $"あなた: {text}");
+        }
 
+        // 接続確認（UI 表示後に実行）
+        if (!await EnsureConnectedAsync("メッセージ送信前"))
+        {
+            if (message != null) message.State = ChatMessageState.Failed;
+            return;
+        }
+
+        // テキストメッセージ送信
+        if (message != null)
+        {
             try
             {
                 await _chatService.SendMessageAsync(SelectedPeerId, text);
@@ -181,9 +184,7 @@ public sealed partial class ChatViewModel : ViewModelBase, IDisposable
                 message.State = ChatMessageState.Failed;
             }
 
-            // 送信結果を履歴に永続化
             await _chatService.AppendMessageAsync(message);
-            UpdatePeerPreview(SelectedPeerId, $"あなた: {text}");
         }
 
         // 添付ファイル送信
@@ -230,23 +231,19 @@ public sealed partial class ChatViewModel : ViewModelBase, IDisposable
             .ToArray();
 
         AddAttachedFiles(paths);
+        // JS に添付ファイル名を通知
+        AttachedFilesChanged?.Invoke(paths.Select(Path.GetFileName).ToArray()!);
     }
+
+    /// <summary>添付ファイルが追加されたときの通知（JS連携用）。</summary>
+    public event Action<string[]>? AttachedFilesChanged;
 
     /// <summary>ファイルをチャット経由で送信する。</summary>
     public async Task SendFilesViaChatAsync(string[] filePaths)
     {
         if (SelectedPeerId == null || _connectionViewModel.SelectedPeer == null) return;
 
-        // 未接続ならオンデマンド接続
-        if (_connectionService.State != PeerState.Connected)
-        {
-            try { await _connectionViewModel.ConnectToSelectedPeerAsync(); }
-            catch (Exception ex)
-            {
-                Util.Logger.Log($"ファイル送信前の接続失敗: {ex.Message}", Util.LogLevel.Error);
-                return;
-            }
-        }
+        if (!await EnsureConnectedAsync("ファイル送信前")) return;
 
         foreach (var path in filePaths)
         {
@@ -418,6 +415,22 @@ public sealed partial class ChatViewModel : ViewModelBase, IDisposable
         }
     }
 
+    /// <summary>未接続ならオンデマンド接続を試行する。失敗時は false を返す。</summary>
+    private async Task<bool> EnsureConnectedAsync(string context)
+    {
+        if (_connectionService.State == PeerState.Connected) return true;
+        try
+        {
+            await _connectionViewModel.ConnectToSelectedPeerAsync();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"{context}の接続失敗: {ex.Message}", Util.LogLevel.Error);
+            return false;
+        }
+    }
+
     // --- メッセージ操作パブリックメソッド ---
 
     public async Task DeleteMessageAsync(Guid messageId)
@@ -445,11 +458,7 @@ public sealed partial class ChatViewModel : ViewModelBase, IDisposable
     public async Task SendReplyAsync(string text, Guid replyToId, string replyToText)
     {
         if (SelectedPeerId == null) return;
-        if (_connectionService.State != PeerState.Connected)
-        {
-            try { await _connectionViewModel.ConnectToSelectedPeerAsync(); }
-            catch (Exception ex) { Util.Logger.Log($"リプライ送信前の接続失敗: {ex.Message}", Util.LogLevel.Error); return; }
-        }
+        if (!await EnsureConnectedAsync("リプライ送信前")) return;
         await _chatService.SendReplyMessageAsync(SelectedPeerId, text, replyToId, replyToText);
     }
 

@@ -82,8 +82,8 @@
 }
 
 .message.mine .file-bubble {
-    background: rgba(0,122,255,0.15);
-    border: 1px solid rgba(0,122,255,0.3);
+    background: var(--custom-accent-muted);
+    border: 1px solid var(--glass-border-active);
 }
 
 .message.peer .file-bubble {

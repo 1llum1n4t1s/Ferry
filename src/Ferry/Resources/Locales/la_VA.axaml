@@ -116,4 +116,39 @@
 
   <x:String x:Key="Text.Close" xml:space="preserve">Claudere</x:String>
 
+  <!-- Connection: No Members -->
+  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">Nulla instrumenta coniugata adhuc</x:String>
+
+  <!-- Transfer: Empty -->
+  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">Nullae translationes</x:String>
+
+  <!-- Update -->
+  <x:String x:Key="Text.Update.Available" xml:space="preserve">Renovatio Praesto</x:String>
+  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">Inspectio renovationis defecit</x:String>
+  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">Depone et Installa</x:String>
+  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">Hanc versionem praetermitte</x:String>
+
+  <!-- Settings: Notification -->
+  <x:String x:Key="Text.Settings.Notification" xml:space="preserve">Notificationes</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">Sonus Notificationis</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">Sonum ede cum nuntii accipiuntur</x:String>
+
+  <!-- Settings: File Transfer -->
+  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">Translatio Fasciculorum</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">Via Servandi Fasciculos Acceptos</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">(Involucrum Depositionum)</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">Fasciculos Automatice Accipe</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">Fasciculos advenientes automatice accipe</x:String>
+
+  <!-- Settings: Appearance (extended) -->
+  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">Color Accentus</x:String>
+  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">Magnitudo Litterarum</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">Parvum</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">Medium</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">Magnum</x:String>
+
+  <!-- Settings: Auto Start -->
+  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Cum Windows incipe</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">In registro Windows initii inscribe</x:String>
+
 </ResourceDictionary>

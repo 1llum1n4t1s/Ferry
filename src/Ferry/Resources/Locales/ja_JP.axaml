@@ -124,9 +124,6 @@
   <!-- Pairing -->
   <x:String x:Key="Text.Pairing.LinkLabel" xml:space="preserve">またはペアリングリンクを共有</x:String>
 
-  <!-- Transfer -->
-  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">フォルダを開く</x:String>
-
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">通知</x:String>
   <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">通知サウンド</x:String>

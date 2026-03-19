@@ -116,4 +116,39 @@
 
   <x:String x:Key="Text.Close" xml:space="preserve">पिधत्ति</x:String>
 
+  <!-- Connection: No Members -->
+  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">अद्यापि कोऽपि युग्मितयन्त्रं नास्ति</x:String>
+
+  <!-- Transfer: Empty -->
+  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">स्थानान्तरणानि न सन्ति</x:String>
+
+  <!-- Update -->
+  <x:String x:Key="Text.Update.Available" xml:space="preserve">नवीकरणं प्राप्यम्</x:String>
+  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">नवीकरणपरीक्षा विफला</x:String>
+  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">अवतारय च स्थापय</x:String>
+  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">इमां संस्करणं प्रत्याख्यातु</x:String>
+
+  <!-- Settings: Notification -->
+  <x:String x:Key="Text.Settings.Notification" xml:space="preserve">सूचनाः</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">सूचनाध्वनिः</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">सन्देशप्राप्तौ ध्वनिं वादयतु</x:String>
+
+  <!-- Settings: File Transfer -->
+  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">सञ्चिकास्थानान्तरणम्</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">प्राप्तसञ्चिकानां संरक्षणमार्गः</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">(अवतरणसञ्चिकाकोशः)</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">सञ्चिकाः स्वयमेव स्वीकरोतु</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">आगमनसञ्चिकाः स्वयमेव स्वीकरोतु</x:String>
+
+  <!-- Settings: Appearance (extended) -->
+  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">उच्चारणवर्णः</x:String>
+  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">अक्षरमापनम्</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">लघु</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">मध्यमम्</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">बृहत्</x:String>
+
+  <!-- Settings: Auto Start -->
+  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Windows सह आरभताम्</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Windows आरम्भे पञ्जिका द्वारा पञ्जीकरोतु</x:String>
+
 </ResourceDictionary>

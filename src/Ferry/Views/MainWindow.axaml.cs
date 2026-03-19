@@ -216,46 +216,46 @@ public partial class MainWindow : Window
                             await OnBrowseReceiveFileSavePath();
                             break;
                         case "openFile":
-                            OnOpenFile(data.GetString()!);
+                            OnOpenFile(dataStr!);
                             break;
                         case "openFolder":
-                            OnOpenFolder(data.GetString()!);
+                            OnOpenFolder(dataStr!);
                             break;
                         case "cancelTransfer":
-                            OnCancelTransfer(data.GetString()!);
+                            OnCancelTransfer(dataStr!);
                             break;
                         case "pasteImage":
-                            await OnPasteImage(data.GetString()!);
+                            await OnPasteImage(dataStr!);
                             break;
                         case "searchMessages":
-                            await OnSearchMessages(data.GetString()!);
+                            await OnSearchMessages(dataStr!);
                             break;
                         case "copyMessage":
-                            await OnCopyMessage(data.GetString()!);
+                            await OnCopyMessage(dataStr!);
                             break;
                         case "deleteMessage":
-                            await OnDeleteMessage(data.GetString()!);
+                            await OnDeleteMessage(dataStr!);
                             break;
                         case "editMessage":
                             SendToJsAsync("showEditDialog", dataStr);
                             break;
                         case "submitEdit":
-                            await OnSubmitEdit(data.GetString()!);
+                            await OnSubmitEdit(dataStr!);
                             break;
                         case "replyMessage":
-                            OnReplyMessage(data.GetString()!);
+                            OnReplyMessage(dataStr!);
                             break;
                         case "sendReply":
-                            await OnSendReply(data.GetString()!);
+                            await OnSendReply(dataStr!);
                             break;
                         case "reactMessage":
-                            SendToJsAsync("showReactionPicker", data.GetString());
+                            SendToJsAsync("showReactionPicker", dataStr);
                             break;
                         case "sendReaction":
-                            await OnSendReaction(data.GetString()!);
+                            await OnSendReaction(dataStr!);
                             break;
                         case "retryMessage":
-                            await OnRetryMessage(data.GetString()!);
+                            await OnRetryMessage(dataStr!);
                             break;
                         case "dropFileStart":
                             OnDropFileStart(dataStr!);
@@ -308,14 +308,11 @@ public partial class MainWindow : Window
     {
         Util.Logger.Log("UI Ready — 初期データ送信");
 
-        // ロケール送信
+        // ロケールを先に送信（他の UI 描画で翻訳キーが必要なため）
         await SendLocaleToJs();
 
-        // ピアリスト送信
-        await SendPeersToJs();
-
-        // 設定送信
-        await SendSettingsToJs();
+        // ピアリスト・設定を並列送信
+        await Task.WhenAll(SendPeersToJs(), SendSettingsToJs());
         SendThemeToJs();
 
         // 最初のピアを自動選択
@@ -369,8 +366,8 @@ public partial class MainWindow : Window
 
     private async Task OnSendMessage(string text)
     {
-        if (ChatVm == null || string.IsNullOrWhiteSpace(text)) return;
-        ChatVm.MessageText = text;
+        if (ChatVm == null) return;
+        ChatVm.MessageText = text ?? string.Empty;
         await ChatVm.SendMessageCommand.ExecuteAsync(null);
     }
 
@@ -701,6 +698,7 @@ public partial class MainWindow : Window
         ChatVm.OnRemoteMessageDeleted += (_, id) => SendToJsAsync("messageDeleted", id.ToString());
         ChatVm.OnRemoteMessageEdited += (_, e) => SendToJsAsync("messageEdited", new { id = e.MessageId.ToString(), newText = e.NewText });
         ChatVm.OnRemoteReactionReceived += (_, e) => SendToJsAsync("reactionReceived", new { id = e.MessageId.ToString(), emoji = e.Emoji, senderName = e.SenderName });
+        ChatVm.AttachedFilesChanged += (names) => SendToJsAsync("filesAttached", names);
 
         ChatVm.AttachedFiles.CollectionChanged += (_, args) =>
         {
@@ -741,24 +739,21 @@ public partial class MainWindow : Window
                     _notificationService?.NotifyMessageReceived(msg.PeerId, senderName, preview);
                 }
 
-                // ファイル転送のプログレス/状態変更を軽量にプッシュ
-                if (msg.Type == ChatMessageType.File)
+                // メッセージの状態変更を JS にプッシュ
+                msg.PropertyChanged += (_, pe) =>
                 {
-                    msg.PropertyChanged += (_, pe) =>
-                    {
-                        var id = msg.MessageId.ToString();
-                        if (pe.PropertyName == nameof(msg.FileProgress))
-                            SendToJsAsync("updateProgress", new { id, progress = msg.FileProgress });
-                        else if (pe.PropertyName == nameof(msg.State))
-                            SendToJsAsync("updateState", new
-                            {
-                                id,
-                                state = msg.State.ToString(),
-                                filePath = msg.FilePath,
-                                thumbnailData = BuildThumbnailData(msg),
-                            });
-                    };
-                }
+                    var id = msg.MessageId.ToString();
+                    if (pe.PropertyName == nameof(msg.FileProgress))
+                        SendToJsAsync("updateProgress", new { id, progress = msg.FileProgress });
+                    else if (pe.PropertyName == nameof(msg.State))
+                        SendToJsAsync("updateState", new
+                        {
+                            id,
+                            state = msg.State.ToString(),
+                            filePath = msg.FilePath,
+                            thumbnailData = BuildThumbnailData(msg),
+                        });
+                };
             }
         };
 
@@ -1053,32 +1048,36 @@ public partial class MainWindow : Window
     /// インラインの &lt;style&gt; と &lt;script&gt; に展開する。
     /// HtmlContent プロパティは about:blank で読み込むため相対パスが使えない。
     /// </summary>
+    // 事前コンパイル済み Regex（毎回のコンパイルコストを回避）
+    private static readonly System.Text.RegularExpressions.Regex StyleLinkRegex = new(
+        @"<link\s+rel=""stylesheet""\s+href=""([^""]+)""\s*/?>",
+        System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex ScriptSrcRegex = new(
+        @"<script\s+src=""([^""]+)""\s*>\s*</script>",
+        System.Text.RegularExpressions.RegexOptions.Compiled);
+
     private static string BuildInlinedHtml(string indexPath)
     {
         var baseDir = Path.GetDirectoryName(indexPath)!;
         var html = File.ReadAllText(indexPath);
 
         // <link rel="stylesheet" href="xxx"> → <style>...</style>
-        html = System.Text.RegularExpressions.Regex.Replace(html,
-            @"<link\s+rel=""stylesheet""\s+href=""([^""]+)""\s*/?>",
-            match =>
-            {
-                var cssPath = Path.Combine(baseDir, match.Groups[1].Value.Replace('/', Path.DirectorySeparatorChar));
-                if (File.Exists(cssPath))
-                    return $"<style>\n{File.ReadAllText(cssPath)}\n</style>";
-                return match.Value;
-            });
+        html = StyleLinkRegex.Replace(html, match =>
+        {
+            var cssPath = Path.Combine(baseDir, match.Groups[1].Value.Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(cssPath))
+                return $"<style>\n{File.ReadAllText(cssPath)}\n</style>";
+            return match.Value;
+        });
 
         // <script src="xxx"></script> → <script>...</script>
-        html = System.Text.RegularExpressions.Regex.Replace(html,
-            @"<script\s+src=""([^""]+)""\s*>\s*</script>",
-            match =>
-            {
-                var jsPath = Path.Combine(baseDir, match.Groups[1].Value.Replace('/', Path.DirectorySeparatorChar));
-                if (File.Exists(jsPath))
-                    return $"<script>\n{File.ReadAllText(jsPath)}\n</script>";
-                return match.Value;
-            });
+        html = ScriptSrcRegex.Replace(html, match =>
+        {
+            var jsPath = Path.Combine(baseDir, match.Groups[1].Value.Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(jsPath))
+                return $"<script>\n{File.ReadAllText(jsPath)}\n</script>";
+            return match.Value;
+        });
 
         return html;
     }

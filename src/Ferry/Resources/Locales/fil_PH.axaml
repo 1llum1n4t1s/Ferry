@@ -116,4 +116,39 @@
 
   <x:String x:Key="Text.Close" xml:space="preserve">Isara</x:String>
 
+  <!-- Connection: No Members -->
+  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">Wala pang naka-pair na device</x:String>
+
+  <!-- Transfer: Empty -->
+  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">Walang paglipat</x:String>
+
+  <!-- Update -->
+  <x:String x:Key="Text.Update.Available" xml:space="preserve">May Available na Update</x:String>
+  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">Nabigo ang pag-check ng update</x:String>
+  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">I-download at I-install</x:String>
+  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">Huwag pansinin ang bersyon na ito</x:String>
+
+  <!-- Settings: Notification -->
+  <x:String x:Key="Text.Settings.Notification" xml:space="preserve">Mga Notipikasyon</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">Tunog ng Notipikasyon</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">Mag-play ng tunog kapag nakatanggap ng mga mensahe</x:String>
+
+  <!-- Settings: File Transfer -->
+  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">Paglipat ng File</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">Lokasyon ng Pag-save ng Natanggap na File</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">(Folder ng Downloads)</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">Awtomatikong Tanggapin ang mga File</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">Awtomatikong tanggapin ang mga papasok na file</x:String>
+
+  <!-- Settings: Appearance (extended) -->
+  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">Kulay ng Accent</x:String>
+  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">Laki ng Font</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">Maliit</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">Katamtaman</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">Malaki</x:String>
+
+  <!-- Settings: Auto Start -->
+  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Magsimula kasama ng Windows</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Irehistro sa Windows startup sa pamamagitan ng registry</x:String>
+
 </ResourceDictionary>

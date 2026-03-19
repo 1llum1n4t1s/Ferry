@@ -21,7 +21,7 @@ const App = {
             } else {
                 const filtered = this.peers.filter(p =>
                     p.displayName.toLowerCase().includes(query));
-                this.renderFilteredPeers(filtered);
+                this.renderPeers(filtered, false);
             }
         });
 
@@ -30,6 +30,29 @@ const App = {
         Bridge.on('showView', (view) => this.showView(view));
         Bridge.on('peerStatus', (data) => this.updatePeerStatus(data));
 
+        // ファイルドラッグ＆ドロップ（capture フェーズで WebView2 のデフォルト動作を抑止）
+        window.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }, true);
+        window.addEventListener('dragenter', (e) => { e.preventDefault(); }, true);
+        window.addEventListener('drop', (e) => {
+            e.preventDefault();
+            if (!e.dataTransfer?.files?.length) return;
+            for (const file of e.dataTransfer.files) {
+                const id = crypto.randomUUID();
+                Bridge.send('dropFileStart', JSON.stringify({ id, name: file.name }));
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const base64 = reader.result.split(',')[1];
+                    // 64KB チャンクに分割して送信
+                    const chunkSize = 65536;
+                    for (let i = 0; i < base64.length; i += chunkSize) {
+                        Bridge.send('dropFileChunk', JSON.stringify({ id, data: base64.slice(i, i + chunkSize) }));
+                    }
+                    Bridge.send('dropFileEnd', JSON.stringify({ id }));
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
         // C# に UI 準備完了を通知
         Bridge.send('ready');
     },
@@ -37,36 +60,22 @@ const App = {
     // ビュー切り替え
     showView(view) {
         this.currentView = view;
-        document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.view').forEach(el => {
+            el.classList.remove('active');
+            el.classList.add('hidden');
+        });
         const target = document.getElementById(`${view}-view`);
-        if (target) target.classList.add('active');
+        if (target) {
+            target.classList.remove('hidden');
+            target.classList.add('active');
+        }
     },
 
-    // ピアリスト描画
-    renderPeers(peers) {
-        this.peers = peers;
+    // ピアリスト描画（updateCache=true でキャッシュも更新）
+    renderPeers(peers, updateCache = true) {
+        if (updateCache) this.peers = peers;
         const container = document.getElementById('peer-list');
         container.innerHTML = peers.map(p => `
-            <div class="peer-item ${p.peerId === this.selectedPeerId ? 'selected' : ''}"
-                 onclick="App.selectPeer('${p.peerId}')"
-                 data-peer-id="${p.peerId}">
-                <div class="peer-dot ${p.isOnline ? 'online' : 'offline'}"></div>
-                <div class="peer-info">
-                    <div class="peer-name">${Chat.escapeHtml(p.displayName)}</div>
-                    <div class="peer-preview">${Chat.escapeHtml(p.lastMessagePreview || '')}</div>
-                </div>
-                <div class="peer-badges">
-                    ${p.hasIncomingFile ? '<span class="badge-file">📦</span>' : ''}
-                    ${p.unreadCount > 0 ? `<span class="badge-unread">${p.unreadCount}</span>` : ''}
-                </div>
-            </div>
-        `).join('');
-    },
-
-    // フィルタ済みピアリスト描画（peers キャッシュを更新しない）
-    renderFilteredPeers(filteredPeers) {
-        const container = document.getElementById('peer-list');
-        container.innerHTML = filteredPeers.map(p => `
             <div class="peer-item ${p.peerId === this.selectedPeerId ? 'selected' : ''}"
                  onclick="App.selectPeer('${p.peerId}')"
                  data-peer-id="${p.peerId}">

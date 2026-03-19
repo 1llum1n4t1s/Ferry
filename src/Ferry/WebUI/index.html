@@ -24,11 +24,10 @@
         <!-- コンテンツエリア -->
         <div id="content">
             <!-- チャットビュー -->
-            <div id="chat-view" class="view">
+            <div id="chat-view" class="view hidden">
                 <div id="chat-header">
                     <div id="chat-header-info">
                         <div id="chat-peer-name">Select a member</div>
-                        <div id="chat-peer-status"></div>
                     </div>
                     <button class="ghost-btn" id="btn-search" title="検索">&#128269;</button>
                 </div>
@@ -57,7 +56,7 @@
             </div>
 
             <!-- 空ビュー（ピア未選択時） -->
-            <div id="empty-view" class="view">
+            <div id="empty-view" class="view active">
                 <div class="empty-message" id="empty-text">Select a member to start chatting</div>
             </div>
         </div>

@@ -48,6 +48,9 @@ public sealed class ChatService : IChatService
         _connectionService = connectionService;
         _settingsService = settingsService;
 
+        // 受信データをハンドリング
+        _connectionService.DataReceived += (_, data) => HandleReceivedData(data);
+
         // 接続確立時にオフラインキューをフラッシュする
         _connectionService.StateChanged += async (_, state) =>
         {
@@ -401,6 +404,17 @@ public sealed class ChatService : IChatService
         if (_historyCache.TryGetValue(peerId, out var cached))
             return FilterByRetention(cached);
 
+        // ロード後の中間状態を正規化するローカル関数
+        static void NormalizeStates(List<ChatMessage> msgs)
+        {
+            foreach (var m in msgs)
+            {
+                // 永続化された「送信中」「転送中」は完了扱いにする
+                if (m.State is ChatMessageState.Sending or ChatMessageState.Transferring)
+                    m.State = m.Type == ChatMessageType.File ? ChatMessageState.Failed : ChatMessageState.Sent;
+            }
+        }
+
         var filePath = GetHistoryFilePath(peerId);
 
         // 旧 JSON ファイルからの移行（暗号化前のファイルがあれば読み込んで暗号化保存）
@@ -412,6 +426,7 @@ public sealed class ChatService : IChatService
                 var legacyJson = await File.ReadAllTextAsync(legacyPath);
                 var legacyMessages = JsonSerializer.Deserialize(legacyJson, ChatMessageJsonContext.Default.ListChatMessage)
                                      ?? new List<ChatMessage>();
+                NormalizeStates(legacyMessages);
                 _historyCache[peerId] = legacyMessages;
                 await SaveHistoryAsync(peerId, legacyMessages);
                 File.Delete(legacyPath); // 移行完了後に旧ファイル削除
@@ -436,6 +451,7 @@ public sealed class ChatService : IChatService
             var json = Decrypt(encryptedData);
             var messages = JsonSerializer.Deserialize(json, ChatMessageJsonContext.Default.ListChatMessage)
                            ?? new List<ChatMessage>();
+            NormalizeStates(messages);
             _historyCache[peerId] = messages;
             return FilterByRetention(messages);
         }
@@ -461,6 +477,13 @@ public sealed class ChatService : IChatService
 
     private async Task SaveHistoryAsync(string peerId, List<ChatMessage> messages)
     {
+        // 永続化前に中間状態を正規化（再起動後に「送信中」が残らないようにする）
+        foreach (var msg in messages)
+        {
+            if (msg.State == ChatMessageState.Sending)
+                msg.State = ChatMessageState.Sent;
+        }
+
         await _saveLock.WaitAsync();
         try
         {

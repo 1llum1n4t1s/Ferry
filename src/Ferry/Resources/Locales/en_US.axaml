@@ -121,9 +121,6 @@
   <!-- Pairing -->
   <x:String x:Key="Text.Pairing.LinkLabel" xml:space="preserve">Or share the pairing link</x:String>
 
-  <!-- Transfer -->
-  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">Open Folder</x:String>
-
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">Notifications</x:String>
   <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">Notification Sound</x:String>

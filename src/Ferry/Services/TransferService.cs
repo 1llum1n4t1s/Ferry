@@ -371,7 +371,13 @@ public sealed class TransferService : ITransferService
         var state = _receiveStates.Values.FirstOrDefault(s => s.FileStream != null);
         if (state == null)
         {
-            Util.Logger.Log($"チャンク受信: 対応する転送が見つかりません (index={chunkIndex})", Util.LogLevel.Warning);
+            // 承認待ち中のチャンクをバッファリング
+            var pending = _pendingApprovals.Values.FirstOrDefault();
+            if (pending != null)
+            {
+                pending.BufferedChunks ??= [];
+                pending.BufferedChunks.Add(data.ToArray());
+            }
             return;
         }
 
@@ -563,6 +569,14 @@ public sealed class TransferService : ITransferService
 
         state.Item.State = TransferState.InProgress;
         _receiveStates[transferId] = state;
+
+        // 承認前にバッファされたチャンクを処理
+        if (state.BufferedChunks is { Count: > 0 })
+        {
+            foreach (var chunkData in state.BufferedChunks)
+                HandleFileChunk(chunkData);
+            state.BufferedChunks = null;
+        }
     }
 
     /// <summary>受信承認待ちの転送を拒否する。送信側に FileReject を送信する。</summary>
@@ -679,5 +693,7 @@ public sealed class TransferService : ITransferService
         public int ReceivedChunks { get; set; }
         public FileStream? FileStream { get; set; }
         public TransferItem Item { get; set; } = new();
+        /// <summary>承認前に到着したチャンクのバッファ。</summary>
+        public List<byte[]>? BufferedChunks { get; set; }
     }
 }

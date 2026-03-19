@@ -98,4 +98,39 @@
 
   <x:String x:Key="Text.Close" xml:space="preserve">Fermer</x:String>
 
+  <!-- Connection: No Members -->
+  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">Aucun appareil appairé</x:String>
+
+  <!-- Transfer: Empty -->
+  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">Aucun transfert</x:String>
+
+  <!-- Update -->
+  <x:String x:Key="Text.Update.Available" xml:space="preserve">Mise à jour disponible</x:String>
+  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">Échec de la vérification des mises à jour</x:String>
+  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">Télécharger et installer</x:String>
+  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">Ignorer cette version</x:String>
+
+  <!-- Settings: Notification -->
+  <x:String x:Key="Text.Settings.Notification" xml:space="preserve">Notifications</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">Son de notification</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">Jouer un son à la réception de messages</x:String>
+
+  <!-- Settings: File Transfer -->
+  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">Transfert de fichiers</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">Emplacement de sauvegarde des fichiers reçus</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">(Dossier Téléchargements)</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">Accepter les fichiers automatiquement</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">Accepter automatiquement les fichiers entrants</x:String>
+
+  <!-- Settings: Appearance (extended) -->
+  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">Couleur d'accentuation</x:String>
+  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">Taille de la police</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">Petite</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">Moyenne</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">Grande</x:String>
+
+  <!-- Settings: Auto Start -->
+  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Démarrer avec Windows</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Inscrire dans le démarrage Windows via le registre</x:String>
+
 </ResourceDictionary>

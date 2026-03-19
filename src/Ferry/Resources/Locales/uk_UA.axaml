@@ -116,4 +116,39 @@
 
   <x:String x:Key="Text.Close" xml:space="preserve">Закрити</x:String>
 
+  <!-- Connection: No Members -->
+  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">Немає з'єднаних пристроїв</x:String>
+
+  <!-- Transfer: Empty -->
+  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">Немає передач</x:String>
+
+  <!-- Update -->
+  <x:String x:Key="Text.Update.Available" xml:space="preserve">Доступне оновлення</x:String>
+  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">Не вдалося перевірити оновлення</x:String>
+  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">Завантажити та встановити</x:String>
+  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">Ігнорувати цю версію</x:String>
+
+  <!-- Settings: Notification -->
+  <x:String x:Key="Text.Settings.Notification" xml:space="preserve">Сповіщення</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">Звук сповіщення</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">Відтворювати звук при отриманні повідомлень</x:String>
+
+  <!-- Settings: File Transfer -->
+  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">Передача файлів</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">Шлях збереження отриманих файлів</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">(Папка завантажень)</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">Автоматично приймати файли</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">Автоматично приймати вхідні файли</x:String>
+
+  <!-- Settings: Appearance (extended) -->
+  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">Колір акценту</x:String>
+  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">Розмір шрифту</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">Малий</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">Середній</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">Великий</x:String>
+
+  <!-- Settings: Auto Start -->
+  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Запускати разом з Windows</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Зареєструвати в автозавантаженні Windows через реєстр</x:String>
+
 </ResourceDictionary>

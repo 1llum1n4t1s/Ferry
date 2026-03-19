@@ -98,4 +98,39 @@
 
   <x:String x:Key="Text.Close" xml:space="preserve">關閉</x:String>
 
+  <!-- Connection: No Members -->
+  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">尚無已配對的裝置</x:String>
+
+  <!-- Transfer: Empty -->
+  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">沒有傳輸紀錄</x:String>
+
+  <!-- Update -->
+  <x:String x:Key="Text.Update.Available" xml:space="preserve">有可用更新</x:String>
+  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">更新檢查失敗</x:String>
+  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">下載並安裝</x:String>
+  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">忽略此版本</x:String>
+
+  <!-- Settings: Notification -->
+  <x:String x:Key="Text.Settings.Notification" xml:space="preserve">通知</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">通知提示音</x:String>
+  <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">收到訊息時播放提示音</x:String>
+
+  <!-- Settings: File Transfer -->
+  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">檔案傳輸</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">接收檔案儲存路徑</x:String>
+  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">（下載資料夾）</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">自動接受檔案</x:String>
+  <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">自動接受傳入的檔案</x:String>
+
+  <!-- Settings: Appearance (extended) -->
+  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">強調色</x:String>
+  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">字型大小</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">小</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">中</x:String>
+  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">大</x:String>
+
+  <!-- Settings: Auto Start -->
+  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">隨 Windows 啟動</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">透過登錄檔註冊至 Windows 啟動項目</x:String>
+
 </ResourceDictionary>
