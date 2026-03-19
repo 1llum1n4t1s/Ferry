@@ -110,11 +110,13 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">受信を拒否しました</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">レジュームに失敗しました</x:String>
+  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">転送するファイルを選択</x:String>
 
   <!-- Chat -->
   <x:String x:Key="Text.Chat.Placeholder" xml:space="preserve">メッセージを入力...</x:String>
   <x:String x:Key="Text.Chat.SelectMember" xml:space="preserve">メンバーを選択してチャットを開始</x:String>
   <x:String x:Key="Text.Chat.AttachFile" xml:space="preserve">ファイルを添付</x:String>
+  <x:String x:Key="Text.Chat.DeletedMessage" xml:space="preserve">このメッセージは削除されました</x:String>
 
   <!-- Settings: Chat Retention -->
   <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">チャット履歴の保持期間</x:String>

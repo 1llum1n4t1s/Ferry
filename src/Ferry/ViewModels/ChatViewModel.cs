@@ -49,6 +49,10 @@ public sealed partial class ChatViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private bool _isChatVisible;
 
+    /// <summary>表示中のピアの表示名。</summary>
+    [ObservableProperty]
+    private string _peerDisplayName = string.Empty;
+
     public ChatViewModel(
         IChatService chatService,
         IConnectionService connectionService,

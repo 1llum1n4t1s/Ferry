@@ -66,7 +66,7 @@ public sealed partial class ChatMessage : ObservableObject
 
     /// <summary>削除済みメッセージの表示テキスト。</summary>
     [JsonIgnore]
-    public string DeletedText => "このメッセージは削除されました";
+    public string DeletedText => App.Text("Chat.DeletedMessage");
 
     /// <summary>転送進捗率 (0.0〜1.0)。Type=File のとき使用。</summary>
     [ObservableProperty]
@@ -93,13 +93,13 @@ public sealed partial class ChatMessage : ObservableObject
     [JsonIgnore]
     public string StateText => State switch
     {
-        ChatMessageState.Sending => "送信中...",
-        ChatMessageState.Sent => "送信済み",
-        ChatMessageState.Delivered => "配達済み",
-        ChatMessageState.Failed => "失敗",
-        ChatMessageState.WaitingApproval => "承認待ち",
-        ChatMessageState.Transferring => $"転送中 {FileProgress * 100:F0}%",
-        ChatMessageState.Completed => "完了",
+        ChatMessageState.Sending => App.Text("State.Pending"),
+        ChatMessageState.Sent => App.Text("State.Sending"),
+        ChatMessageState.Delivered => "✓✓",
+        ChatMessageState.Failed => App.Text("State.Error"),
+        ChatMessageState.WaitingApproval => App.Text("State.WaitingApproval"),
+        ChatMessageState.Transferring => $"{App.Text("State.Sending")} {FileProgress * 100:F0}%",
+        ChatMessageState.Completed => App.Text("State.Completed"),
         _ => "",
     };
 

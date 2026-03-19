@@ -1,0 +1,259 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Ferry.ViewModels"
+             xmlns:m="using:Ferry.Models"
+             xmlns:conv="using:Ferry.Converters"
+             mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="500"
+             x:Class="Ferry.Views.ChatView"
+             x:DataType="vm:ChatViewModel">
+
+    <UserControl.Resources>
+        <conv:MessageAlignmentConverter x:Key="AlignmentConverter" />
+        <conv:MessageBubbleColorConverter x:Key="BubbleColorConverter" />
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto,Auto">
+
+        <!-- Row 0: ヘッダー -->
+        <Border Grid.Row="0" Padding="16,12"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock x:Name="PeerNameText" FontSize="15" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextPrimaryBrush}"
+                           Text="{Binding PeerDisplayName}" />
+                <Button Grid.Column="1" Classes="icon" Content="&#x1F50D;"
+                        FontSize="14" x:Name="SearchButton"
+                        ToolTip.Tip="検索" />
+            </Grid>
+        </Border>
+
+        <!-- Row 1: 検索バー -->
+        <Border Grid.Row="1" x:Name="SearchBar" IsVisible="False"
+                Background="{DynamicResource SurfaceBrush}"
+                Padding="12,6"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="*,Auto,Auto">
+                <TextBox Grid.Column="0" x:Name="SearchInput" Classes="search"
+                         Watermark="メッセージを検索..." />
+                <TextBlock Grid.Column="1" x:Name="SearchResultCount"
+                           FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                           VerticalAlignment="Center" Margin="8,0" />
+                <Button Grid.Column="2" Classes="icon" Content="&#x2715;"
+                        FontSize="12" x:Name="CloseSearchButton"
+                        ToolTip.Tip="閉じる" />
+            </Grid>
+        </Border>
+
+        <!-- Row 2: メッセージ一覧 -->
+        <ListBox Grid.Row="2" x:Name="MessageList"
+                 Classes="messageList"
+                 ItemsSource="{Binding Messages}"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 SelectionMode="Single">
+            <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <VirtualizingStackPanel />
+                </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="m:ChatMessage">
+                    <Panel Margin="8,2"
+                           HorizontalAlignment="{Binding IsFromMe, Converter={StaticResource AlignmentConverter}}">
+
+                        <!-- テキストメッセージ -->
+                        <StackPanel IsVisible="{Binding IsTextMessage}">
+                            <Border Background="{Binding IsFromMe, Converter={StaticResource BubbleColorConverter}}"
+                                    CornerRadius="{DynamicResource BubbleCornerRadius}"
+                                    Padding="{DynamicResource BubblePadding}"
+                                    MaxWidth="420">
+                                <Border.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="コピー" x:Name="CopyMenuItem"
+                                                  Tag="{Binding MessageId}" />
+                                        <MenuItem Header="リプライ" x:Name="ReplyMenuItem"
+                                                  Tag="{Binding MessageId}" />
+                                        <Separator />
+                                        <MenuItem Header="編集" x:Name="EditMenuItem"
+                                                  Tag="{Binding MessageId}"
+                                                  IsVisible="{Binding IsFromMe}" />
+                                        <MenuItem Header="削除" x:Name="DeleteMenuItem"
+                                                  Tag="{Binding MessageId}"
+                                                  IsVisible="{Binding IsFromMe}" />
+                                    </ContextMenu>
+                                </Border.ContextMenu>
+                                <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
+                                           Foreground="White" FontSize="14" />
+                            </Border>
+                            <!-- 時刻・状態はバブルの外 -->
+                            <StackPanel Orientation="Horizontal" Spacing="4" Margin="4,2,4,0"
+                                        HorizontalAlignment="{Binding IsFromMe, Converter={StaticResource AlignmentConverter}}">
+                                <TextBlock Text="{Binding SentAtText}" FontSize="11"
+                                           Foreground="{DynamicResource TextTertiaryBrush}" />
+                                <TextBlock Text="{Binding StateText}" FontSize="11"
+                                           Foreground="{DynamicResource TextTertiaryBrush}"
+                                           IsVisible="{Binding IsFromMe}" />
+                                <TextBlock Text="(編集済み)" FontSize="10"
+                                           Foreground="{DynamicResource TextTertiaryBrush}"
+                                           IsVisible="{Binding IsEdited}" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- ファイルメッセージ -->
+                        <Border IsVisible="{Binding IsFileMessage}"
+                                Background="{Binding IsFromMe, Converter={StaticResource BubbleColorConverter}}"
+                                CornerRadius="{DynamicResource BubbleCornerRadius}"
+                                Padding="{DynamicResource BubblePadding}"
+                                MaxWidth="420">
+                            <StackPanel Spacing="4">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="&#x1F4CE;" FontSize="16"
+                                               VerticalAlignment="Center" />
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding FileName}" FontSize="14"
+                                                   Foreground="White" FontWeight="Medium" />
+                                        <TextBlock Text="{Binding FileSizeText}" FontSize="12"
+                                                   Foreground="#80FFFFFF" />
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <!-- プログレスバー -->
+                                <ProgressBar IsVisible="{Binding IsTransferring}"
+                                             Value="{Binding FileProgress}"
+                                             Minimum="0" Maximum="1"
+                                             Height="4"
+                                             Foreground="{DynamicResource GreenBrush}" />
+
+                                <!-- 承認/拒否ボタン -->
+                                <StackPanel Orientation="Horizontal" Spacing="8"
+                                            IsVisible="{Binding IsWaitingApproval}">
+                                    <Button Classes="accent" Content="{DynamicResource Text.Transfer.Approve}"
+                                            Command="{Binding $parent[ListBox].((vm:ChatViewModel)DataContext).ApproveFileCommand}"
+                                            CommandParameter="{Binding TransferId}"
+                                            FontSize="12" Padding="12,4" />
+                                    <Button Classes="danger" Content="{DynamicResource Text.Transfer.Reject}"
+                                            Command="{Binding $parent[ListBox].((vm:ChatViewModel)DataContext).RejectFileCommand}"
+                                            CommandParameter="{Binding TransferId}"
+                                            FontSize="12" Padding="12,4" />
+                                </StackPanel>
+
+                                <!-- 状態テキスト -->
+                                <TextBlock Text="{Binding StateText}" FontSize="11"
+                                           Foreground="#80FFFFFF"
+                                           HorizontalAlignment="Right" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- システムメッセージ -->
+                        <TextBlock IsVisible="{Binding IsSystemMessage}"
+                                   Text="{Binding Text}"
+                                   FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,8" />
+                    </Panel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- Row 3: 添付ファイルチップ -->
+        <ItemsControl Grid.Row="3"
+                       ItemsSource="{Binding AttachedFiles}"
+                       IsVisible="{Binding HasAttachedFiles}"
+                       Margin="12,4">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                    <Border Background="{DynamicResource SurfaceBrush}"
+                            CornerRadius="12" Padding="8,4" Margin="2">
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="&#x1F4CE;" FontSize="12" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding}" FontSize="12"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       MaxWidth="150" TextTrimming="CharacterEllipsis" />
+                            <Button Classes="icon" Content="&#x2715;" FontSize="10"
+                                    Padding="2" MinWidth="16" MinHeight="16"
+                                    Command="{Binding $parent[UserControl].((vm:ChatViewModel)DataContext).RemoveAttachedFileCommand}"
+                                    CommandParameter="{Binding}" />
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Row 4: リプライバー -->
+        <Border Grid.Row="4" x:Name="ReplyBar" IsVisible="False"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2,0,0,0"
+                Padding="12,6" Margin="12,4">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel>
+                    <TextBlock x:Name="ReplyToLabel" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{DynamicResource AccentBrush}" />
+                    <TextBlock x:Name="ReplyToText" FontSize="12"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               MaxLines="1" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <Button Grid.Column="1" Classes="icon" Content="&#x2715;"
+                        x:Name="CancelReplyButton" />
+            </Grid>
+        </Border>
+
+        <!-- Row 5: 入力エリア -->
+        <Border Grid.Row="5" Padding="8,8"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                <!-- 添付ボタン -->
+                <Button Grid.Column="0" Classes="icon" Content="&#x1F4CE;"
+                        FontSize="18" Margin="0,0,4,0"
+                        Command="{Binding AttachFileCommand}" />
+
+                <!-- テキスト入力 -->
+                <TextBox Grid.Column="1" Classes="chatInput" x:Name="MessageInput"
+                         Text="{Binding MessageText, Mode=TwoWay}"
+                         Watermark="{DynamicResource Text.Chat.Placeholder}" />
+
+                <!-- 絵文字ボタン -->
+                <Button Grid.Column="2" Classes="icon" Content="&#x1F60A;"
+                        FontSize="20" Margin="4,0,0,0"
+                        x:Name="EmojiButton"
+                        ToolTip.Tip="絵文字">
+                    <Button.Flyout>
+                        <Flyout Placement="TopEdgeAlignedRight">
+                            <Border Background="{DynamicResource SurfaceBrush}"
+                                    CornerRadius="12" Padding="8"
+                                    Width="320" Height="380">
+                                <Grid RowDefinitions="Auto,Auto,*">
+                                    <!-- 検索 -->
+                                    <TextBox Grid.Row="0" x:Name="EmojiSearchInput"
+                                             Classes="search" Watermark="絵文字を検索..."
+                                             Margin="0,0,0,4" />
+                                    <!-- カテゴリタブ -->
+                                    <StackPanel Grid.Row="1" x:Name="EmojiCategoryTabs"
+                                                Orientation="Horizontal" Spacing="2" Margin="0,0,0,4" />
+                                    <!-- 絵文字グリッド -->
+                                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                                        <WrapPanel x:Name="EmojiGrid" />
+                                    </ScrollViewer>
+                                </Grid>
+                            </Border>
+                        </Flyout>
+                    </Button.Flyout>
+                </Button>
+
+                <!-- 送信ボタン -->
+                <Button Grid.Column="3" Classes="accent" Content="&#x25B6;"
+                        FontSize="16" Margin="4,0,0,0"
+                        MinWidth="36" MinHeight="36"
+                        CornerRadius="18"
+                        Command="{Binding SendMessageCommand}" />
+            </Grid>
+        </Border>
+
+    </Grid>
+</UserControl>

@@ -198,18 +198,21 @@ public sealed partial class SettingsViewModel : ViewModelBase
             app.Check4Update(true);
     }
 
-    partial void OnDisplayNameChanged(string value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
-    partial void OnRunAtStartupChanged(bool value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
-    partial void OnStartMinimizedChanged(bool value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
-    partial void OnMinimizeToTrayChanged(bool value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
-    partial void OnSaveDirectoryChanged(string value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
-    partial void OnChatHistoryRetentionDaysChanged(int value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
-    partial void OnEnableNotificationSoundChanged(bool value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
-    partial void OnReceiveFileSavePathChanged(string value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
-    partial void OnAutoAcceptFileTransferChanged(bool value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
-    partial void OnThemeChanged(string value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
-    partial void OnAccentColorChanged(string value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
-    partial void OnFontSizeChanged(string value) { if (!_isLoading) SaveSettingsCommand.Execute(null); }
+    /// <summary>ロード中でなければ設定を保存する。各プロパティ変更ハンドラから呼び出す共通ヘルパー。</summary>
+    private void SaveIfNotLoading() { if (!_isLoading) SaveSettingsCommand.Execute(null); }
+
+    partial void OnDisplayNameChanged(string value) => SaveIfNotLoading();
+    partial void OnRunAtStartupChanged(bool value) => SaveIfNotLoading();
+    partial void OnStartMinimizedChanged(bool value) => SaveIfNotLoading();
+    partial void OnMinimizeToTrayChanged(bool value) => SaveIfNotLoading();
+    partial void OnSaveDirectoryChanged(string value) => SaveIfNotLoading();
+    partial void OnChatHistoryRetentionDaysChanged(int value) => SaveIfNotLoading();
+    partial void OnEnableNotificationSoundChanged(bool value) => SaveIfNotLoading();
+    partial void OnReceiveFileSavePathChanged(string value) => SaveIfNotLoading();
+    partial void OnAutoAcceptFileTransferChanged(bool value) => SaveIfNotLoading();
+    partial void OnThemeChanged(string value) => SaveIfNotLoading();
+    partial void OnAccentColorChanged(string value) => SaveIfNotLoading();
+    partial void OnFontSizeChanged(string value) => SaveIfNotLoading();
     partial void OnAutoStartWithWindowsChanged(bool value)
     {
         if (!_isLoading)
@@ -226,7 +229,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         App.SetLocale(value);
         // テーマ選択肢のテキストを再描画
         OnPropertyChanged(nameof(ThemeOptions));
-        if (!_isLoading) SaveSettingsCommand.Execute(null);
+        SaveIfNotLoading();
     }
 
     private void LoadVersionInfo()
@@ -249,6 +252,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 _ => ThemeVariant.Default, // OS 追従
             };
         }
-        if (!_isLoading) SaveSettingsCommand.Execute(null);
+        SaveIfNotLoading();
     }
 }

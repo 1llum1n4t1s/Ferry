@@ -1,0 +1,185 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Ferry.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="700"
+             x:Class="Ferry.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,16">
+        <StackPanel Spacing="4" MaxWidth="500">
+
+            <!-- 一般 -->
+            <TextBlock Classes="sectionHeader" Text="{DynamicResource Text.Settings.General}" />
+            <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,4">
+                <StackPanel Spacing="8">
+                    <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.DisplayName}" />
+                    <TextBox Text="{Binding DisplayName, Mode=TwoWay}"
+                             Watermark="{DynamicResource Text.Settings.DisplayName.Placeholder}"
+                             Classes="search" />
+                </StackPanel>
+            </Border>
+
+            <!-- 外観 -->
+            <TextBlock Classes="sectionHeader" Text="{DynamicResource Text.Settings.Appearance}" />
+            <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,4">
+                <StackPanel Spacing="12">
+                    <!-- テーマ -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.Theme}" />
+                        <ComboBox Grid.Column="1" ItemsSource="{Binding ThemeOptions}"
+                                  SelectedIndex="{Binding SelectedThemeIndex, Mode=TwoWay}"
+                                  MinWidth="120" />
+                    </Grid>
+
+                    <!-- 言語 -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.Language}" />
+                        <ComboBox Grid.Column="1" x:Name="LocaleComboBox"
+                                  MinWidth="160" />
+                    </Grid>
+
+                    <!-- アクセントカラー -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.AccentColor}" />
+                        <TextBox Grid.Column="1" Text="{Binding AccentColor, Mode=TwoWay}"
+                                 Width="100" Classes="search" />
+                    </Grid>
+
+                    <!-- フォントサイズ -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.FontSize}" />
+                        <ComboBox Grid.Column="1" x:Name="FontSizeComboBox" MinWidth="120"
+                                  SelectedIndex="1">
+                            <ComboBoxItem Content="{DynamicResource Text.Settings.FontSize.Small}" Tag="small" />
+                            <ComboBoxItem Content="{DynamicResource Text.Settings.FontSize.Medium}" Tag="medium" />
+                            <ComboBoxItem Content="{DynamicResource Text.Settings.FontSize.Large}" Tag="large" />
+                        </ComboBox>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- ファイル -->
+            <TextBlock Classes="sectionHeader" Text="{DynamicResource Text.Settings.File}" />
+            <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,4">
+                <StackPanel Spacing="12">
+                    <!-- 保存先ディレクトリ -->
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.SaveDirectory}" />
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                            <TextBox Grid.Column="0" Text="{Binding SaveDirectory, Mode=TwoWay}"
+                                     Classes="search" IsReadOnly="True" />
+                            <Button Grid.Column="1" Content="{DynamicResource Text.Settings.SaveDirectory.Browse}"
+                                    Classes="accent" Margin="8,0,0,0"
+                                    Command="{Binding BrowseSaveDirectoryCommand}" />
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- 受信ファイル保存先 -->
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.ReceiveFileSavePath}" />
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                            <TextBox Grid.Column="0" Text="{Binding ReceiveFileSavePath, Mode=TwoWay}"
+                                     Classes="search"
+                                     Watermark="{DynamicResource Text.Settings.ReceiveFileSavePath.Default}" />
+                            <Button Grid.Column="1" Content="{DynamicResource Text.Settings.SaveDirectory.Browse}"
+                                    Classes="accent" Margin="8,0,0,0"
+                                    x:Name="BrowseReceivePathButton" />
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- ファイル自動承認 -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel>
+                            <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.AutoAcceptFile}" />
+                            <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.AutoAcceptFile.Desc}" />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding AutoAcceptFileTransfer, Mode=TwoWay}" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- 動作 -->
+            <TextBlock Classes="sectionHeader" Text="{DynamicResource Text.Settings.Behavior}" />
+            <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,4">
+                <StackPanel Spacing="12">
+                    <!-- Windows 自動起動 -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel>
+                            <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.AutoStartWithWindows}" />
+                            <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.AutoStartWithWindows.Desc}" />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding AutoStartWithWindows, Mode=TwoWay}" />
+                    </Grid>
+
+                    <!-- スタートアップ起動 -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel>
+                            <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.RunAtStartup}" />
+                            <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.RunAtStartup.Desc}" />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding RunAtStartup, Mode=TwoWay}" />
+                    </Grid>
+
+                    <!-- 最小化起動 -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel>
+                            <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.StartMinimized}" />
+                            <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.StartMinimized.Desc}" />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding StartMinimized, Mode=TwoWay}" />
+                    </Grid>
+
+                    <!-- トレイ最小化 -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel>
+                            <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.MinimizeToTray}" />
+                            <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.MinimizeToTray.Desc}" />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding MinimizeToTray, Mode=TwoWay}" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- 通知 -->
+            <TextBlock Classes="sectionHeader" Text="{DynamicResource Text.Settings.Notification}" />
+            <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,4">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel>
+                        <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.NotificationSound}" />
+                        <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.NotificationSound.Desc}" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding EnableNotificationSound, Mode=TwoWay}" />
+                </Grid>
+            </Border>
+
+            <!-- チャット -->
+            <TextBlock Classes="sectionHeader" Text="{DynamicResource Text.Settings.ChatRetention}" />
+            <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,4">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.ChatRetention.Days}" />
+                    <ComboBox Grid.Column="1" ItemsSource="{Binding ChatRetentionOptions}"
+                              SelectedItem="{Binding ChatHistoryRetentionDays, Mode=TwoWay}"
+                              MinWidth="80" />
+                </Grid>
+            </Border>
+
+            <!-- バージョン -->
+            <TextBlock Classes="sectionHeader" Text="{DynamicResource Text.Settings.Version}" />
+            <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,16">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel>
+                        <TextBlock Classes="settingLabel" Text="Ferry" />
+                        <TextBlock Text="{Binding VersionText}" FontSize="12"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Classes="accent"
+                            Content="{DynamicResource Text.Settings.CheckUpdate}"
+                            Command="{Binding CheckForUpdateCommand}" />
+                </Grid>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

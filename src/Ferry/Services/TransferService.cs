@@ -442,17 +442,20 @@ public sealed class TransferService : ITransferService
             state.Item.ErrorMessage = "ファイルの整合性検証に失敗しました（SHA-256 不一致）";
         }
 
-        // ACK を送信（送信側に結果を通知）
-        try
+        // ACK を送信（送信側に結果を通知）— fire-and-forget でブロッキングを回避
+        var ackMessage = FileChunker.CreateAckMessage(hashMatch, sha256Bytes);
+        _ = Task.Run(async () =>
         {
-            var ackMessage = FileChunker.CreateAckMessage(hashMatch, sha256Bytes);
-            _connectionService.SendAsync(ackMessage).GetAwaiter().GetResult();
-            Util.Logger.Log("ACK 送信完了");
-        }
-        catch (Exception ex)
-        {
-            Util.Logger.Log($"ACK 送信エラー: {ex.Message}", Util.LogLevel.Warning);
-        }
+            try
+            {
+                await _connectionService.SendAsync(ackMessage);
+                Util.Logger.Log("ACK 送信完了");
+            }
+            catch (Exception ex)
+            {
+                Util.Logger.Log($"ACK 送信エラー: {ex.Message}", Util.LogLevel.Warning);
+            }
+        });
 
         if (hashMatch)
         {
@@ -506,15 +509,19 @@ public sealed class TransferService : ITransferService
 
     private void HandlePing()
     {
-        try
+        // fire-and-forget でブロッキングを回避
+        var pong = FileChunker.CreatePongMessage();
+        _ = Task.Run(async () =>
         {
-            var pong = FileChunker.CreatePongMessage();
-            _connectionService.SendAsync(pong).GetAwaiter().GetResult();
-        }
-        catch (Exception ex)
-        {
-            Util.Logger.Log($"Pong 送信エラー: {ex.Message}", Util.LogLevel.Warning);
-        }
+            try
+            {
+                await _connectionService.SendAsync(pong);
+            }
+            catch (Exception ex)
+            {
+                Util.Logger.Log($"Pong 送信エラー: {ex.Message}", Util.LogLevel.Warning);
+            }
+        });
     }
 
     private void HandleResumeRequest(byte[] data)
@@ -522,16 +529,19 @@ public sealed class TransferService : ITransferService
         var (transferId, lastChunkIndex) = FileChunker.ParseResumeRequest(data);
         Util.Logger.Log($"レジュームリクエスト受信: transferId={transferId}, lastChunk={lastChunkIndex}");
 
-        // レジューム応答（現時点では非対応として拒否）
-        try
+        // レジューム応答（現時点では非対応として拒否）— fire-and-forget でブロッキングを回避
+        var response = FileChunker.CreateResumeResponseMessage(transferId, false, lastChunkIndex);
+        _ = Task.Run(async () =>
         {
-            var response = FileChunker.CreateResumeResponseMessage(transferId, false, lastChunkIndex);
-            _connectionService.SendAsync(response).GetAwaiter().GetResult();
-        }
-        catch (Exception ex)
-        {
-            Util.Logger.Log($"レジューム応答送信エラー: {ex.Message}", Util.LogLevel.Warning);
-        }
+            try
+            {
+                await _connectionService.SendAsync(response);
+            }
+            catch (Exception ex)
+            {
+                Util.Logger.Log($"レジューム応答送信エラー: {ex.Message}", Util.LogLevel.Warning);
+            }
+        });
     }
 
     private void HandleResumeResponse(byte[] data)
@@ -592,16 +602,19 @@ public sealed class TransferService : ITransferService
         state.Item.State = TransferState.Cancelled;
         state.Item.ErrorMessage = "受信を拒否しました";
 
-        // FileReject メッセージを送信側に通知
-        try
+        // FileReject メッセージを送信側に通知 — fire-and-forget でブロッキングを回避
+        var rejectMessage = FileChunker.CreateRejectMessage("受信側が拒否しました");
+        _ = Task.Run(async () =>
         {
-            var rejectMessage = FileChunker.CreateRejectMessage("受信側が拒否しました");
-            _connectionService.SendAsync(rejectMessage).GetAwaiter().GetResult();
-        }
-        catch (Exception ex)
-        {
-            Util.Logger.Log($"拒否メッセージ送信エラー: {ex.Message}", Util.LogLevel.Warning);
-        }
+            try
+            {
+                await _connectionService.SendAsync(rejectMessage);
+            }
+            catch (Exception ex)
+            {
+                Util.Logger.Log($"拒否メッセージ送信エラー: {ex.Message}", Util.LogLevel.Warning);
+            }
+        });
     }
 
     /// <summary>進行中の転送をキャンセルする。</summary>

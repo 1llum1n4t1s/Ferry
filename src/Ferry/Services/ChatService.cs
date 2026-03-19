@@ -86,7 +86,7 @@ public sealed class ChatService : IChatService
         textBytes.CopyTo(payload, 17);
 
         await SendOrEnqueueAsync(payload, message);
-        await AppendMessageAsync(message);
+        // 注: AppendMessageAsync は呼び出し元（ViewModel）が責任を持つ
     }
 
     /// <inheritdoc />
@@ -181,10 +181,20 @@ public sealed class ChatService : IChatService
             if (message != null)
                 message.State = ChatMessageState.Sent;
         }
-        catch
+        catch (InvalidOperationException)
         {
             // 接続されていない場合はキューに溜める
             _offlineQueue.Enqueue(payload);
+        }
+        catch (IOException)
+        {
+            // 通信エラー時はキューに溜める
+            _offlineQueue.Enqueue(payload);
+        }
+        catch (Exception ex)
+        {
+            // 予期しないエラーはログ出力 + 失敗状態に設定
+            Util.Logger.Log($"メッセージ送信エラー: {ex.Message}", Util.LogLevel.Error);
             if (message != null)
                 message.State = ChatMessageState.Failed;
         }

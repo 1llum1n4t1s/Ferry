@@ -77,7 +77,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         var files = await storageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             AllowMultiple = true,
-            Title = "転送するファイルを選択",
+            Title = App.Text("Transfer.SelectFiles"),
         });
 
         if (files.Count == 0) return;
