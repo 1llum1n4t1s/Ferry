@@ -282,18 +282,31 @@ public partial class MainWindow : Window
 
     // === C# → JS メッセージ送信 ===
 
+    /// <summary>action と data を AOT 安全に JSON 化する（匿名型対応）</summary>
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AOT", "IL3050",
+        Justification = "Bridge メッセージは匿名型が多く Source Generator 不可。Windows 専用コードのため AOT は正常動作する")]
+    private static string BuildBridgeJson(string action, object? data)
+    {
+        var dataJson = data switch
+        {
+            null => "null",
+            string s => JsonSerializer.Serialize(s),
+            _ => JsonSerializer.Serialize(data, data.GetType())
+        };
+        return $$"""{"action":{{JsonSerializer.Serialize(action)}},"data":{{dataJson}}}""";
+    }
+
     private void SendToJs(string action, object? data = null)
     {
         if (_webView == null) return;
-        var json = JsonSerializer.Serialize(new { action, data });
-        // PostWebMessageAsString で送信
+        var json = BuildBridgeJson(action, data);
         _webView.PostWebMessageAsString(json, new Uri("about:blank"));
     }
 
     private async void SendToJsAsync(string action, object? data = null)
     {
         if (_webView == null) return;
-        var json = JsonSerializer.Serialize(new { action, data });
+        var json = BuildBridgeJson(action, data);
         await _webView.ExecuteScriptAsync($"window.receiveBridgeMessage({EscapeJsString(json)})");
     }
 

@@ -15,7 +15,8 @@
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <PublishAot>true</PublishAot>
+    <!-- Native AOT は Windows のみ（WebView.Avalonia.Desktop が他プラットフォームの ILC 非対応） -->
+    <PublishAot Condition="$([MSBuild]::IsOSPlatform('Windows'))">true</PublishAot>
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>link</TrimMode>
   </PropertyGroup>
