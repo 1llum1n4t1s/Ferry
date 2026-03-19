@@ -1,7 +1,11 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:wv="using:AvaloniaWebView"
+        xmlns:vm="using:Ferry.ViewModels"
+        xmlns:m="using:Ferry.Models"
+        xmlns:v="using:Ferry.Views"
+        xmlns:conv="using:Ferry.Converters"
         x:Class="Ferry.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
         Title="Ferry"
         Width="800"
         Height="540"
@@ -15,35 +19,155 @@
         ExtendClientAreaTitleBarHeightHint="36"
         DragDrop.AllowDrop="True">
 
+    <Window.Resources>
+        <conv:OnlineStatusToBrushConverter x:Key="OnlineStatusBrush" />
+        <conv:IntGreaterThanZeroConverter x:Key="IntGtZero" />
+    </Window.Resources>
+
     <Panel>
-        <!-- ダーク背景フォールバック -->
-        <Border Background="#161618" Opacity="0.92"
-                IsHitTestVisible="False" />
+        <!-- アクリル背景 -->
+        <ExperimentalAcrylicBorder IsHitTestVisible="False">
+            <ExperimentalAcrylicBorder.Material>
+                <ExperimentalAcrylicMaterial BackgroundSource="Digger"
+                                             TintColor="#161618"
+                                             TintOpacity="0.85"
+                                             MaterialOpacity="0.65" />
+            </ExperimentalAcrylicBorder.Material>
+        </ExperimentalAcrylicBorder>
 
         <Grid RowDefinitions="36,*">
-            <!-- タイトルバー（ドラッグ領域、背景色をアプリと統一） -->
-            <Border Grid.Row="0" Background="#161618" IsHitTestVisible="False" />
+            <!-- Row 0: タイトルバー（透明） -->
+            <Border Grid.Row="0" Background="Transparent" IsHitTestVisible="False" />
 
-            <!-- 全画面 WebView -->
-            <wv:WebView Grid.Row="1" x:Name="MainWebView" Margin="0"
-                        Url="about:blank" />
+            <!-- Row 1: メインコンテンツ 2カラム -->
+            <Grid Grid.Row="1" ColumnDefinitions="220,*">
+
+                <!-- Col 0: サイドバー -->
+                <Border Grid.Column="0" Background="{DynamicResource SidebarBrush}"
+                        CornerRadius="12" Margin="8,4,4,8"
+                        ClipToBounds="True">
+                    <Grid RowDefinitions="Auto,*,Auto">
+
+                        <!-- 検索ボックス -->
+                        <TextBox Grid.Row="0" Classes="search"
+                                 Watermark="{DynamicResource Text.Chat.Placeholder}"
+                                 Margin="8,8" />
+
+                        <!-- ピアリスト -->
+                        <ListBox Grid.Row="1" Classes="peerList"
+                                 ItemsSource="{Binding Connection.PairedPeers}"
+                                 SelectedItem="{Binding Connection.SelectedPeer, Mode=TwoWay}"
+                                 x:Name="PeerListBox">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="m:PairedPeer">
+                                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2">
+                                        <!-- オンラインインジケーター -->
+                                        <Ellipse Grid.Column="0" Width="10" Height="10"
+                                                 Fill="{Binding IsOnline, Converter={StaticResource OnlineStatusBrush}}"
+                                                 VerticalAlignment="Center"
+                                                 Margin="0,0,8,0" />
+
+                                        <!-- ピア名と最終メッセージ -->
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <TextBlock Text="{Binding DisplayName}"
+                                                           FontSize="14" FontWeight="Medium"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="1" Text="{Binding LastMessageAtText}"
+                                                           FontSize="11"
+                                                           Foreground="{DynamicResource TextTertiaryBrush}"
+                                                           VerticalAlignment="Center" Margin="4,0,0,0" />
+                                            </Grid>
+                                            <TextBlock Text="{Binding LastMessagePreview}"
+                                                       FontSize="12"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                       MaxLines="1" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+
+                                        <!-- 未読バッジ -->
+                                        <StackPanel Grid.Column="2" VerticalAlignment="Center"
+                                                    HorizontalAlignment="Right" Spacing="4">
+                                            <Border Classes="badge"
+                                                    IsVisible="{Binding UnreadCount, Converter={StaticResource IntGtZero}}">
+                                                <TextBlock Text="{Binding UnreadCount}"
+                                                           FontSize="11" Foreground="White"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center" />
+                                            </Border>
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <!-- サイドバー下部ツールバー -->
+                        <Border Grid.Row="2" BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="0,1,0,0" Padding="0,4">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="16">
+                                <Button Classes="icon" FontSize="20"
+                                        Content="+" ToolTip.Tip="メンバー追加"
+                                        Command="{Binding Connection.AddNewPeerCommand}" />
+                                <Button Classes="icon" FontSize="18"
+                                        Content="&#x2699;" ToolTip.Tip="設定"
+                                        Command="{Binding ToggleSettingsCommand}" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <!-- Col 1: メインパネル（排他制御） -->
+                <Border Grid.Column="1" Background="{DynamicResource SurfaceBrush}"
+                        CornerRadius="12" Margin="4,4,8,8" ClipToBounds="True">
+                <Panel>
+                    <!-- チャットビュー -->
+                    <v:ChatView x:Name="ChatViewControl"
+                                DataContext="{Binding Chat}">
+                        <v:ChatView.IsVisible>
+                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                <Binding Path="((vm:MainWindowViewModel)DataContext).IsSettingsMode"
+                                         RelativeSource="{RelativeSource AncestorType=Window}"
+                                         Converter="{x:Static BoolConverters.Not}" />
+                                <Binding Path="((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer"
+                                         RelativeSource="{RelativeSource AncestorType=Window}"
+                                         Converter="{x:Static ObjectConverters.IsNotNull}" />
+                            </MultiBinding>
+                        </v:ChatView.IsVisible>
+                    </v:ChatView>
+
+                    <!-- 設定ビュー -->
+                    <v:SettingsView DataContext="{Binding Settings}"
+                                    IsVisible="{Binding ((vm:MainWindowViewModel)DataContext).IsSettingsMode,
+                                                        RelativeSource={RelativeSource AncestorType=Window}}" />
+
+                    <!-- 空ビュー（ピア未選択時） -->
+                    <Border IsVisible="False" x:Name="EmptyView">
+                        <TextBlock Text="{DynamicResource Text.Chat.SelectMember}"
+                                   FontSize="16"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                    </Border>
+                </Panel>
+                </Border>
+            </Grid>
         </Grid>
 
         <!-- ドロップオーバーレイ -->
         <Border x:Name="DropOverlay" IsVisible="False" ZIndex="100"
-                Background="#80000000" IsHitTestVisible="True"
+                Background="{DynamicResource OverlayBrush}" IsHitTestVisible="True"
                 DragDrop.AllowDrop="True">
-            <Border Background="#1E1E20" CornerRadius="16"
+            <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="16"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
                     Padding="48,32"
-                    BorderBrush="#12FFFFFF" BorderThickness="1">
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
                 <StackPanel Spacing="16" HorizontalAlignment="Center">
-                    <TextBlock Text="Drop files to transfer"
-                               FontSize="16" Foreground="#F5F5F7"
+                    <TextBlock Text="{DynamicResource Text.Drop.Message}"
+                               FontSize="16" Foreground="{DynamicResource TextPrimaryBrush}"
                                HorizontalAlignment="Center" />
-                    <TextBlock Text="Dropped files will be sent to the connected device"
-                               FontSize="11" Foreground="#4DEBEBF5"
+                    <TextBlock Text="{DynamicResource Text.Drop.Description}"
+                               FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"
                                HorizontalAlignment="Center" />
                 </StackPanel>
             </Border>

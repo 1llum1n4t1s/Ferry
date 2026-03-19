@@ -11,7 +11,6 @@ using Avalonia.Data.Core;
 using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
-using AvaloniaWebView;
 using Ferry.Infrastructure;
 using Ferry.Services;
 using Ferry.ViewModels;
@@ -73,12 +72,6 @@ public partial class App : Application
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
-    }
-
-    public override void RegisterServices()
-    {
-        base.RegisterServices();
-        AvaloniaWebViewBuilder.Initialize(default);
     }
 
     [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Reflection used by Avalonia data validation plugins and ViewLocator")]

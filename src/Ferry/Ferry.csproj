@@ -15,8 +15,7 @@
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <!-- Native AOT は Windows のみ（WebView.Avalonia.Desktop が他プラットフォームの ILC 非対応） -->
-    <PublishAot Condition="$([MSBuild]::IsOSPlatform('Windows'))">true</PublishAot>
+    <PublishAot>true</PublishAot>
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>link</TrimMode>
   </PropertyGroup>
@@ -32,11 +31,6 @@
     <AvaloniaResource Include="..\..\icon\app.ico" Link="icon\app.ico" />
   </ItemGroup>
 
-  <!-- WebUI ファイルを出力ディレクトリにコピー -->
-  <ItemGroup>
-    <Content Include="WebUI\**" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
   <Target Name="GenerateIcon" BeforeTargets="BeforeBuild" Inputs="..\..\icon\app_icon.png" Outputs="..\..\icon\app.ico"
           Condition="$([MSBuild]::IsOSPlatform('Windows'))">
     <Exec Command="powershell -ExecutionPolicy Bypass -NoProfile -File &quot;$(ProjectDir)..\..\icon\generate_icon.ps1&quot;" />
@@ -50,11 +44,9 @@
     <PackageReference Include="Avalonia.Diagnostics" Version="11.3.12" Condition="'$(Configuration)' == 'Debug'" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="Velopack" Version="0.0.1298" />
-<PackageReference Include="QRCoder" Version="1.7.0" />
+    <PackageReference Include="QRCoder" Version="1.7.0" />
     <PackageReference Include="FirebaseDatabase.net" Version="5.0.0" />
     <PackageReference Include="NLog" Version="6.1.1" />
-    <PackageReference Include="WebView.Avalonia" Version="11.0.0.1" />
-    <PackageReference Include="WebView.Avalonia.Desktop" Version="11.0.0.1" />
   </ItemGroup>
 
   <ItemGroup>
@@ -62,11 +54,5 @@
     <TrimmerRootAssembly Include="Avalonia.Themes.Fluent" />
     <TrimmerRootAssembly Include="Avalonia.Desktop" />
     <TrimmerRootAssembly Include="Velopack" />
-    <TrimmerRootAssembly Include="WebView.Avalonia" />
-    <!-- WebView.Avalonia.Desktop は Windows のみ実 DLL が存在（macOS/Linux ではメタパッケージ） -->
-    <TrimmerRootAssembly Include="WebView.Avalonia.Desktop" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
-    <TrimmerRootAssembly Include="Avalonia.WebView.MacCatalyst" Condition="$([MSBuild]::IsOSPlatform('OSX'))" />
-    <TrimmerRootAssembly Include="Avalonia.WebView.Linux" Condition="$([MSBuild]::IsOSPlatform('Linux'))" />
-    <TrimmerRootAssembly Include="Linux.WebView.Core" Condition="$([MSBuild]::IsOSPlatform('Linux'))" />
   </ItemGroup>
 </Project>
