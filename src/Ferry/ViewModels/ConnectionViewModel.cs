@@ -452,11 +452,11 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         while (!ct.IsCancellationRequested)
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var peers = PairedPeers.ToArray();
 
-            foreach (var peer in PairedPeers.ToArray())
+            // 全ピアのプレゼンスを並列取得（順次 → 並列で N 倍高速化）
+            var tasks = peers.Select(async peer =>
             {
-                if (ct.IsCancellationRequested) break;
-
                 try
                 {
                     var presenceData = await _presenceSignaling!.GetPresenceAsync(peer.PeerId, ct);
@@ -477,12 +477,15 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                         }
                     });
                 }
-                catch (OperationCanceledException) { break; }
+                catch (OperationCanceledException) { /* キャンセルは WhenAll 後に判定 */ }
                 catch
                 {
                     // 個別ピアのエラーは無視して次へ
                 }
-            }
+            });
+
+            await Task.WhenAll(tasks);
+            if (ct.IsCancellationRequested) break;
 
             // ポーリング間隔（末尾に配置して初回は即座にチェック）
             try { await Task.Delay(PollIntervalMs, ct); }

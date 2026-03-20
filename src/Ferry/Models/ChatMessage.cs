@@ -109,7 +109,7 @@ public sealed partial class ChatMessage : ObservableObject
 
     /// <summary>ファイルサイズの表示テキスト。</summary>
     [JsonIgnore]
-    public string FileSizeText => FileSize.HasValue ? FormatBytes(FileSize.Value) : string.Empty;
+    public string FileSizeText => FileSize.HasValue ? Util.Formatting.FormatBytes(FileSize.Value) : string.Empty;
 
     // --- XAML バインディング用ヘルパープロパティ ---
 
@@ -132,14 +132,6 @@ public sealed partial class ChatMessage : ObservableObject
     /// <summary>プログレスバーの幅（親の幅に依存せず固定幅で表現）。</summary>
     [JsonIgnore]
     public double ProgressBarWidth => FileProgress * 300;
-
-    private static string FormatBytes(long bytes) => bytes switch
-    {
-        < 1024 => $"{bytes} B",
-        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
-        < 1024L * 1024 * 1024 => $"{bytes / (1024.0 * 1024):F1} MB",
-        _ => $"{bytes / (1024.0 * 1024 * 1024):F2} GB",
-    };
 }
 
 /// <summary>メッセージ種別。</summary>

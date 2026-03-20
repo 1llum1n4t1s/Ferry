@@ -96,17 +96,11 @@ public sealed class WebSocketRelayTransport : ITransport
         _receiveCts?.Dispose();
         _receiveCts = null;
 
-        try
+        // fire-and-forget で非同期クローズ（sync-over-async のデッドロックを回避）
+        if (_ws.State == WebSocketState.Open)
         {
-            if (_ws.State == WebSocketState.Open)
-            {
-                _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "切断", CancellationToken.None)
-                    .GetAwaiter().GetResult();
-            }
-        }
-        catch
-        {
-            // クローズ時のエラーは無視
+            _ = _ws.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "切断", CancellationToken.None)
+                .ContinueWith(_ => { }, TaskScheduler.Default);
         }
 
         _ws.Dispose();
@@ -191,10 +185,6 @@ public sealed class WebSocketRelayTransport : ITransport
             catch (OperationCanceledException)
             {
                 // 正常なキャンセル
-            }
-            catch (WebSocketException ex)
-            {
-                Util.Logger.Log($"WebSocket リレー受信エラー: {ex.Message}", Util.LogLevel.Warning);
             }
             catch (Exception ex)
             {

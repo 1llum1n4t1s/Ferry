@@ -21,11 +21,13 @@ public static class LengthPrefixedStream
     /// </summary>
     public static async Task WriteMessageAsync(Stream stream, byte[] data, CancellationToken ct = default)
     {
-        var header = new byte[4];
-        BinaryPrimitives.WriteInt32BigEndian(header, data.Length);
+        // ヘッダー + ペイロードを1バッファに結合して1回で送信
+        // NoDelay 有効時、2回の WriteAsync は2つの TCP セグメントになるため統合
+        var frame = new byte[4 + data.Length];
+        BinaryPrimitives.WriteInt32BigEndian(frame, data.Length);
+        data.CopyTo(frame, 4);
 
-        await stream.WriteAsync(header, ct);
-        await stream.WriteAsync(data, ct);
+        await stream.WriteAsync(frame, ct);
         await stream.FlushAsync(ct);
     }
 

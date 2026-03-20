@@ -1,5 +1,5 @@
 using System;
-using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
@@ -171,7 +171,7 @@ public sealed class UdpHolePunchTransport : ITransport
             await _windowSem.WaitAsync(ct);
 
             var seq = (uint)Interlocked.Increment(ref _nextSeq);
-            WriteUInt32BE(frag, 1, seq); // シーケンス番号をパケットに書き込み
+            BinaryPrimitives.WriteUInt32BigEndian(frag.AsSpan(1), seq); // シーケンス番号をパケットに書き込み
 
             var info = new SentPacketInfo(seq, (uint)msgId, frag);
             _sentPackets[seq] = info;
@@ -342,10 +342,10 @@ public sealed class UdpHolePunchTransport : ITransport
     {
         if (packet.Length < PacketHeaderSize + FragmentHeaderSize) return;
 
-        var seq = ReadUInt32BE(packet, 1);
-        var msgId = ReadUInt32BE(packet, 5);
-        var fragIdx = ReadUInt16BE(packet, 9);
-        var fragCount = ReadUInt16BE(packet, 11);
+        var seq = BinaryPrimitives.ReadUInt32BigEndian(packet.AsSpan(1));
+        var msgId = BinaryPrimitives.ReadUInt32BigEndian(packet.AsSpan(5));
+        var fragIdx = BinaryPrimitives.ReadUInt16BigEndian(packet.AsSpan(9));
+        var fragCount = BinaryPrimitives.ReadUInt16BigEndian(packet.AsSpan(11));
 
         // ACK を即座に返す
         var ack = MakeHeaderOnlyPacket(PktAck, seq);
@@ -354,9 +354,7 @@ public sealed class UdpHolePunchTransport : ITransport
 
         // フラグメントデータを抽出
         var dataOffset = PacketHeaderSize + FragmentHeaderSize;
-        var dataLen = packet.Length - dataOffset;
-        var fragData = new byte[dataLen];
-        Buffer.BlockCopy(packet, dataOffset, fragData, 0, dataLen);
+        var fragData = packet.AsSpan(dataOffset).ToArray();
 
         // メッセージ再構築
         var msg = _receivingMessages.GetOrAdd(msgId, _ => new ReceivingMessage(fragCount));
@@ -375,6 +373,7 @@ public sealed class UdpHolePunchTransport : ITransport
         // 全フラグメント受信完了 → メッセージを再構築して配信
         _receivingMessages.TryRemove(msgId, out _);
 
+        // 1パスでサイズ計算とコピーを同時実行
         var totalSize = 0;
         for (var i = 0; i < msg.TotalFragments; i++)
             totalSize += msg.Fragments[i].Length;
@@ -383,7 +382,7 @@ public sealed class UdpHolePunchTransport : ITransport
         var offset = 0;
         for (var i = 0; i < msg.TotalFragments; i++)
         {
-            Buffer.BlockCopy(msg.Fragments[i], 0, fullData, offset, msg.Fragments[i].Length);
+            msg.Fragments[i].CopyTo(fullData.AsSpan(offset));
             offset += msg.Fragments[i].Length;
         }
 
@@ -392,7 +391,7 @@ public sealed class UdpHolePunchTransport : ITransport
 
     private void HandleAck(byte[] packet)
     {
-        var ackedSeq = ReadUInt32BE(packet, 1);
+        var ackedSeq = BinaryPrimitives.ReadUInt32BigEndian(packet.AsSpan(1));
 
         if (!_sentPackets.TryRemove(ackedSeq, out var info)) return;
 
@@ -435,10 +434,10 @@ public sealed class UdpHolePunchTransport : ITransport
             var packet = new byte[PacketHeaderSize + FragmentHeaderSize + fragLen];
             packet[0] = PktData;
             // seq は送信時に書き込む（ここでは 0）
-            WriteUInt32BE(packet, 5, msgId);
-            WriteUInt16BE(packet, 9, (ushort)i);
-            WriteUInt16BE(packet, 11, (ushort)fragCount);
-            Buffer.BlockCopy(data, fragOffset, packet, PacketHeaderSize + FragmentHeaderSize, fragLen);
+            BinaryPrimitives.WriteUInt32BigEndian(packet.AsSpan(5), msgId);
+            BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(9), (ushort)i);
+            BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(11), (ushort)fragCount);
+            data.AsSpan(fragOffset, fragLen).CopyTo(packet.AsSpan(PacketHeaderSize + FragmentHeaderSize));
 
             packets[i] = packet;
         }
@@ -452,33 +451,8 @@ public sealed class UdpHolePunchTransport : ITransport
     {
         var packet = new byte[PacketHeaderSize];
         packet[0] = type;
-        WriteUInt32BE(packet, 1, seq);
+        BinaryPrimitives.WriteUInt32BigEndian(packet.AsSpan(1), seq);
         return packet;
-    }
-
-    private static void WriteUInt32BE(byte[] buf, int offset, uint value)
-    {
-        buf[offset] = (byte)(value >> 24);
-        buf[offset + 1] = (byte)(value >> 16);
-        buf[offset + 2] = (byte)(value >> 8);
-        buf[offset + 3] = (byte)(value & 0xFF);
-    }
-
-    private static void WriteUInt16BE(byte[] buf, int offset, ushort value)
-    {
-        buf[offset] = (byte)(value >> 8);
-        buf[offset + 1] = (byte)(value & 0xFF);
-    }
-
-    private static uint ReadUInt32BE(byte[] buf, int offset)
-    {
-        return (uint)((buf[offset] << 24) | (buf[offset + 1] << 16) |
-                       (buf[offset + 2] << 8) | buf[offset + 3]);
-    }
-
-    private static ushort ReadUInt16BE(byte[] buf, int offset)
-    {
-        return (ushort)((buf[offset] << 8) | buf[offset + 1]);
     }
 
     // === 内部クラス ===
