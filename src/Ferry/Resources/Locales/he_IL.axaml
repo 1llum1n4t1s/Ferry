@@ -103,6 +103,7 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">הצג חלון</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">יציאה</x:String>
+  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">חפש עמיתים...</x:String>
   <x:String x:Key="Text.Chat.Placeholder">הקלד הודעה...</x:String>
   <x:String x:Key="Text.Chat.SelectMember">בחר חבר כדי להתחיל צ'אט</x:String>
   <x:String x:Key="Text.Chat.AttachFile">בחר קבצים לשליחה</x:String>

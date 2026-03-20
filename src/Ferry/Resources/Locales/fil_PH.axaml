@@ -103,6 +103,7 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Ipakita ang Window</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Lumabas</x:String>
+  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">Maghanap ng peer...</x:String>
   <x:String x:Key="Text.Chat.Placeholder">Mag-type ng mensahe...</x:String>
   <x:String x:Key="Text.Chat.SelectMember">Pumili ng miyembro para magsimula ng chat</x:String>
   <x:String x:Key="Text.Chat.AttachFile">Pumili ng mga file na ipapadala</x:String>

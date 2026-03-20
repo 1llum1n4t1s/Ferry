@@ -2,6 +2,15 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <Styles.Resources>
+        <!-- === Avalonia FluentTheme アクセントカラー上書き === -->
+        <Color x:Key="SystemAccentColor">#007AFF</Color>
+        <Color x:Key="SystemAccentColorDark1">#0A84FF</Color>
+        <Color x:Key="SystemAccentColorDark2">#409CFF</Color>
+        <Color x:Key="SystemAccentColorDark3">#66B3FF</Color>
+        <Color x:Key="SystemAccentColorLight1">#0064D2</Color>
+        <Color x:Key="SystemAccentColorLight2">#004DA6</Color>
+        <Color x:Key="SystemAccentColorLight3">#003580</Color>
+
         <!-- === ダークテーマ色（デフォルト） === -->
         <SolidColorBrush x:Key="AppBackgroundBrush" Color="#161618" />
         <SolidColorBrush x:Key="SurfaceBrush" Color="#222224" />
@@ -19,6 +28,8 @@
         <SolidColorBrush x:Key="SidebarBrush" Color="#1C1C1E" />
         <SolidColorBrush x:Key="OverlayBrush" Color="#80000000" />
         <SolidColorBrush x:Key="BadgeBrush" Color="#FF453A" />
+        <SolidColorBrush x:Key="PeerSelectedBrush" Color="#1A3A5C" />
+        <SolidColorBrush x:Key="OfflineBrush" Color="#FF453A" />
 
         <!-- Tahoe ダイアログ用ブラシ（AddMemberWindow, SelfUpdateWindow 等） -->
         <SolidColorBrush x:Key="TahoeWindowBgBrush" Color="#161618" />
@@ -114,7 +125,7 @@
         <Setter Property="Cursor" Value="Hand" />
     </Style>
     <Style Selector="ListBox.peerList ListBoxItem:selected /template/ ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="Background" Value="{DynamicResource PeerSelectedBrush}" />
     </Style>
     <Style Selector="ListBox.peerList ListBoxItem:pointerover /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />

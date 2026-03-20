@@ -50,7 +50,7 @@
 
                         <!-- 検索ボックス -->
                         <TextBox Grid.Row="0" Classes="search"
-                                 Watermark="{DynamicResource Text.Chat.Placeholder}"
+                                 Watermark="{DynamicResource Text.Chat.SearchPeer}"
                                  Margin="8,8" />
 
                         <!-- ピアリスト -->

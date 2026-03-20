@@ -85,6 +85,7 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">顯示視窗</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">結束</x:String>
+  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">搜尋對等裝置...</x:String>
   <x:String x:Key="Text.Chat.Placeholder">輸入訊息...</x:String>
   <x:String x:Key="Text.Chat.SelectMember">選擇成員以開始聊天</x:String>
   <x:String x:Key="Text.Chat.AttachFile">選擇要傳送的檔案</x:String>

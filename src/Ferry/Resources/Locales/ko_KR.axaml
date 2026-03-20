@@ -85,6 +85,7 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">창 표시</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">종료</x:String>
+  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">피어 검색...</x:String>
   <x:String x:Key="Text.Chat.Placeholder">메시지를 입력하세요...</x:String>
   <x:String x:Key="Text.Chat.SelectMember">멤버를 선택하여 채팅 시작</x:String>
   <x:String x:Key="Text.Chat.AttachFile">전송할 파일 선택</x:String>

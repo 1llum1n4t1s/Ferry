@@ -110,6 +110,7 @@
   <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
 
   <!-- Chat -->
+  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">Search peers...</x:String>
   <x:String x:Key="Text.Chat.Placeholder" xml:space="preserve">Type a message...</x:String>
   <x:String x:Key="Text.Chat.SelectMember" xml:space="preserve">Select a member to start chatting</x:String>
   <x:String x:Key="Text.Chat.AttachFile" xml:space="preserve">Attach files</x:String>

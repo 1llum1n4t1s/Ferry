@@ -31,8 +31,7 @@
     <AvaloniaResource Include="..\..\icon\app.ico" Link="icon\app.ico" />
   </ItemGroup>
 
-  <Target Name="GenerateIcon" BeforeTargets="BeforeBuild" Inputs="..\..\icon\app_icon.png" Outputs="..\..\icon\app.ico"
-          Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+  <Target Name="GenerateIcon" BeforeTargets="BeforeBuild" Inputs="..\..\icon\app_icon.png" Outputs="..\..\icon\app.ico" Condition="$([MSBuild]::IsOSPlatform('Windows'))">
     <Exec Command="powershell -ExecutionPolicy Bypass -NoProfile -File &quot;$(ProjectDir)..\..\icon\generate_icon.ps1&quot;" />
   </Target>
 
@@ -42,7 +41,7 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.12" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.12" />
     <PackageReference Include="Avalonia.Diagnostics" Version="11.3.12" Condition="'$(Configuration)' == 'Debug'" />
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.1" />
     <PackageReference Include="Velopack" Version="0.0.1298" />
     <PackageReference Include="QRCoder" Version="1.7.0" />
     <PackageReference Include="FirebaseDatabase.net" Version="5.0.0" />

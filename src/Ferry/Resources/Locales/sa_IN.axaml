@@ -103,6 +103,7 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">वातायनं दर्शयतु</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">निर्गमनम्</x:String>
+  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">समकक्षं अन्विष्यतु...</x:String>
   <x:String x:Key="Text.Chat.Placeholder">सन्देशं लिखतु...</x:String>
   <x:String x:Key="Text.Chat.SelectMember">सम्भाषणारम्भाय सदस्यं चिनोतु</x:String>
   <x:String x:Key="Text.Chat.AttachFile">प्रेषणाय सञ्चिकाः चिनोतु</x:String>

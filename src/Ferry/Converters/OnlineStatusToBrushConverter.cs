@@ -23,7 +23,9 @@ public sealed class OnlineStatusToBrushConverter : IValueConverter
                 return brush;
             return new SolidColorBrush(Color.Parse("#30D158"));
         }
-        return new SolidColorBrush(Color.Parse("#636366"));
+        if (Application.Current?.TryFindResource("OfflineBrush", out var offlineRes) == true && offlineRes is IBrush offlineBrush)
+            return offlineBrush;
+        return new SolidColorBrush(Color.Parse("#FF453A"));
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)

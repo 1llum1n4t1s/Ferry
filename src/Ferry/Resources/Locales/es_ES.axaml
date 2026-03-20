@@ -85,6 +85,7 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Mostrar ventana</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Salir</x:String>
+  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">Buscar pares...</x:String>
   <x:String x:Key="Text.Chat.Placeholder">Escribe un mensaje...</x:String>
   <x:String x:Key="Text.Chat.SelectMember">Selecciona un miembro para iniciar el chat</x:String>
   <x:String x:Key="Text.Chat.AttachFile">Seleccionar archivos para enviar</x:String>

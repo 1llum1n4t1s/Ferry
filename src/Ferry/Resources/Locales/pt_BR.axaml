@@ -103,6 +103,7 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Mostrar janela</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Sair</x:String>
+  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">Pesquisar peers...</x:String>
   <x:String x:Key="Text.Chat.Placeholder">Digite uma mensagem...</x:String>
   <x:String x:Key="Text.Chat.SelectMember">Selecione um membro para iniciar o chat</x:String>
   <x:String x:Key="Text.Chat.AttachFile">Selecionar arquivos para enviar</x:String>

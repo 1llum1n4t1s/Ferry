@@ -113,6 +113,7 @@
   <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">転送するファイルを選択</x:String>
 
   <!-- Chat -->
+  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">ピアを検索...</x:String>
   <x:String x:Key="Text.Chat.Placeholder" xml:space="preserve">メッセージを入力...</x:String>
   <x:String x:Key="Text.Chat.SelectMember" xml:space="preserve">メンバーを選択してチャットを開始</x:String>
   <x:String x:Key="Text.Chat.AttachFile" xml:space="preserve">ファイルを添付</x:String>

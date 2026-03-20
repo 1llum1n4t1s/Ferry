@@ -103,6 +103,7 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Fenestram Ostende</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Exi</x:String>
+  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">Quaere pares...</x:String>
   <x:String x:Key="Text.Chat.Placeholder">Nuntium scribe...</x:String>
   <x:String x:Key="Text.Chat.SelectMember">Sodalis elige ut colloquium incipias</x:String>
   <x:String x:Key="Text.Chat.AttachFile">Fasciculos mittendos elige</x:String>
