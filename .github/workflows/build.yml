@@ -85,3 +85,4 @@ jobs:
         with:
           name: ferry.${{ matrix.runtime }}
           path: publish/*
+          retention-days: 3
