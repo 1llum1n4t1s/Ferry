@@ -2,8 +2,8 @@ name: Firebase ゴミセッション定期削除
 
 on:
   schedule:
-    # 毎時0分に実行
-    - cron: '0 * * * *'
+    # 6時間おきに実行（UTC 0,6,12,18時）
+    - cron: '0 */6 * * *'
   workflow_dispatch: # 手動実行も可能
 
 jobs:
@@ -15,8 +15,8 @@ jobs:
           FIREBASE_DB_URL: ${{ secrets.FIREBASE_DB_URL }}
         shell: bash
         run: |
-          # 1時間前のタイムスタンプ（ミリ秒）
-          THRESHOLD=$(( ($(date +%s) - 3600) * 1000 ))
+          # 6時間前のタイムスタンプ（ミリ秒）
+          THRESHOLD=$(( ($(date +%s) - 21600) * 1000 ))
           echo "削除閾値: $(date -d @$(( THRESHOLD / 1000 )) -u '+%Y-%m-%d %H:%M:%S UTC')"
 
           cleanup_node() {
