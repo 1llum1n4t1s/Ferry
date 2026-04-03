@@ -45,13 +45,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     private bool _minimizeToTray;
 
-    /// <summary>チャット履歴の保持日数（0=無期限）。</summary>
-    [ObservableProperty]
-    private int _chatHistoryRetentionDays = 30;
-
-    /// <summary>チャット履歴保持日数の選択肢。</summary>
-    public int[] ChatRetentionOptions => [7, 14, 30, 60, 90];
-
     // --- 通知設定 ---
 
     /// <summary>受信サウンドを再生するか。</summary>
@@ -127,7 +120,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
             RunAtStartup = s.RunAtStartup;
             StartMinimized = s.StartMinimized;
             MinimizeToTray = s.MinimizeToTray;
-            ChatHistoryRetentionDays = s.ChatHistoryRetentionDays;
             EnableNotificationSound = s.EnableNotificationSound;
             ReceiveFileSavePath = s.ReceiveFileSavePath;
             AutoAcceptFileTransfer = s.AutoAcceptFileTransfer;
@@ -163,7 +155,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         s.RunAtStartup = RunAtStartup;
         s.StartMinimized = StartMinimized;
         s.MinimizeToTray = MinimizeToTray;
-        s.ChatHistoryRetentionDays = ChatHistoryRetentionDays;
         s.EnableNotificationSound = EnableNotificationSound;
         s.ReceiveFileSavePath = ReceiveFileSavePath;
         s.AutoAcceptFileTransfer = AutoAcceptFileTransfer;
@@ -206,7 +197,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
     partial void OnStartMinimizedChanged(bool value) => SaveIfNotLoading();
     partial void OnMinimizeToTrayChanged(bool value) => SaveIfNotLoading();
     partial void OnSaveDirectoryChanged(string value) => SaveIfNotLoading();
-    partial void OnChatHistoryRetentionDaysChanged(int value) => SaveIfNotLoading();
     partial void OnEnableNotificationSoundChanged(bool value) => SaveIfNotLoading();
     partial void OnReceiveFileSavePathChanged(string value) => SaveIfNotLoading();
     partial void OnAutoAcceptFileTransferChanged(bool value) => SaveIfNotLoading();

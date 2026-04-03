@@ -92,6 +92,13 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Translatio reiecta</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Resumptio defecit</x:String>
+  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
+  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
+  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>
+  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Send File</x:String>
+  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Drop files here to send</x:String>
+  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">or click "Send File" button</x:String>
+  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
 
   <!-- Connection Phase Status -->
   <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">TCP auscultator praeparatur…</x:String>
@@ -103,16 +110,6 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Fenestram Ostende</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Exi</x:String>
-  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">Quaere pares...</x:String>
-  <x:String x:Key="Text.Chat.Placeholder">Nuntium scribe...</x:String>
-  <x:String x:Key="Text.Chat.SelectMember">Sodalis elige ut colloquium incipias</x:String>
-  <x:String x:Key="Text.Chat.AttachFile">Fasciculos mittendos elige</x:String>
-
-  <!-- Settings: Chat Retention -->
-  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">Conservatio historiae colloquii</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve"> dies</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">Infinitum</x:String>
-
   <x:String x:Key="Text.Pairing.LinkLabel">Nexus Coniugationis</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">Claudere</x:String>

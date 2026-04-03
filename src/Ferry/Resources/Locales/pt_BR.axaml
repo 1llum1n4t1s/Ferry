@@ -92,6 +92,13 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Transferência rejeitada</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Falha ao retomar</x:String>
+  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
+  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
+  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>
+  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Send File</x:String>
+  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Drop files here to send</x:String>
+  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">or click "Send File" button</x:String>
+  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
 
   <!-- Connection Phase Status -->
   <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">Preparando listener TCP…</x:String>
@@ -103,16 +110,6 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Mostrar janela</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Sair</x:String>
-  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">Pesquisar peers...</x:String>
-  <x:String x:Key="Text.Chat.Placeholder">Digite uma mensagem...</x:String>
-  <x:String x:Key="Text.Chat.SelectMember">Selecione um membro para iniciar o chat</x:String>
-  <x:String x:Key="Text.Chat.AttachFile">Selecionar arquivos para enviar</x:String>
-
-  <!-- Settings: Chat Retention -->
-  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">Retenção do histórico de chat</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve"> dias</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">Ilimitado</x:String>
-
   <x:String x:Key="Text.Pairing.LinkLabel">Link de pareamento</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">Fechar</x:String>

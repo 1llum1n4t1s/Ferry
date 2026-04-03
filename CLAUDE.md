@@ -25,38 +25,29 @@ cd src/Ferry.Bridge && firebase deploy --only hosting
 
 ### 全体構造
 
-Ferry は QR コードでペアリングし、TCP 直接接続（LAN）/ UDP ホールパンチ（NAT 越え P2P）/ WebSocket リレー（最終手段）で PC 間ファイルを P2P 転送するデスクトップアプリ。
+Ferry は QR コードでペアリングし、TCP 直接接続（LAN）/ UDP ホールパンチ（NAT 越え P2P）/ WebSocket リレー（最終手段）で PC 間ファイルを P2P 転送するデスクトップアプリ。ファイル転送に特化しており、チャット機能は含まない。
 
 - **`src/Ferry/`** — .NET 10 Avalonia UI デスクトップアプリ（Native AOT、win-x64）
 - **`src/Ferry.Bridge/`** — Firebase Hosting にデプロイする Web ページ（スマホでQRスキャン→2台のPCをペアリング）
 - **`src/Ferry.Relay/`** — Node.js WebSocket リレーサーバー（NAT 越え用、VPS にデプロイ）
 - **`tests/Ferry.Tests/`** — xUnit v3 + NSubstitute によるユニットテスト
 
-### WebView SPA + MVVM サービス層
+### Avalonia UI ネイティブ + MVVM サービス層
 
-UI は Avalonia WebView で読み込む SPA（HTML/CSS/JS）。C# サービス層と JSON メッセージで通信（bridge.js 経由）。
-
-手動 DI（`App.axaml.cs` で組み立て）。DI コンテナは未使用。
+UI は Avalonia UI ネイティブ（AXAML）。手動 DI（`App.axaml.cs` で組み立て）。DI コンテナは未使用。
 
 ```
-WebUI/                  → HTML/CSS/JS SPA（about:blank で読み込み、相対パス使用不可）
-  └ js/                 → bridge.js（C# ↔ JS 通信）+ app/chat/settings/i18n
+Views/                  → Avalonia AXAML + コードビハインド（MainWindow, TransferView, SettingsView）
 ViewModels/             → CommunityToolkit.Mvvm の ObservableObject / ObservableProperty
 Services/               → インターフェース (I*Service) + 実装 + Stub（テスト・開発用）
 Infrastructure/         → FirebaseSignaling, TcpDirectTransport, UdpHolePunchTransport, WebSocketRelayTransport, StunClient, FileChunker
 ```
-
-**WebView と C# の通信フロー:**
-1. **JS → C#**: `Bridge.send(action, data)` → `MainWindow.OnWebMessageReceived`
-2. **C# → JS**: `SendToJsAsync(action, data)` → `window.receiveBridgeMessage()` または `PostWebMessageAsString`
-   - `about:blank` での読み込みのため、相対パスが使用不可。`BuildInlinedHtml()` で CSS/JS をインライン化
 
 主要サービスインターフェース:
 - `IConnectionService` — ペアリング（QR）とオンデマンド接続（TCP / UDP / リレー）を管理
 - `ITransferService` — ファイルチャンク転送（SHA-256 検証・レジューム対応）
 - `IPeerRegistryService` — ペア情報の永続化（`%APPDATA%\Ferry\peers.json`）
 - `ISettingsService` — アプリ設定（`%APPDATA%\Ferry\settings.json`）
-- `IChatService` — テキストメッセージ送受信・履歴管理（AES-256-GCM で暗号化）
 
 ### 接続フロー（3 階層フォールバック）
 
@@ -90,7 +81,7 @@ signaling/{pairId}/{role}Endpoint       = "ip:port"（UDP ホールパンチ用�
 signaling/{pairId}/createdAt            = タイムスタンプ
 ```
 
-全ノードに `CreatedAt` を入れており、GitHub Actions（毎時）で1時間超の古いデータを自動削除。
+全ノードに `CreatedAt` を入れており、GitHub Actions（6時間おき）で1時間超の古いデータを自動削除。
 
 ### Native AOT 制約
 
@@ -119,15 +110,6 @@ PresencePollLoop (10秒):
   └ now - lastSeen < 60秒 なら IsOnline = true
 ```
 
-### チャット（テキストメッセージ）
-
-`ChatService` でテキストメッセージ・ファイル転送を管理。
-
-- **送信**: MessageId 付き バイナリ（`0x30` フラグ + 16byte GUID + UTF-8 テキスト）→ 接続経由で送信
-- **受信**: データを解析 → 配達確認 ACK 返送 → MessageReceived イベント発火
-- **履歴永続化**: AES-256-GCM で暗号化してローカル保存（`%APPDATA%\Ferry\chat\{peerId}.enc`）
-- **保持期間**: Settings.ChatHistoryRetentionDays に従う（0 = 無期限）
-
 ### テスト
 
 xUnit v3 + NSubstitute。テスト内の非同期メソッドには `TestContext.Current.CancellationToken` を渡すこと（xUnit1051 警告回避）。
@@ -137,17 +119,8 @@ xUnit v3 + NSubstitute。テスト内の非同期メソッドには `TestContext
 NLog でファイル出力。場所: `%LOCALAPPDATA%\Ferry\logs\Ferry_YYYYMMDD.log`。DEBUG ビルドは全レベル、Release は Warning 以上。
 
 **通信デバッグのポイント:**
-- メッセージ送信失敗時、エラーは `ChatViewModel.SendMessageAsync` の `catch` で記録される（`メッセージ送信前の接続失敗: ...`）
 - SDP offer/answer ポーリング: `SDP 待機中` ログで現在の待機状態を確認（`createdAt=null` なら Firebase に offer が無い）
-- WebView 初期化: `NavigationCompleted: isSuccess=False` が出ても最終的に `True` で完了すれば OK
 - 接続失敗時は常にログに原因が出力されるよう各所で `Util.Logger.Log(..., Util.LogLevel.Error)` を使用
-
-### WebUI 開発のポイント
-
-- **about:blank での読み込み**: 相対パス・fetch が使えないため、CSS/JS はすべて `BuildInlinedHtml()` でインライン化される
-- **JS のモジュール化**: `app.js`, `chat.js`, `settings.js` は `Bridge` グローバル オブジェクト経由で通信
-- **パフォーマンス**: チャットメッセージは `DocumentFragment` + `requestAnimationFrame` でバッチ描画
-  - スクロール重い場合は CSS の `contain: content`, `content-visibility: auto` で改善
 
 ## サーバー接続情報
 
@@ -155,9 +128,8 @@ WebSocket リレーサーバー・STUN サーバーの接続情報・デプロ�
 
 ## 既知の制限と注意事項
 
-1. **同時接続の競合**: 2台の PC が同時にメッセージ送信を試みると、両方が offer 側になり接続失敗する可能性がある。接続確立後にメッセージ送信すること。
-2. **WebView リソース**: 複数インスタンス起動時に WebView2 キャッシュが競合することがある（`Ferry.exe.WebView2/` ディレクトリ）。
-3. **Native AOT 制約**: JSON の動的シリアライズは使用不可。モデル追加時は `*JsonContext` も追加。
+1. **同時接続の競合**: 2台の PC が同時にファイル送信を試みると、両方が offer 側になり接続失敗する可能性がある。接続確立後にファイル送信すること。
+2. **Native AOT 制約**: JSON の動的シリアライズは使用不可。モデル追加時は `*JsonContext` も追加。
 
 ## 言語
 

@@ -85,3 +85,24 @@ jobs:
             -t "Velopack $VERSION" \
             --notes "自動更新用パッケージ（ユーザーが直接ダウンロードする必要はありません）"
           gh release upload "$VTAG" --repo "$REPO" velopack-packages/*
+      - name: Cleanup old releases (keep latest 3)
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_PAT }}
+        run: |
+          REPO="1llum1n4t1s/Ferry-releases"
+
+          # 通常リリース: タグがx.y.z形式のもの（velopack-を含まない）を作成日降順で取得
+          gh release list --repo "$REPO" --limit 100 --json tagName,createdAt \
+            --jq '[.[] | select(.tagName | test("^[0-9]"))] | sort_by(.createdAt) | reverse | .[3:] | .[].tagName' \
+          | while read -r tag; do
+              echo "Deleting old release: $tag"
+              gh release delete "$tag" --repo "$REPO" --yes --cleanup-tag || true
+            done
+
+          # Velopackリリース: タグがvelopack-x.y.z形式のものを作成日降順で取得
+          gh release list --repo "$REPO" --limit 100 --json tagName,createdAt \
+            --jq '[.[] | select(.tagName | startswith("velopack-"))] | sort_by(.createdAt) | reverse | .[3:] | .[].tagName' \
+          | while read -r tag; do
+              echo "Deleting old velopack release: $tag"
+              gh release delete "$tag" --repo "$REPO" --yes --cleanup-tag || true
+            done

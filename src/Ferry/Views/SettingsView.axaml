@@ -154,17 +154,6 @@
                 </Grid>
             </Border>
 
-            <!-- チャット -->
-            <TextBlock Classes="sectionHeader" Text="{DynamicResource Text.Settings.ChatRetention}" />
-            <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,4">
-                <Grid ColumnDefinitions="*,Auto">
-                    <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.ChatRetention.Days}" />
-                    <ComboBox Grid.Column="1" ItemsSource="{Binding ChatRetentionOptions}"
-                              SelectedItem="{Binding ChatHistoryRetentionDays, Mode=TwoWay}"
-                              MinWidth="80" />
-                </Grid>
-            </Border>
-
             <!-- バージョン -->
             <TextBlock Classes="sectionHeader" Text="{DynamicResource Text.Settings.Version}" />
             <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,16">

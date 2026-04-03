@@ -141,19 +141,16 @@ public partial class App : Application
                 _ => ThemeVariant.Default, // "System" = OS 追従
             };
 
-            var chatService = new ChatService(connectionService, settingsService);
             var connectionVm = new ConnectionViewModel(connectionService, qrCodeService, settingsService, peerRegistry);
             var transferVm = new TransferViewModel(connectionService, transferService, connectionVm);
-            var chatVm = new ChatViewModel(chatService, connectionService, transferService, settingsService, connectionVm);
             var settingsVm = new SettingsViewModel(settingsService);
-            var mainVm = new MainWindowViewModel(connectionVm, transferVm, chatVm, settingsVm);
+            var mainVm = new MainWindowViewModel(connectionVm, transferVm, settingsVm);
 
             _mainWindow = new MainWindow
             {
                 DataContext = mainVm,
             };
             _mainWindow.SetSettingsService(settingsService);
-            _mainWindow.SetNotificationService(new NotificationService(settingsService));
             desktop.MainWindow = _mainWindow;
 
             // トレイアイコン設定（MinimizeToTray 有効時にウィンドウ復帰用）

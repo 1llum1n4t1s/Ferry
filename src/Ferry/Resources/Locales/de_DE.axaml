@@ -74,6 +74,13 @@
   <x:String x:Key="Text.Update.Unknown" xml:space="preserve">Unbekannt</x:String>
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Empfang abgelehnt</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Wiederaufnahme fehlgeschlagen</x:String>
+  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
+  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
+  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>
+  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Send File</x:String>
+  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Drop files here to send</x:String>
+  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">or click "Send File" button</x:String>
+  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
 
   <!-- Connection Phase Status -->
   <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">TCP-Listener wird vorbereitet…</x:String>
@@ -85,16 +92,6 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Fenster anzeigen</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Beenden</x:String>
-  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">Peer suchen...</x:String>
-  <x:String x:Key="Text.Chat.Placeholder">Nachricht eingeben...</x:String>
-  <x:String x:Key="Text.Chat.SelectMember">Mitglied auswählen, um den Chat zu starten</x:String>
-  <x:String x:Key="Text.Chat.AttachFile">Dateien zum Senden auswählen</x:String>
-
-  <!-- Settings: Chat Retention -->
-  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">Aufbewahrung des Chatverlaufs</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve"> Tage</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">Unbegrenzt</x:String>
-
   <x:String x:Key="Text.Pairing.LinkLabel">Pairing-Link</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">Schließen</x:String>

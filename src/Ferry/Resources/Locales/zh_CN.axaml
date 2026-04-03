@@ -74,6 +74,13 @@
   <x:String x:Key="Text.Update.Unknown" xml:space="preserve">未知</x:String>
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">已拒绝接收</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">恢复失败</x:String>
+  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
+  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
+  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>
+  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Send File</x:String>
+  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Drop files here to send</x:String>
+  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">or click "Send File" button</x:String>
+  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
 
   <!-- Connection Phase Status -->
   <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">正在准备 TCP 监听…</x:String>
@@ -85,16 +92,6 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">显示窗口</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">退出</x:String>
-  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">搜索对等设备...</x:String>
-  <x:String x:Key="Text.Chat.Placeholder">输入消息...</x:String>
-  <x:String x:Key="Text.Chat.SelectMember">选择成员以开始聊天</x:String>
-  <x:String x:Key="Text.Chat.AttachFile">选择要发送的文件</x:String>
-
-  <!-- Settings: Chat Retention -->
-  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">聊天记录保留</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve">天</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">无限制</x:String>
-
   <x:String x:Key="Text.Pairing.LinkLabel">配对链接</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">关闭</x:String>

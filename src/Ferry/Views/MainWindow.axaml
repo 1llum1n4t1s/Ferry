@@ -21,7 +21,6 @@
 
     <Window.Resources>
         <conv:OnlineStatusToBrushConverter x:Key="OnlineStatusBrush" />
-        <conv:IntGreaterThanZeroConverter x:Key="IntGtZero" />
     </Window.Resources>
 
     <Panel>
@@ -50,7 +49,7 @@
 
                         <!-- 検索ボックス -->
                         <TextBox Grid.Row="0" Classes="search"
-                                 Watermark="{DynamicResource Text.Chat.SearchPeer}"
+                                 Watermark="{DynamicResource Text.Transfer.SearchPeer}"
                                  Margin="8,8" />
 
                         <!-- ピアリスト -->
@@ -60,41 +59,23 @@
                                  x:Name="PeerListBox">
                             <ListBox.ItemTemplate>
                                 <DataTemplate x:DataType="m:PairedPeer">
-                                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2">
+                                    <Grid ColumnDefinitions="Auto,*" Margin="0,2">
                                         <!-- オンラインインジケーター -->
                                         <Ellipse Grid.Column="0" Width="10" Height="10"
                                                  Fill="{Binding IsOnline, Converter={StaticResource OnlineStatusBrush}}"
                                                  VerticalAlignment="Center"
                                                  Margin="0,0,8,0" />
 
-                                        <!-- ピア名と最終メッセージ -->
+                                        <!-- ピア名と接続経路 -->
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <Grid ColumnDefinitions="*,Auto">
-                                                <TextBlock Text="{Binding DisplayName}"
-                                                           FontSize="14" FontWeight="Medium"
-                                                           Foreground="{DynamicResource TextPrimaryBrush}"
-                                                           TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Grid.Column="1" Text="{Binding LastMessageAtText}"
-                                                           FontSize="11"
-                                                           Foreground="{DynamicResource TextTertiaryBrush}"
-                                                           VerticalAlignment="Center" Margin="4,0,0,0" />
-                                            </Grid>
-                                            <TextBlock Text="{Binding LastMessagePreview}"
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       FontSize="14" FontWeight="Medium"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding RouteText}"
                                                        FontSize="12"
                                                        Foreground="{DynamicResource TextSecondaryBrush}"
                                                        MaxLines="1" TextTrimming="CharacterEllipsis" />
-                                        </StackPanel>
-
-                                        <!-- 未読バッジ -->
-                                        <StackPanel Grid.Column="2" VerticalAlignment="Center"
-                                                    HorizontalAlignment="Right" Spacing="4">
-                                            <Border Classes="badge"
-                                                    IsVisible="{Binding UnreadCount, Converter={StaticResource IntGtZero}}">
-                                                <TextBlock Text="{Binding UnreadCount}"
-                                                           FontSize="11" Foreground="White"
-                                                           HorizontalAlignment="Center"
-                                                           VerticalAlignment="Center" />
-                                            </Border>
                                         </StackPanel>
                                     </Grid>
                                 </DataTemplate>
@@ -120,10 +101,10 @@
                 <Border Grid.Column="1" Background="{DynamicResource SurfaceBrush}"
                         CornerRadius="12" Margin="4,4,8,8" ClipToBounds="True">
                 <Panel>
-                    <!-- チャットビュー -->
-                    <v:ChatView x:Name="ChatViewControl"
-                                DataContext="{Binding Chat}">
-                        <v:ChatView.IsVisible>
+                    <!-- 転送ビュー -->
+                    <v:TransferView x:Name="TransferViewControl"
+                                    DataContext="{Binding Transfer}">
+                        <v:TransferView.IsVisible>
                             <MultiBinding Converter="{x:Static BoolConverters.And}">
                                 <Binding Path="((vm:MainWindowViewModel)DataContext).IsSettingsMode"
                                          RelativeSource="{RelativeSource AncestorType=Window}"
@@ -132,8 +113,8 @@
                                          RelativeSource="{RelativeSource AncestorType=Window}"
                                          Converter="{x:Static ObjectConverters.IsNotNull}" />
                             </MultiBinding>
-                        </v:ChatView.IsVisible>
-                    </v:ChatView>
+                        </v:TransferView.IsVisible>
+                    </v:TransferView>
 
                     <!-- 設定ビュー -->
                     <v:SettingsView DataContext="{Binding Settings}"
@@ -142,7 +123,7 @@
 
                     <!-- 空ビュー（ピア未選択時） -->
                     <Border IsVisible="False" x:Name="EmptyView">
-                        <TextBlock Text="{DynamicResource Text.Chat.SelectMember}"
+                        <TextBlock Text="{DynamicResource Text.Transfer.SelectMember}"
                                    FontSize="16"
                                    Foreground="{DynamicResource TextSecondaryBrush}"
                                    HorizontalAlignment="Center"

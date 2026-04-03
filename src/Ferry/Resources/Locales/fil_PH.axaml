@@ -92,6 +92,13 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Tinanggihan ang paglipat</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Nabigong ipagpatuloy</x:String>
+  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
+  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
+  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>
+  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Send File</x:String>
+  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Drop files here to send</x:String>
+  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">or click "Send File" button</x:String>
+  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
 
   <!-- Connection Phase Status -->
   <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">Inihahanda ang TCP listener…</x:String>
@@ -103,16 +110,6 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Ipakita ang Window</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Lumabas</x:String>
-  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">Maghanap ng peer...</x:String>
-  <x:String x:Key="Text.Chat.Placeholder">Mag-type ng mensahe...</x:String>
-  <x:String x:Key="Text.Chat.SelectMember">Pumili ng miyembro para magsimula ng chat</x:String>
-  <x:String x:Key="Text.Chat.AttachFile">Pumili ng mga file na ipapadala</x:String>
-
-  <!-- Settings: Chat Retention -->
-  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">Pagpapanatili ng kasaysayan ng chat</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve"> araw</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">Walang limitasyon</x:String>
-
   <x:String x:Key="Text.Pairing.LinkLabel">Link ng Pagpapares</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">Isara</x:String>

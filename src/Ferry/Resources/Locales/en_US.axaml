@@ -108,18 +108,12 @@
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Transfer rejected</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Resume failed</x:String>
   <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
-
-  <!-- Chat -->
-  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">Search peers...</x:String>
-  <x:String x:Key="Text.Chat.Placeholder" xml:space="preserve">Type a message...</x:String>
-  <x:String x:Key="Text.Chat.SelectMember" xml:space="preserve">Select a member to start chatting</x:String>
-  <x:String x:Key="Text.Chat.AttachFile" xml:space="preserve">Attach files</x:String>
-  <x:String x:Key="Text.Chat.DeletedMessage" xml:space="preserve">This message has been deleted</x:String>
-
-  <!-- Settings: Chat Retention -->
-  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">Chat history retention</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve"> days</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">Unlimited</x:String>
+  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
+  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>
+  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Send File</x:String>
+  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Drop files here to send</x:String>
+  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">or click "Send File" button</x:String>
+  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
 
   <!-- Pairing -->
   <x:String x:Key="Text.Pairing.LinkLabel" xml:space="preserve">Or share the pairing link</x:String>

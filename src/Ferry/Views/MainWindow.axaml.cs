@@ -8,31 +8,28 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Ferry.Infrastructure;
-using Ferry.Models;
 using Ferry.Services;
 using Ferry.ViewModels;
 
 namespace Ferry.Views;
 
 /// <summary>
-/// メインウィンドウ。2カラムレイアウト（サイドバー + チャット/設定）を管理する。
+/// メインウィンドウ。2カラムレイアウト（サイドバー + 転送/設定）を管理する。
 /// </summary>
 public partial class MainWindow : Window
 {
     private Border? _dropOverlay;
     private ISettingsService? _settingsService;
-    private INotificationService? _notificationService;
 
     /// <summary>ウィンドウ位置保存のデバウンスタイマー（500ms）。</summary>
     private System.Threading.Timer? _savePositionDebounceTimer;
 
     private MainWindowViewModel? _mainVm;
     private ConnectionViewModel? ConnectionVm => _mainVm?.Connection;
-    private ChatViewModel? ChatVm => _mainVm?.Chat;
+    private TransferViewModel? TransferVm => _mainVm?.Transfer;
 
     // イベント重複登録防止用: 前回購読した ViewModel の参照を保持
     private ConnectionViewModel? _subscribedConnectionVm;
-    private ChatViewModel? _subscribedChatVm;
     private MainWindowViewModel? _subscribedMainVm;
 
     public MainWindow()
@@ -83,7 +80,6 @@ public partial class MainWindow : Window
     }
 
     public void SetSettingsService(ISettingsService settingsService) => _settingsService = settingsService;
-    public void SetNotificationService(INotificationService notificationService) => _notificationService = notificationService;
 
     // === イベント購読 ===
 
@@ -96,16 +92,12 @@ public partial class MainWindow : Window
         {
             _subscribedConnectionVm.PropertyChanged -= OnConnectionVmPropertyChanged;
         }
-        if (_subscribedChatVm != null)
-        {
-            _subscribedChatVm.Messages.CollectionChanged -= OnMessagesCollectionChanged;
-        }
         if (_subscribedMainVm != null)
         {
             _subscribedMainVm.PropertyChanged -= OnMainVmPropertyChangedForEmptyView;
         }
 
-        // SelectedPeer 変更 → チャット読み込み + ピア名更新
+        // SelectedPeer 変更 → ピア名更新
         if (ConnectionVm != null)
         {
             ConnectionVm.PropertyChanged += OnConnectionVmPropertyChanged;
@@ -126,13 +118,6 @@ public partial class MainWindow : Window
             };
         }
 
-        // 受信メッセージの通知処理
-        if (ChatVm != null)
-        {
-            ChatVm.Messages.CollectionChanged += OnMessagesCollectionChanged;
-            _subscribedChatVm = ChatVm;
-        }
-
         // IsSettingsMode 変更時の空ビュー更新（名前付きメソッドで一度だけ登録）
         _mainVm.PropertyChanged += OnMainVmPropertyChangedForEmptyView;
         _subscribedMainVm = _mainVm;
@@ -146,38 +131,12 @@ public partial class MainWindow : Window
         if (e.PropertyName == nameof(ConnectionViewModel.SelectedPeer))
         {
             var peer = ConnectionVm?.SelectedPeer;
-            if (peer != null && ChatVm != null)
+            if (peer != null)
             {
                 // 設定モードを解除
                 if (_mainVm != null) _mainVm.IsSettingsMode = false;
-
-                // チャット履歴読み込み
-                _ = ChatVm.LoadChatAsync(peer.PeerId);
-
-                // ピア名をバインディング経由で設定
-                ChatVm.PeerDisplayName = peer.DisplayName;
             }
             UpdateEmptyViewVisibility();
-        }
-    }
-
-    private void OnMessagesCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
-    {
-        if (e.NewItems == null) return;
-
-        foreach (ChatMessage msg in e.NewItems)
-        {
-            // 受信メッセージ かつ ウィンドウが非アクティブなら通知
-            if (!msg.IsFromMe && !IsActive)
-            {
-                var platformHandle = this.TryGetPlatformHandle();
-                var hwnd = platformHandle?.Handle ?? IntPtr.Zero;
-                WindowFlash.Flash(hwnd);
-
-                var senderName = ConnectionVm?.SelectedPeer?.DisplayName ?? string.Empty;
-                var preview = msg.Type == ChatMessageType.File ? msg.FileName ?? string.Empty : msg.Text;
-                _notificationService?.NotifyMessageReceived(msg.PeerId, senderName, preview);
-            }
         }
     }
 
@@ -336,9 +295,9 @@ public partial class MainWindow : Window
             .Where(p => File.Exists(p) || Directory.Exists(p))
             .ToArray();
 
-        if (paths.Length > 0 && ChatVm?.IsChatVisible == true && ChatVm.SelectedPeerId != null)
+        if (paths.Length > 0 && ConnectionVm?.SelectedPeer != null && _mainVm?.IsSettingsMode != true)
         {
-            ChatVm.AddAttachedFiles(paths);
+            TransferVm?.SendFilesCommand.Execute(paths);
         }
 
         e.Handled = true;

@@ -92,6 +92,13 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">स्थानान्तरणं निराकृतम्</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">पुनरारम्भः विफलः</x:String>
+  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
+  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
+  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>
+  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Send File</x:String>
+  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Drop files here to send</x:String>
+  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">or click "Send File" button</x:String>
+  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
 
   <!-- Connection Phase Status -->
   <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">TCP श्रोता सज्जीक्रियते…</x:String>
@@ -103,16 +110,6 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">वातायनं दर्शयतु</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">निर्गमनम्</x:String>
-  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">समकक्षं अन्विष्यतु...</x:String>
-  <x:String x:Key="Text.Chat.Placeholder">सन्देशं लिखतु...</x:String>
-  <x:String x:Key="Text.Chat.SelectMember">सम्भाषणारम्भाय सदस्यं चिनोतु</x:String>
-  <x:String x:Key="Text.Chat.AttachFile">प्रेषणाय सञ्चिकाः चिनोतु</x:String>
-
-  <!-- Settings: Chat Retention -->
-  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">सम्भाषणेतिहासस्य धारणम्</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve"> दिनानि</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">अनियमितम्</x:String>
-
   <x:String x:Key="Text.Pairing.LinkLabel">युग्मनसम्बन्धः</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">पिधत्ति</x:String>

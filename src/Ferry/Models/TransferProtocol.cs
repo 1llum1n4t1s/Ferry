@@ -29,24 +29,6 @@ public static class TransferProtocol
     /// <summary>転送レジューム応答 [TransferId (16byte)] [Status (1byte)] [LastChunkIndex (4byte)]。</summary>
     public const byte ResumeResponse = 0x21;
 
-    /// <summary>テキストメッセージ [MessageId (16byte GUID)] [UTF-8 テキスト]。</summary>
-    public const byte ChatMessage = 0x30;
-
-    /// <summary>メッセージ配達確認 [MessageId (16byte GUID)]。</summary>
-    public const byte ChatAck = 0x31;
-
-    /// <summary>メッセージ削除 [MessageId (16byte GUID)]。</summary>
-    public const byte ChatDeleteMessage = 0x32;
-
-    /// <summary>メッセージ編集 [MessageId (16byte GUID)] [UTF-8 新テキスト]。</summary>
-    public const byte ChatEditMessage = 0x33;
-
-    /// <summary>リアクション [MessageId (16byte GUID)] [UTF-8 絵文字]。</summary>
-    public const byte ChatReaction = 0x34;
-
-    /// <summary>リプライ [ReplyToMessageId (16byte)] [NewMessageId (16byte)] [ReplyToTextLength (4byte)] [UTF-8 ReplyToText] [UTF-8 本文]。</summary>
-    public const byte ChatReplyMessage = 0x35;
-
     /// <summary>チャンクサイズ (16KB)。</summary>
     public const int ChunkSize = 16_384;
 

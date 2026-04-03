@@ -92,6 +92,13 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Transfer ditolak</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Gagal melanjutkan</x:String>
+  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
+  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
+  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>
+  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Send File</x:String>
+  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Drop files here to send</x:String>
+  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">or click "Send File" button</x:String>
+  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
 
   <!-- Connection Phase Status -->
   <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">Menyiapkan listener TCP…</x:String>
@@ -103,16 +110,6 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Tampilkan Jendela</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Keluar</x:String>
-  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">Cari peer...</x:String>
-  <x:String x:Key="Text.Chat.Placeholder">Ketik pesan...</x:String>
-  <x:String x:Key="Text.Chat.SelectMember">Pilih anggota untuk memulai obrolan</x:String>
-  <x:String x:Key="Text.Chat.AttachFile">Pilih file untuk dikirim</x:String>
-
-  <!-- Settings: Chat Retention -->
-  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">Penyimpanan riwayat obrolan</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve"> hari</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">Tidak terbatas</x:String>
-
   <x:String x:Key="Text.Pairing.LinkLabel">Tautan Pemasangan</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">Tutup</x:String>

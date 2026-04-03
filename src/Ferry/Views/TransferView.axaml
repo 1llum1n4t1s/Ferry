@@ -1,0 +1,130 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:Ferry.ViewModels"
+             xmlns:m="using:Ferry.Models"
+             mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="500"
+             x:Class="Ferry.Views.TransferView"
+             x:DataType="vm:TransferViewModel">
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- ヘッダー: ピア名 + 送信ボタン -->
+        <Border Grid.Row="0" Background="{DynamicResource SurfaceVariantBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
+                Padding="16,12">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.DisplayName,
+                                              RelativeSource={RelativeSource AncestorType=Window}}"
+                               FontSize="16" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <TextBlock Text="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.RouteText,
+                                              RelativeSource={RelativeSource AncestorType=Window}}"
+                               FontSize="12"
+                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                </StackPanel>
+                <Button Grid.Column="1" Classes="accent"
+                        Content="{DynamicResource Text.Transfer.SendFile}"
+                        Command="{Binding BrowseAndSendFilesCommand}" />
+            </Grid>
+        </Border>
+
+        <!-- 転送リスト -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <Panel>
+                <!-- 転送アイテムがある場合 -->
+                <ItemsControl ItemsSource="{Binding Transfers}"
+                              IsVisible="{Binding HasTransfers}"
+                              Margin="8">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="m:TransferItem">
+                            <Border Background="{DynamicResource SurfaceVariantBrush}"
+                                    CornerRadius="8" Padding="12,10" Margin="0,4">
+                                <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
+                                    <!-- アイコン -->
+                                    <TextBlock Grid.Column="0" Grid.RowSpan="2"
+                                               Text="📄" FontSize="24"
+                                               VerticalAlignment="Center" Margin="0,0,12,0" />
+
+                                    <!-- ファイル名 + サイズ -->
+                                    <TextBlock Grid.Column="1" Grid.Row="0"
+                                               Text="{Binding FileName}"
+                                               FontSize="14" FontWeight="Medium"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <StackPanel Grid.Column="1" Grid.Row="1"
+                                                Orientation="Horizontal" Spacing="8">
+                                        <TextBlock Text="{Binding FileSizeText}"
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                                        <TextBlock Text="{Binding StateText}"
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource TextTertiaryBrush}" />
+                                    </StackPanel>
+
+                                    <!-- 方向アイコン -->
+                                    <TextBlock Grid.Column="2" Grid.RowSpan="2"
+                                               Text="{Binding DirectionSymbol}"
+                                               FontSize="16" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- 転送履歴が空の場合 -->
+                <StackPanel IsVisible="{Binding !HasTransfers}"
+                            HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Spacing="8">
+                    <TextBlock Text="{DynamicResource Text.Transfer.DropHere}"
+                               FontSize="16"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               HorizontalAlignment="Center" />
+                    <TextBlock Text="{DynamicResource Text.Transfer.OrClickSend}"
+                               FontSize="12"
+                               Foreground="{DynamicResource TextTertiaryBrush}"
+                               HorizontalAlignment="Center" />
+                </StackPanel>
+            </Panel>
+        </ScrollViewer>
+
+        <!-- 承認待ちパネル -->
+        <Border Grid.Row="2" IsVisible="{Binding HasPendingApproval}"
+                Background="{DynamicResource SurfaceVariantBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0"
+                Padding="8">
+            <ItemsControl ItemsSource="{Binding PendingApprovals}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="m:TransferItem">
+                        <Border Background="{DynamicResource SurfaceBrush}"
+                                CornerRadius="8" Padding="12,8" Margin="0,4">
+                            <Grid ColumnDefinitions="*,Auto,Auto">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding FileName}"
+                                               FontSize="14" FontWeight="Medium"
+                                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                                    <TextBlock Text="{Binding FileSizeText}"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                                </StackPanel>
+                                <Button Grid.Column="1" Classes="accent" Margin="8,0"
+                                        Content="{DynamicResource Text.Transfer.Accept}"
+                                        Command="{Binding ((vm:TransferViewModel)DataContext).ApproveTransferCommand,
+                                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding TransferId}" />
+                                <Button Grid.Column="2"
+                                        Content="{DynamicResource Text.Transfer.Reject}"
+                                        Command="{Binding ((vm:TransferViewModel)DataContext).RejectTransferCommand,
+                                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding TransferId}" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Border>
+    </Grid>
+
+</UserControl>

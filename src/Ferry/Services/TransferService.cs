@@ -157,9 +157,6 @@ public sealed class TransferService : ITransferService
     {
         if (data.Length == 0) return;
 
-        // チャットメッセージ（0x30-0x31）はChatServiceが処理するのでスキップ
-        if (data.Length > 0 && data[0] >= TransferProtocol.ChatMessage) return;
-
         var messageType = FileChunker.GetMessageType(data);
 
         switch (messageType)

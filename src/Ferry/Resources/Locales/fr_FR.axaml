@@ -74,6 +74,13 @@
   <x:String x:Key="Text.Update.Unknown" xml:space="preserve">Inconnu</x:String>
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Transfert rejeté</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Échec de la reprise</x:String>
+  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
+  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
+  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>
+  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Send File</x:String>
+  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Drop files here to send</x:String>
+  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">or click "Send File" button</x:String>
+  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
 
   <!-- Connection Phase Status -->
   <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">Préparation du listener TCP…</x:String>
@@ -85,16 +92,6 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Afficher la fenêtre</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Quitter</x:String>
-  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">Rechercher un pair...</x:String>
-  <x:String x:Key="Text.Chat.Placeholder">Saisir un message...</x:String>
-  <x:String x:Key="Text.Chat.SelectMember">Sélectionnez un membre pour démarrer la conversation</x:String>
-  <x:String x:Key="Text.Chat.AttachFile">Sélectionner les fichiers à envoyer</x:String>
-
-  <!-- Settings: Chat Retention -->
-  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">Conservation de l'historique des discussions</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve"> jours</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">Illimité</x:String>
-
   <x:String x:Key="Text.Pairing.LinkLabel">Lien d'appairage</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">Fermer</x:String>

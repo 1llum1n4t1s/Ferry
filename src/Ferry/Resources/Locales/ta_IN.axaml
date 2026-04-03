@@ -92,6 +92,13 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">பரிமாற்றம் நிராகரிக்கப்பட்டது</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">மீண்டும் தொடங்குவது தோல்வியடைந்தது</x:String>
+  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
+  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
+  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>
+  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Send File</x:String>
+  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Drop files here to send</x:String>
+  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">or click "Send File" button</x:String>
+  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
 
   <!-- Connection Phase Status -->
   <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">TCP கேட்பி தயாராகிறது…</x:String>
@@ -103,16 +110,6 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">சாளரத்தைக் காட்டு</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">வெளியேறு</x:String>
-  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">பீரைத் தேடு...</x:String>
-  <x:String x:Key="Text.Chat.Placeholder">செய்தியை உள்ளிடுங்கள்...</x:String>
-  <x:String x:Key="Text.Chat.SelectMember">அரட்டையைத் தொடங்க உறுப்பினரைத் தேர்ந்தெடுக்கவும்</x:String>
-  <x:String x:Key="Text.Chat.AttachFile">அனுப்ப கோப்புகளைத் தேர்ந்தெடுக்கவும்</x:String>
-
-  <!-- Settings: Chat Retention -->
-  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">அரட்டை வரலாற்றைப் பாதுகாத்தல்</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve"> நாட்கள்</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">வரம்பற்றது</x:String>
-
   <x:String x:Key="Text.Pairing.LinkLabel">இணைப்பு இணைப்பு</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">மூடு</x:String>

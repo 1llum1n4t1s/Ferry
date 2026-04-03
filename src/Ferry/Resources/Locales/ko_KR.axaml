@@ -74,6 +74,13 @@
   <x:String x:Key="Text.Update.Unknown" xml:space="preserve">알 수 없음</x:String>
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">수신이 거부되었습니다</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">재개 실패</x:String>
+  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
+  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
+  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>
+  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Send File</x:String>
+  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Drop files here to send</x:String>
+  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">or click "Send File" button</x:String>
+  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
 
   <!-- Connection Phase Status -->
   <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">TCP 리스너 준비 중…</x:String>
@@ -85,16 +92,6 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">창 표시</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">종료</x:String>
-  <x:String x:Key="Text.Chat.SearchPeer" xml:space="preserve">피어 검색...</x:String>
-  <x:String x:Key="Text.Chat.Placeholder">메시지를 입력하세요...</x:String>
-  <x:String x:Key="Text.Chat.SelectMember">멤버를 선택하여 채팅 시작</x:String>
-  <x:String x:Key="Text.Chat.AttachFile">전송할 파일 선택</x:String>
-
-  <!-- Settings: Chat Retention -->
-  <x:String x:Key="Text.Settings.ChatRetention" xml:space="preserve">채팅 기록 보관</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Days" xml:space="preserve">일</x:String>
-  <x:String x:Key="Text.Settings.ChatRetention.Unlimited" xml:space="preserve">무제한</x:String>
-
   <x:String x:Key="Text.Pairing.LinkLabel">페어링 링크</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">닫기</x:String>
