@@ -15,7 +15,7 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Output version string
         id: version
         run: |
@@ -42,13 +42,13 @@ jobs:
       contents: read
     steps:
       - name: Download package artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: package.*
           path: packages
           merge-multiple: true
       - name: Download Velopack artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: velopack.*
           path: velopack-packages
@@ -60,7 +60,7 @@ jobs:
           echo "=== Velopack 自動更新フィード (velopack-packages/) ==="
           ls -lh velopack-packages/ || true
       - name: Node.js セットアップ (wrangler 4.x が Node.js >=22 を要求)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
       - name: wrangler CLI をインストール

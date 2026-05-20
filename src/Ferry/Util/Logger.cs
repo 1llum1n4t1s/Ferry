@@ -55,7 +55,9 @@ public static class Logger
 #if DEBUG
         LogLevel.Debug;
 #else
-        LogLevel.Warning;
+        // Release でも接続フォールバックの各段（成功・経路確定・状態遷移）を診断できるよう
+        // Info 以上を出力する。IP 等の PII は MaskIp で伏せて記録する
+        LogLevel.Info;
 #endif
 
     /// <summary>
@@ -180,6 +182,24 @@ public static class Logger
             return;
 
         _logger?.Log(ToNLogLevel(level), message);
+    }
+
+    /// <summary>
+    /// ログ出力用に IPv4 アドレスの末尾オクテットを伏せる（PII 保護）。
+    /// "1.2.3.4" → "1.2.3.x"、"1.2.3.4:5678" → "1.2.3.x:5678"。IPv4 でなければそのまま返す。
+    /// </summary>
+    public static string MaskIp(string? ipOrEndpoint)
+    {
+        if (string.IsNullOrEmpty(ipOrEndpoint)) return ipOrEndpoint ?? "";
+
+        var colon = ipOrEndpoint.LastIndexOf(':');
+        var ip = colon >= 0 ? ipOrEndpoint[..colon] : ipOrEndpoint;
+        var port = colon >= 0 ? ipOrEndpoint[colon..] : "";
+
+        var parts = ip.Split('.');
+        if (parts.Length != 4) return ipOrEndpoint; // IPv4 でなければマスクしない
+        parts[3] = "x";
+        return string.Join('.', parts) + port;
     }
 
     /// <summary>

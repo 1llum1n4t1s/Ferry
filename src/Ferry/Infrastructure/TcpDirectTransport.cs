@@ -101,7 +101,7 @@ public sealed class TcpDirectTransport : ITransport
                 _stream = _client.GetStream();
                 IsConnected = true;
 
-                Util.Logger.Log($"TCP 接続成功: {ip}:{port}");
+                Util.Logger.Log($"TCP 接続成功: {Util.Logger.MaskIp(ip)}:{port}");
                 StartReceiveLoop();
                 ChannelOpened?.Invoke(this, EventArgs.Empty);
                 RouteChanged?.Invoke(this, ConnectionRoute.Direct);
@@ -109,7 +109,7 @@ public sealed class TcpDirectTransport : ITransport
             }
             catch (Exception ex)
             {
-                Util.Logger.Log($"TCP 接続失敗 ({ip}:{port}): {ex.Message}", Util.LogLevel.Warning);
+                Util.Logger.Log($"TCP 接続失敗 ({Util.Logger.MaskIp(ip)}:{port}): {ex.Message}", Util.LogLevel.Warning);
                 lastException = ex;
             }
         }

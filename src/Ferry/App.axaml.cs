@@ -26,6 +26,7 @@ public partial class App : Application
     private MainWindow? _mainWindow;
     private ResourceDictionary? _activeLocale;
     private ISettingsService? _settingsService;
+    private System.Threading.Timer? _updateCheckTimer;
 
     /// <summary>TransferService のインスタンス（MainWindow からのアクセス用）。</summary>
     public ITransferService? TransferService { get; private set; }
@@ -185,7 +186,14 @@ public partial class App : Application
 
             // 起動時の自動更新チェック（更新がある場合のみダイアログ表示）
             if (_settingsService!.Settings.Check4UpdatesOnStartup)
+            {
                 Check4Update(false);
+                // トレイ常駐で長時間起動し続けるため、24時間ごとに定期チェックする
+                // （起動時 1 回のみだと常駐ユーザーに更新が届かない）
+                _updateCheckTimer = new System.Threading.Timer(
+                    _ => Check4Update(false), null,
+                    TimeSpan.FromHours(24), TimeSpan.FromHours(24));
+            }
         }
 
         base.OnFrameworkInitializationCompleted();

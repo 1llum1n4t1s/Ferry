@@ -19,9 +19,9 @@ jobs:
             label: windows-arm64
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Download build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ferry.${{ matrix.runtime }}
           path: build/Ferry
@@ -32,7 +32,7 @@ jobs:
           LABEL: ${{ matrix.label }}
         run: ./build/scripts/package.win.ps1
       - name: Upload package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: package.${{ matrix.label }}
           path: build/ferry_*.zip
@@ -47,9 +47,9 @@ jobs:
             label: macos-apple-silicon
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Download build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ferry.${{ matrix.runtime }}
           path: build
@@ -65,7 +65,7 @@ jobs:
           chmod +x build/scripts/package.osx-app.sh
           ./build/scripts/package.osx-app.sh
       - name: Upload package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: package.${{ matrix.label }}
           path: build/ferry_*.zip
@@ -83,7 +83,7 @@ jobs:
             label: linux-arm64
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Download package dependencies
         run: |
           export DEBIAN_FRONTEND=noninteractive
@@ -91,7 +91,7 @@ jobs:
           apt-get update
           apt-get install -y curl wget git dpkg-dev fakeroot tzdata zip unzip desktop-file-utils rpm libfuse2 file build-essential binutils
       - name: Download build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ferry.${{ matrix.runtime }}
           path: build
@@ -107,7 +107,7 @@ jobs:
           chmod +x build/scripts/package.linux.sh
           ./build/scripts/package.linux.sh
       - name: Upload package artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: package.${{ matrix.label }}
           path: |

@@ -234,7 +234,7 @@ public sealed class FirebaseSignaling : IDisposable
             .Child(pairId)
             .Child($"{role}Endpoint")
             .PutAsync(new SignalingValue { Data = encoded });
-        Util.Logger.Log($"外部エンドポイント送信 ({role}): {endpoint}");
+        Util.Logger.Log($"外部エンドポイント送信 ({role}): {Util.Logger.MaskIp(endpoint)}");
     }
 
     /// <summary>
@@ -257,7 +257,7 @@ public sealed class FirebaseSignaling : IDisposable
                 if (value?.Data != null)
                 {
                     var decoded = DecodeBase64(value.Data);
-                    Util.Logger.Log($"外部エンドポイント受信 ({role}): {decoded}");
+                    Util.Logger.Log($"外部エンドポイント受信 ({role}): {Util.Logger.MaskIp(decoded)}");
                     return decoded;
                 }
             }

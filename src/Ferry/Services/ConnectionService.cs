@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -183,7 +184,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     continue;
                 }
 
-                Util.Logger.Log($"着信接続情報検知！ Answer 側として接続開始: pairId={pairId}, ips=[{string.Join(", ", offer.Ips)}], port={offer.Port}");
+                Util.Logger.Log($"着信接続情報検知！ Answer 側として接続開始: pairId={pairId}, ips=[{string.Join(", ", offer.Ips.Select(Util.Logger.MaskIp))}], port={offer.Port}");
                 SetState(PeerState.Connecting);
                 StatusMessageChanged?.Invoke(this, "Status.Phase.TcpConnecting");
 
@@ -303,7 +304,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 RelayUrl = RelayUrl,
             };
             var offerJson = SerializeConnectionInfo(offerInfo);
-            Util.Logger.Log($"接続情報送信: ips=[{string.Join(", ", localIps)}], port={port}");
+            Util.Logger.Log($"接続情報送信: ips=[{string.Join(", ", localIps.Select(Util.Logger.MaskIp))}], port={port}");
             await _signaling.SendSdpOfferAsync(pairId, offerJson, ct);
 
             // ② TCP accept + Answer ポーリングを同時待機
@@ -355,7 +356,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
                     if (stunResult != null)
                     {
-                        Util.Logger.Log($"STUN 外部エンドポイント取得: {stunResult.Value.ip}:{stunResult.Value.port}");
+                        Util.Logger.Log($"STUN 外部エンドポイント取得: {Util.Logger.MaskIp(stunResult.Value.ip)}:{stunResult.Value.port}");
 
                         // 外部エンドポイントを offer に追加送信
                         var updatedOffer = new ConnectionInfo
@@ -556,7 +557,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 return false;
             }
 
-            Util.Logger.Log($"STUN 外部エンドポイント取得: {stunResult.Value.ip}:{stunResult.Value.port}");
+            Util.Logger.Log($"STUN 外部エンドポイント取得: {Util.Logger.MaskIp(stunResult.Value.ip)}:{stunResult.Value.port}");
 
             // 自身の外部エンドポイントを Firebase に書き込み（Offer 側が読む）
             await _signaling!.SendEndpointAsync(pairId, "answer", $"{stunResult.Value.ip}:{stunResult.Value.port}", ct);

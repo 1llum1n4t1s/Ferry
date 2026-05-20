@@ -93,7 +93,7 @@ public sealed class UdpHolePunchTransport : ITransport
                 var result = await StunClient.GetExternalEndpointAsync(_udp, host, port, ct);
                 if (result != null)
                 {
-                    Util.Logger.Log($"STUN 成功: {host}:{port} → {result.Value.ip}:{result.Value.port}");
+                    Util.Logger.Log($"STUN 成功: {host}:{port} → {Util.Logger.MaskIp(result.Value.ip)}:{result.Value.port}");
                     return result;
                 }
             }
@@ -121,7 +121,7 @@ public sealed class UdpHolePunchTransport : ITransport
     public async Task HolePunchAsync(string remoteIp, int remotePort, CancellationToken ct = default)
     {
         _remoteEp = new IPEndPoint(IPAddress.Parse(remoteIp), remotePort);
-        Util.Logger.Log($"UDP ホールパンチ開始: {remoteIp}:{remotePort}");
+        Util.Logger.Log($"UDP ホールパンチ開始: {Util.Logger.MaskIp(remoteIp)}:{remotePort}");
 
         // 受信ループを先に起動（PUNCH_ACK を受け取るため）
         StartBackgroundLoops();
