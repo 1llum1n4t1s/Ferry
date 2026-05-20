@@ -12,7 +12,7 @@ QR コードでペアリングし、TCP 直接接続 / UDP ホールパンチ / 
 | P2P 通信 | TCP 直接接続 / UDP ホールパンチ (STUN) / WebSocket リレー |
 | シグナリング | Firebase Realtime Database (FirebaseDatabase.net) |
 | ペアリング | QR コード (QRCoder) → Firebase Hosting Bridge ページ |
-| 自動更新 | Velopack (GitHub Releases) |
+| 自動更新 | Velopack (Cloudflare R2 ferry-updates) |
 | ログ | NLog (ローリングファイル) |
 | テスト | xUnit v3 + NSubstitute |
 

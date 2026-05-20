@@ -30,8 +30,8 @@ public partial class App : Application
     /// <summary>TransferService のインスタンス（MainWindow からのアクセス用）。</summary>
     public ITransferService? TransferService { get; private set; }
 
-    /// <summary>GitHub Releases の更新元リポジトリ URL（public リポジトリ経由）。</summary>
-    private const string GitHubRepoUrl = "https://github.com/1llum1n4t1s/Ferry-releases";
+    /// <summary>自動更新の配信元 URL（Cloudflare R2 ferry-updates 経由）。</summary>
+    private const string UpdateBaseUrl = "https://ferry.nephilim.jp";
 
     /// <summary>サポートされているロケール一覧。</summary>
     public static readonly string[] SupportedLocales =
@@ -306,7 +306,7 @@ public partial class App : Application
         {
             try
             {
-                var source = new Velopack.Sources.GithubSource(GitHubRepoUrl, string.Empty, false);
+                var source = new Velopack.Sources.SimpleWebSource(UpdateBaseUrl);
                 var mgr = new Velopack.UpdateManager(source);
 
                 if (!mgr.IsInstalled)

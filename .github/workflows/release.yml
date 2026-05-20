@@ -34,12 +34,12 @@ jobs:
     uses: ./.github/workflows/velopack.yml
     with:
       version: ${{ needs.version.outputs.version }}
-  release:
+  r2-upload:
     needs: [package, velopack, version]
-    name: Release
+    name: R2 Upload
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - name: Download package artifacts
         uses: actions/download-artifact@v4
@@ -53,56 +53,59 @@ jobs:
           pattern: velopack.*
           path: velopack-packages
           merge-multiple: true
-      - name: Publish installers to Ferry-releases (public)
-        env:
-          GH_TOKEN: ${{ secrets.RELEASES_PAT }}
-          TAG: ${{ needs.version.outputs.tag }}
-          VERSION: ${{ needs.version.outputs.version }}
+      - name: 成果物を確認
         run: |
-          REPO="1llum1n4t1s/Ferry-releases"
-          if gh release view "$TAG" --repo "$REPO" > /dev/null 2>&1; then
-            gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag
-          fi
-          gh release create "$TAG" \
-            --repo "$REPO" \
-            -t "Ferry $VERSION" \
-            --notes "Ferry $VERSION のインストーラーです。"
-          gh release upload "$TAG" --repo "$REPO" packages/*
-          gh release upload "$TAG" --repo "$REPO" velopack-packages/*-Setup.exe velopack-packages/*-Setup.pkg
-      - name: Publish Velopack auto-update to Ferry-releases (public)
+          echo "=== インストーラ (packages/) ==="
+          ls -lh packages/ || true
+          echo "=== Velopack 自動更新フィード (velopack-packages/) ==="
+          ls -lh velopack-packages/ || true
+      - name: Node.js セットアップ (wrangler 4.x が Node.js >=22 を要求)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: wrangler CLI をインストール
+        # サプライチェーン攻撃防止のため明示的にバージョン固定
+        run: npm install -g wrangler@4.93.0
+      - name: Velopack 自動更新フィードを R2 (ferry-updates) にアップロード
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_PAT }}
-          TAG: ${{ needs.version.outputs.tag }}
-          VERSION: ${{ needs.version.outputs.version }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          REPO="1llum1n4t1s/Ferry-releases"
-          VTAG="velopack-$TAG"
-          if gh release view "$VTAG" --repo "$REPO" > /dev/null 2>&1; then
-            gh release delete "$VTAG" --repo "$REPO" --yes --cleanup-tag
-          fi
-          gh release create "$VTAG" \
-            --repo "$REPO" \
-            -t "Velopack $VERSION" \
-            --notes "自動更新用パッケージ（ユーザーが直接ダウンロードする必要はありません）"
-          gh release upload "$VTAG" --repo "$REPO" velopack-packages/*
-      - name: Cleanup old releases (keep latest 3)
+          set -euo pipefail
+          count=0
+          for f in velopack-packages/*; do
+            [ -f "$f" ] || continue
+            name=$(basename "$f")
+            echo "::group::Upload (feed) $name"
+            wrangler r2 object put "ferry-updates/$name" --file="$f" --remote
+            echo "::endgroup::"
+            count=$((count + 1))
+          done
+          echo "✅ Velopack フィード アップロード完了: $count ファイル"
+      - name: インストーラを R2 (ferry-updates) にアップロード
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_PAT }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          REPO="1llum1n4t1s/Ferry-releases"
-
-          # 通常リリース: タグがx.y.z形式のもの（velopack-を含まない）を作成日降順で取得
-          gh release list --repo "$REPO" --limit 100 --json tagName,createdAt \
-            --jq '[.[] | select(.tagName | test("^[0-9]"))] | sort_by(.createdAt) | reverse | .[3:] | .[].tagName' \
-          | while read -r tag; do
-              echo "Deleting old release: $tag"
-              gh release delete "$tag" --repo "$REPO" --yes --cleanup-tag || true
-            done
-
-          # Velopackリリース: タグがvelopack-x.y.z形式のものを作成日降順で取得
-          gh release list --repo "$REPO" --limit 100 --json tagName,createdAt \
-            --jq '[.[] | select(.tagName | startswith("velopack-"))] | sort_by(.createdAt) | reverse | .[3:] | .[].tagName' \
-          | while read -r tag; do
-              echo "Deleting old velopack release: $tag"
-              gh release delete "$tag" --repo "$REPO" --yes --cleanup-tag || true
-            done
+          set -euo pipefail
+          count=0
+          for f in packages/*; do
+            [ -f "$f" ] || continue
+            name=$(basename "$f")
+            echo "::group::Upload (installer) $name"
+            wrangler r2 object put "ferry-updates/$name" --file="$f" --remote
+            echo "::endgroup::"
+            count=$((count + 1))
+          done
+          echo "✅ インストーラ アップロード完了: $count ファイル"
+      - name: 配信確認 (全 channel の releases.<channel>.json HTTP 200 を検証)
+        run: |
+          set -euo pipefail
+          base="https://ferry.nephilim.jp"
+          for channel in win-x64 win-arm64 osx-arm64 linux-x64 linux-arm64; do
+            url="${base}/releases.${channel}.json"
+            curl --fail --silent --show-error --max-time 30 \
+                 --retry 3 --retry-delay 5 --retry-all-errors \
+                 -o /dev/null -w "${channel}: HTTP %{http_code} (%{size_download} bytes)\n" \
+                 "$url"
+          done
