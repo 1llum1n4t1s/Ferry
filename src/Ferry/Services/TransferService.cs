@@ -309,9 +309,22 @@ public sealed class TransferService : ITransferService
         }
         else
         {
-            savePath = Path.Combine(saveDir, meta.FileName);
+            // パストラバーサル防止: ピア制御のファイル名はディレクトリ要素を除去する
+            savePath = Path.Combine(saveDir, Path.GetFileName(meta.FileName));
             // 単独ファイルの同名リネーム
             savePath = GetUniquePath(savePath);
+        }
+
+        // パストラバーサル最終防御: 組み立てた保存先が saveDir 配下に収まることを検証
+        // （RelativePath 経路の絶対パス混入や Path.Combine の親破棄挙動を弾く）
+        var fullSaveDir = Path.GetFullPath(saveDir);
+        var dirWithSep = fullSaveDir.EndsWith(Path.DirectorySeparatorChar)
+            ? fullSaveDir
+            : fullSaveDir + Path.DirectorySeparatorChar;
+        if (!Path.GetFullPath(savePath).StartsWith(dirWithSep, StringComparison.OrdinalIgnoreCase))
+        {
+            Util.Logger.Log($"保存パスが保存先ディレクトリ外を指しています: {savePath}", Util.LogLevel.Warning);
+            return;
         }
 
         // 保存先ディレクトリを作成

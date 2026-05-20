@@ -38,6 +38,7 @@ public sealed class UdpHolePunchTransport : ITransport
     private const int WindowSize = 128;         // 同時送信可能パケット数
     private const int RetransmitIntervalMs = 100;
     private const int RetransmitTimeoutMs = 300;
+    private const int MaxFragments = 16384;     // 1メッセージ最大フラグメント数（攻撃者制御 fragCount による OOM 防止。約19MB相当）
 
     // === ソケット ===
     private readonly UdpClient _udp;
@@ -347,6 +348,9 @@ public sealed class UdpHolePunchTransport : ITransport
         var fragIdx = BinaryPrimitives.ReadUInt16BigEndian(packet.AsSpan(9));
         var fragCount = BinaryPrimitives.ReadUInt16BigEndian(packet.AsSpan(11));
 
+        // 攻撃者制御の生値を弾く（OOM・配列外アクセス防止）
+        if (fragCount == 0 || fragCount > MaxFragments || fragIdx >= fragCount) return;
+
         // ACK を即座に返す
         var ack = MakeHeaderOnlyPacket(PktAck, seq);
         if (_remoteEp != null)
@@ -361,6 +365,8 @@ public sealed class UdpHolePunchTransport : ITransport
 
         lock (msg)
         {
+            // 確保済み配列長で再検証（同一 msgId で異なる fragCount を送る攻撃を防ぐ）
+            if (fragIdx >= msg.Received.Length) return;
             if (msg.Received[fragIdx]) return; // 重複パケット
 
             msg.Fragments[fragIdx] = fragData;

@@ -84,7 +84,9 @@ public partial class App : Application
             DisableAvaloniaDataAnnotationValidation();
 
             // Windows ファイアウォールルールの確認・追加（初回のみ UAC ダイアログ表示）
-            FirewallHelper.EnsureFirewallRule();
+            // netsh の同期実行が起動クリティカルパスをブロックしないようバックグラウンド化
+            // （ルールは TCP 着信が必要になる接続確立前に完了すればよい）
+            _ = Task.Run(FirewallHelper.EnsureFirewallRule);
 
             // サービス組み立て（コンストラクタで同期的に settings.json を読み込み、DeviceId を永続化）
             _settingsService = new SettingsService();
