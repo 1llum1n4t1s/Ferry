@@ -20,6 +20,7 @@ public sealed class TcpDirectTransport : ITransport
     private TcpClient? _client;
     private NetworkStream? _stream;
     private CancellationTokenSource? _receiveCts;
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
 
     public bool IsConnected { get; private set; }
     public ConnectionRoute Route => ConnectionRoute.Direct;
@@ -123,7 +124,16 @@ public sealed class TcpDirectTransport : ITransport
         if (_stream == null || !IsConnected)
             throw new InvalidOperationException("接続されていません");
 
-        await LengthPrefixedStream.WriteMessageAsync(_stream, data, ct);
+        // 同一ストリームへの並行 Write を直列化（length-prefix フレームの交錯を防止）
+        await _sendLock.WaitAsync(ct);
+        try
+        {
+            await LengthPrefixedStream.WriteMessageAsync(_stream, data, ct);
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
     }
 
     public void Close()

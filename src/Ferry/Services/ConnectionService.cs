@@ -90,23 +90,33 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     private async void OnPairingDetected(object? sender, PairingInfo info)
     {
-        if (_signaling == null) return;
-
-        Util.Logger.Log($"ペアリング検知: peer={info.PeerDisplayName}");
-
-        _signaling.PairingDetected -= OnPairingDetected;
-        _signaling.StopWatching();
-
-        SetState(PeerState.WaitingForMatch);
-
-        var peer = new PairedPeer
+        // async void のため例外は捕捉しないとプロセスを巻き込む。全体を try-catch で保護する
+        try
         {
-            PeerId = info.PeerId,
-            DisplayName = info.PeerDisplayName,
-        };
-        PairingCompleted?.Invoke(this, peer);
+            // 他タスクの Dispose と競合しないようローカルにキャプチャしてから使う
+            var sig = _signaling;
+            if (sig == null) return;
 
-        await _signaling.CleanupAsync(info.PairingId, ct: default);
+            Util.Logger.Log($"ペアリング検知: peer={info.PeerDisplayName}");
+
+            sig.PairingDetected -= OnPairingDetected;
+            sig.StopWatching();
+
+            SetState(PeerState.WaitingForMatch);
+
+            var peer = new PairedPeer
+            {
+                PeerId = info.PeerId,
+                DisplayName = info.PeerDisplayName,
+            };
+            PairingCompleted?.Invoke(this, peer);
+
+            await sig.CleanupAsync(info.PairingId, ct: default);
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"ペアリング検知処理エラー: {ex.Message}", Util.LogLevel.Warning);
+        }
     }
 
     // === 着信接続監視 ===
@@ -141,6 +151,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
         var minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
+        // ポーリング用 Firebase クライアントはループ全体で再利用する
+        // （毎反復で new すると接続/TLS ハンドシェイクの churn が発生するため）
+        using var pollingSignaling = new FirebaseSignaling(_databaseUrl);
+
         while (!ct.IsCancellationRequested)
         {
             try
@@ -152,7 +166,6 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 }
 
                 // Offer（接続情報 JSON）をポーリングで待つ
-                using var pollingSignaling = new FirebaseSignaling(_databaseUrl);
                 var offerJson = await pollingSignaling.WaitForSdpAsync(pairId, "offer", minCreatedAt: minCreatedAt, ct: ct);
 
                 if (State is PeerState.Connected or PeerState.Connecting)
@@ -175,7 +188,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 StatusMessageChanged?.Invoke(this, "Status.Phase.TcpConnecting");
 
                 _signaling?.Dispose();
-                _signaling = new FirebaseSignaling(_databaseUrl);
+                var sig = new FirebaseSignaling(_databaseUrl);
+                _signaling = sig;
                 _currentPairId = pairId;
 
                 // ① TCP 直接接続を試行
@@ -190,7 +204,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     Route = connected ? RouteDirect : RouteNeedRelay,
                 };
                 var answerJson = SerializeConnectionInfo(answerInfo);
-                await _signaling.SendSdpAnswerAsync(pairId, answerJson, ct);
+                await sig.SendSdpAnswerAsync(pairId, answerJson, ct);
 
                 // ② TCP 失敗時: UDP ホールパンチを試行
                 if (!connected && !string.IsNullOrEmpty(offer.ExternalIp) && offer.ExternalPort > 0)

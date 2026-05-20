@@ -20,6 +20,7 @@ public sealed class WebSocketRelayTransport : ITransport
 {
     private ClientWebSocket? _ws;
     private CancellationTokenSource? _receiveCts;
+    private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly string _relayUrl;
     private readonly string _pairId;
     private readonly string _role; // "offer" or "answer"
@@ -81,7 +82,16 @@ public sealed class WebSocketRelayTransport : ITransport
         if (_ws == null || _ws.State != WebSocketState.Open || !IsConnected)
             throw new InvalidOperationException("リレー接続されていません");
 
-        await _ws.SendAsync(data, WebSocketMessageType.Binary, true, ct);
+        // ClientWebSocket は同時 SendAsync で InvalidOperationException を投げるため直列化
+        await _sendLock.WaitAsync(ct);
+        try
+        {
+            await _ws.SendAsync(data, WebSocketMessageType.Binary, true, ct);
+        }
+        finally
+        {
+            _sendLock.Release();
+        }
     }
 
     public void Close()
