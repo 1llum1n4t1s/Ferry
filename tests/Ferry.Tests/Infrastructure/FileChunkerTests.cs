@@ -71,16 +71,16 @@ public class FileChunkerTests : IDisposable
     public void CreateChunkMessage_先頭バイトがFileChunkであること()
     {
         var data = new byte[] { 0xAA, 0xBB, 0xCC };
-        var msg = FileChunker.CreateChunkMessage(0, data);
+        var msg = FileChunker.CreateChunkMessage(Guid.NewGuid(), 0, data);
         Assert.Equal(TransferProtocol.FileChunk, msg[0]);
     }
 
     [Fact]
     public void CreateChunkMessage_チャンクインデックスがBigEndianで書き込まれること()
     {
-        var msg = FileChunker.CreateChunkMessage(0x01020304, new byte[] { 0xFF });
-        // msg[1..5] に BigEndian の int が入る
-        var index = BinaryPrimitives.ReadInt32BigEndian(msg.AsSpan(1, 4));
+        var msg = FileChunker.CreateChunkMessage(Guid.NewGuid(), 0x01020304, new byte[] { 0xFF });
+        // TransferId(16) の後ろ msg[17..21] に BigEndian の int が入る
+        var index = BinaryPrimitives.ReadInt32BigEndian(msg.AsSpan(17, 4));
         Assert.Equal(0x01020304, index);
     }
 
@@ -88,16 +88,16 @@ public class FileChunkerTests : IDisposable
     public void CreateChunkMessage_データ部分が正しくコピーされること()
     {
         var data = new byte[] { 10, 20, 30, 40, 50 };
-        var msg = FileChunker.CreateChunkMessage(0, data);
-        Assert.Equal(1 + 4 + 5, msg.Length);
-        Assert.Equal(data, msg[5..]);
+        var msg = FileChunker.CreateChunkMessage(Guid.NewGuid(), 0, data);
+        Assert.Equal(TransferProtocol.ChunkHeaderSize + 5, msg.Length);
+        Assert.Equal(data, msg[TransferProtocol.ChunkHeaderSize..]);
     }
 
     [Fact]
     public void CreateChunkMessage_空データでも動作すること()
     {
-        var msg = FileChunker.CreateChunkMessage(0, ReadOnlySpan<byte>.Empty);
-        Assert.Equal(5, msg.Length); // 種別1 + インデックス4
+        var msg = FileChunker.CreateChunkMessage(Guid.NewGuid(), 0, ReadOnlySpan<byte>.Empty);
+        Assert.Equal(TransferProtocol.ChunkHeaderSize, msg.Length); // 種別1 + TransferId16 + インデックス4
     }
 
     // ==================== CreateAckMessage ====================
@@ -483,11 +483,12 @@ public class FileChunkerTests : IDisposable
 
         // 各チャンクをメッセージ化して再構成
         var reassembled = new MemoryStream();
+        var roundtripId = Guid.NewGuid();
         foreach (var (index, chunkData) in chunks)
         {
-            var chunkMsg = FileChunker.CreateChunkMessage(index, chunkData);
+            var chunkMsg = FileChunker.CreateChunkMessage(roundtripId, index, chunkData);
             // メッセージからデータ部分を抽出
-            reassembled.Write(chunkMsg, 5, chunkMsg.Length - 5);
+            reassembled.Write(chunkMsg, TransferProtocol.ChunkHeaderSize, chunkMsg.Length - TransferProtocol.ChunkHeaderSize);
         }
         Assert.Equal(data, reassembled.ToArray());
 

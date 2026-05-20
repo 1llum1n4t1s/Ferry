@@ -8,7 +8,7 @@ public static class TransferProtocol
     /// <summary>ファイルメタデータ (JSON)。</summary>
     public const byte FileMeta = 0x01;
 
-    /// <summary>ファイルチャンク [chunkIndex (4byte)] [data]。</summary>
+    /// <summary>ファイルチャンク [TransferId (16byte)] [chunkIndex (4byte)] [data]。</summary>
     public const byte FileChunk = 0x02;
 
     /// <summary>ファイル受信完了確認 [status (1byte)] [sha256 (32byte)]。</summary>
@@ -31,6 +31,9 @@ public static class TransferProtocol
 
     /// <summary>チャンクサイズ (16KB)。</summary>
     public const int ChunkSize = 16_384;
+
+    /// <summary>チャンクメッセージのヘッダ長 = 種別(1) + TransferId(16) + chunkIndex(4)。</summary>
+    public const int ChunkHeaderSize = 1 + 16 + 4;
 
     /// <summary>送信バッファ閾値 (64KB)。これを超えたら送信を一時停止する。</summary>
     public const int BufferedAmountThreshold = 65_536;

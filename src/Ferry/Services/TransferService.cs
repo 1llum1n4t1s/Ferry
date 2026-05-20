@@ -19,6 +19,9 @@ namespace Ferry.Services;
 /// </summary>
 public sealed class TransferService : ITransferService
 {
+    /// <summary>承認待ち中にバッファできるチャンクの合計上限（OOM 防止）。</summary>
+    private const long MaxApprovalBufferBytes = 64L * 1024 * 1024;
+
     private readonly IConnectionService _connectionService;
     private readonly ISettingsService _settingsService;
 
@@ -222,7 +225,7 @@ public sealed class TransferService : ITransferService
             if (index < startChunk)
                 continue;
 
-            var chunkMessage = FileChunker.CreateChunkMessage(index, chunkData);
+            var chunkMessage = FileChunker.CreateChunkMessage(transferId, index, chunkData);
             await _connectionService.SendAsync(chunkMessage, ct);
 
             item.TransferredBytes = (long)(index + 1) * TransferProtocol.ChunkSize;
@@ -260,6 +263,14 @@ public sealed class TransferService : ITransferService
         if (meta == null)
         {
             Util.Logger.Log("ファイルメタデータのパースに失敗", Util.LogLevel.Warning);
+            return;
+        }
+
+        // メタデータの整合性検証（攻撃者制御の値で巨大確保・ディスク枯渇を起こさせない）
+        // TotalChunks は FileSize から導出される値と一致しなければ拒否する
+        if (meta.FileSize < 0 || meta.TotalChunks != FileChunker.CalculateTotalChunks(meta.FileSize))
+        {
+            Util.Logger.Log($"不正なメタデータを拒否: FileSize={meta.FileSize}, TotalChunks={meta.TotalChunks}", Util.LogLevel.Warning);
             return;
         }
 
@@ -372,32 +383,58 @@ public sealed class TransferService : ITransferService
 
     private void HandleFileChunk(byte[] data)
     {
-        if (data.Length < 5) return;
+        // [種別 1] [TransferId 16] [chunkIndex 4] [data]
+        if (data.Length < TransferProtocol.ChunkHeaderSize) return;
 
-        var chunkIndex = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(1, 4));
-        var chunkData = data.AsSpan(5);
+        var transferId = new Guid(data.AsSpan(1, 16)).ToString();
+        var chunkIndex = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(17, 4));
+        var chunkLength = data.Length - TransferProtocol.ChunkHeaderSize;
 
-        // 受信中の転送を特定（現時点では1つだけの想定）
-        var state = _receiveStates.Values.FirstOrDefault(s => s.FileStream != null);
-        if (state == null)
+        if (!_receiveStates.TryGetValue(transferId, out var state) || state.FileStream == null)
         {
-            // 承認待ち中のチャンクをバッファリング
-            var pending = _pendingApprovals.Values.FirstOrDefault();
-            if (pending != null)
+            // 承認待ち中のチャンクは TransferId 単位でバッファリング（上限超過分は破棄して OOM 防止）
+            if (_pendingApprovals.TryGetValue(transferId, out var pending))
             {
+                if (pending.BufferedBytes + chunkLength > MaxApprovalBufferBytes)
+                {
+                    Util.Logger.Log($"承認待ちバッファ上限超過のためチャンクを破棄: {pending.FileName}", Util.LogLevel.Warning);
+                    return;
+                }
                 pending.BufferedChunks ??= [];
-                pending.BufferedChunks.Add(data.ToArray());
+                pending.BufferedChunks.Add(data);
+                pending.BufferedBytes += chunkLength;
             }
+            return;
+        }
+
+        // chunkIndex の範囲検証
+        if (chunkIndex < 0 || chunkIndex >= state.TotalChunks) return;
+
+        var offset = (long)chunkIndex * TransferProtocol.ChunkSize;
+        // 申告サイズを超える書き込みを拒否（ディスク枯渇 DoS 防止）
+        if (offset + chunkLength > state.FileSize)
+        {
+            Util.Logger.Log($"チャンクが申告サイズを超過: {state.FileName}", Util.LogLevel.Warning);
+            state.Item.State = TransferState.Error;
+            state.Item.ErrorMessage = "受信データが申告サイズを超過しました";
+            TransferError?.Invoke(this, state.Item);
+            CleanupReceiveState(state);
             return;
         }
 
         try
         {
-            // チャンクをファイルに書き込み
-            state.FileStream!.Write(chunkData);
-            state.ReceivedChunks++;
+            // chunkIndex をオフセットに変換して書き込む（順不同到着でも正しい位置に置く）。重複チャンクは無視
+            if (state.ReceivedChunkSet != null && !state.ReceivedChunkSet[chunkIndex])
+            {
+                state.FileStream!.Seek(offset, SeekOrigin.Begin);
+                state.FileStream.Write(data.AsSpan(TransferProtocol.ChunkHeaderSize));
+                state.ReceivedChunkSet[chunkIndex] = true;
+                state.ReceivedChunks++;
+                state.WrittenBytes += chunkLength;
+            }
 
-            state.Item.TransferredBytes = state.FileStream.Position;
+            state.Item.TransferredBytes = state.WrittenBytes;
             state.Item.LastConfirmedChunkIndex = chunkIndex;
 
             // 進捗通知（32チャンクごと）
@@ -588,6 +625,10 @@ public sealed class TransferService : ITransferService
         }
 
         state.Item.State = TransferState.InProgress;
+        // 受信済みチャンク追跡ビットマップを確保（chunkIndex ベースの書き込み・重複除外・完了判定に使用）
+        state.ReceivedChunkSet = new bool[state.TotalChunks];
+        state.WrittenBytes = 0;
+        state.ReceivedChunks = 0;
         _receiveStates[transferId] = state;
 
         // 承認前にバッファされたチャンクを処理
@@ -596,6 +637,7 @@ public sealed class TransferService : ITransferService
             foreach (var chunkData in state.BufferedChunks)
                 HandleFileChunk(chunkData);
             state.BufferedChunks = null;
+            state.BufferedBytes = 0;
         }
     }
 
@@ -716,7 +758,13 @@ public sealed class TransferService : ITransferService
         public int ReceivedChunks { get; set; }
         public FileStream? FileStream { get; set; }
         public TransferItem Item { get; set; } = new();
+        /// <summary>受信済みチャンクの追跡ビットマップ（承認時に確保）。重複除外・完了判定に使用。</summary>
+        public bool[]? ReceivedChunkSet { get; set; }
+        /// <summary>実書き込みバイト数（Seek 書き込みのため Position と別管理）。</summary>
+        public long WrittenBytes { get; set; }
         /// <summary>承認前に到着したチャンクのバッファ。</summary>
         public List<byte[]>? BufferedChunks { get; set; }
+        /// <summary>承認待ちバッファの累積バイト数（OOM 防止の上限管理用）。</summary>
+        public long BufferedBytes { get; set; }
     }
 }

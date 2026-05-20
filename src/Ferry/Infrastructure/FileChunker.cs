@@ -38,13 +38,14 @@ public static class FileChunker
     /// <summary>
     /// ファイルチャンクメッセージを生成する。
     /// </summary>
-    public static byte[] CreateChunkMessage(int chunkIndex, ReadOnlySpan<byte> data)
+    public static byte[] CreateChunkMessage(Guid transferId, int chunkIndex, ReadOnlySpan<byte> data)
     {
-        // [種別 1byte] [chunkIndex 4byte] [data]
-        var message = new byte[1 + 4 + data.Length];
+        // [種別 1byte] [TransferId 16byte] [chunkIndex 4byte] [data]
+        var message = new byte[TransferProtocol.ChunkHeaderSize + data.Length];
         message[0] = TransferProtocol.FileChunk;
-        BinaryPrimitives.WriteInt32BigEndian(message.AsSpan(1, 4), chunkIndex);
-        data.CopyTo(message.AsSpan(5));
+        transferId.TryWriteBytes(message.AsSpan(1, 16));
+        BinaryPrimitives.WriteInt32BigEndian(message.AsSpan(17, 4), chunkIndex);
+        data.CopyTo(message.AsSpan(TransferProtocol.ChunkHeaderSize));
         return message;
     }
 
