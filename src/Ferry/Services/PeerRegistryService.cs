@@ -81,6 +81,14 @@ public sealed class PeerRegistryService : IPeerRegistryService
         catch (Exception ex)
         {
             Util.Logger.Log($"peers.json の読み込みに失敗: {ex.Message}", Util.LogLevel.Error);
+            // 破損ファイルを退避して診断用に保全
+            try
+            {
+                var backup = _filePath + $".corrupt-{DateTime.Now:yyyyMMddHHmmss}";
+                File.Move(_filePath, backup, overwrite: true);
+                Util.Logger.Log($"破損した peers.json を退避しました: {backup}", Util.LogLevel.Warning);
+            }
+            catch { /* 退避失敗は無視 */ }
         }
     }
 
@@ -89,7 +97,10 @@ public sealed class PeerRegistryService : IPeerRegistryService
         try
         {
             var json = JsonSerializer.SerializeToUtf8Bytes(_peers, PeerRegistryJsonContext.Default.ListPairedPeer);
-            await File.WriteAllBytesAsync(_filePath, json);
+            // 一時ファイルに書いてからリネームで置換し、書き込み中断による破損を防ぐ
+            var tmp = _filePath + ".tmp";
+            await File.WriteAllBytesAsync(tmp, json);
+            File.Move(tmp, _filePath, overwrite: true);
         }
         catch (Exception ex)
         {

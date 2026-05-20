@@ -62,7 +62,23 @@ public sealed class SettingsService : ISettingsService
         catch (Exception ex)
         {
             Util.Logger.Log($"settings.json の読み込みに失敗: {ex.Message}", Util.LogLevel.Error);
+            // 破損ファイルを退避して診断用に保全（次回 Save で静かに上書きされるのを防ぐ）
+            try
+            {
+                var backup = _filePath + $".corrupt-{DateTime.Now:yyyyMMddHHmmss}";
+                File.Move(_filePath, backup, overwrite: true);
+                Util.Logger.Log($"破損した settings.json を退避しました: {backup}", Util.LogLevel.Warning);
+            }
+            catch { /* 退避失敗は無視 */ }
         }
+    }
+
+    /// <summary>一時ファイルに書いてからリネームで置換し、書き込み中断による破損を防ぐ。</summary>
+    private void WriteAtomic(byte[] json)
+    {
+        var tmp = _filePath + ".tmp";
+        File.WriteAllBytes(tmp, json);
+        File.Move(tmp, _filePath, overwrite: true);
     }
 
     private void Save()
@@ -70,7 +86,7 @@ public sealed class SettingsService : ISettingsService
         try
         {
             var json = JsonSerializer.SerializeToUtf8Bytes(Settings, AppSettingsJsonContext.Default.AppSettings);
-            File.WriteAllBytes(_filePath, json);
+            WriteAtomic(json);
         }
         catch (Exception ex)
         {
@@ -89,7 +105,9 @@ public sealed class SettingsService : ISettingsService
         try
         {
             var json = JsonSerializer.SerializeToUtf8Bytes(Settings, AppSettingsJsonContext.Default.AppSettings);
-            await File.WriteAllBytesAsync(_filePath, json);
+            var tmp = _filePath + ".tmp";
+            await File.WriteAllBytesAsync(tmp, json);
+            File.Move(tmp, _filePath, overwrite: true);
         }
         catch (Exception ex)
         {

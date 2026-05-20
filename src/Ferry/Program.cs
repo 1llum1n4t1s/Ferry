@@ -22,13 +22,30 @@ internal sealed class Program
     {
         VelopackApp.Build().Run();
 
-        Logger.Initialize(new LoggerConfig
+        try
         {
-            LogDirectory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Ferry", "logs"),
-            FilePrefix = "Ferry",
-        });
+            Logger.Initialize(new LoggerConfig
+            {
+                LogDirectory = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "Ferry", "logs"),
+                FilePrefix = "Ferry",
+            });
+        }
+        catch
+        {
+            // ログ初期化失敗（権限不足・ディスクフル・フォルダロック等）。
+            // TEMP にフォールバックし、それも失敗したらログ無しで起動を継続する
+            try
+            {
+                Logger.Initialize(new LoggerConfig
+                {
+                    LogDirectory = Path.Combine(Path.GetTempPath(), "Ferry", "logs"),
+                    FilePrefix = "Ferry",
+                });
+            }
+            catch { /* ログ無しで続行 */ }
+        }
         Logger.LogStartup(args);
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);

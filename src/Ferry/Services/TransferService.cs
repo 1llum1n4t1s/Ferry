@@ -127,8 +127,10 @@ public sealed class TransferService : ITransferService
             return false;
         }
 
-        var startChunk = item.LastConfirmedChunkIndex + 1;
-        Util.Logger.Log($"転送レジューム: {item.FileName}, チャンク {startChunk}/{item.TotalChunks} から再開");
+        // 受信側はレジューム時にファイルを再作成するため、部分再送ではなく先頭から安全に再送する
+        // （途中チャンクだけ送ると受信ファイルが破損するのを防ぐ）
+        var startChunk = 0;
+        Util.Logger.Log($"転送レジューム: {item.FileName}, 先頭から再送 (全 {item.TotalChunks} チャンク)");
 
         item.State = TransferState.InProgress;
 

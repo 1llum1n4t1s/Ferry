@@ -203,6 +203,11 @@ public sealed class UdpHolePunchTransport : ITransport
         _loopCts = null;
 
         try { _udp.Close(); } catch { }
+
+        // 未完成メッセージ・未 ACK パケットを解放（切断時のメモリ滞留を防止）
+        _receivingMessages.Clear();
+        _sentPackets.Clear();
+        _pendingMessages.Clear();
     }
 
     public void Dispose()
