@@ -24,3 +24,6 @@ build/resources/app/App.icns
 
 # Claude local settings
 .claude/settings.local.json
+
+# Machine-specific MCP server config (ssh ホストエイリアス等を含むためコミットしない)
+.mcp.json
