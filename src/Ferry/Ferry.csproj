@@ -10,7 +10,7 @@
     <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
 
     <Product>Ferry</Product>
-    <Version>1.0.28</Version>
+    <Version>1.0.31</Version>
     <Description>P2P File Transfer Application</Description>
   </PropertyGroup>
 

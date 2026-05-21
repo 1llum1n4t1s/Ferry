@@ -8,18 +8,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # デバッグビルド
 dotnet build src/Ferry/Ferry.csproj
 
-# リリースビルド (Native AOT)
-dotnet publish src/Ferry/Ferry.csproj -c Release
+# リリース発行 (Native AOT、ランタイム指定が必須)
+# CI は win-x64 / win-arm64 / osx-arm64 / linux-x64 / linux-arm64 の 5 ランタイムを発行する
+dotnet publish src/Ferry/Ferry.csproj -c Release -r win-x64
 
 # テスト全実行
 dotnet test tests/Ferry.Tests/Ferry.Tests.csproj
 
-# テスト単体実行（メソッド名フィルタ）
-dotnet test tests/Ferry.Tests/Ferry.Tests.csproj --filter "FullyQualifiedName~EnsureConnectedAsync_未接続時に接続を実行する"
+# テスト単体実行（クラス名 or メソッド名でフィルタ）
+dotnet test tests/Ferry.Tests/Ferry.Tests.csproj --filter "FullyQualifiedName~FileChunkerTests"
 
 # Bridge ページのデプロイ (Firebase Hosting)
 cd src/Ferry.Bridge && firebase deploy --only hosting
 ```
+
+> リリースは手動 `dotnet` ではなく、`release/**` ブランチへの push で CI が行う（後述「自動更新と配信」）。
 
 ## アーキテクチャ
 
@@ -27,10 +30,11 @@ cd src/Ferry.Bridge && firebase deploy --only hosting
 
 Ferry は QR コードでペアリングし、TCP 直接接続（LAN）/ UDP ホールパンチ（NAT 越え P2P）/ WebSocket リレー（最終手段）で PC 間ファイルを P2P 転送するデスクトップアプリ。ファイル転送に特化しており、チャット機能は含まない。
 
-- **`src/Ferry/`** — .NET 10 Avalonia UI デスクトップアプリ（Native AOT、win-x64）
-- **`src/Ferry.Bridge/`** — Firebase Hosting にデプロイする Web ページ（スマホでQRスキャン→2台のPCをペアリング）
-- **`src/Ferry.Relay/`** — Node.js WebSocket リレーサーバー（NAT 越え用、VPS にデプロイ）
+- **`src/Ferry/`** — .NET 10 Avalonia UI デスクトップアプリ（Native AOT、クロスプラットフォーム: win-x64 / win-arm64 / osx-arm64 / linux-x64 / linux-arm64）
+- **`src/Ferry.Bridge/`** — Firebase Hosting にデプロイする Web ページ（スマホでQRスキャン→2台のPCをペアリング。`bridge.js` + `index.html`、ライブラリは CDN 直リンク）
 - **`tests/Ferry.Tests/`** — xUnit v3 + NSubstitute によるユニットテスト
+
+> WebSocket リレーサーバー（Node.js）は **本リポジトリには無い**。別リポジトリ `1llum1n4t1.net` から VPS にデプロイする（後述「サーバー接続情報」）。
 
 ### Avalonia UI ネイティブ + MVVM サービス層
 
@@ -89,11 +93,30 @@ signaling/{pairId}/createdAt            = タイムスタンプ
 - リフレクションベースのシリアライズは使用不可
 - `ConnectionInfo` にプロパティを追加する場合は `ConnectionInfoJsonContext` の更新が必要
 
+### 自動更新と配信（CI/CD）
+
+Velopack による自動更新の配信元は **Cloudflare R2**（カスタムドメイン `https://ferry.nephilim.jp`、bucket `ferry-updates`）。クライアントは `App.axaml.cs` の `UpdateBaseUrl` 定数 + `Velopack.Sources.SimpleWebSource` で更新を取得する（旧 `GithubSource` から移行済み）。`Check4Update` は起動時 + 24時間ごとに実行。
+
+リリースは `release/**` ブランチへの push で `.github/workflows/release.yml` が発火し、以下を順に呼ぶ（GitHub Releases は使わず R2 単独配信）:
+
+- `build.yml` — 5 ランタイムを Native AOT 発行
+- `package.yml` — ユーザー向け配布物（zip / deb / rpm / AppImage）
+- `velopack.yml` — Velopack 自動更新パッケージ（`vpk pack --channel <runtime>` → `releases.<channel>.json` + nupkg）
+- `r2-upload` job — フィードとインストーラを `wrangler` で R2 にアップロード（要 Secrets: `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`）
+
+バージョンは `Directory.Build.props` の `<Version>` 単一管理（`version` job が抽出）。GitHub Actions はコミット SHA で固定。
+
 ### 転送プロトコル
 
-TCP / WebSocket 上の長さプレフィクス付きバイナリプロトコル（`TransferProtocol.cs` + `FileChunker.cs` + `LengthPrefixedStream.cs`）。チャンクサイズ 16KB。転送中断時はチャンクレベルでレジューム可能。SHA-256 によるファイル整合性検証。
+TCP / WebSocket 上の長さプレフィクス付きバイナリプロトコル（`TransferProtocol.cs` + `FileChunker.cs` + `LengthPrefixedStream.cs`）。チャンクサイズ 16KB。
 
-UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レイヤー（選択的 ACK・フラグメンテーション 1187 bytes・スライディングウィンドウ 128）を提供。
+チャンクメッセージは `[0x02 FileChunk][TransferId 16byte][chunkIndex 4byte][data]`（ヘッダ長 `ChunkHeaderSize`=21）。受信側（`TransferService.HandleFileChunk`）は **TransferId で受信状態を引き、`chunkIndex × 16KB` のオフセットへ `Seek` して書き込む**ため、UDP の順不同到着でも正しく再構成できる。受信完了は全 chunkIndex 受信（ビットマップ `ReceivedChunkSet`）で判定し、最後に SHA-256 でファイル整合性を検証する。受信ファイル名・相対パスはパストラバーサル防止のため保存先ディレクトリ配下に収まることを検証する。
+
+UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レイヤー（選択的 ACK・フラグメンテーション 1187 bytes・スライディングウィンドウ 128）を提供する。順序保証はトランスポート層ではなく上記の chunkIndex ベース書き込みで担保している。
+
+> **レジュームは「先頭から再送」方式**（`ResumeTransferAsync`、`startChunk=0`）。受信側は承認時にファイルを再作成するため、部分再送ではなく全チャンクを送り直す。
+>
+> チャンクメッセージ形式は 2026-05 に `chunkIndex` 単独から `TransferId + chunkIndex` に変更済み。**旧形式とは非互換**（既存の配布クライアントは存在しないため移行問題なし）。形式を再度変える場合は送受信（`FileChunker.CreateChunkMessage` ↔ `HandleFileChunk`）と `FileChunkerTests` のオフセットを揃えること。
 
 ### プレゼンス監視（オンライン検出）
 
@@ -116,7 +139,7 @@ xUnit v3 + NSubstitute。テスト内の非同期メソッドには `TestContext
 
 ### ログとデバッグ
 
-NLog でファイル出力。場所: `%LOCALAPPDATA%\Ferry\logs\Ferry_YYYYMMDD.log`。DEBUG ビルドは全レベル、Release は Warning 以上。
+NLog でファイル出力。場所: `%LOCALAPPDATA%\Ferry\logs\Ferry_YYYYMMDD.log`。DEBUG は全レベル、Release は Info 以上（接続フォールバックの各段を本番でも追えるようにするため）。IP 等の PII はログ出力時に `Util.Logger.MaskIp` で末尾オクテットを伏せる。`Logger.Initialize` は失敗時に `%TEMP%` へフォールバックする（`Program.cs`）。
 
 **通信デバッグのポイント:**
 - SDP offer/answer ポーリング: `SDP 待機中` ログで現在の待機状態を確認（`createdAt=null` なら Firebase に offer が無い）
@@ -128,8 +151,11 @@ WebSocket リレーサーバー・STUN サーバーの接続情報・デプロ�
 
 ## 既知の制限と注意事項
 
-1. **同時接続の競合**: 2台の PC が同時にファイル送信を試みると、両方が offer 側になり接続失敗する可能性がある。接続確立後にファイル送信すること。
+1. **同時接続の競合**: 2台の PC が同時にファイル送信を試みると、両方が offer 側になり接続失敗する可能性がある。接続確立後にファイル送信すること（role 調停は未実装の設計課題）。
 2. **Native AOT 制約**: JSON の動的シリアライズは使用不可。モデル追加時は `*JsonContext` も追加。
+3. **信頼モデルは設計途上**: 現状 Firebase シグナリングは匿名アクセス（セキュリティルール要確認）、トランスポートのピア認証なし、転送ペイロードは平文（リレー経由時は中継サーバが内容を読める）。E2E 暗号・ペア相互認証・Firebase ルールは未実装の設計事項。改修方針は `memory-bank` の Ferry プロジェクト `design-proposals.md` を参照。
+
+> 設定（`settings.json` / `peers.json`）は一時ファイル→リネームでアトミックに保存し、読み込み失敗時は `.corrupt-<時刻>` に退避する。`DeviceId` は pairId / presence の基盤なので、破損で再生成されるとペアが消える点に注意。
 
 ## 言語
 
