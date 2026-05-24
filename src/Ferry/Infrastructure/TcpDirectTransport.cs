@@ -119,7 +119,15 @@ public sealed class TcpDirectTransport : ITransport
             lastException);
     }
 
-    public async Task SendAsync(byte[] data, CancellationToken ct = default)
+    public Task SendAsync(byte[] data, CancellationToken ct = default)
+        => SendAsync(data.AsMemory(), ct);
+
+    /// <summary>
+    /// P-1: ArrayPool 借用バッファをコピーなしで受け取れる ReadOnlyMemory 版。
+    /// 内部の <see cref="LengthPrefixedStream.WriteMessageAsync(Stream, ReadOnlyMemory{byte}, CancellationToken)"/>
+    /// に直接渡すため、フレーム書き込み用の ArrayPool 1 回分の rent 以外には alloc が発生しない。
+    /// </summary>
+    public async Task SendAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default)
     {
         if (_stream == null || !IsConnected)
             throw new InvalidOperationException("接続されていません");
@@ -166,13 +174,35 @@ public sealed class TcpDirectTransport : ITransport
             ChannelClosed?.Invoke(this, EventArgs.Empty);
     }
 
+    // P-8: NIC 列挙は Windows で 20-50ms かかる重い OS コール。接続のたびに呼ばれる経路だが、
+    // NIC 構成は普段ほぼ変わらないため short-TTL キャッシュで再利用する。NetworkAddressChanged で無効化
+    private static string[]? s_cachedLocalIps;
+    private static long s_cachedLocalIpsTicks;
+    private const long LocalIpsCacheTtlTicks = TimeSpan.TicksPerSecond * 30; // 30 秒
+    private static readonly object s_localIpsLock = new();
+
+    static TcpDirectTransport()
+    {
+        // NIC 構成変化（Wi-Fi 切替、VPN 接続/切断 等）でキャッシュを破棄
+        NetworkChange.NetworkAddressChanged += (_, _) =>
+        {
+            lock (s_localIpsLock) { s_cachedLocalIps = null; }
+        };
+    }
+
     /// <summary>
-    /// このマシンの LAN 内 IPv4 アドレスを列挙する。
+    /// このマシンの LAN 内 IPv4 アドレスを列挙する（30 秒キャッシュ + NIC 変化で無効化）。
     /// </summary>
     public static string[] GetLocalIpAddresses()
     {
-        var ips = new List<string>();
+        var now = DateTime.UtcNow.Ticks;
+        lock (s_localIpsLock)
+        {
+            if (s_cachedLocalIps is not null && now - s_cachedLocalIpsTicks < LocalIpsCacheTtlTicks)
+                return s_cachedLocalIps;
+        }
 
+        var ips = new List<string>();
         foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
         {
             if (nic.OperationalStatus != OperationalStatus.Up)
@@ -190,7 +220,13 @@ public sealed class TcpDirectTransport : ITransport
             }
         }
 
-        return ips.ToArray();
+        var result = ips.ToArray();
+        lock (s_localIpsLock)
+        {
+            s_cachedLocalIps = result;
+            s_cachedLocalIpsTicks = now;
+        }
+        return result;
     }
 
     private static void ConfigureTcpClient(TcpClient client)

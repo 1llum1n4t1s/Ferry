@@ -15,13 +15,12 @@
         Background="Transparent"
         TransparencyLevelHint="AcrylicBlur,Blur,None"
         ExtendClientAreaToDecorationsHint="True"
-        ExtendClientAreaChromeHints="PreferSystemChrome"
         ExtendClientAreaTitleBarHeightHint="36"
         DragDrop.AllowDrop="True">
 
-    <Window.Resources>
-        <conv:OnlineStatusToBrushConverter x:Key="OnlineStatusBrush" />
-    </Window.Resources>
+    <!-- OnlineStatusBrush コンバータは {x:Static conv:OnlineStatusToBrushConverter.Instance} で参照する。
+         Window.Resources での個別インスタンス化は不要（N-16 統一）。-->
+
 
     <Panel>
         <!-- アクリル背景 -->
@@ -49,7 +48,7 @@
 
                         <!-- 検索ボックス -->
                         <TextBox Grid.Row="0" Classes="search"
-                                 Watermark="{DynamicResource Text.Transfer.SearchPeer}"
+                                 PlaceholderText="{DynamicResource Text.Transfer.SearchPeer}"
                                  Margin="8,8" />
 
                         <!-- ピアリスト -->
@@ -59,10 +58,10 @@
                                  x:Name="PeerListBox">
                             <ListBox.ItemTemplate>
                                 <DataTemplate x:DataType="m:PairedPeer">
-                                    <Grid ColumnDefinitions="Auto,*" Margin="0,2">
+                                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2">
                                         <!-- オンラインインジケーター -->
                                         <Ellipse Grid.Column="0" Width="10" Height="10"
-                                                 Fill="{Binding IsOnline, Converter={StaticResource OnlineStatusBrush}}"
+                                                 Fill="{Binding IsOnline, Converter={x:Static conv:OnlineStatusToBrushConverter.Instance}}"
                                                  VerticalAlignment="Center"
                                                  Margin="0,0,8,0" />
 
@@ -77,6 +76,28 @@
                                                        Foreground="{DynamicResource TextSecondaryBrush}"
                                                        MaxLines="1" TextTrimming="CharacterEllipsis" />
                                         </StackPanel>
+
+                                        <!-- 3 点リーダー → サブメニュー（削除など）。
+                                             ListBoxItem へのバブルを止めて SelectedPeer 書き換えを防ぐ -->
+                                        <Button Grid.Column="2"
+                                                Content="&#x22EF;"
+                                                ToolTip.Tip="{DynamicResource Text.Member.Menu}"
+                                                VerticalAlignment="Center"
+                                                MinWidth="28" Height="28"
+                                                Padding="6,0"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                FontSize="16"
+                                                Foreground="{DynamicResource TextSecondaryBrush}"
+                                                PointerPressed="OnDotMenuPointerPressed">
+                                            <Button.Flyout>
+                                                <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                                    <!-- 削除前に確認ダイアログを出すため、Command バインドではなく Click を介す -->
+                                                    <MenuItem Header="{DynamicResource Text.Member.Delete}"
+                                                              Click="OnDeletePeerClick" />
+                                                </MenuFlyout>
+                                            </Button.Flyout>
+                                        </Button>
                                     </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>

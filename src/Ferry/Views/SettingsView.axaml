@@ -16,7 +16,7 @@
                 <StackPanel Spacing="8">
                     <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.DisplayName}" />
                     <TextBox Text="{Binding DisplayName, Mode=TwoWay}"
-                             Watermark="{DynamicResource Text.Settings.DisplayName.Placeholder}"
+                             PlaceholderText="{DynamicResource Text.Settings.DisplayName.Placeholder}"
                              Classes="search" />
                 </StackPanel>
             </Border>
@@ -40,23 +40,7 @@
                                   MinWidth="160" />
                     </Grid>
 
-                    <!-- アクセントカラー -->
-                    <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.AccentColor}" />
-                        <TextBox Grid.Column="1" Text="{Binding AccentColor, Mode=TwoWay}"
-                                 Width="100" Classes="search" />
-                    </Grid>
-
-                    <!-- フォントサイズ -->
-                    <Grid ColumnDefinitions="*,Auto">
-                        <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.FontSize}" />
-                        <ComboBox Grid.Column="1" x:Name="FontSizeComboBox" MinWidth="120"
-                                  SelectedIndex="1">
-                            <ComboBoxItem Content="{DynamicResource Text.Settings.FontSize.Small}" Tag="small" />
-                            <ComboBoxItem Content="{DynamicResource Text.Settings.FontSize.Medium}" Tag="medium" />
-                            <ComboBoxItem Content="{DynamicResource Text.Settings.FontSize.Large}" Tag="large" />
-                        </ComboBox>
-                    </Grid>
+                    <!-- N-1: AccentColor / FontSize は未実装で死蔵だったため削除（ThemeMode のみ有効） -->
                 </StackPanel>
             </Border>
 
@@ -82,7 +66,7 @@
                         <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
                             <TextBox Grid.Column="0" Text="{Binding ReceiveFileSavePath, Mode=TwoWay}"
                                      Classes="search"
-                                     Watermark="{DynamicResource Text.Settings.ReceiveFileSavePath.Default}" />
+                                     PlaceholderText="{DynamicResource Text.Settings.ReceiveFileSavePath.Default}" />
                             <Button Grid.Column="1" Content="{DynamicResource Text.Settings.SaveDirectory.Browse}"
                                     Classes="accent" Margin="8,0,0,0"
                                     x:Name="BrowseReceivePathButton" />
@@ -113,14 +97,7 @@
                         <ToggleSwitch Grid.Column="1" IsChecked="{Binding AutoStartWithWindows, Mode=TwoWay}" />
                     </Grid>
 
-                    <!-- スタートアップ起動 -->
-                    <Grid ColumnDefinitions="*,Auto">
-                        <StackPanel>
-                            <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.RunAtStartup}" />
-                            <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.RunAtStartup.Desc}" />
-                        </StackPanel>
-                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding RunAtStartup, Mode=TwoWay}" />
-                    </Grid>
+                    <!-- N-2: 旧スタートアップ起動は AutoStartWithWindows と意味が重複していたため削除 -->
 
                     <!-- 最小化起動 -->
                     <Grid ColumnDefinitions="*,Auto">

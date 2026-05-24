@@ -47,8 +47,6 @@
   <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">Lokasyon ng pag-save ng natanggap na file</x:String>
   <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">Mag-browse</x:String>
   <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">Pag-uugali</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">Buksan ang Ferry sa startup</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">Awtomatikong nag-lulunsad kapag binuksan ang computer</x:String>
   <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">Magsimula nang naka-minimize</x:String>
   <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">Nag-lulunsad sa background</x:String>
   <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">I-minimize sa tray kapag isinara</x:String>
@@ -80,14 +78,14 @@
   <x:String x:Key="Text.Route.Stun" xml:space="preserve">Internet P2P (STUN)</x:String>
   <x:String x:Key="Text.Route.Relay" xml:space="preserve">Server Relay (TURN)</x:String>
 
-  <!-- Update Messages -->
-  <x:String x:Key="Text.Update.Checking" xml:space="preserve">Tinitingnan ang mga update...</x:String>
-  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">Hindi maaring tingnan ang mga update sa development</x:String>
-  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">Dina-download ang v{0}...</x:String>
-  <x:String x:Key="Text.Update.Applying" xml:space="preserve">Ina-apply ang update... Nire-restart</x:String>
-  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">Na-update na</x:String>
-  <x:String x:Key="Text.Update.Error" xml:space="preserve">Nabigo ang pag-check ng update: {0}</x:String>
-  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">Hindi alam</x:String>
+  <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
+  <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">May bagong bersyon ng software na ito: </x:String>
+  <x:String x:Key="Text.SelfUpdate.Checking" xml:space="preserve">Tinitingnan ang mga update...</x:String>
+  <x:String x:Key="Text.SelfUpdate.DownloadAndInstall" xml:space="preserve">I-download &amp; I-install</x:String>
+  <x:String x:Key="Text.SelfUpdate.Error" xml:space="preserve">Nabigo ang pagsuri ng mga update!</x:String>
+  <x:String x:Key="Text.SelfUpdate.IgnoreThisVersion" xml:space="preserve">Laktawan ang Bersyon na Ito</x:String>
+  <x:String x:Key="Text.SelfUpdate.Title" xml:space="preserve">Update ng Software</x:String>
+  <x:String x:Key="Text.SelfUpdate.UpToDate" xml:space="preserve">Kasalukuyang walang mga update na magagamit.</x:String>
 
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Tinanggihan ang paglipat</x:String>
@@ -120,12 +118,6 @@
   <!-- Transfer: Empty -->
   <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">Walang paglipat</x:String>
 
-  <!-- Update -->
-  <x:String x:Key="Text.Update.Available" xml:space="preserve">May Available na Update</x:String>
-  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">Nabigo ang pag-check ng update</x:String>
-  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">I-download at I-install</x:String>
-  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">Huwag pansinin ang bersyon na ito</x:String>
-
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">Mga Notipikasyon</x:String>
   <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">Tunog ng Notipikasyon</x:String>
@@ -139,11 +131,6 @@
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">Awtomatikong tanggapin ang mga papasok na file</x:String>
 
   <!-- Settings: Appearance (extended) -->
-  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">Kulay ng Accent</x:String>
-  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">Laki ng Font</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">Maliit</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">Katamtaman</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">Malaki</x:String>
 
   <!-- Settings: Auto Start -->
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Magsimula kasama ng Windows</x:String>

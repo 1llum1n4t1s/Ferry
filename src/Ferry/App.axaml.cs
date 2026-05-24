@@ -7,9 +7,8 @@ using Avalonia;
 using Avalonia.Platform;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Data.Core;
-using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
+using Avalonia.Media;
 using Avalonia.Styling;
 using Ferry.Infrastructure;
 using Ferry.Services;
@@ -26,7 +25,6 @@ public partial class App : Application
     private MainWindow? _mainWindow;
     private ResourceDictionary? _activeLocale;
     private ISettingsService? _settingsService;
-    private System.Threading.Timer? _updateCheckTimer;
 
     /// <summary>TransferService のインスタンス（MainWindow からのアクセス用）。</summary>
     public ITransferService? TransferService { get; private set; }
@@ -82,12 +80,12 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            DisableAvaloniaDataAnnotationValidation();
+            // Avalonia 12 から DataAnnotationsValidationPlugin がデフォルト除外されたため、
+            // 旧 11.x で必要だった DisableAvaloniaDataAnnotationValidation() は不要になった。
 
-            // Windows ファイアウォールルールの確認・追加（初回のみ UAC ダイアログ表示）
-            // netsh の同期実行が起動クリティカルパスをブロックしないようバックグラウンド化
-            // （ルールは TCP 着信が必要になる接続確立前に完了すればよい）
-            _ = Task.Run(FirewallHelper.EnsureFirewallRule);
+            // Windows ファイアウォールルールの確認・追加（初回のみ UAC ダイアログ表示）。
+            // N-15: 非同期版に切替。Task.Run でスレッドプールを占有する必要なし、async I/O で軽く回す
+            _ = FirewallHelper.EnsureFirewallRuleAsync();
 
             // サービス組み立て（コンストラクタで同期的に settings.json を読み込み、DeviceId を永続化）
             _settingsService = new SettingsService();
@@ -118,11 +116,17 @@ public partial class App : Application
             }
             if (needsSave)
             {
-                _ = settingsService.SaveAsync().ContinueWith(t =>
+                // M-7: ContinueWith のレガシーパターンを async/await + try/catch に統一
+                _ = SaveInitialSettingsAsync(settingsService);
+
+                static async Task SaveInitialSettingsAsync(SettingsService svc)
                 {
-                    if (t.IsFaulted)
-                        Util.Logger.Log($"初期設定の保存に失敗: {t.Exception?.GetBaseException().Message}", Util.LogLevel.Warning);
-                }, TaskScheduler.Default);
+                    try { await svc.SaveAsync(); }
+                    catch (Exception ex)
+                    {
+                        Util.Logger.Log($"初期設定の保存に失敗: {ex.Message}", Util.LogLevel.Warning);
+                    }
+                }
             }
             var connectionService = new ConnectionService(settings.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName);
             if (!string.IsNullOrEmpty(settings.RelayUrl))
@@ -147,6 +151,19 @@ public partial class App : Application
             var connectionVm = new ConnectionViewModel(connectionService, qrCodeService, settingsService, peerRegistry);
             var transferVm = new TransferViewModel(connectionService, transferService, connectionVm);
             var settingsVm = new SettingsViewModel(settingsService);
+
+            // N-6: SettingsViewModel から MVVM 違反を除去するため、テーマ切替 / 更新チェックは App 側で実行する
+            settingsVm.ThemeChangeRequested += (_, themeIndex) =>
+            {
+                RequestedThemeVariant = themeIndex switch
+                {
+                    1 => ThemeVariant.Light,
+                    2 => ThemeVariant.Dark,
+                    _ => ThemeVariant.Default, // OS 追従
+                };
+            };
+            settingsVm.UpdateCheckRequested += (_, _) => Check4Update(true);
+
             var mainVm = new MainWindowViewModel(connectionVm, transferVm, settingsVm);
 
             _mainWindow = new MainWindow
@@ -175,48 +192,35 @@ public partial class App : Application
             }
             else
             {
-                // ピア未登録時はメンバー追加ダイアログを自動表示
+                // ピア未登録時はメンバー追加ダイアログを自動表示。
+                // async void の未捕捉例外はアプリ即落ちさせるので try-catch で握り潰してログに出す。
                 _mainWindow.Loaded += async (_, _) =>
                 {
-                    connectionVm.StartSessionCommand.Execute(null);
-                    var dialog = new AddMemberWindow { DataContext = connectionVm };
-                    await dialog.ShowDialog(_mainWindow);
+                    try
+                    {
+                        connectionVm.StartSessionCommand.Execute(null);
+                        var dialog = new AddMemberWindow { DataContext = connectionVm };
+                        await dialog.ShowDialog(_mainWindow);
+                    }
+                    catch (Exception ex)
+                    {
+                        Util.Logger.Log($"起動時メンバー追加ダイアログ表示失敗: {ex.Message}", Util.LogLevel.Error);
+                    }
                 };
             }
 
-            // 起動時の自動更新チェック（更新がある場合のみダイアログ表示）
+            // 起動時の自動更新チェック（更新がある場合のみダイアログ表示）。
+            // Komorebi と仕様を揃え「起動時 1 回のみ」。トレイ常駐ユーザーへは
+            // トレイ右クリックメニューの「アップデートを確認」から手動チェックしてもらう
             if (_settingsService!.Settings.Check4UpdatesOnStartup)
             {
                 Check4Update(false);
-                // トレイ常駐で長時間起動し続けるため、24時間ごとに定期チェックする
-                // （起動時 1 回のみだと常駐ユーザーに更新が届かない）
-                _updateCheckTimer = new System.Threading.Timer(
-                    _ => Check4Update(false), null,
-                    TimeSpan.FromHours(24), TimeSpan.FromHours(24));
             }
         }
 
         base.OnFrameworkInitializationCompleted();
     }
 
-    [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Reflection used by Avalonia data validation plugins")]
-    private static void DisableAvaloniaDataAnnotationValidation()
-    {
-        try
-        {
-            var dataValidationPluginsToRemove =
-                BindingPlugins.DataValidators.OfType<DataAnnotationsValidationPlugin>().ToArray();
-
-            foreach (var plugin in dataValidationPluginsToRemove)
-            {
-                BindingPlugins.DataValidators.Remove(plugin);
-            }
-        }
-        catch
-        {
-            // NativeAOT 環境で反射に関する例外が発生する場合がある
-        }
-    }
 
     /// <summary>
     /// ロケールを切り替える。
@@ -244,7 +248,15 @@ public partial class App : Application
     /// <returns>ローカライズ済み文字列</returns>
     public static string Text(string key, params object[] args)
     {
-        var fmt = Current?.FindResource($"Text.{key}") as string;
+        // Avalonia 12 では Application.FindResource はキー未登録時に例外を投げる契約。
+        // ロケール途中切替で欠損キーがあれば即落ちするのを避け、TryGetResource にフォールバック
+        string? fmt = null;
+        if (Current is { } app
+            && app.TryGetResource($"Text.{key}", app.ActualThemeVariant, out var value)
+            && value is string s)
+        {
+            fmt = s;
+        }
         if (string.IsNullOrWhiteSpace(fmt))
             return $"Text.{key}";
 
@@ -253,6 +265,14 @@ public partial class App : Application
 
         return string.Format(fmt, args);
     }
+
+    /// <summary>
+    /// <summary>
+    /// メインウィンドウを取得する（IClassicDesktopStyleApplicationLifetime 経由）。
+    /// M-8: 3 箇所のフル修飾キャストパターンを集約。SingleViewLifetime 等の変更にも一元対応可能。
+    /// </summary>
+    public static Window? GetMainWindow() =>
+        (Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
 
     /// <summary>
     /// システムのカルチャからデフォルトロケールを検出する。
@@ -291,6 +311,12 @@ public partial class App : Application
         showItem.Click += (_, _) => ShowMainWindow();
         menu.Add(showItem);
 
+        // Komorebi と同じく手動でアップデート確認できる入口をトレイにも置く
+        // （Ferry はサイドバーを開かないと Settings に行けないため、トレイから一発で叩ける方が便利）
+        var checkUpdateItem = new NativeMenuItem(Text("Tray.CheckForUpdate"));
+        checkUpdateItem.Click += (_, _) => Check4Update(true);
+        menu.Add(checkUpdateItem);
+
         menu.Add(new NativeMenuItemSeparator());
 
         var exitItem = new NativeMenuItem(Text("Tray.Exit"));
@@ -304,66 +330,73 @@ public partial class App : Application
         return menu;
     }
 
-    // === 自動更新チェック（Komorebi パターン） ===
+    // === 自動更新チェック（VelopackUpdateDialog.Avalonia 委譲、Komorebi 同等パターン） ===
+
+    /// <summary>更新チェック中かどうかのアトミックフラグ（0=未実行, 1=実行中）。
+    /// 起動時自動チェックとメニュー手動チェックの同時実行を防止する。</summary>
+    private static int _isCheckingUpdate;
 
     /// <summary>
-    /// 更新チェックを実行する。更新がある場合はダイアログを表示する。
+    /// VelopackUpdateDialog.Avalonia ライブラリに更新チェックとダイアログ表示を委譲する。
+    /// 自動チェック時はサイレント、手動チェック時は結果ダイアログを表示する。
     /// </summary>
-    /// <param name="manually">ユーザーが手動で実行した場合は true（結果を常に表示）。</param>
+    /// <param name="manually">
+    /// true: 手動チェック（最新版/失敗でも結果ダイアログを表示、無視タグをスキップ）
+    /// false: 自動チェック（更新がありかつ無視タグと一致しない場合のみダイアログ表示）
+    /// </param>
     public void Check4Update(bool manually = false)
     {
-        Task.Run(async () =>
+        // 先勝ち: 既に更新チェック中なら何もしない
+        if (System.Threading.Interlocked.CompareExchange(ref _isCheckingUpdate, 1, 0) != 0)
+            return;
+
+        Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
         {
             try
             {
+                // Velopack の UpdateManager を初期化（配信元: Cloudflare R2 カスタムドメイン経由の SimpleWebSource）
                 var source = new Velopack.Sources.SimpleWebSource(UpdateBaseUrl);
                 var mgr = new Velopack.UpdateManager(source);
 
-                if (!mgr.IsInstalled)
+                // ライブラリへ Ferry 流のローカライズ・アイコン・無視タグを注入する
+                var settings = _settingsService?.Settings;
+                var owner = GetMainWindow(); // M-8 統一
+
+                // Avalonia 12 では Application.FindResource が直接公開されないため TryGetResource を使う
+                IBrush? accent = null;
+                if (Current is { } app
+                    && app.TryGetResource("TahoeAccentBrush", app.ActualThemeVariant, out var brushObj)
+                    && brushObj is IBrush b)
                 {
-                    if (manually)
-                        ShowSelfUpdateResult(new Models.AlreadyUpToDate());
-                    return;
+                    accent = b;
                 }
 
-                var newVersion = await mgr.CheckForUpdatesAsync();
-                if (newVersion == null)
+                var options = new VelopackUpdateDialog.UpdateDialogOptions
                 {
-                    if (manually)
-                        ShowSelfUpdateResult(new Models.AlreadyUpToDate());
-                    return;
-                }
+                    Strings = Models.UpdateDialogStrings.Instance,
+                    Icons = Models.UpdateDialogIcons.Instance,
+                    AccentBrush = accent,
+                    IgnoredTagName = string.IsNullOrEmpty(settings?.IgnoreUpdateTag) ? null : settings!.IgnoreUpdateTag,
+                    SuppressUpToDateOnAutoCheck = true,
+                };
 
-                // 自動チェック時はユーザーが無視指定したバージョンをスキップ
-                if (!manually)
-                {
-                    var s = _settingsService?.Settings;
-                    var newTag = $"v{newVersion.TargetFullRelease.Version}";
-                    if (s != null && newTag == s.IgnoreUpdateTag)
-                        return;
-                }
+                // 「このバージョンを無視」を Settings へ永続化する
+                options.VersionIgnored += tag => IgnoreUpdateVersion(tag);
 
-                ShowSelfUpdateResult(new Models.VelopackUpdate(mgr, newVersion));
+                // チェック / ダウンロード中の例外をログへ流す（手動チェック時はライブラリ側でエラーダイアログも出る）
+                options.ErrorOccurred += ex => Util.Logger.LogException("更新チェック失敗", ex);
+
+                // 手動=true ならウィンドウ即表示でチェック進捗を可視化、自動=false ならチェック完了まで非表示
+                await VelopackUpdateDialog.UpdateDialogWindow.ShowAsync(owner, mgr, options, manualCheck: manually);
             }
             catch (Exception e)
             {
-                Util.Logger.Log($"更新チェック失敗: {e.Message}", Util.LogLevel.Warning);
-                if (manually)
-                    ShowSelfUpdateResult(new Models.SelfUpdateFailed(e));
+                Util.Logger.LogException("更新チェック失敗", e);
             }
-        });
-    }
-
-    /// <summary>更新結果ダイアログを表示する。</summary>
-    private void ShowSelfUpdateResult(object data)
-    {
-        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-        {
-            if (_mainWindow == null) return;
-
-            var vm = new ViewModels.SelfUpdateViewModel { Data = data };
-            var window = new Views.SelfUpdateWindow { DataContext = vm };
-            window.ShowDialog(_mainWindow);
+            finally
+            {
+                System.Threading.Interlocked.Exchange(ref _isCheckingUpdate, 0);
+            }
         });
     }
 

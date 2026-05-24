@@ -64,7 +64,7 @@ Infrastructure/         → FirebaseSignaling, TcpDirectTransport, UdpHolePunchT
 3. **TCP 失敗時**: Offer 側が STUN クエリ実行 → UDP ホールパンチ試行（8秒）
 4. **UDP 失敗時**: WebSocket リレーにフォールバック（`wss://1llum1n4t1.net/ferry-relay`）
 
-STUN は 4 サーバーフォールバック（Google×2、Cloudflare、Nextcloud）。IPv4 明示指定。
+STUN は **自前 coturn (`1llum1n4t1.net:3478`) を主、公開 STUN (Google / Cloudflare) を従** の 3 サーバーフォールバック。IPv4 明示指定（`AddressFamily.InterNetwork`、VPS は IPv4/IPv6 両対応だが `49.212.230.244` を引く）。TURN/TURNS は VPS に立ってるが、Ferry は現状 WebSocket リレーで代替しているため未使用（接続詳細は `1llum1n4t1.net/docs/server.md`）。
 
 ### ペアリングフロー
 
@@ -139,7 +139,7 @@ xUnit v3 + NSubstitute。テスト内の非同期メソッドには `TestContext
 
 ### ログとデバッグ
 
-NLog でファイル出力。場所: `%LOCALAPPDATA%\Ferry\logs\Ferry_YYYYMMDD.log`。DEBUG は全レベル、Release は Info 以上（接続フォールバックの各段を本番でも追えるようにするため）。IP 等の PII はログ出力時に `Util.Logger.MaskIp` で末尾オクテットを伏せる。`Logger.Initialize` は失敗時に `%TEMP%` へフォールバックする（`Program.cs`）。
+**SuperLightLogger**（log4net 互換シム + 内蔵 File Target、Native AOT 安全）でファイル出力。場所: `%LOCALAPPDATA%\Ferry\logs\Ferry_YYYYMMDD.log`。DEBUG は全レベル、Release は Info 以上（接続フォールバックの各段を本番でも追えるようにするため）。IP 等の PII はログ出力時に `Util.Logger.MaskIp` で末尾オクテットを伏せる。`Logger.Initialize` は失敗時に `%TEMP%` へフォールバックする（`Program.cs`）。`Util.Logger` は内部で `SuperLightLogger.ILog` を保持し、`LogManager.Configure(b => b.AddSuperLightFile(...).SetMinimumLevel("Trace"))` でローリング設定（旧 NLog から 2026-05 に移行）。
 
 **通信デバッグのポイント:**
 - SDP offer/answer ポーリング: `SDP 待機中` ログで現在の待機状態を確認（`createdAt=null` なら Firebase に offer が無い）

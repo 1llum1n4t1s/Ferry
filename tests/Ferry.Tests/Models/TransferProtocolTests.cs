@@ -21,15 +21,17 @@ public class TransferProtocolTests
     }
 
     [Fact]
-    public void ChunkSizeが16KBであること()
+    public void ChunkSizeが64KBであること()
     {
-        Assert.Equal(16_384, TransferProtocol.ChunkSize);
+        // P-15: 16KB → 64KB に拡大（プロトコルヘッダー overhead 削減）
+        Assert.Equal(65_536, TransferProtocol.ChunkSize);
     }
 
     [Fact]
-    public void BufferedAmountThresholdが64KBであること()
+    public void BufferedAmountThresholdが256KBであること()
     {
-        Assert.Equal(65_536, TransferProtocol.BufferedAmountThreshold);
+        // P-15: ChunkSize 4 倍化に合わせて閾値も 4 倍に拡大
+        Assert.Equal(262_144, TransferProtocol.BufferedAmountThreshold);
     }
 
     [Fact]

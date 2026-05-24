@@ -34,45 +34,45 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     private const long OfflineThresholdMs = 60_000;  // 60秒更新なしでオフライン判定
 
     [ObservableProperty]
-    private PeerState _connectionState = PeerState.Disconnected;
+    public partial PeerState ConnectionState { get; set; } = PeerState.Disconnected;
 
     /// <summary>QR コード関連のステータステキスト（ペアリング中のみ表示）。</summary>
     [ObservableProperty]
-    private string _statusText = string.Empty;
+    public partial string StatusText { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private Bitmap? _qrCodeImage;
+    public partial Bitmap? QrCodeImage { get; set; }
 
     [ObservableProperty]
-    private string _sessionId = string.Empty;
+    public partial string SessionId { get; set; } = string.Empty;
 
     /// <summary>ペアリング用 URL（QR コード下に表示してコピー共有可能にする）。</summary>
     [ObservableProperty]
-    private string _pairingUrl = string.Empty;
+    public partial string PairingUrl { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private string _peerName = string.Empty;
+    public partial string PeerName { get; set; } = string.Empty;
 
     [ObservableProperty]
-    private bool _isConnecting;
+    public partial bool IsConnecting { get; set; }
 
     [ObservableProperty]
-    private PairedPeer? _selectedPeer;
+    public partial PairedPeer? SelectedPeer { get; set; }
 
     /// <summary>ペアリング済みピアの一覧。</summary>
     public ObservableCollection<PairedPeer> PairedPeers { get; } = [];
 
     /// <summary>ペアリング済みピアが存在するか。QR/宛先リストの表示切替に使用。</summary>
     [ObservableProperty]
-    private bool _hasPairedPeers;
+    public partial bool HasPairedPeers { get; set; }
 
     /// <summary>接続経路の表示テキスト。</summary>
     [ObservableProperty]
-    private string _connectionRouteText = string.Empty;
+    public partial string ConnectionRouteText { get; set; } = string.Empty;
 
     /// <summary>リンクコピー済みフラグ（一時的に「コピー済み」表示にする）。</summary>
     [ObservableProperty]
-    private bool _isLinkCopied;
+    public partial bool IsLinkCopied { get; set; }
 
     public ConnectionViewModel(
         IConnectionService connectionService,
@@ -193,38 +193,26 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         await StartSessionAsync();
     }
 
+    /// <summary>ペアリングリンクのクリップボード書き込み要求イベント (View 側で TopLevel.Clipboard 経由処理)。</summary>
+    public event EventHandler<string>? CopyPairingLinkRequested;
+
     /// <summary>
-    /// ペアリングリンクをクリップボードにコピーする。
+    /// ペアリングリンクのコピーを要求する。実際のクリップボード操作は View 側で行う (N-5: MVVM 厳密化)。
+    /// View 側はコピー成功後に <see cref="NotifyPairingLinkCopied"/> を呼んで UI を更新する。
     /// </summary>
     [RelayCommand]
-    private async Task CopyPairingLinkAsync()
+    private void CopyPairingLink()
     {
         if (string.IsNullOrEmpty(PairingUrl)) return;
+        CopyPairingLinkRequested?.Invoke(this, PairingUrl);
+    }
 
-        try
-        {
-            // Avalonia のクリップボード API: TopLevel から取得
-            var topLevel = TopLevel.GetTopLevel(
-                Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
-                    ? desktop.MainWindow
-                    : null);
-            var clipboard = topLevel?.Clipboard;
-            if (clipboard != null)
-            {
-                await clipboard.SetTextAsync(PairingUrl);
-                IsLinkCopied = true;
-                Util.Logger.Log("ペアリングリンクをクリップボードにコピー");
-
-                // 2秒後に「コピー済み」表示をリセット
-                _ = Task.Delay(2000).ContinueWith(_ =>
-                    Dispatcher.UIThread.Post(() => IsLinkCopied = false),
-                    System.Threading.Tasks.TaskScheduler.Default);
-            }
-        }
-        catch (Exception ex)
-        {
-            Util.Logger.Log($"クリップボードコピーエラー: {ex.Message}", Util.LogLevel.Warning);
-        }
+    /// <summary>View 側のクリップボード書き込み成功後に呼び出され、「コピー済み」表示を 2 秒間表示する。</summary>
+    public void NotifyPairingLinkCopied()
+    {
+        IsLinkCopied = true;
+        Util.Logger.Log("ペアリングリンクをクリップボードにコピー");
+        DispatcherTimer.RunOnce(() => IsLinkCopied = false, TimeSpan.FromSeconds(2));
     }
 
     /// <summary>
@@ -427,11 +415,16 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     {
         while (!ct.IsCancellationRequested)
         {
+            // Dispose レースで _presenceSignaling が null 化されても NRE しないよう
+            // ループ反復ごとにローカル束縛する（ConnectionService.OnPairingDetected と同パターン）
+            var sig = _presenceSignaling;
+            if (sig is null) break;
+
             try
             {
                 // 設定変更に対応するため毎回最新の表示名を取得
                 var currentName = _settingsService.Settings.DisplayName;
-                await _presenceSignaling!.UpdatePresenceAsync(deviceId, currentName, ct);
+                await sig.UpdatePresenceAsync(deviceId, currentName, ct);
             }
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
@@ -454,12 +447,16 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var peers = PairedPeers.ToArray();
 
+            // Dispose レース対策: ループ内でローカル束縛
+            var sig = _presenceSignaling;
+            if (sig is null) break;
+
             // 全ピアのプレゼンスを並列取得（順次 → 並列で N 倍高速化）
             var tasks = peers.Select(async peer =>
             {
                 try
                 {
-                    var presenceData = await _presenceSignaling!.GetPresenceAsync(peer.PeerId, ct);
+                    var presenceData = await sig.GetPresenceAsync(peer.PeerId, ct);
                     var isOnline = presenceData != null && (now - presenceData.LastSeen) < OfflineThresholdMs;
 
                     Dispatcher.UIThread.Post(() =>

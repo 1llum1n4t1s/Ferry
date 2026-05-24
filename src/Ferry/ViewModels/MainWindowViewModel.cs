@@ -15,7 +15,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>設定画面を表示中かどうか（⚙ トグル）。</summary>
     [ObservableProperty]
-    private bool _isSettingsMode;
+    public partial bool IsSettingsMode { get; set; }
 
     public MainWindowViewModel(
         ConnectionViewModel connection,

@@ -77,7 +77,15 @@ public sealed class WebSocketRelayTransport : ITransport
         Util.Logger.Log("WebSocket リレー: 相手と接続確立");
     }
 
-    public async Task SendAsync(byte[] data, CancellationToken ct = default)
+    public Task SendAsync(byte[] data, CancellationToken ct = default)
+        => SendAsync(data.AsMemory(), ct);
+
+    /// <summary>
+    /// P-1: ArrayPool 借用バッファをコピーなしで受け取れる ReadOnlyMemory 版。
+    /// <see cref="ClientWebSocket.SendAsync(ReadOnlyMemory{byte}, WebSocketMessageType, bool, CancellationToken)"/>
+    /// に直接渡すため、ペイロード追加コピーは発生しない。
+    /// </summary>
+    public async Task SendAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default)
     {
         if (_ws == null || _ws.State != WebSocketState.Open || !IsConnected)
             throw new InvalidOperationException("リレー接続されていません");
@@ -161,53 +169,106 @@ public sealed class WebSocketRelayTransport : ITransport
 
     /// <summary>
     /// バイナリメッセージの受信ループ。
+    /// P-7: <see cref="WebSocketReceiveResult.EndOfMessage"/> を確認し、64KB を超えるメッセージが
+    /// 複数フレームに分割された場合も <see cref="System.IO.MemoryStream"/> に集約してから配信する。
+    /// 集約サイズは <see cref="MaxAggregatedMessageSize"/> で上限を設け、超過時はストリームを破棄して
+    /// 警告を出すのみで接続自体は維持する（後続メッセージは引き続き処理される）。
     /// </summary>
     private void StartReceiveLoop()
     {
         _receiveCts = new CancellationTokenSource();
         var ct = _receiveCts.Token;
 
-        _ = Task.Run(async () =>
+        _ = Task.Run(() => ReceiveLoopAsync(ct), ct);
+    }
+
+    /// <summary>受信集約バッファのサイズ上限。LengthPrefixedStream の MaxMessageSize と揃えてある。</summary>
+    private const int MaxAggregatedMessageSize = 16 * 1024 * 1024;
+
+    private async Task ReceiveLoopAsync(CancellationToken ct)
+    {
+        // 64KB の固定受信バッファ。1 フレーム分の読み取りに使い回す。
+        var frameBuffer = new byte[64 * 1024];
+        System.IO.MemoryStream? aggregate = null;
+        var overflowDropping = false; // サイズ超過後、EndOfMessage まで読み捨てるためのフラグ
+
+        try
         {
-            // WebSocket フレームの最大サイズ（チャンクサイズ + ヘッダー分の余裕）
-            var buffer = new byte[64 * 1024];
-
-            try
+            while (!ct.IsCancellationRequested && _ws?.State == WebSocketState.Open)
             {
-                while (!ct.IsCancellationRequested && _ws?.State == WebSocketState.Open)
+                var result = await _ws.ReceiveAsync(frameBuffer, ct);
+
+                if (result.MessageType == WebSocketMessageType.Close)
                 {
-                    var result = await _ws.ReceiveAsync(buffer, ct);
+                    Util.Logger.Log("WebSocket リレー: 相手が切断");
+                    break;
+                }
 
-                    if (result.MessageType == WebSocketMessageType.Close)
-                    {
-                        Util.Logger.Log("WebSocket リレー: 相手が切断");
-                        break;
-                    }
+                if (result.MessageType != WebSocketMessageType.Binary)
+                    continue;
 
-                    if (result.MessageType == WebSocketMessageType.Binary && result.Count > 0)
+                // P-7: 単一フレーム完結 & 集約バッファ未使用 & 直近の超過破棄もない → ホットパス
+                if (result.EndOfMessage && aggregate is null && !overflowDropping)
+                {
+                    if (result.Count > 0)
                     {
-                        var data = new byte[result.Count];
-                        Buffer.BlockCopy(buffer, 0, data, 0, result.Count);
+                        // M-4: Buffer.BlockCopy (レガシー API) を Span.ToArray に統一
+                        var data = frameBuffer.AsSpan(0, result.Count).ToArray();
                         DataReceived?.Invoke(this, data);
                     }
+                    continue;
                 }
-            }
-            catch (OperationCanceledException)
-            {
-                // 正常なキャンセル
-            }
-            catch (Exception ex)
-            {
-                Util.Logger.Log($"WebSocket リレー受信エラー: {ex.Message}", Util.LogLevel.Warning);
-            }
-            finally
-            {
-                if (IsConnected)
+
+                // 超過破棄モード: EndOfMessage まで読み飛ばし、後続メッセージで通常モードに復帰
+                if (overflowDropping)
                 {
-                    IsConnected = false;
-                    ChannelClosed?.Invoke(this, EventArgs.Empty);
+                    if (result.EndOfMessage)
+                        overflowDropping = false;
+                    continue;
+                }
+
+                // フラグメント集約モード
+                aggregate ??= new System.IO.MemoryStream(result.Count);
+
+                if (aggregate.Length + result.Count > MaxAggregatedMessageSize)
+                {
+                    Util.Logger.Log(
+                        $"WebSocket メッセージサイズ超過: {aggregate.Length + result.Count} > {MaxAggregatedMessageSize}, 破棄",
+                        Util.LogLevel.Warning);
+                    aggregate.Dispose();
+                    aggregate = null;
+                    // 残りのフラグメントは EndOfMessage まで読み飛ばす
+                    overflowDropping = !result.EndOfMessage;
+                    continue;
+                }
+
+                aggregate.Write(frameBuffer, 0, result.Count);
+
+                if (result.EndOfMessage)
+                {
+                    var data = aggregate.ToArray();
+                    aggregate.Dispose();
+                    aggregate = null;
+                    DataReceived?.Invoke(this, data);
                 }
             }
-        }, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            // 正常なキャンセル
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"WebSocket リレー受信エラー: {ex.Message}", Util.LogLevel.Warning);
+        }
+        finally
+        {
+            aggregate?.Dispose();
+            if (IsConnected)
+            {
+                IsConnected = false;
+                ChannelClosed?.Invoke(this, EventArgs.Empty);
+            }
+        }
     }
 }

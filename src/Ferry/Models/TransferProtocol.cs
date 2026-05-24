@@ -17,6 +17,12 @@ public static class TransferProtocol
     /// <summary>ファイル受信拒否 [reason (UTF-8)]。</summary>
     public const byte FileReject = 0x04;
 
+    /// <summary>ファイル SHA-256 ハッシュ後送り [sha256 (32byte)]。
+    /// P-3: 旧プロトコルは FileMeta に事前計算済みハッシュを入れていたが、
+    /// 送信側でファイルを 2 度読み (ハッシュ計算 + 送信) する必要があった。
+    /// 新プロトコルではチャンク送信中に IncrementalHash で並行計算し、最後にこのメッセージで送る。</summary>
+    public const byte FileHash = 0x05;
+
     /// <summary>キープアライブ送信。</summary>
     public const byte Ping = 0x10;
 
@@ -29,12 +35,16 @@ public static class TransferProtocol
     /// <summary>転送レジューム応答 [TransferId (16byte)] [Status (1byte)] [LastChunkIndex (4byte)]。</summary>
     public const byte ResumeResponse = 0x21;
 
-    /// <summary>チャンクサイズ (16KB)。</summary>
-    public const int ChunkSize = 16_384;
+    /// <summary>チャンクサイズ (64KB)。
+    /// P-15: 旧 16KB から 4 倍化。1GB 転送のチャンク数を 65,536 → 16,384 に削減し、
+    /// プロトコルヘッダー overhead を 1.4MB → 344KB へ圧縮。UDP transport は内部で
+    /// MTU 1187 bytes にフラグメント化されるため、上位プロトコルから見て影響なし。</summary>
+    public const int ChunkSize = 65_536;
 
     /// <summary>チャンクメッセージのヘッダ長 = 種別(1) + TransferId(16) + chunkIndex(4)。</summary>
     public const int ChunkHeaderSize = 1 + 16 + 4;
 
-    /// <summary>送信バッファ閾値 (64KB)。これを超えたら送信を一時停止する。</summary>
-    public const int BufferedAmountThreshold = 65_536;
+    /// <summary>送信バッファ閾値 (256KB)。これを超えたら送信を一時停止する。
+    /// ChunkSize 4 倍化に合わせて閾値も 4 倍に拡大。</summary>
+    public const int BufferedAmountThreshold = 262_144;
 }

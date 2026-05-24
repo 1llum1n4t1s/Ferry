@@ -1,9 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
-using NLog;
-using NLog.Config;
-using NLog.Targets;
+using SuperLightLogger;
 
 namespace Ferry.Util;
 
@@ -40,11 +38,11 @@ public sealed class LoggerConfig
 }
 
 /// <summary>
-/// NLogを使用した汎用ログ出力クラス
+/// SuperLightLogger（log4net 互換シム + 内蔵 File Target）を使用した汎用ログ出力クラス。
 /// </summary>
 public static class Logger
 {
-    private static NLog.Logger? _logger;
+    private static ILog? _logger;
     private static bool _isConfigured;
     private static string _appName = "Ferry";
 
@@ -75,34 +73,26 @@ public static class Logger
             Directory.CreateDirectory(config.LogDirectory);
         }
 
-        var nlogConfig = new LoggingConfiguration();
-
-        var fileTarget = new FileTarget("file")
+        // SuperLightLogger の内蔵 File Target で NLog 同等のローリング設定を構築する。
+        // builder の最小レベルは Trace に設定し、Ferry 側の MinLogLevel で実フィルタを行う
+        // （SuperLightLogger は Microsoft.Extensions.Logging を内部利用するが、ここでは
+        //  Ferry.Util.LogLevel と MEL.LogLevel の名前衝突を避けるため文字列ベース API を使う）。
+        LogManager.Configure(builder =>
         {
-            FileName = Path.Combine(config.LogDirectory, $"{config.FilePrefix}_${{date:format=yyyyMMdd}}.log"),
-            ArchiveAboveSize = config.MaxSizeMB * 1024 * 1024,
-            ArchiveFileName = Path.Combine(config.LogDirectory, $"{config.FilePrefix}_${{date:format=yyyyMMdd}}_{{##}}.log"),
-            MaxArchiveFiles = config.MaxArchiveFiles,
-            Layout = "${longdate} [${uppercase:${level}}] ${message}${onexception:inner=${newline}${exception:format=tostring}}",
-            Encoding = System.Text.Encoding.UTF8
-        };
+            builder.AddSuperLightFile(opt =>
+            {
+                opt.FileName = Path.Combine(config.LogDirectory, $"{config.FilePrefix}_${{date:format=yyyyMMdd}}.log");
+                opt.Layout = "${longdate} [${level:uppercase=true}] ${message}${onexception:${newline}${exception:format=tostring}}";
+                opt.ArchiveAboveSize = (long)config.MaxSizeMB * 1024L * 1024L;
+                opt.MaxArchiveFiles = config.MaxArchiveFiles;
+            });
+            builder.SetMinimumLevel("Trace");
+        });
 
-        var consoleTarget = new ConsoleTarget("console")
-        {
-            Layout = "${longdate} [${uppercase:${level}}] ${message}${onexception:inner=${newline}${exception:format=tostring}}"
-        };
-
-        nlogConfig.AddTarget(fileTarget);
-        nlogConfig.AddTarget(consoleTarget);
-
-        nlogConfig.AddRule(NLog.LogLevel.Trace, NLog.LogLevel.Fatal, fileTarget);
-        nlogConfig.AddRule(NLog.LogLevel.Trace, NLog.LogLevel.Fatal, consoleTarget);
-
-        LogManager.Configuration = nlogConfig;
         _logger = LogManager.GetLogger(config.FilePrefix);
         _isConfigured = true;
 
-        Log("Logger initialized with NLog (RollingFile)", LogLevel.Debug);
+        Log("Logger initialized with SuperLightLogger (RollingFile)", LogLevel.Debug);
 
         // 過去のバグで作成された不要な "0" ファイルを削除
         CleanupStaleFile(Path.Combine(config.LogDirectory, "0"));
@@ -140,23 +130,30 @@ public static class Logger
         try
         {
             var cutoffDate = DateTime.Now.Date.AddDays(-retentionDays);
-            var logFiles = Directory.GetFiles(logDirectory, $"{filePrefix}_*.log");
+            // ローテーション形式は SuperLightLogger 実装次第で複数あり得るので、
+            //   - `Ferry_20260206.log`     （日付ごとの最新）
+            //   - `Ferry_20260206.log.1`   （サイズ超過時のアーカイブ）
+            //   - `Ferry_20260206_000.log` （別命名形式）
+            // のすべてを拾うため、拡張子を限定せず `Ferry_*` で検索する
+            var prefix = $"{filePrefix}_";
+            var logFiles = Directory.GetFiles(logDirectory, $"{prefix}*");
 
             foreach (var file in logFiles)
             {
                 try
                 {
-                    // ファイル名から日付部分を抽出（例: Ferry_20260206.log or Ferry_20260206_000.log）
-                    var fileName = Path.GetFileNameWithoutExtension(file);
-                    var parts = fileName.Split('_');
-                    if (parts.Length >= 2 && parts[1].Length == 8 &&
-                        DateTime.TryParseExact(parts[1], "yyyyMMdd", null, System.Globalization.DateTimeStyles.None, out var fileDate))
+                    var fileName = Path.GetFileName(file);
+                    if (!fileName.StartsWith(prefix, StringComparison.Ordinal)) continue;
+                    if (fileName.Length < prefix.Length + 8) continue;
+
+                    // M-17 + P-10: Substring の string 確保を AsSpan で回避 + InvariantCulture 明示
+                    var datePart = fileName.AsSpan(prefix.Length, 8);
+                    if (DateTime.TryParseExact(datePart, "yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.None, out var fileDate)
+                        && fileDate < cutoffDate)
                     {
-                        if (fileDate < cutoffDate)
-                        {
-                            File.Delete(file);
-                            Log($"古いログファイルを削除しました: {Path.GetFileName(file)}", LogLevel.Debug);
-                        }
+                        File.Delete(file);
+                        Log($"古いログファイルを削除しました: {fileName}", LogLevel.Debug);
                     }
                 }
                 catch (Exception ex)
@@ -178,45 +175,72 @@ public static class Logger
     /// <param name="level">ログレベル（デフォルト: Info）</param>
     public static void Log(string message, LogLevel level = LogLevel.Info)
     {
-        if (level < MinLogLevel)
+        if (level < MinLogLevel || _logger == null)
             return;
 
-        _logger?.Log(ToNLogLevel(level), message);
+        Dispatch(_logger, level, message);
     }
 
     /// <summary>
-    /// ログ出力用に IPv4 アドレスの末尾オクテットを伏せる（PII 保護）。
-    /// "1.2.3.4" → "1.2.3.x"、"1.2.3.4:5678" → "1.2.3.x:5678"。IPv4 でなければそのまま返す。
+    /// ログ出力用に IP アドレスの末尾を伏せる（PII 保護）。
+    /// IPv4: "1.2.3.4" → "1.2.3.x"、"1.2.3.4:5678" → "1.2.3.x:5678"
+    /// IPv6: "2403:3a00:202:1134:49:212:230:244" → "2403:3a00:202:1134:49:212:x:x"
+    /// IPv6 ブラケット形式: "[2001:db8::1]:8080" → "[2001:db8::x:x]:8080"
     /// </summary>
     public static string MaskIp(string? ipOrEndpoint)
     {
         if (string.IsNullOrEmpty(ipOrEndpoint)) return ipOrEndpoint ?? "";
 
+        // IPv6 ブラケット形式: [::1]:port
+        if (ipOrEndpoint[0] == '[')
+        {
+            var closeBracket = ipOrEndpoint.IndexOf(']');
+            if (closeBracket > 1)
+            {
+                var ipv6 = ipOrEndpoint[1..closeBracket];
+                var rest = ipOrEndpoint[(closeBracket + 1)..]; // ":port" or ""
+                return "[" + MaskIpv6(ipv6) + "]" + rest;
+            }
+        }
+
+        // IPv6（ブラケットなし）: コロンが 2 個以上ある → IPv4:port の単一コロンと区別。
+        // M-6 + P-9: LINQ Count(デリゲート割当 + 全走査) を 2 段 IndexOf（早期終了）に
+        var firstColon = ipOrEndpoint.IndexOf(':');
+        if (firstColon >= 0 && ipOrEndpoint.IndexOf(':', firstColon + 1) >= 0)
+        {
+            return MaskIpv6(ipOrEndpoint);
+        }
+
+        // IPv4 または IPv4:port
         var colon = ipOrEndpoint.LastIndexOf(':');
         var ip = colon >= 0 ? ipOrEndpoint[..colon] : ipOrEndpoint;
         var port = colon >= 0 ? ipOrEndpoint[colon..] : "";
 
         var parts = ip.Split('.');
-        if (parts.Length != 4) return ipOrEndpoint; // IPv4 でなければマスクしない
+        if (parts.Length != 4) return ipOrEndpoint; // 不正形式はそのまま返す
         parts[3] = "x";
         return string.Join('.', parts) + port;
     }
 
     /// <summary>
-    /// 複数行のログを出力する
+    /// IPv6 アドレスの末尾 2 hextet を伏せる。`::` 圧縮表記の空ブロックはスキップする。
     /// </summary>
-    /// <param name="messages">ログメッセージの配列</param>
-    /// <param name="level">ログレベル（デフォルト: Info）</param>
-    public static void LogLines(string[] messages, LogLevel level = LogLevel.Info)
+    private static string MaskIpv6(string ipv6)
     {
-        if (messages == null || messages.Length == 0) return;
-        if (level < MinLogLevel) return;
+        var hextets = ipv6.Split(':');
+        if (hextets.Length < 2) return ipv6;
 
-        var nlogLevel = ToNLogLevel(level);
-        foreach (var message in messages)
+        // 末尾から非空 hextet を 2 つだけ "x" に置換する（`::` の空要素は飛ばす）
+        var masked = 0;
+        for (var i = hextets.Length - 1; i >= 0 && masked < 2; i--)
         {
-            _logger?.Log(nlogLevel, message);
+            if (!string.IsNullOrEmpty(hextets[i]))
+            {
+                hextets[i] = "x";
+                masked++;
+            }
         }
+        return string.Join(':', hextets);
     }
 
     /// <summary>
@@ -226,7 +250,8 @@ public static class Logger
     /// <param name="exception">例外オブジェクト</param>
     public static void LogException(string message, Exception exception)
     {
-        _logger?.Error(exception, message);
+        // log4net 互換の引数順は (message, exception)。NLog の (exception, message) とは順序が逆
+        _logger?.Error(message, exception);
     }
 
     /// <summary>
@@ -237,7 +262,7 @@ public static class Logger
     {
         if (LogLevel.Debug < MinLogLevel) return;
 
-        _logger?.Debug(
+        var message =
             $"""
             === {_appName} 起動ログ ===
             起動時刻: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}
@@ -245,7 +270,17 @@ public static class Logger
             コマンドライン引数の数: {args.Length}
             コマンドライン引数:
             {string.Join(Environment.NewLine, args.Select((a, i) => $"  [{i}]: {a}"))}
-            """);
+            """;
+
+        if (_logger != null)
+        {
+            _logger.Debug(message);
+        }
+        else
+        {
+            // Initialize 失敗時のフォールバック。起動情報を黙って捨てないよう stderr に出す
+            try { Console.Error.WriteLine($"[{_appName}/LogStartup] {message}"); } catch { /* 出力先がないなら諦める */ }
+        }
     }
 
     /// <summary>
@@ -254,18 +289,22 @@ public static class Logger
     public static void Dispose()
     {
         LogManager.Shutdown();
+        // Shutdown 後にログを呼ばれてもダングリングしないよう参照をクリア
+        _logger = null;
         _isConfigured = false;
     }
 
     /// <summary>
-    /// 独自LogLevelをNLogのLogLevelに変換
+    /// 自前の <see cref="LogLevel"/> を SuperLightLogger の <see cref="ILog"/> メソッド呼び出しに振り分ける
     /// </summary>
-    private static NLog.LogLevel ToNLogLevel(LogLevel level) => level switch
+    private static void Dispatch(ILog log, LogLevel level, string message)
     {
-        LogLevel.Debug => NLog.LogLevel.Debug,
-        LogLevel.Info => NLog.LogLevel.Info,
-        LogLevel.Warning => NLog.LogLevel.Warn,
-        LogLevel.Error => NLog.LogLevel.Error,
-        _ => NLog.LogLevel.Info
-    };
+        switch (level)
+        {
+            case LogLevel.Debug: log.Debug(message); break;
+            case LogLevel.Info: log.Info(message); break;
+            case LogLevel.Warning: log.Warn(message); break;
+            case LogLevel.Error: log.Error(message); break;
+        }
+    }
 }

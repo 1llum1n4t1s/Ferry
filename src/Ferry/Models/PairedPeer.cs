@@ -24,18 +24,18 @@ public sealed partial class PairedPeer : ObservableObject
 
     /// <summary>現在の接続経路（接続時に更新、未接続時は Unknown）。ランタイム専用。</summary>
     [ObservableProperty]
-    [property: JsonIgnore]
-    private ConnectionRoute _route = ConnectionRoute.Unknown;
+    [JsonIgnore]
+    public partial ConnectionRoute Route { get; set; } = ConnectionRoute.Unknown;
 
     /// <summary>接続状態テキスト（ランタイム専用）。</summary>
     [ObservableProperty]
-    [property: JsonIgnore]
-    private string _connectionStatusText = string.Empty;
+    [JsonIgnore]
+    public partial string ConnectionStatusText { get; set; } = string.Empty;
 
     /// <summary>相手がオンライン（アプリ起動中）かどうか（ランタイム専用）。</summary>
     [ObservableProperty]
-    [property: JsonIgnore]
-    private bool _isOnline;
+    [JsonIgnore]
+    public partial bool IsOnline { get; set; }
 
     /// <summary>接続経路の表示テキスト。</summary>
     [JsonIgnore]

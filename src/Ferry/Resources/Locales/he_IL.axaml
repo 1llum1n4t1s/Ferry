@@ -47,8 +47,6 @@
   <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">מיקום שמירת קבצים שהתקבלו</x:String>
   <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">עיין</x:String>
   <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">התנהגות</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">פתח את Ferry בהפעלה</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">מופעל אוטומטית כאשר המחשב נדלק</x:String>
   <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">התחל ממוזער</x:String>
   <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">מופעל ברקע</x:String>
   <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">מזער למגש בעת סגירה</x:String>
@@ -79,15 +77,6 @@
   <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN ישיר</x:String>
   <x:String x:Key="Text.Route.Stun" xml:space="preserve">אינטרנט P2P (STUN)</x:String>
   <x:String x:Key="Text.Route.Relay" xml:space="preserve">ממסר שרת (TURN)</x:String>
-
-  <!-- Update Messages -->
-  <x:String x:Key="Text.Update.Checking" xml:space="preserve">בודק עדכונים...</x:String>
-  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">לא ניתן לבדוק עדכונים בסביבת פיתוח</x:String>
-  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">מוריד v{0}...</x:String>
-  <x:String x:Key="Text.Update.Applying" xml:space="preserve">מחיל עדכון... מפעיל מחדש</x:String>
-  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">מעודכן</x:String>
-  <x:String x:Key="Text.Update.Error" xml:space="preserve">בדיקת העדכון נכשלה: {0}</x:String>
-  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">לא ידוע</x:String>
 
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">ההעברה נדחתה</x:String>
@@ -120,12 +109,6 @@
   <!-- Transfer: Empty -->
   <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">אין העברות</x:String>
 
-  <!-- Update -->
-  <x:String x:Key="Text.Update.Available" xml:space="preserve">עדכון זמין</x:String>
-  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">בדיקת העדכון נכשלה</x:String>
-  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">הורד והתקן</x:String>
-  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">התעלם מגרסה זו</x:String>
-
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">התראות</x:String>
   <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">צליל התראה</x:String>
@@ -139,11 +122,6 @@
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">קבל אוטומטית קבצים נכנסים</x:String>
 
   <!-- Settings: Appearance (extended) -->
-  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">צבע הדגשה</x:String>
-  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">גודל גופן</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">קטן</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">בינוני</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">גדול</x:String>
 
   <!-- Settings: Auto Start -->
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">הפעל עם Windows</x:String>

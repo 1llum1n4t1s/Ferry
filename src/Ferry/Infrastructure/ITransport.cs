@@ -32,6 +32,15 @@ public interface ITransport : IDisposable
     /// <summary>バイナリデータを送信する。</summary>
     Task SendAsync(byte[] data, CancellationToken ct = default);
 
+    /// <summary>
+    /// バイナリデータを送信する（<see cref="ReadOnlyMemory{T}"/> 版）。
+    /// P-1: 送信パスの alloc 削減のため、ArrayPool 借用バッファをコピーなしで渡せるオーバーロードを追加。
+    /// デフォルト実装は <c>ToArray()</c> で旧 API に委譲するが、各 transport で override して
+    /// 直接 Memory ベース API（<c>Stream.WriteAsync(ReadOnlyMemory)</c> / <c>WebSocket.SendAsync(ReadOnlyMemory)</c>）に流すこと。
+    /// </summary>
+    Task SendAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default)
+        => SendAsync(data.ToArray(), ct);
+
     /// <summary>接続を閉じる。</summary>
     void Close();
 }

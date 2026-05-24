@@ -47,8 +47,6 @@
   <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">Папка сохранения полученных файлов</x:String>
   <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">Обзор</x:String>
   <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">Поведение</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">Запускать Ferry при старте</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">Автоматически запускается при включении компьютера</x:String>
   <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">Запускать свёрнутым</x:String>
   <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">Запускается в фоновом режиме</x:String>
   <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">Сворачивать в трей при закрытии</x:String>
@@ -80,14 +78,14 @@
   <x:String x:Key="Text.Route.Stun" xml:space="preserve">Интернет P2P (STUN)</x:String>
   <x:String x:Key="Text.Route.Relay" xml:space="preserve">Серверный ретранслятор (TURN)</x:String>
 
-  <!-- Update Messages -->
-  <x:String x:Key="Text.Update.Checking" xml:space="preserve">Проверка обновлений...</x:String>
-  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">Невозможно проверить обновления в среде разработки</x:String>
-  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">Загрузка v{0}...</x:String>
-  <x:String x:Key="Text.Update.Applying" xml:space="preserve">Применение обновления... Перезапуск</x:String>
-  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">Обновлений нет</x:String>
-  <x:String x:Key="Text.Update.Error" xml:space="preserve">Ошибка проверки обновлений: {0}</x:String>
-  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">Неизвестно</x:String>
+  <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
+  <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">Доступна новая версия программного обеспечения: </x:String>
+  <x:String x:Key="Text.SelfUpdate.Checking" xml:space="preserve">Проверка обновлений...</x:String>
+  <x:String x:Key="Text.SelfUpdate.DownloadAndInstall" xml:space="preserve">Скачать и установить</x:String>
+  <x:String x:Key="Text.SelfUpdate.Error" xml:space="preserve">Не удалось проверить наличие обновлений!</x:String>
+  <x:String x:Key="Text.SelfUpdate.IgnoreThisVersion" xml:space="preserve">Пропустить эту версию</x:String>
+  <x:String x:Key="Text.SelfUpdate.Title" xml:space="preserve">Обновление ПО</x:String>
+  <x:String x:Key="Text.SelfUpdate.UpToDate" xml:space="preserve">Сейчас нет обновлений.</x:String>
 
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Передача отклонена</x:String>
@@ -120,12 +118,6 @@
   <!-- Transfer: Empty -->
   <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">Нет передач</x:String>
 
-  <!-- Update -->
-  <x:String x:Key="Text.Update.Available" xml:space="preserve">Доступно обновление</x:String>
-  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">Не удалось проверить обновления</x:String>
-  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">Скачать и установить</x:String>
-  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">Пропустить эту версию</x:String>
-
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">Уведомления</x:String>
   <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">Звук уведомления</x:String>
@@ -139,11 +131,6 @@
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">Автоматически принимать входящие файлы</x:String>
 
   <!-- Settings: Appearance (extended) -->
-  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">Цвет акцента</x:String>
-  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">Размер шрифта</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">Маленький</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">Средний</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">Большой</x:String>
 
   <!-- Settings: Auto Start -->
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Запускать вместе с Windows</x:String>

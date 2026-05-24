@@ -414,6 +414,18 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         await _transport.SendAsync(data, ct);
     }
 
+    /// <summary>
+    /// P-1: ArrayPool 借用バッファをコピーなしで transport の Memory 版に流す送信パス。
+    /// 1GB 転送で約 1GB の Gen0 alloc 削減（チャンクメッセージごとの new byte[] 解消）。
+    /// </summary>
+    public async Task SendAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default)
+    {
+        if (_transport == null || !_transport.IsConnected)
+            throw new InvalidOperationException("接続されていません");
+
+        await _transport.SendAsync(data, ct);
+    }
+
     public async Task DisconnectAsync(CancellationToken ct = default)
     {
         Util.Logger.Log("切断処理開始");

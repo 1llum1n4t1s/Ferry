@@ -24,18 +24,24 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     private readonly ConnectionViewModel _connectionViewModel;
 
     [ObservableProperty]
-    private bool _isDragOver;
+    public partial bool IsDragOver { get; set; }
 
     [ObservableProperty]
-    private bool _isTransferring;
+    public partial bool IsTransferring { get; set; }
 
     /// <summary>転送アイテムの一覧があるか。</summary>
     [ObservableProperty]
-    private bool _hasTransfers;
+    public partial bool HasTransfers { get; set; }
 
     /// <summary>承認待ちの受信アイテムがあるか（サイドメニュー下部パネル表示用）。</summary>
     [ObservableProperty]
-    private bool _hasPendingApproval;
+    public partial bool HasPendingApproval { get; set; }
+
+    // P-12: 進捗・エラーイベントごとに Transfers から InProgress アイテムを線形検索していた箇所を
+    // 直接参照に置換。1 GB 転送で 2048 回 × Transfers.Count の比較が O(1) になる。
+    // 単一同時転送前提（接続 1 対 1）なので "send 1 / receive 1" だけ覚える
+    private TransferItem? _currentSendItem;
+    private TransferItem? _currentReceiveItem;
 
     /// <summary>
     /// 転送アイテムの一覧。
@@ -70,7 +76,8 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private async Task BrowseAndSendFilesAsync()
     {
-        if ((App.Current?.ApplicationLifetime as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?.MainWindow is not { } mainWindow)
+        // M-8: App.GetMainWindow ヘルパーで統一
+        if (App.GetMainWindow() is not { } mainWindow)
             return;
 
         var storageProvider = mainWindow.StorageProvider;
@@ -274,9 +281,15 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         {
             if (e.Direction == TransferDirection.Send)
             {
-                // 送信中のアイテムを更新（逐次送信なので InProgress は 1 つだけ）
-                var item = Transfers.FirstOrDefault(t =>
-                    t.Direction == TransferDirection.Send && t.State == TransferState.InProgress);
+                // P-12: O(N) 線形検索を直接参照に置換
+                var item = _currentSendItem;
+                if (item is null || item.State != TransferState.InProgress)
+                {
+                    // フォールバック（初期状態 or 完了後の遅延イベント）
+                    item = Transfers.FirstOrDefault(t =>
+                        t.Direction == TransferDirection.Send && t.State == TransferState.InProgress);
+                    _currentSendItem = item;
+                }
                 if (item != null)
                 {
                     item.TransferredBytes = e.TransferredBytes;
@@ -285,8 +298,12 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             else
             {
                 // 受信中: 既存アイテムを探す、なければ追加
-                var item = Transfers.FirstOrDefault(t =>
-                    t.Direction == TransferDirection.Receive && t.State == TransferState.InProgress);
+                var item = _currentReceiveItem;
+                if (item is null || item.State != TransferState.InProgress)
+                {
+                    item = Transfers.FirstOrDefault(t =>
+                        t.Direction == TransferDirection.Receive && t.State == TransferState.InProgress);
+                }
                 if (item == null)
                 {
                     var peerName = _connectionViewModel.SelectedPeer?.DisplayName ?? string.Empty;
@@ -304,6 +321,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                     IsTransferring = true;
                     // 通知はサイドバー下部パネルで表示
                 }
+                _currentReceiveItem = item;
                 item.TransferredBytes = e.TransferredBytes;
             }
         });

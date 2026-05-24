@@ -42,11 +42,30 @@ public static class FileChunker
     {
         // [種別 1byte] [TransferId 16byte] [chunkIndex 4byte] [data]
         var message = new byte[TransferProtocol.ChunkHeaderSize + data.Length];
-        message[0] = TransferProtocol.FileChunk;
-        transferId.TryWriteBytes(message.AsSpan(1, 16));
-        BinaryPrimitives.WriteInt32BigEndian(message.AsSpan(17, 4), chunkIndex);
-        data.CopyTo(message.AsSpan(TransferProtocol.ChunkHeaderSize));
+        WriteChunkMessage(message, transferId, chunkIndex, data);
         return message;
+    }
+
+    /// <summary>
+    /// ファイルチャンクメッセージを呼び出し側が用意したバッファ（ArrayPool 等）に直接書き込む。
+    /// P-1: 1GB 転送で約 1GB の Gen0 alloc を削減するため、ホットループでは
+    /// CreateChunkMessage の代わりに本メソッド + ArrayPool を使う。
+    /// </summary>
+    /// <param name="destination">書き込み先バッファ。長さは <c>ChunkHeaderSize + data.Length</c> 以上必要。</param>
+    /// <param name="transferId">転送 ID。</param>
+    /// <param name="chunkIndex">チャンクインデックス。</param>
+    /// <param name="data">チャンクデータ本体。</param>
+    public static void WriteChunkMessage(Span<byte> destination, Guid transferId, int chunkIndex, ReadOnlySpan<byte> data)
+    {
+        var messageSize = TransferProtocol.ChunkHeaderSize + data.Length;
+        if (destination.Length < messageSize)
+            throw new ArgumentException($"バッファサイズが不足: 必要={messageSize}, 実際={destination.Length}", nameof(destination));
+
+        // [種別 1byte] [TransferId 16byte] [chunkIndex 4byte] [data]
+        destination[0] = TransferProtocol.FileChunk;
+        transferId.TryWriteBytes(destination.Slice(1, 16));
+        BinaryPrimitives.WriteInt32BigEndian(destination.Slice(17, 4), chunkIndex);
+        data.CopyTo(destination[TransferProtocol.ChunkHeaderSize..]);
     }
 
     /// <summary>
@@ -96,11 +115,54 @@ public static class FileChunker
 
         while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
         {
+            // M-4: Buffer.BlockCopy → Span.CopyTo（コードベース一貫性）
             var chunk = new byte[bytesRead];
-            Buffer.BlockCopy(buffer, 0, chunk, 0, bytesRead);
+            buffer.AsSpan(0, bytesRead).CopyTo(chunk);
             yield return (index, chunk);
             index++;
         }
+    }
+
+    /// <summary>
+    /// ファイルを読み込みつつ SHA-256 を並行計算するチャンク列挙。
+    /// P-3: 送信パスで「ハッシュ計算 + チャンク送信」を 1 度のディスク読みで完結させる。
+    /// 列挙完了後に <paramref name="hashSink"/>.GetHashAndReset() で最終ハッシュが取れる。
+    /// </summary>
+    public static IEnumerable<(int Index, byte[] Data)> ReadChunksWithHash(string filePath, IncrementalHash hashSink)
+    {
+        using var stream = File.OpenRead(filePath);
+        var buffer = new byte[TransferProtocol.ChunkSize];
+        var index = 0;
+        int bytesRead;
+
+        while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            // ハッシュは元バッファ上で計算（コピー前のサイズ分だけ）
+            hashSink.AppendData(buffer, 0, bytesRead);
+
+            var chunk = new byte[bytesRead];
+            buffer.AsSpan(0, bytesRead).CopyTo(chunk);
+            yield return (index, chunk);
+            index++;
+        }
+    }
+
+    /// <summary>
+    /// ファイル SHA-256 後送りメッセージを生成する [種別 1byte] [sha256 32byte]。P-3 プロトコル拡張。
+    /// </summary>
+    public static byte[] CreateFileHashMessage(byte[] sha256)
+    {
+        var message = new byte[1 + 32];
+        message[0] = TransferProtocol.FileHash;
+        sha256.AsSpan(0, 32).CopyTo(message.AsSpan(1));
+        return message;
+    }
+
+    /// <summary>FileHash メッセージから SHA-256 バイト列を抽出する。</summary>
+    public static byte[]? ParseFileHash(ReadOnlySpan<byte> message)
+    {
+        if (message.Length < 1 + 32) return null;
+        return message.Slice(1, 32).ToArray();
     }
 
     /// <summary>
@@ -137,7 +199,8 @@ public static class FileChunker
         // [種別 1byte] [TransferId 16byte] [LastChunkIndex 4byte]
         var message = new byte[1 + 16 + 4];
         message[0] = TransferProtocol.ResumeRequest;
-        transferId.ToByteArray().CopyTo(message.AsSpan(1, 16));
+        // M-2: ToByteArray() のヒープ確保を回避（CreateChunkMessage と同パターン）
+        transferId.TryWriteBytes(message.AsSpan(1, 16));
         BinaryPrimitives.WriteInt32BigEndian(message.AsSpan(17, 4), lastChunkIndex);
         return message;
     }
@@ -153,7 +216,8 @@ public static class FileChunker
         // [種別 1byte] [TransferId 16byte] [Status 1byte] [LastChunkIndex 4byte]
         var message = new byte[1 + 16 + 1 + 4];
         message[0] = TransferProtocol.ResumeResponse;
-        transferId.ToByteArray().CopyTo(message.AsSpan(1, 16));
+        // M-2: ToByteArray() のヒープ確保を回避（CreateChunkMessage と同パターン）
+        transferId.TryWriteBytes(message.AsSpan(1, 16));
         message[17] = accepted ? (byte)1 : (byte)0;
         BinaryPrimitives.WriteInt32BigEndian(message.AsSpan(18, 4), lastChunkIndex);
         return message;

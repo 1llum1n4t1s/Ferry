@@ -10,7 +10,6 @@
         CanResize="False"
         Background="{StaticResource TahoeWindowBgBrush}"
         ExtendClientAreaToDecorationsHint="True"
-        ExtendClientAreaChromeHints="PreferSystemChrome"
         ExtendClientAreaTitleBarHeightHint="36">
 
     <Grid RowDefinitions="36,*">

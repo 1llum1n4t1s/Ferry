@@ -39,8 +39,6 @@
   <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">接收檔案儲存位置</x:String>
   <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">瀏覽</x:String>
   <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">行為</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">開機時啟動 Ferry</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">電腦啟動時自動執行</x:String>
   <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">最小化啟動</x:String>
   <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">在背景啟動</x:String>
   <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">關閉時最小化至系統匣</x:String>
@@ -65,13 +63,14 @@
   <x:String x:Key="Text.Route.Direct" xml:space="preserve">區域網路直連</x:String>
   <x:String x:Key="Text.Route.Stun" xml:space="preserve">網際網路 P2P（STUN）</x:String>
   <x:String x:Key="Text.Route.Relay" xml:space="preserve">伺服器中繼（TURN）</x:String>
-  <x:String x:Key="Text.Update.Checking" xml:space="preserve">正在檢查更新…</x:String>
-  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">開發環境無法檢查更新</x:String>
-  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">正在下載 v{0}…</x:String>
-  <x:String x:Key="Text.Update.Applying" xml:space="preserve">正在套用更新…即將重新啟動</x:String>
-  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">已是最新版本 ✓</x:String>
-  <x:String x:Key="Text.Update.Error" xml:space="preserve">更新檢查失敗: {0}</x:String>
-  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">未知</x:String>
+  <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
+  <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">軟體有版本更新:</x:String>
+  <x:String x:Key="Text.SelfUpdate.Checking" xml:space="preserve">正在檢查更新...</x:String>
+  <x:String x:Key="Text.SelfUpdate.DownloadAndInstall" xml:space="preserve">下載並安裝</x:String>
+  <x:String x:Key="Text.SelfUpdate.Error" xml:space="preserve">取得最新版本資訊失敗!</x:String>
+  <x:String x:Key="Text.SelfUpdate.IgnoreThisVersion" xml:space="preserve">忽略此版本</x:String>
+  <x:String x:Key="Text.SelfUpdate.Title" xml:space="preserve">軟體更新</x:String>
+  <x:String x:Key="Text.SelfUpdate.UpToDate" xml:space="preserve">目前已是最新版本。</x:String>
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">已拒絕接收</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">恢復失敗</x:String>
   <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
@@ -102,12 +101,6 @@
   <!-- Transfer: Empty -->
   <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">沒有傳輸紀錄</x:String>
 
-  <!-- Update -->
-  <x:String x:Key="Text.Update.Available" xml:space="preserve">有可用更新</x:String>
-  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">更新檢查失敗</x:String>
-  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">下載並安裝</x:String>
-  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">忽略此版本</x:String>
-
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">通知</x:String>
   <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">通知提示音</x:String>
@@ -121,11 +114,6 @@
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">自動接受傳入的檔案</x:String>
 
   <!-- Settings: Appearance (extended) -->
-  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">強調色</x:String>
-  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">字型大小</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">小</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">中</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">大</x:String>
 
   <!-- Settings: Auto Start -->
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">隨 Windows 啟動</x:String>

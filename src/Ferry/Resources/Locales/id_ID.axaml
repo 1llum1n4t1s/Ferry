@@ -47,8 +47,6 @@
   <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">Lokasi penyimpanan file yang diterima</x:String>
   <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">Jelajahi</x:String>
   <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">Perilaku</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">Buka Ferry saat startup</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">Diluncurkan otomatis saat komputer menyala</x:String>
   <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">Mulai diminimalkan</x:String>
   <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">Diluncurkan di latar belakang</x:String>
   <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">Minimalkan ke tray saat ditutup</x:String>
@@ -80,14 +78,14 @@
   <x:String x:Key="Text.Route.Stun" xml:space="preserve">Internet P2P (STUN)</x:String>
   <x:String x:Key="Text.Route.Relay" xml:space="preserve">Relay Server (TURN)</x:String>
 
-  <!-- Update Messages -->
-  <x:String x:Key="Text.Update.Checking" xml:space="preserve">Memeriksa pembaruan...</x:String>
-  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">Tidak dapat memeriksa pembaruan dalam lingkungan pengembangan</x:String>
-  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">Mengunduh v{0}...</x:String>
-  <x:String x:Key="Text.Update.Applying" xml:space="preserve">Menerapkan pembaruan... Memulai ulang</x:String>
-  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">Sudah terbaru</x:String>
-  <x:String x:Key="Text.Update.Error" xml:space="preserve">Pemeriksaan pembaruan gagal: {0}</x:String>
-  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">Tidak diketahui</x:String>
+  <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
+  <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">Versi baru dari perangkat lunak ini tersedia: </x:String>
+  <x:String x:Key="Text.SelfUpdate.Checking" xml:space="preserve">Memeriksa pembaruan...</x:String>
+  <x:String x:Key="Text.SelfUpdate.DownloadAndInstall" xml:space="preserve">Unduh &amp; Instal</x:String>
+  <x:String x:Key="Text.SelfUpdate.Error" xml:space="preserve">Pemeriksaan pembaruan gagal!</x:String>
+  <x:String x:Key="Text.SelfUpdate.IgnoreThisVersion" xml:space="preserve">Lewati Versi Ini</x:String>
+  <x:String x:Key="Text.SelfUpdate.Title" xml:space="preserve">Pembaruan Perangkat Lunak</x:String>
+  <x:String x:Key="Text.SelfUpdate.UpToDate" xml:space="preserve">Saat ini tidak ada pembaruan yang tersedia.</x:String>
 
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Transfer ditolak</x:String>
@@ -120,12 +118,6 @@
   <!-- Transfer: Empty -->
   <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">Tidak ada transfer</x:String>
 
-  <!-- Update -->
-  <x:String x:Key="Text.Update.Available" xml:space="preserve">Pembaruan Tersedia</x:String>
-  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">Pemeriksaan pembaruan gagal</x:String>
-  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">Unduh &amp; Pasang</x:String>
-  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">Abaikan versi ini</x:String>
-
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">Notifikasi</x:String>
   <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">Suara Notifikasi</x:String>
@@ -139,11 +131,6 @@
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">Secara otomatis menerima file yang masuk</x:String>
 
   <!-- Settings: Appearance (extended) -->
-  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">Warna Aksen</x:String>
-  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">Ukuran Font</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">Kecil</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">Sedang</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">Besar</x:String>
 
   <!-- Settings: Auto Start -->
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Mulai dengan Windows</x:String>

@@ -47,8 +47,6 @@
   <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">Locus servandi fasciculos acceptos</x:String>
   <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">Perspice</x:String>
   <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">Modus Agendi</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">Aperi Ferry initio</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">Automatice inchoatur cum computatrum accenditur</x:String>
   <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">Incipe imminutum</x:String>
   <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">In occulto inchoatur</x:String>
   <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">Imminue ad lancem claudendo</x:String>
@@ -80,14 +78,14 @@
   <x:String x:Key="Text.Route.Stun" xml:space="preserve">Interrete P2P (STUN)</x:String>
   <x:String x:Key="Text.Route.Relay" xml:space="preserve">Relay Servitoris (TURN)</x:String>
 
-  <!-- Update Messages -->
-  <x:String x:Key="Text.Update.Checking" xml:space="preserve">Renovationes inspiciuntur...</x:String>
-  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">In ambitu progressionis renovationes inspici non possunt</x:String>
-  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">v{0} deponens...</x:String>
-  <x:String x:Key="Text.Update.Applying" xml:space="preserve">Renovatio applicatur... Restituitur</x:String>
-  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">Novissimum</x:String>
-  <x:String x:Key="Text.Update.Error" xml:space="preserve">Inspectio renovationis defecit: {0}</x:String>
-  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">Ignotum</x:String>
+  <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
+  <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">Nova versio huius programatis praesto est: </x:String>
+  <x:String x:Key="Text.SelfUpdate.Checking" xml:space="preserve">Renovationes inquirens...</x:String>
+  <x:String x:Key="Text.SelfUpdate.DownloadAndInstall" xml:space="preserve">Depone &amp; Installa</x:String>
+  <x:String x:Key="Text.SelfUpdate.Error" xml:space="preserve">Quaerere renovationes defecit!</x:String>
+  <x:String x:Key="Text.SelfUpdate.IgnoreThisVersion" xml:space="preserve">Omitte Hanc Versionem</x:String>
+  <x:String x:Key="Text.SelfUpdate.Title" xml:space="preserve">Renovatio Programatis</x:String>
+  <x:String x:Key="Text.SelfUpdate.UpToDate" xml:space="preserve">Nunc nullae renovationes praesto sunt.</x:String>
 
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Translatio reiecta</x:String>
@@ -120,12 +118,6 @@
   <!-- Transfer: Empty -->
   <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">Nullae translationes</x:String>
 
-  <!-- Update -->
-  <x:String x:Key="Text.Update.Available" xml:space="preserve">Renovatio Praesto</x:String>
-  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">Inspectio renovationis defecit</x:String>
-  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">Depone et Installa</x:String>
-  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">Hanc versionem praetermitte</x:String>
-
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">Notificationes</x:String>
   <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">Sonus Notificationis</x:String>
@@ -139,11 +131,6 @@
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">Fasciculos advenientes automatice accipe</x:String>
 
   <!-- Settings: Appearance (extended) -->
-  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">Color Accentus</x:String>
-  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">Magnitudo Litterarum</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">Parvum</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">Medium</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">Magnum</x:String>
 
   <!-- Settings: Auto Start -->
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Cum Windows incipe</x:String>

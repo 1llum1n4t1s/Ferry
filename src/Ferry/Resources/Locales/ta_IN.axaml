@@ -47,8 +47,6 @@
   <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">பெறப்பட்ட கோப்பு சேமிப்பிடம்</x:String>
   <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">உலாவு</x:String>
   <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">நடத்தை</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">தொடக்கத்தில் Ferry ஐத் திற</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">கணினி தொடங்கும்போது தானாகவே துவங்கும்</x:String>
   <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">சிறிதாக்கப்பட்ட நிலையில் தொடங்கு</x:String>
   <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">பின்னணியில் துவங்கும்</x:String>
   <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">மூடும்போது ட்ரேக்கு சிறிதாக்கு</x:String>
@@ -80,14 +78,14 @@
   <x:String x:Key="Text.Route.Stun" xml:space="preserve">இணையம் P2P (STUN)</x:String>
   <x:String x:Key="Text.Route.Relay" xml:space="preserve">சர்வர் ரிலே (TURN)</x:String>
 
-  <!-- Update Messages -->
-  <x:String x:Key="Text.Update.Checking" xml:space="preserve">புதுப்பிப்புகளைச் சரிபார்க்கிறது...</x:String>
-  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">மேம்பாட்டு சூழலில் புதுப்பிப்புகளைச் சரிபார்க்க முடியாது</x:String>
-  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">v{0} பதிவிறக்குகிறது...</x:String>
-  <x:String x:Key="Text.Update.Applying" xml:space="preserve">புதுப்பிப்பைப் பயன்படுத்துகிறது... மறுதொடக்கம்</x:String>
-  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">புதுப்பித்தநிலையில்</x:String>
-  <x:String x:Key="Text.Update.Error" xml:space="preserve">புதுப்பிப்பு சரிபார்ப்பு தோல்வி: {0}</x:String>
-  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">தெரியாது</x:String>
+  <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
+  <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">இந்த மென்பொருளின் புதிய பதிப்பு கிடைக்கிறது: </x:String>
+  <x:String x:Key="Text.SelfUpdate.Checking" xml:space="preserve">புதுப்பிப்புகளைச் சரிபார்க்கிறது...</x:String>
+  <x:String x:Key="Text.SelfUpdate.DownloadAndInstall" xml:space="preserve">பதிவிறக்கி நிறுவு</x:String>
+  <x:String x:Key="Text.SelfUpdate.Error" xml:space="preserve">புதுப்பிப்புகளைச் சரிபார்க்க முடியவில்லை!</x:String>
+  <x:String x:Key="Text.SelfUpdate.IgnoreThisVersion" xml:space="preserve">இந்தப் பதிப்பைத் தவிர்</x:String>
+  <x:String x:Key="Text.SelfUpdate.Title" xml:space="preserve">மென்பொருள் புதுப்பி</x:String>
+  <x:String x:Key="Text.SelfUpdate.UpToDate" xml:space="preserve">தற்போது புதுப்பிப்புகள் எதுவும் கிடைக்கவில்லை.</x:String>
 
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">பரிமாற்றம் நிராகரிக்கப்பட்டது</x:String>
@@ -120,12 +118,6 @@
   <!-- Transfer: Empty -->
   <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">பரிமாற்றங்கள் இல்லை</x:String>
 
-  <!-- Update -->
-  <x:String x:Key="Text.Update.Available" xml:space="preserve">புதுப்பிப்பு கிடைக்கிறது</x:String>
-  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">புதுப்பிப்பு சரிபார்ப்பு தோல்வி</x:String>
-  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">பதிவிறக்கி நிறுவு</x:String>
-  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">இந்தப் பதிப்பைப் புறக்கணி</x:String>
-
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">அறிவிப்புகள்</x:String>
   <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">அறிவிப்பு ஒலி</x:String>
@@ -139,11 +131,6 @@
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">வரும் கோப்புகளைத் தானாகவே ஏற்றுக்கொள்</x:String>
 
   <!-- Settings: Appearance (extended) -->
-  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">முக்கிய நிறம்</x:String>
-  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">எழுத்துரு அளவு</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">சிறியது</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">நடுத்தரம்</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">பெரியது</x:String>
 
   <!-- Settings: Auto Start -->
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Windows உடன் தொடங்கு</x:String>

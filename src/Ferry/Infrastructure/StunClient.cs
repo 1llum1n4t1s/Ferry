@@ -54,8 +54,8 @@ public static class StunClient
         request[5] = (byte)((MagicCookie >> 16) & 0xFF);
         request[6] = (byte)((MagicCookie >> 8) & 0xFF);
         request[7] = (byte)(MagicCookie & 0xFF);
-        // Transaction ID
-        Buffer.BlockCopy(transactionId, 0, request, 8, 12);
+        // Transaction ID（M-4: BlockCopy → Span.CopyTo）
+        transactionId.AsSpan(0, 12).CopyTo(request.AsSpan(8));
 
         // 最大3回リトライ
         for (var attempt = 0; attempt < 3; attempt++)
@@ -109,11 +109,12 @@ public static class StunClient
                                 response[attrStart + 7]);
                             var addr = xAddr ^ MagicCookie;
 
-                            var ip = new IPAddress(new[]
-                            {
+                            // M-5: new[] {} を collection expression に統一（コードベース一貫性）
+                            var ip = new IPAddress((ReadOnlySpan<byte>)
+                            [
                                 (byte)(addr >> 24), (byte)(addr >> 16),
                                 (byte)(addr >> 8), (byte)(addr & 0xFF),
-                            });
+                            ]);
                             return (ip.ToString(), port);
                         }
                     }
@@ -123,11 +124,12 @@ public static class StunClient
                         if (response[attrStart + 1] == 0x01) // IPv4
                         {
                             var port = (response[attrStart + 2] << 8) | response[attrStart + 3];
-                            var ip = new IPAddress(new[]
-                            {
+                            // M-5: collection expression に統一
+                            var ip = new IPAddress((ReadOnlySpan<byte>)
+                            [
                                 response[attrStart + 4], response[attrStart + 5],
                                 response[attrStart + 6], response[attrStart + 7],
-                            });
+                            ]);
                             return (ip.ToString(), port);
                         }
                     }

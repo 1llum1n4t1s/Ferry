@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -28,14 +29,15 @@ public sealed class TransferService : ITransferService
     /// <summary>送信中の転送アイテム（レジューム用に保持）。</summary>
     private readonly ConcurrentDictionary<Guid, TransferItem> _activeTransfers = new();
 
-    /// <summary>受信中の転送状態。TransferId → 受信状態。</summary>
-    private readonly ConcurrentDictionary<string, ReceiveState> _receiveStates = new();
+    /// <summary>受信中の転送状態。TransferId → 受信状態。
+    /// P-6: キーを string → Guid に変更し、毎チャンクの ToString() ヒープ確保 (1GB で 9MB) を撤去。</summary>
+    private readonly ConcurrentDictionary<Guid, ReceiveState> _receiveStates = new();
 
     /// <summary>フォルダ受信時のルートフォルダ名マッピング（元の名前 → リネーム後の名前）。同一フォルダの全ファイルを同じ先に保存するため。</summary>
     private readonly ConcurrentDictionary<string, string> _folderMappings = new();
 
     /// <summary>承認待ちの転送状態（TransferId → ReceiveState）。承認/拒否後に _receiveStates へ移動。</summary>
-    private readonly ConcurrentDictionary<string, ReceiveState> _pendingApprovals = new();
+    private readonly ConcurrentDictionary<Guid, ReceiveState> _pendingApprovals = new();
 
     public event EventHandler<TransferItem>? ProgressChanged;
     public event EventHandler<TransferItem>? FileReceived;
@@ -64,11 +66,12 @@ public sealed class TransferService : ITransferService
             throw new FileNotFoundException("送信ファイルが見つかりません", filePath);
 
         var totalChunks = FileChunker.CalculateTotalChunks(fileInfo.Length);
-        var sha256Hex = FileChunker.ComputeSha256Hex(filePath);
         var transferId = Guid.NewGuid();
 
+        // P-3: ハッシュは事前計算せず、SendChunksAsync 中に IncrementalHash で並行計算する。
+        // FileMeta にはハッシュなしで送り、全 chunk 送信後に FileHash メッセージで送る
         var displayName = relativePath ?? fileInfo.Name;
-        Util.Logger.Log($"ファイル送信開始: {displayName}, サイズ={fileInfo.Length}, チャンク数={totalChunks}, SHA256={sha256Hex[..16]}…");
+        Util.Logger.Log($"ファイル送信開始: {displayName}, サイズ={fileInfo.Length}, チャンク数={totalChunks}");
 
         var item = new TransferItem
         {
@@ -78,23 +81,31 @@ public sealed class TransferService : ITransferService
             TotalChunks = totalChunks,
             Direction = TransferDirection.Send,
             State = TransferState.InProgress,
-            Sha256Hash = sha256Hex,
+            Sha256Hash = string.Empty, // ハッシュは送信後確定
             SourceFilePath = filePath,
         };
         _activeTransfers[transferId] = item;
 
         try
         {
-            // 1. メタデータを送信
+            // 1. メタデータを送信（ハッシュは空、後送り）
             var metaMessage = FileChunker.CreateFileMetaMessage(
-                fileInfo.Name, fileInfo.Length, totalChunks, sha256Hex, transferId, relativePath);
+                fileInfo.Name, fileInfo.Length, totalChunks, string.Empty, transferId, relativePath);
             await _connectionService.SendAsync(metaMessage, ct);
             Util.Logger.Log("ファイルメタデータ送信完了");
 
-            // 2. チャンクを順次送信
-            await SendChunksAsync(filePath, transferId, startChunk: 0, item, ct);
+            // 2. チャンクを順次送信しつつハッシュを並行計算
+            using var hashSink = System.Security.Cryptography.IncrementalHash.CreateHash(
+                System.Security.Cryptography.HashAlgorithmName.SHA256);
+            await SendChunksAsync(filePath, transferId, startChunk: 0, item, ct, hashSink);
 
-            Util.Logger.Log($"ファイル送信完了: {displayName}");
+            // 3. 確定したハッシュを後送り
+            var sha256Bytes = hashSink.GetHashAndReset();
+            item.Sha256Hash = Convert.ToHexString(sha256Bytes).ToLowerInvariant();
+            var hashMessage = FileChunker.CreateFileHashMessage(sha256Bytes);
+            await _connectionService.SendAsync(hashMessage, ct);
+
+            Util.Logger.Log($"ファイル送信完了: {displayName}, SHA256={item.Sha256Hash[..16]}…");
         }
         catch (Exception ex)
         {
@@ -182,6 +193,10 @@ public sealed class TransferService : ITransferService
                 HandleFileReject(data);
                 break;
 
+            case TransferProtocol.FileHash:
+                HandleFileHash(data);
+                break;
+
             case TransferProtocol.Ping:
                 HandlePing();
                 break;
@@ -216,10 +231,20 @@ public sealed class TransferService : ITransferService
     /// <summary>
     /// チャンクを順次送信する。バックプレッシャーとして一定間隔で進捗を通知する。
     /// </summary>
-    private async Task SendChunksAsync(string filePath, Guid transferId, int startChunk, TransferItem item, CancellationToken ct)
+    private async Task SendChunksAsync(string filePath, Guid transferId, int startChunk, TransferItem item, CancellationToken ct, System.Security.Cryptography.IncrementalHash? hashSink = null)
     {
         var sentCount = 0;
-        foreach (var (index, chunkData) in FileChunker.ReadChunks(filePath))
+        // P-11: 進捗通知の throttle (UI スレッドへの Post と PropertyChanged 発火を抑制)。
+        // 時間ベース (60ms = 16fps 相当) に切り替え、UI から見える滑らかさは維持しつつ通知頻度を一定化
+        var lastProgressTick = Environment.TickCount64;
+        const long ProgressIntervalMs = 60;
+
+        // P-3: hashSink を渡された場合は ReadChunksWithHash でハッシュ並行計算（送信側 1 度読み）
+        var chunkSource = hashSink is null
+            ? FileChunker.ReadChunks(filePath)
+            : FileChunker.ReadChunksWithHash(filePath, hashSink);
+
+        foreach (var (index, chunkData) in chunkSource)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -227,8 +252,20 @@ public sealed class TransferService : ITransferService
             if (index < startChunk)
                 continue;
 
-            var chunkMessage = FileChunker.CreateChunkMessage(transferId, index, chunkData);
-            await _connectionService.SendAsync(chunkMessage, ct);
+            // P-1: チャンクメッセージ用バッファを ArrayPool から借用し、
+            // FileChunker.WriteChunkMessage で直接書き込んだ後 Memory として渡す。
+            // 1GB 転送 (16,384 チャンク) で約 1GB の Gen0 alloc を削減。
+            var messageSize = TransferProtocol.ChunkHeaderSize + chunkData.Length;
+            var buffer = ArrayPool<byte>.Shared.Rent(messageSize);
+            try
+            {
+                FileChunker.WriteChunkMessage(buffer.AsSpan(0, messageSize), transferId, index, chunkData);
+                await _connectionService.SendAsync(buffer.AsMemory(0, messageSize), ct);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
 
             item.TransferredBytes = (long)(index + 1) * TransferProtocol.ChunkSize;
             if (item.TransferredBytes > item.FileSize)
@@ -237,18 +274,17 @@ public sealed class TransferService : ITransferService
 
             sentCount++;
 
-            // 進捗通知（32チャンクごと ≈ 512KB ごと）
-            if (sentCount % 32 == 0)
+            // 進捗通知（時間ベース throttle、60ms 経過時のみ）
+            var nowTick = Environment.TickCount64;
+            if (nowTick - lastProgressTick >= ProgressIntervalMs)
             {
                 ProgressChanged?.Invoke(this, item);
+                lastProgressTick = nowTick;
             }
 
-            // バックプレッシャー: TCP の送信バッファが溜まりすぎないよう微小な待機
-            // 大ファイル送信時の CPU 占有率を下げる
-            if (sentCount % 64 == 0)
-            {
-                await Task.Yield();
-            }
+            // P-14: 旧コードの 64 チャンクごと Task.Yield() は撤去。
+            // 本来意図した TCP 送信バックプレッシャーは _stream.WriteAsync の自然な await で既に効いている
+            // （バッファが詰まれば await が長くなる）。Task.Yield はスレッド再スケジュールで CPU を浪費していた
         }
 
         // 最終進捗通知
@@ -356,18 +392,26 @@ public sealed class TransferService : ITransferService
         if (!string.IsNullOrEmpty(meta.RelativePath))
             savePath = GetUniquePath(savePath);
 
+        // P-6: meta.TransferId (string) を 1 度だけ Guid 化し、以降の dictionary 操作で再利用
+        if (!Guid.TryParse(meta.TransferId, out var transferIdGuid))
+        {
+            Util.Logger.Log($"不正な TransferId 形式: {meta.TransferId}", Util.LogLevel.Warning);
+            return;
+        }
+
         var state = new ReceiveState
         {
-            TransferId = meta.TransferId,
+            TransferId = transferIdGuid,
             FileName = displayName,
             FileSize = meta.FileSize,
             TotalChunks = meta.TotalChunks,
-            ExpectedSha256 = meta.Sha256,
+            // P-3: ハッシュはメタには含まれず、FileHash メッセージで後送りされる
+            ExpectedSha256 = meta.Sha256, // 旧版互換のため受け取った値をそのまま保持（新版では空文字）
             SavePath = savePath,
             ReceivedChunks = 0,
             Item = new TransferItem
             {
-                TransferId = Guid.TryParse(meta.TransferId, out var tid) ? tid : Guid.NewGuid(),
+                TransferId = transferIdGuid,
                 FileName = displayName,
                 FileSize = meta.FileSize,
                 TotalChunks = meta.TotalChunks,
@@ -378,7 +422,7 @@ public sealed class TransferService : ITransferService
         };
 
         // 承認待ちキューに追加し、UI に通知
-        _pendingApprovals[meta.TransferId] = state;
+        _pendingApprovals[transferIdGuid] = state;
         Util.Logger.Log($"受信承認待ち: {displayName} ({Util.Formatting.FormatBytes(meta.FileSize)})");
         ApprovalRequested?.Invoke(this, state.Item);
     }
@@ -388,7 +432,8 @@ public sealed class TransferService : ITransferService
         // [種別 1] [TransferId 16] [chunkIndex 4] [data]
         if (data.Length < TransferProtocol.ChunkHeaderSize) return;
 
-        var transferId = new Guid(data.AsSpan(1, 16)).ToString();
+        // P-6: Guid のまま辞書引き（ToString() のヒープ確保撤去、1GB 転送で 9MB alloc 削減）
+        var transferId = new Guid(data.AsSpan(1, 16));
         var chunkIndex = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(17, 4));
         var chunkLength = data.Length - TransferProtocol.ChunkHeaderSize;
 
@@ -439,17 +484,17 @@ public sealed class TransferService : ITransferService
             state.Item.TransferredBytes = state.WrittenBytes;
             state.Item.LastConfirmedChunkIndex = chunkIndex;
 
-            // 進捗通知（32チャンクごと）
-            if (state.ReceivedChunks % 32 == 0)
+            // 進捗通知（P-11: 時間ベース throttle、60ms 経過時のみ。送信側と統一）
+            var nowTick = Environment.TickCount64;
+            if (nowTick - state.LastProgressTick >= 60)
             {
                 ProgressChanged?.Invoke(this, state.Item);
+                state.LastProgressTick = nowTick;
             }
 
-            // 全チャンク受信完了
-            if (state.ReceivedChunks >= state.TotalChunks)
-            {
-                CompleteReceive(state);
-            }
+            // P-3: 完了判定は「全 chunk 受信 AND 期待ハッシュ確定」の両方が揃ったとき。
+            // FileHash メッセージは順不同で到着し得るので、両方の経路から TryCompleteReceive を呼ぶ
+            TryCompleteReceiveIfReady(state);
         }
         catch (Exception ex)
         {
@@ -523,6 +568,45 @@ public sealed class TransferService : ITransferService
         // 全受信完了時にフォルダマッピングキャッシュをクリア
         if (_receiveStates.IsEmpty)
             _folderMappings.Clear();
+    }
+
+    /// <summary>
+    /// P-3: FileHash メッセージを受信して期待ハッシュを確定する。
+    /// 全 chunk 受信済みなら即座に検証 → CompleteReceive。
+    /// まだチャンク受信中なら、最後のチャンク到着時に CompleteReceive が呼ばれる。
+    /// </summary>
+    private void HandleFileHash(byte[] data)
+    {
+        var sha256Bytes = FileChunker.ParseFileHash(data);
+        if (sha256Bytes is null)
+        {
+            Util.Logger.Log("FileHash メッセージのパースに失敗", Util.LogLevel.Warning);
+            return;
+        }
+
+        // FileHash は転送ごとに 1 つだけ送られる前提。受信中の状態を 1 つ探して紐付ける。
+        // 複数同時受信時は最後に書き込まれた chunk の TransferId を使う必要があるが、
+        // Ferry は逐次転送（接続あたり 1 ファイル送信 1 受信）なので _receiveStates から 1 つ取る
+        var hex = Convert.ToHexString(sha256Bytes).ToLowerInvariant();
+        foreach (var kv in _receiveStates)
+        {
+            var state = kv.Value;
+            if (!string.IsNullOrEmpty(state.ExpectedSha256)) continue; // 既に確定済みはスキップ
+            state.ExpectedSha256 = hex;
+            Util.Logger.Log($"FileHash 受信: {state.FileName}, SHA256={hex[..16]}…");
+            TryCompleteReceiveIfReady(state);
+            return;
+        }
+        Util.Logger.Log($"FileHash 受信したが該当する受信状態なし: SHA256={hex[..16]}…", Util.LogLevel.Warning);
+    }
+
+    /// <summary>全 chunk 受信 AND 期待ハッシュ確定の両方が揃ったときだけ CompleteReceive を呼ぶ。</summary>
+    private void TryCompleteReceiveIfReady(ReceiveState state)
+    {
+        if (state.ReceivedChunks >= state.TotalChunks && !string.IsNullOrEmpty(state.ExpectedSha256))
+        {
+            CompleteReceive(state);
+        }
     }
 
     private void HandleFileAck(byte[] data)
@@ -601,10 +685,12 @@ public sealed class TransferService : ITransferService
 
     // === 承認/拒否 ===
 
-    /// <summary>受信承認待ちの転送を承認する。ファイルストリームを開いて受信可能にする。</summary>
+    /// <summary>受信承認待ちの転送を承認する。ファイルストリームを開いて受信可能にする。
+    /// P-6: 内部 dictionary が Guid 化されたため string → Guid を 1 度パースして以降使い回す。</summary>
     public void ApproveTransfer(string transferId)
     {
-        if (!_pendingApprovals.TryRemove(transferId, out var state))
+        if (!Guid.TryParse(transferId, out var tid)) return;
+        if (!_pendingApprovals.TryRemove(tid, out var state))
         {
             Util.Logger.Log($"承認対象が見つかりません: {transferId}", Util.LogLevel.Warning);
             return;
@@ -631,7 +717,7 @@ public sealed class TransferService : ITransferService
         state.ReceivedChunkSet = new bool[state.TotalChunks];
         state.WrittenBytes = 0;
         state.ReceivedChunks = 0;
-        _receiveStates[transferId] = state;
+        _receiveStates[tid] = state;
 
         // 承認前にバッファされたチャンクを処理
         if (state.BufferedChunks is { Count: > 0 })
@@ -646,7 +732,8 @@ public sealed class TransferService : ITransferService
     /// <summary>受信承認待ちの転送を拒否する。送信側に FileReject を送信する。</summary>
     public void RejectTransfer(string transferId)
     {
-        if (!_pendingApprovals.TryRemove(transferId, out var state))
+        if (!Guid.TryParse(transferId, out var tid)) return;
+        if (!_pendingApprovals.TryRemove(tid, out var state))
         {
             Util.Logger.Log($"拒否対象が見つかりません: {transferId}", Util.LogLevel.Warning);
             return;
@@ -674,7 +761,8 @@ public sealed class TransferService : ITransferService
     /// <summary>進行中の転送をキャンセルする。</summary>
     public void CancelTransfer(string transferId)
     {
-        if (_receiveStates.TryRemove(transferId, out var receiveState))
+        if (!Guid.TryParse(transferId, out var tid)) return;
+        if (_receiveStates.TryRemove(tid, out var receiveState))
         {
             Util.Logger.Log($"受信キャンセル: {receiveState.FileName}");
             receiveState.Item.State = TransferState.Cancelled;
@@ -683,7 +771,7 @@ public sealed class TransferService : ITransferService
             TransferError?.Invoke(this, receiveState.Item);
             return;
         }
-        if (_pendingApprovals.TryRemove(transferId, out var pendingState))
+        if (_pendingApprovals.TryRemove(tid, out var pendingState))
         {
             Util.Logger.Log($"承認待ちキャンセル: {pendingState.FileName}");
             pendingState.Item.State = TransferState.Cancelled;
@@ -691,7 +779,7 @@ public sealed class TransferService : ITransferService
             TransferError?.Invoke(this, pendingState.Item);
             return;
         }
-        if (Guid.TryParse(transferId, out var tid) && _activeTransfers.TryRemove(tid, out var sendItem))
+        if (_activeTransfers.TryRemove(tid, out var sendItem))
         {
             Util.Logger.Log($"送信キャンセル: {sendItem.FileName}");
             sendItem.State = TransferState.Cancelled;
@@ -751,7 +839,8 @@ public sealed class TransferService : ITransferService
     /// </summary>
     private sealed class ReceiveState
     {
-        public string TransferId { get; set; } = string.Empty;
+        /// <summary>転送一意 ID。P-6: 旧 string 型から Guid 型に変更（dictionary キーと一致）。</summary>
+        public Guid TransferId { get; set; }
         public string FileName { get; set; } = string.Empty;
         public long FileSize { get; set; }
         public int TotalChunks { get; set; }
@@ -768,5 +857,7 @@ public sealed class TransferService : ITransferService
         public List<byte[]>? BufferedChunks { get; set; }
         /// <summary>承認待ちバッファの累積バイト数（OOM 防止の上限管理用）。</summary>
         public long BufferedBytes { get; set; }
+        /// <summary>P-11: 進捗通知の最終発火時刻（時間ベース throttle 用）。</summary>
+        public long LastProgressTick { get; set; }
     }
 }

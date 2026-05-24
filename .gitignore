@@ -12,6 +12,9 @@ obj/
 # NuGet
 packages/
 
+# Serena MCP ローカルキャッシュ
+.serena/
+
 # OS files
 Thumbs.db
 .DS_Store

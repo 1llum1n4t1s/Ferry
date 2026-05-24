@@ -1,8 +1,5 @@
 using System;
-using System.Reflection;
 using System.Threading.Tasks;
-using Avalonia;
-using Avalonia.Styling;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Ferry.Services;
@@ -19,73 +16,60 @@ public sealed partial class SettingsViewModel : ViewModelBase
     private bool _isLoading;
 
     [ObservableProperty]
-    private string _displayName = Environment.MachineName;
+    public partial string DisplayName { get; set; } = Environment.MachineName;
 
     /// <summary>テーマモード選択肢の表示名一覧（ロケール連動）。</summary>
     public string[] ThemeOptions => [App.Text("Settings.Theme.System"), App.Text("Settings.Theme.Light"), App.Text("Settings.Theme.Dark")];
 
     /// <summary>選択中のテーマインデックス（0=System, 1=Light, 2=Dark）。</summary>
     [ObservableProperty]
-    private int _selectedThemeIndex;
+    public partial int SelectedThemeIndex { get; set; }
 
     /// <summary>選択中のロケールキー。</summary>
     [ObservableProperty]
-    private string _selectedLocale = string.Empty;
+    public partial string SelectedLocale { get; set; } = string.Empty;
 
     /// <summary>受信ファイルの保存先ディレクトリ。</summary>
     [ObservableProperty]
-    private string _saveDirectory = string.Empty;
+    public partial string SaveDirectory { get; set; } = string.Empty;
+
+    // N-2: 旧 RunAtStartup は AutoStartWithWindows と統合済み
 
     [ObservableProperty]
-    private bool _runAtStartup;
+    public partial bool StartMinimized { get; set; }
 
     [ObservableProperty]
-    private bool _startMinimized;
-
-    [ObservableProperty]
-    private bool _minimizeToTray;
+    public partial bool MinimizeToTray { get; set; }
 
     // --- 通知設定 ---
 
     /// <summary>受信サウンドを再生するか。</summary>
     [ObservableProperty]
-    private bool _enableNotificationSound = true;
+    public partial bool EnableNotificationSound { get; set; } = true;
 
     // --- ファイル転送設定 ---
 
     /// <summary>受信ファイルの保存先フォルダ。空の場合はダウンロードフォルダ。</summary>
     [ObservableProperty]
-    private string _receiveFileSavePath = string.Empty;
+    public partial string ReceiveFileSavePath { get; set; } = string.Empty;
 
     /// <summary>ファイル受信を自動承認するか。</summary>
     [ObservableProperty]
-    private bool _autoAcceptFileTransfer = true;
+    public partial bool AutoAcceptFileTransfer { get; set; } = true;
 
-    // --- 外観設定 ---
-
-    /// <summary>テーマ ("dark" / "light" / "system")。</summary>
-    [ObservableProperty]
-    private string _theme = "dark";
-
-    /// <summary>アクセントカラー (hex)。</summary>
-    [ObservableProperty]
-    private string _accentColor = "#007AFF";
-
-    /// <summary>フォントサイズ ("small" / "medium" / "large")。</summary>
-    [ObservableProperty]
-    private string _fontSize = "medium";
+    // N-1: 旧 Theme / AccentColor / FontSize は SelectedThemeIndex (ThemeMode) と二重定義のため削除済み
 
     // --- アプリ動作設定 ---
 
     /// <summary>Windows 起動時に自動起動するか。</summary>
     [ObservableProperty]
-    private bool _autoStartWithWindows;
+    public partial bool AutoStartWithWindows { get; set; }
 
     // === バージョン ===
 
     /// <summary>バージョン表示テキスト。</summary>
     [ObservableProperty]
-    private string _versionText = string.Empty;
+    public partial string VersionText { get; set; } = string.Empty;
 
     public SettingsViewModel(ISettingsService settingsService)
     {
@@ -117,15 +101,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
             SaveDirectory = string.IsNullOrEmpty(s.SaveDirectory)
                 ? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads")
                 : s.SaveDirectory;
-            RunAtStartup = s.RunAtStartup;
             StartMinimized = s.StartMinimized;
             MinimizeToTray = s.MinimizeToTray;
             EnableNotificationSound = s.EnableNotificationSound;
             ReceiveFileSavePath = s.ReceiveFileSavePath;
             AutoAcceptFileTransfer = s.AutoAcceptFileTransfer;
-            Theme = s.Theme;
-            AccentColor = s.AccentColor;
-            FontSize = s.FontSize;
             AutoStartWithWindows = s.AutoStartWithWindows;
         }
         finally
@@ -152,15 +132,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
         s.ThemeMode = ThemeIndexToMode(SelectedThemeIndex);
         s.Locale = SelectedLocale;
         s.SaveDirectory = SaveDirectory;
-        s.RunAtStartup = RunAtStartup;
         s.StartMinimized = StartMinimized;
         s.MinimizeToTray = MinimizeToTray;
         s.EnableNotificationSound = EnableNotificationSound;
         s.ReceiveFileSavePath = ReceiveFileSavePath;
         s.AutoAcceptFileTransfer = AutoAcceptFileTransfer;
-        s.Theme = Theme;
-        s.AccentColor = AccentColor;
-        s.FontSize = FontSize;
         s.AutoStartWithWindows = AutoStartWithWindows;
         await _settingsService.SaveAsync();
     }
@@ -179,38 +155,40 @@ public sealed partial class SettingsViewModel : ViewModelBase
     /// <summary>保存先フォルダ選択ダイアログを要求するイベント。</summary>
     public event EventHandler? BrowseSaveDirectoryRequested;
 
+    /// <summary>テーマ切替要求イベント (App.axaml.cs で購読し RequestedThemeVariant を更新)。</summary>
+    public event EventHandler<int>? ThemeChangeRequested;
+
+    /// <summary>更新チェック要求イベント (App.axaml.cs で購読)。</summary>
+    public event EventHandler? UpdateCheckRequested;
+
     /// <summary>
-    /// 手動更新チェックを実行する。App の更新ダイアログを表示する。
+    /// 手動更新チェックを要求する。実際の Check4Update 実行は App 側に委譲 (N-6: MVVM 厳密化)。
     /// </summary>
     [RelayCommand]
     private void CheckForUpdate()
     {
-        if (Application.Current is App app)
-            app.Check4Update(true);
+        UpdateCheckRequested?.Invoke(this, EventArgs.Empty);
     }
 
-    /// <summary>ロード中でなければ設定を保存する。各プロパティ変更ハンドラから呼び出す共通ヘルパー。</summary>
-    private void SaveIfNotLoading() { if (!_isLoading) SaveSettingsCommand.Execute(null); }
+    /// <summary>ロード中でなければ設定を保存する。各プロパティ変更ハンドラから呼び出す共通ヘルパー。
+    /// RelayCommand 生成 Command.Execute(null) ではなく直接メソッドを fire-and-forget で呼ぶ
+    /// （内部呼び出しに Command 経由は不要、N-20 正規化）。</summary>
+    private void SaveIfNotLoading() { if (!_isLoading) _ = SaveSettingsAsync(); }
 
     partial void OnDisplayNameChanged(string value) => SaveIfNotLoading();
-    partial void OnRunAtStartupChanged(bool value) => SaveIfNotLoading();
     partial void OnStartMinimizedChanged(bool value) => SaveIfNotLoading();
     partial void OnMinimizeToTrayChanged(bool value) => SaveIfNotLoading();
     partial void OnSaveDirectoryChanged(string value) => SaveIfNotLoading();
     partial void OnEnableNotificationSoundChanged(bool value) => SaveIfNotLoading();
     partial void OnReceiveFileSavePathChanged(string value) => SaveIfNotLoading();
     partial void OnAutoAcceptFileTransferChanged(bool value) => SaveIfNotLoading();
-    partial void OnThemeChanged(string value) => SaveIfNotLoading();
-    partial void OnAccentColorChanged(string value) => SaveIfNotLoading();
-    partial void OnFontSizeChanged(string value) => SaveIfNotLoading();
     partial void OnAutoStartWithWindowsChanged(bool value)
     {
         if (!_isLoading)
         {
-            // レジストリに自動起動を登録/解除
-            if (_settingsService is Services.SettingsService ss)
-                ss.SetAutoStart(value);
-            SaveSettingsCommand.Execute(null);
+            // レジストリに自動起動を登録/解除（インターフェース経由、N-21 正規化）
+            _settingsService.SetAutoStart(value);
+            _ = SaveSettingsAsync();
         }
     }
 
@@ -224,24 +202,14 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     private void LoadVersionInfo()
     {
-        var raw = typeof(SettingsViewModel).Assembly
-            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "1.0.0";
-        // ビルドメタデータ（'+' 以降）を除去
-        VersionText = raw.Contains('+') ? raw.Split('+')[0] : raw;
+        // N-9: Reflection (`AssemblyInformationalVersion`) を Native AOT 安全な static 定数に置換
+        VersionText = AppVersion.Value;
     }
 
     partial void OnSelectedThemeIndexChanged(int value)
     {
-        // テーマを即座に切り替え
-        if (Application.Current is { } app)
-        {
-            app.RequestedThemeVariant = value switch
-            {
-                1 => ThemeVariant.Light,
-                2 => ThemeVariant.Dark,
-                _ => ThemeVariant.Default, // OS 追従
-            };
-        }
+        // テーマを即座に切り替え (N-6: View 側 = App.axaml.cs で RequestedThemeVariant を更新)
+        ThemeChangeRequested?.Invoke(this, value);
         SaveIfNotLoading();
     }
 }

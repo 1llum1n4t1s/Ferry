@@ -39,8 +39,6 @@
   <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">수신 파일 저장 위치</x:String>
   <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">변경</x:String>
   <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">동작</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">시작 시 Ferry 열기</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">컴퓨터 시작 시 자동으로 실행됩니다</x:String>
   <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">최소화 상태로 시작</x:String>
   <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">백그라운드에서 시작됩니다</x:String>
   <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">닫기 시 트레이로 최소화</x:String>
@@ -65,13 +63,14 @@
   <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN 직접 연결</x:String>
   <x:String x:Key="Text.Route.Stun" xml:space="preserve">인터넷 P2P (STUN)</x:String>
   <x:String x:Key="Text.Route.Relay" xml:space="preserve">서버 중계 (TURN)</x:String>
-  <x:String x:Key="Text.Update.Checking" xml:space="preserve">업데이트 확인 중…</x:String>
-  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">개발 환경에서는 업데이트를 확인할 수 없습니다</x:String>
-  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">v{0} 다운로드 중…</x:String>
-  <x:String x:Key="Text.Update.Applying" xml:space="preserve">업데이트 적용 중…재시작합니다</x:String>
-  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">최신 버전입니다 ✓</x:String>
-  <x:String x:Key="Text.Update.Error" xml:space="preserve">업데이트 확인 실패: {0}</x:String>
-  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">알 수 없음</x:String>
+  <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
+  <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">이 소프트웨어의 새 버전을 사용할 수 있습니다: </x:String>
+  <x:String x:Key="Text.SelfUpdate.Checking" xml:space="preserve">업데이트 확인 중...</x:String>
+  <x:String x:Key="Text.SelfUpdate.DownloadAndInstall" xml:space="preserve">다운로드 및 설치</x:String>
+  <x:String x:Key="Text.SelfUpdate.Error" xml:space="preserve">업데이트 확인 실패!</x:String>
+  <x:String x:Key="Text.SelfUpdate.IgnoreThisVersion" xml:space="preserve">이 버전 건너뛰기</x:String>
+  <x:String x:Key="Text.SelfUpdate.Title" xml:space="preserve">소프트웨어 업데이트</x:String>
+  <x:String x:Key="Text.SelfUpdate.UpToDate" xml:space="preserve">현재 사용 가능한 업데이트가 없습니다.</x:String>
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">수신이 거부되었습니다</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">재개 실패</x:String>
   <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
@@ -102,12 +101,6 @@
   <!-- Transfer: Empty -->
   <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">전송 내역 없음</x:String>
 
-  <!-- Update -->
-  <x:String x:Key="Text.Update.Available" xml:space="preserve">업데이트 사용 가능</x:String>
-  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">업데이트 확인 실패</x:String>
-  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">다운로드 및 설치</x:String>
-  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">이 버전 무시</x:String>
-
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">알림</x:String>
   <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">알림 소리</x:String>
@@ -121,11 +114,6 @@
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">수신되는 파일을 자동으로 수락합니다</x:String>
 
   <!-- Settings: Appearance (extended) -->
-  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">강조 색상</x:String>
-  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">글꼴 크기</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">작게</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">보통</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">크게</x:String>
 
   <!-- Settings: Auto Start -->
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Windows와 함께 시작</x:String>

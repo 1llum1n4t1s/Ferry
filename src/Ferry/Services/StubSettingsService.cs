@@ -16,4 +16,5 @@ public sealed class StubSettingsService : ISettingsService
 
     public Task LoadAsync() => Task.CompletedTask;
     public Task SaveAsync() => Task.CompletedTask;
+    public void SetAutoStart(bool enabled) { /* スタブは no-op */ }
 }

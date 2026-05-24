@@ -29,8 +29,7 @@ public sealed class AppSettings
     /// <summary>WebSocket リレーサーバーの URL（NAT 越え用）。</summary>
     public string RelayUrl { get; set; } = string.Empty;
 
-    /// <summary>OS 起動時にアプリを自動起動するか。</summary>
-    public bool RunAtStartup { get; set; }
+    // N-2: 旧 RunAtStartup は AutoStartWithWindows と意味が重複・実機能なしのため削除済み
 
     /// <summary>起動時にウィンドウを最小化した状態にするか。</summary>
     public bool StartMinimized { get; set; }
@@ -66,16 +65,8 @@ public sealed class AppSettings
     /// <summary>ファイル受信を自動承認するか。</summary>
     public bool AutoAcceptFileTransfer { get; set; } = true;
 
-    // --- 外観設定 ---
-
-    /// <summary>テーマ ("dark" / "light" / "system")。</summary>
-    public string Theme { get; set; } = "dark";
-
-    /// <summary>アクセントカラー (hex)。</summary>
-    public string AccentColor { get; set; } = "#007AFF";
-
-    /// <summary>フォントサイズ ("small" / "medium" / "large")。</summary>
-    public string FontSize { get; set; } = "medium";
+    // N-1: 旧 Theme / AccentColor / FontSize は ThemeMode と二重定義 + 未実装だったため削除済み
+    // テーマは ThemeMode で一元管理する
 
     // --- アプリ動作設定 ---
 

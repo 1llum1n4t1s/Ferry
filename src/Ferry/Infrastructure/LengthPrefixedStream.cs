@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Buffers.Binary;
 using System.IO;
 using System.Threading;
@@ -17,18 +18,36 @@ public static class LengthPrefixedStream
     private const int MaxMessageSize = 16 * 1024 * 1024;
 
     /// <summary>
-    /// メッセージを長さプレフィックス付きで書き込む。
+    /// メッセージを長さプレフィックス付きで書き込む（byte[] 版、後方互換用）。
+    /// 内部で <see cref="WriteMessageAsync(Stream, ReadOnlyMemory{byte}, CancellationToken)"/> に委譲する。
     /// </summary>
-    public static async Task WriteMessageAsync(Stream stream, byte[] data, CancellationToken ct = default)
-    {
-        // ヘッダー + ペイロードを1バッファに結合して1回で送信
-        // NoDelay 有効時、2回の WriteAsync は2つの TCP セグメントになるため統合
-        var frame = new byte[4 + data.Length];
-        BinaryPrimitives.WriteInt32BigEndian(frame, data.Length);
-        data.CopyTo(frame, 4);
+    public static Task WriteMessageAsync(Stream stream, byte[] data, CancellationToken ct = default)
+        => WriteMessageAsync(stream, data.AsMemory(), ct);
 
-        await stream.WriteAsync(frame, ct);
-        await stream.FlushAsync(ct);
+    /// <summary>
+    /// メッセージを長さプレフィックス付きで書き込む（ReadOnlyMemory 版）。
+    /// M-12: 毎送信で new byte[] していたフレームバッファを ArrayPool で再利用。
+    /// P-1: 送信パスのホットループから渡された ArrayPool 借用バッファをそのまま受け取れるよう
+    /// ReadOnlyMemory&lt;byte&gt; をプライマリ受け口にした。
+    /// 1 GB 転送で約 1 GB の Gen0 alloc が削減される。
+    /// </summary>
+    public static async Task WriteMessageAsync(Stream stream, ReadOnlyMemory<byte> data, CancellationToken ct = default)
+    {
+        var frameSize = 4 + data.Length;
+        var buffer = ArrayPool<byte>.Shared.Rent(frameSize);
+        try
+        {
+            BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan(0, 4), data.Length);
+            data.Span.CopyTo(buffer.AsSpan(4));
+            // ヘッダー + ペイロードを1バッファに結合して1回で送信
+            // NoDelay 有効時、2回の WriteAsync は2つの TCP セグメントになるため統合
+            await stream.WriteAsync(buffer.AsMemory(0, frameSize), ct);
+            await stream.FlushAsync(ct);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     /// <summary>
@@ -37,11 +56,11 @@ public static class LengthPrefixedStream
     /// </summary>
     public static async Task<byte[]?> ReadMessageAsync(Stream stream, CancellationToken ct = default)
     {
+        // M-11: 自作 ReadExactAsync を .NET 7+ の Stream.ReadExactlyAsync に置換
         // ヘッダー（4byte 長さ）を読み取る
         var header = new byte[4];
-        var headerRead = await ReadExactAsync(stream, header, ct);
-        if (!headerRead)
-            return null; // 接続が閉じられた
+        try { await stream.ReadExactlyAsync(header, ct); }
+        catch (EndOfStreamException) { return null; } // 接続が閉じられた
 
         var length = BinaryPrimitives.ReadInt32BigEndian(header);
 
@@ -53,26 +72,9 @@ public static class LengthPrefixedStream
 
         // ペイロードを読み取る
         var payload = new byte[length];
-        var payloadRead = await ReadExactAsync(stream, payload, ct);
-        if (!payloadRead)
-            return null; // 途中で切断
+        try { await stream.ReadExactlyAsync(payload, ct); }
+        catch (EndOfStreamException) { return null; } // 途中で切断
 
         return payload;
-    }
-
-    /// <summary>
-    /// 指定バイト数を確実に読み取る。途中で切断された場合は false を返す。
-    /// </summary>
-    private static async Task<bool> ReadExactAsync(Stream stream, byte[] buffer, CancellationToken ct)
-    {
-        var offset = 0;
-        while (offset < buffer.Length)
-        {
-            var read = await stream.ReadAsync(buffer.AsMemory(offset, buffer.Length - offset), ct);
-            if (read == 0)
-                return false; // 接続が閉じられた
-            offset += read;
-        }
-        return true;
     }
 }

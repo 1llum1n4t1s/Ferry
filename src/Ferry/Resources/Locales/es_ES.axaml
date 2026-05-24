@@ -39,8 +39,6 @@
   <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">Ubicación de archivos recibidos</x:String>
   <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">Examinar</x:String>
   <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">Comportamiento</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">Abrir Ferry al inicio</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">Se inicia automáticamente al encender el equipo</x:String>
   <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">Iniciar minimizado</x:String>
   <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">Se inicia en segundo plano</x:String>
   <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">Minimizar a la bandeja al cerrar</x:String>
@@ -65,13 +63,14 @@
   <x:String x:Key="Text.Route.Direct" xml:space="preserve">Conexión directa LAN</x:String>
   <x:String x:Key="Text.Route.Stun" xml:space="preserve">Internet P2P (STUN)</x:String>
   <x:String x:Key="Text.Route.Relay" xml:space="preserve">Relé del servidor (TURN)</x:String>
-  <x:String x:Key="Text.Update.Checking" xml:space="preserve">Buscando actualizaciones…</x:String>
-  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">No se pueden buscar actualizaciones en desarrollo</x:String>
-  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">Descargando v{0}…</x:String>
-  <x:String x:Key="Text.Update.Applying" xml:space="preserve">Aplicando actualización… Reiniciando</x:String>
-  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">Actualizado ✓</x:String>
-  <x:String x:Key="Text.Update.Error" xml:space="preserve">Error al buscar actualizaciones: {0}</x:String>
-  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">Desconocido</x:String>
+  <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
+  <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">Nueva versión de este software disponible: </x:String>
+  <x:String x:Key="Text.SelfUpdate.Checking" xml:space="preserve">Buscando actualizaciones...</x:String>
+  <x:String x:Key="Text.SelfUpdate.DownloadAndInstall" xml:space="preserve">Descargar e instalar</x:String>
+  <x:String x:Key="Text.SelfUpdate.Error" xml:space="preserve">¡Error al buscar actualizaciones!</x:String>
+  <x:String x:Key="Text.SelfUpdate.IgnoreThisVersion" xml:space="preserve">Omitir Esta Versión</x:String>
+  <x:String x:Key="Text.SelfUpdate.Title" xml:space="preserve">Actualización de Software</x:String>
+  <x:String x:Key="Text.SelfUpdate.UpToDate" xml:space="preserve">Actualmente no hay actualizaciones disponibles.</x:String>
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Transferencia rechazada</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Error al reanudar</x:String>
   <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
@@ -102,12 +101,6 @@
   <!-- Transfer: Empty -->
   <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">Sin transferencias</x:String>
 
-  <!-- Update -->
-  <x:String x:Key="Text.Update.Available" xml:space="preserve">Actualización disponible</x:String>
-  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">Error al buscar actualizaciones</x:String>
-  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">Descargar e instalar</x:String>
-  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">Ignorar esta versión</x:String>
-
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">Notificaciones</x:String>
   <x:String x:Key="Text.Settings.NotificationSound" xml:space="preserve">Sonido de notificación</x:String>
@@ -121,11 +114,6 @@
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">Aceptar automáticamente los archivos entrantes</x:String>
 
   <!-- Settings: Appearance (extended) -->
-  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">Color de acento</x:String>
-  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">Tamaño de fuente</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">Pequeño</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">Mediano</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">Grande</x:String>
 
   <!-- Settings: Auto Start -->
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Iniciar con Windows</x:String>

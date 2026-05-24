@@ -1,6 +1,8 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Ferry.Infrastructure;
 
@@ -15,15 +17,17 @@ public static class FirewallHelper
     /// <summary>
     /// Windows 環境でのみ、ファイアウォールルールの有無を確認し、
     /// なければ UAC 昇格で netsh を実行して追加する。
+    /// N-15: 同期 Process API を Process.WaitForExitAsync / ReadToEndAsync に置換し、
+    /// 呼び出し側の Task.Run スレッド占有を回避（async 一貫性）。
     /// </summary>
-    public static void EnsureFirewallRule()
+    public static async Task EnsureFirewallRuleAsync(CancellationToken ct = default)
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             return;
 
         try
         {
-            if (RuleExists())
+            if (await RuleExistsAsync(ct))
             {
                 Util.Logger.Log("ファイアウォールルール確認済み");
                 return;
@@ -39,11 +43,14 @@ public static class FirewallHelper
         }
     }
 
+    /// <summary>後方互換用の同期 wrapper（既存の Task.Run 呼び出しを段階的に置換するため）。</summary>
+    public static void EnsureFirewallRule() => EnsureFirewallRuleAsync().GetAwaiter().GetResult();
+
     /// <summary>
-    /// netsh で TCP ルールの存在を確認する（昇格不要）。
+    /// netsh で TCP ルールの存在を非同期に確認する（昇格不要）。
     /// 旧バージョンの UDP ルールは無視する。
     /// </summary>
-    private static bool RuleExists()
+    private static async Task<bool> RuleExistsAsync(CancellationToken ct)
     {
         var psi = new ProcessStartInfo
         {
@@ -58,8 +65,11 @@ public static class FirewallHelper
         using var process = Process.Start(psi);
         if (process == null) return false;
 
-        var output = process.StandardOutput.ReadToEnd();
-        process.WaitForExit(5000);
+        var output = await process.StandardOutput.ReadToEndAsync(ct);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
+        try { await process.WaitForExitAsync(timeoutCts.Token); }
+        catch (OperationCanceledException) { /* タイムアウトでも判定継続 */ }
 
         // TCP ルールが存在するか確認（旧 UDP ルールとの区別）
         return output.Contains(RuleName, StringComparison.OrdinalIgnoreCase)

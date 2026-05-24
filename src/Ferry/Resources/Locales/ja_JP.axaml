@@ -49,8 +49,6 @@
   <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">受信ファイルの保存先</x:String>
   <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">変更</x:String>
   <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">動作</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup" xml:space="preserve">起動時に Ferry を開く</x:String>
-  <x:String x:Key="Text.Settings.RunAtStartup.Desc" xml:space="preserve">パソコンの起動時に自動で立ち上がります</x:String>
   <x:String x:Key="Text.Settings.StartMinimized" xml:space="preserve">最小化した状態で起動</x:String>
   <x:String x:Key="Text.Settings.StartMinimized.Desc" xml:space="preserve">バックグラウンドで起動します</x:String>
   <x:String x:Key="Text.Settings.MinimizeToTray" xml:space="preserve">最小化時にタスクトレイに格納</x:String>
@@ -82,18 +80,14 @@
   <x:String x:Key="Text.Route.Stun" xml:space="preserve">インターネット P2P（STUN）</x:String>
   <x:String x:Key="Text.Route.Relay" xml:space="preserve">サーバー経由（TURN リレー）</x:String>
 
-  <!-- Update Messages -->
-  <x:String x:Key="Text.Update.Checking" xml:space="preserve">更新を確認中…</x:String>
-  <x:String x:Key="Text.Update.DevEnvironment" xml:space="preserve">開発環境では更新チェックできません</x:String>
-  <x:String x:Key="Text.Update.Downloading" xml:space="preserve">v{0} をダウンロード中…</x:String>
-  <x:String x:Key="Text.Update.Applying" xml:space="preserve">更新を適用中…再起動します</x:String>
-  <x:String x:Key="Text.Update.UpToDate" xml:space="preserve">最新バージョンです ✓</x:String>
-  <x:String x:Key="Text.Update.Error" xml:space="preserve">更新チェック失敗: {0}</x:String>
-  <x:String x:Key="Text.Update.Unknown" xml:space="preserve">不明</x:String>
-  <x:String x:Key="Text.Update.Available" xml:space="preserve">アップデートがあります</x:String>
-  <x:String x:Key="Text.Update.DownloadInstall" xml:space="preserve">ダウンロードしてインストール</x:String>
-  <x:String x:Key="Text.Update.IgnoreVersion" xml:space="preserve">このバージョンを無視</x:String>
-  <x:String x:Key="Text.Update.CheckFailed" xml:space="preserve">更新チェックに失敗しました</x:String>
+  <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
+  <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">新しいバージョンが利用可能です！</x:String>
+  <x:String x:Key="Text.SelfUpdate.Checking" xml:space="preserve">更新を確認しています…</x:String>
+  <x:String x:Key="Text.SelfUpdate.DownloadAndInstall" xml:space="preserve">ダウンロード＆インストール</x:String>
+  <x:String x:Key="Text.SelfUpdate.Error" xml:space="preserve">更新の確認に失敗しました！</x:String>
+  <x:String x:Key="Text.SelfUpdate.IgnoreThisVersion" xml:space="preserve">このバージョンをスキップ</x:String>
+  <x:String x:Key="Text.SelfUpdate.Title" xml:space="preserve">ソフトウェアの更新</x:String>
+  <x:String x:Key="Text.SelfUpdate.UpToDate" xml:space="preserve">最新バージョンを使用しています。</x:String>
   <x:String x:Key="Text.Close" xml:space="preserve">閉じる</x:String>
 
   <!-- Connection Phase Status -->
@@ -105,6 +99,7 @@
 
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">ウィンドウを表示</x:String>
+  <x:String x:Key="Text.Tray.CheckForUpdate" xml:space="preserve">アップデートを確認…</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">終了</x:String>
 
   <!-- Transfer Messages -->
@@ -134,14 +129,22 @@
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">受信ファイルを自動的に承認する</x:String>
 
   <!-- Settings: Appearance (extended) -->
-  <x:String x:Key="Text.Settings.AccentColor" xml:space="preserve">アクセントカラー</x:String>
-  <x:String x:Key="Text.Settings.FontSize" xml:space="preserve">フォントサイズ</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Small" xml:space="preserve">小</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Medium" xml:space="preserve">中</x:String>
-  <x:String x:Key="Text.Settings.FontSize.Large" xml:space="preserve">大</x:String>
 
   <!-- Settings: Auto Start -->
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Windows と同時に起動</x:String>
   <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Windows のスタートアップにレジストリ登録する</x:String>
+
+  <!-- Common: 確認ダイアログ等の共通文言 -->
+  <x:String x:Key="Text.Warn" xml:space="preserve">警告</x:String>
+  <x:String x:Key="Text.Sure" xml:space="preserve">OK</x:String>
+  <x:String x:Key="Text.Cancel" xml:space="preserve">キャンセル</x:String>
+  <x:String x:Key="Text.Yes" xml:space="preserve">はい</x:String>
+  <x:String x:Key="Text.No" xml:space="preserve">いいえ</x:String>
+
+  <!-- Member: メンバーリスト操作 -->
+  <x:String x:Key="Text.Member.Menu" xml:space="preserve">メニュー</x:String>
+  <x:String x:Key="Text.Member.Delete" xml:space="preserve">削除</x:String>
+  <x:String x:Key="Text.Member.Delete.Confirm" xml:space="preserve">"{0}" をメンバーから削除しますか？
+この操作は取り消せません。</x:String>
 
 </ResourceDictionary>

@@ -304,7 +304,7 @@ public class FileChunkerTests : IDisposable
     [Fact]
     public void CalculateTotalChunks_ゼロサイズは0チャンクを返すこと()
     {
-        // fileSize=0 の場合: (0 + 16383) / 16384 = 0
+        // fileSize=0 の場合: (0 + 65535) / 65536 = 0 (P-15 で 64KB に更新)
         Assert.Equal(0, FileChunker.CalculateTotalChunks(0));
     }
 
@@ -327,11 +327,12 @@ public class FileChunkerTests : IDisposable
     }
 
     [Theory]
-    [InlineData(16_384, 1)]       // ちょうど1チャンク
-    [InlineData(16_385, 2)]       // 1バイトはみ出し
-    [InlineData(32_768, 2)]       // ちょうど2チャンク
-    [InlineData(100_000, 7)]      // 100KB ≈ 6.1チャンク → 7
-    [InlineData(1_000_000, 62)]   // 1MB ≈ 61.04チャンク → 62
+    // P-15: ChunkSize 64KB (65,536 bytes) 前提に更新
+    [InlineData(65_536, 1)]        // ちょうど1チャンク
+    [InlineData(65_537, 2)]        // 1バイトはみ出し
+    [InlineData(131_072, 2)]       // ちょうど2チャンク
+    [InlineData(100_000, 2)]       // 100KB → 2チャンク
+    [InlineData(1_000_000, 16)]    // 1MB ≈ 15.26チャンク → 16
     public void CalculateTotalChunks_各種サイズで正しいチャンク数を返すこと(long fileSize, int expected)
     {
         Assert.Equal(expected, FileChunker.CalculateTotalChunks(fileSize));
@@ -458,7 +459,7 @@ public class FileChunkerTests : IDisposable
     [Fact]
     public void 統合テスト_ファイルのチャンク分割とSHA256検証が一致すること()
     {
-        // テストデータ（ChunkSize * 2.5 = 40960バイト）
+        // テストデータ（ChunkSize * 2.5 = 163840バイト = 64KB × 2.5、P-15 で 64KB に更新）
         var data = new byte[TransferProtocol.ChunkSize * 2 + TransferProtocol.ChunkSize / 2];
         Random.Shared.NextBytes(data);
         var path = CreateTempFile(data);

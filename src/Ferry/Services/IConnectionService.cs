@@ -84,6 +84,15 @@ public interface IConnectionService
     Task SendAsync(byte[] data, CancellationToken ct = default);
 
     /// <summary>
+    /// DataChannel 経由でバイナリデータを送信する（<see cref="ReadOnlyMemory{T}"/> 版）。
+    /// P-1: 送信パスの alloc 削減のため、ArrayPool 借用バッファをコピーなしで渡せるオーバーロードを追加。
+    /// デフォルト実装は <c>ToArray()</c> で旧 API に委譲する。<see cref="ConnectionService"/> は
+    /// transport の Memory 版に直結することでホットパスのコピーを完全に解消する。
+    /// </summary>
+    Task SendAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default)
+        => SendAsync(data.ToArray(), ct);
+
+    /// <summary>
     /// 接続を切断し、リソースを解放する。
     /// </summary>
     Task DisconnectAsync(CancellationToken ct = default);

@@ -60,8 +60,9 @@ public class AppSettingsTests
     public void ブール設定のデフォルトがfalseであること()
     {
         var settings = new AppSettings();
-        Assert.False(settings.RunAtStartup);
+        // N-2: 旧 RunAtStartup は AutoStartWithWindows と統合済みのため検証から除外
         Assert.False(settings.StartMinimized);
         Assert.False(settings.MinimizeToTray);
+        Assert.False(settings.AutoStartWithWindows);
     }
 }

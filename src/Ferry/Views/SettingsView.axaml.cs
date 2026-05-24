@@ -12,6 +12,12 @@ namespace Ferry.Views;
 /// </summary>
 public partial class SettingsView : UserControl
 {
+    // OnUnloaded で対称に解除するため、購読対象の参照とハンドラを保持する
+    private ComboBox? _localeCombo;
+    private Button? _browseReceivePathButton;
+    private SettingsViewModel? _subscribedVm;
+    private EventHandler<SelectionChangedEventArgs>? _localeChanged;
+
     public SettingsView()
     {
         InitializeComponent();
@@ -22,57 +28,41 @@ public partial class SettingsView : UserControl
         base.OnLoaded(e);
 
         // ロケール ComboBox の初期化
-        var localeCombo = this.FindControl<ComboBox>("LocaleComboBox");
-        if (localeCombo != null)
+        _localeCombo = this.FindControl<ComboBox>("LocaleComboBox");
+        if (_localeCombo != null)
         {
-            localeCombo.ItemsSource = App.LocaleOptions;
-            localeCombo.DisplayMemberBinding = new Avalonia.Data.Binding("DisplayName");
+            _localeCombo.ItemsSource = App.LocaleOptions;
+            _localeCombo.DisplayMemberBinding = new Avalonia.Data.Binding("DisplayName");
 
             if (DataContext is SettingsViewModel vm)
             {
                 // 現在のロケールを選択
                 var current = App.LocaleOptions.FirstOrDefault(l => l.Key == vm.SelectedLocale);
-                if (current != null) localeCombo.SelectedItem = current;
+                if (current != null) _localeCombo.SelectedItem = current;
 
-                localeCombo.SelectionChanged += (_, _) =>
+                _localeChanged = (_, _) =>
                 {
-                    if (localeCombo.SelectedItem is LocaleItem item)
+                    if (_localeCombo.SelectedItem is LocaleItem item)
                         vm.SelectedLocale = item.Key;
                 };
+                _localeCombo.SelectionChanged += _localeChanged;
             }
         }
 
-        // フォントサイズ ComboBox の初期化
-        var fontSizeCombo = this.FindControl<ComboBox>("FontSizeComboBox");
-        if (fontSizeCombo != null && DataContext is SettingsViewModel settingsVm)
-        {
-            // 現在値に合わせて選択
-            var idx = settingsVm.FontSize switch
-            {
-                "small" => 0,
-                "large" => 2,
-                _ => 1, // medium
-            };
-            fontSizeCombo.SelectedIndex = idx;
-
-            fontSizeCombo.SelectionChanged += (_, _) =>
-            {
-                if (fontSizeCombo.SelectedItem is ComboBoxItem item && item.Tag is string tag)
-                    settingsVm.FontSize = tag;
-            };
-        }
+        // N-1: FontSizeComboBox 関連は AccentColor / FontSize の死蔵プロパティ削除に伴い撤去済み
 
         // BrowseSaveDirectory イベント購読
         if (DataContext is SettingsViewModel svm)
         {
             svm.BrowseSaveDirectoryRequested += OnBrowseSaveDirectoryRequested;
+            _subscribedVm = svm;
         }
 
         // 受信ファイル保存先の参照ボタン
-        var browseReceivePath = this.FindControl<Button>("BrowseReceivePathButton");
-        if (browseReceivePath != null)
+        _browseReceivePathButton = this.FindControl<Button>("BrowseReceivePathButton");
+        if (_browseReceivePathButton != null)
         {
-            browseReceivePath.Click += OnBrowseReceivePathClick;
+            _browseReceivePathButton.Click += OnBrowseReceivePathClick;
         }
     }
 
@@ -80,9 +70,23 @@ public partial class SettingsView : UserControl
     {
         base.OnUnloaded(e);
 
-        if (DataContext is SettingsViewModel vm)
+        // OnLoaded で += したものを対称に解除する。
+        // 再 Load される可能性があるので、解除後はフィールドを null クリアして次回の二重購読を防ぐ
+        if (_localeCombo != null && _localeChanged != null)
         {
-            vm.BrowseSaveDirectoryRequested -= OnBrowseSaveDirectoryRequested;
+            _localeCombo.SelectionChanged -= _localeChanged;
+        }
+        _localeChanged = null;
+
+        if (_browseReceivePathButton != null)
+        {
+            _browseReceivePathButton.Click -= OnBrowseReceivePathClick;
+        }
+
+        if (_subscribedVm != null)
+        {
+            _subscribedVm.BrowseSaveDirectoryRequested -= OnBrowseSaveDirectoryRequested;
+            _subscribedVm = null;
         }
     }
 

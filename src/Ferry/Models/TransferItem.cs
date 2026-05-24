@@ -15,19 +15,19 @@ public sealed partial class TransferItem : ObservableObject
     /// <summary>ファイル名。</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DisplayInfo))]
-    private string _fileName = string.Empty;
+    public partial string FileName { get; set; } = string.Empty;
 
     /// <summary>ファイルサイズ (バイト)。</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Progress))]
     [NotifyPropertyChangedFor(nameof(DisplayInfo))]
-    private long _fileSize;
+    public partial long FileSize { get; set; }
 
     /// <summary>転送済みバイト数。</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Progress))]
     [NotifyPropertyChangedFor(nameof(DisplayInfo))]
-    private long _transferredBytes;
+    public partial long TransferredBytes { get; set; }
 
     /// <summary>最後に確認済みのチャンクインデックス。</summary>
     public int LastConfirmedChunkIndex { get; set; } = -1;
@@ -38,7 +38,7 @@ public sealed partial class TransferItem : ObservableObject
     /// <summary>転送方向。</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DirectionSymbol))]
-    private TransferDirection _direction;
+    public partial TransferDirection Direction { get; set; }
 
     /// <summary>転送状態。</summary>
     [ObservableProperty]
@@ -47,21 +47,21 @@ public sealed partial class TransferItem : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsInProgress))]
     [NotifyPropertyChangedFor(nameof(IsWaitingApproval))]
     [NotifyPropertyChangedFor(nameof(DisplayInfo))]
-    private TransferState _state = TransferState.Pending;
+    public partial TransferState State { get; set; } = TransferState.Pending;
 
     /// <summary>エラーメッセージ（State が Error の場合）。</summary>
     [ObservableProperty]
-    private string? _errorMessage;
+    public partial string? ErrorMessage { get; set; }
 
     /// <summary>転送相手のピア名（送信先 or 送信元の表示名）。</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DisplayInfo))]
-    private string _peerName = string.Empty;
+    public partial string PeerName { get; set; } = string.Empty;
 
     /// <summary>転送完了日時。</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CompletedAtText))]
-    private DateTime? _completedAt;
+    public partial DateTime? CompletedAt { get; set; }
 
     /// <summary>SHA-256 ハッシュ値（転送完了後の検証用）。</summary>
     public string? Sha256Hash { get; set; }

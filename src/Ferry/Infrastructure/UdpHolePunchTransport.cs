@@ -53,7 +53,7 @@ public sealed class UdpHolePunchTransport : ITransport
     private readonly ConcurrentDictionary<uint, PendingMessage> _pendingMessages = new();
 
     // === 受信状態 ===
-    private readonly object _receiveLock = new();
+    // 実際の受信ロックは ReceivingMessage 単位の `lock (msg)` で行う（HandleData 内）
     private readonly ConcurrentDictionary<uint, ReceivingMessage> _receivingMessages = new();
 
     public bool IsConnected { get; private set; }
@@ -75,13 +75,13 @@ public sealed class UdpHolePunchTransport : ITransport
     /// 複数の STUN サーバーに順次問い合わせて外部 IP:port を取得する。
     /// 1つのサーバーが応答しなければ次のサーバーにフォールバックする。
     /// このソケットと同じ NAT マッピングを使うため、結果はそのままホールパンチに利用可能。
+    /// 先頭は自前 coturn (1llum1n4t1.net VPS)。残りは coturn 単体障害時のフォールバックとして公開 STUN を残す。
     /// </summary>
     private static readonly (string host, int port)[] StunServers =
     [
+        ("1llum1n4t1.net", 3478),
         ("stun.l.google.com", 19302),
-        ("stun1.l.google.com", 19302),
         ("stun.cloudflare.com", 3478),
-        ("stun.nextcloud.com", 443),
     ];
 
     public async Task<(string ip, int port)?> GetExternalEndpointAsync(CancellationToken ct = default)
@@ -156,13 +156,21 @@ public sealed class UdpHolePunchTransport : ITransport
         Util.Logger.Log("UDP ホールパンチ成功！");
     }
 
-    public async Task SendAsync(byte[] data, CancellationToken ct = default)
+    public Task SendAsync(byte[] data, CancellationToken ct = default)
+        => SendAsync(data.AsMemory(), ct);
+
+    /// <summary>
+    /// P-1: ArrayPool 借用バッファを受け取り、MTU フラグメント化して送信する。
+    /// 信頼性レイヤー（再送用）でフラグメント byte[] は保持が必要なため、
+    /// フラグメント化時点で再送用配列にコピーする（入力バッファは即解放可能）。
+    /// </summary>
+    public async Task SendAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default)
     {
         if (!IsConnected || _remoteEp == null)
             throw new InvalidOperationException("接続されていません");
 
         var msgId = Interlocked.Increment(ref _nextMsgId);
-        var fragments = FragmentMessage(data, (uint)msgId);
+        var fragments = FragmentMessage(data.Span, (uint)msgId);
         var pending = new PendingMessage(fragments.Length);
         _pendingMessages[(uint)msgId] = pending;
 
@@ -172,7 +180,8 @@ public sealed class UdpHolePunchTransport : ITransport
             await _windowSem.WaitAsync(ct);
 
             var seq = (uint)Interlocked.Increment(ref _nextSeq);
-            BinaryPrimitives.WriteUInt32BigEndian(frag.AsSpan(1), seq); // シーケンス番号をパケットに書き込み
+            // シーケンス番号をパケットに書き込み（Slice で範囲を明示）
+            BinaryPrimitives.WriteUInt32BigEndian(frag.AsSpan(1, 4), seq);
 
             var info = new SentPacketInfo(seq, (uint)msgId, frag);
             _sentPackets[seq] = info;
@@ -287,15 +296,19 @@ public sealed class UdpHolePunchTransport : ITransport
         }
     }
 
-    /// <summary>再送ループ: 未 ACK パケットを定期的に再送する。</summary>
+    /// <summary>
+    /// 再送ループ: 未 ACK パケットを定期的に再送する。
+    /// P-5: <see cref="Task.Delay(int, CancellationToken)"/> を <see cref="PeriodicTimer"/> に置換し、
+    /// ループあたりの Task allocation を撲滅。再送タイムアウト超過のパケットを 1 周期で一括スキャンする。
+    /// （RTT 推定は導入せず固定値のまま。動作中の信頼性レイヤーへの侵襲を最小化）
+    /// </summary>
     private async Task RetransmitLoopAsync(CancellationToken ct)
     {
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(RetransmitIntervalMs));
         try
         {
-            while (!ct.IsCancellationRequested)
+            while (await timer.WaitForNextTickAsync(ct))
             {
-                await Task.Delay(RetransmitIntervalMs, ct);
-
                 if (_remoteEp == null) continue;
 
                 var now = Environment.TickCount64;
@@ -324,8 +337,7 @@ public sealed class UdpHolePunchTransport : ITransport
     {
         // 相手の PUNCH を受信 → PUNCH_ACK を返す
         _remoteEp = from;
-        var ack = MakeHeaderOnlyPacket(PktPunchAck, 0);
-        _ = _udp.SendAsync(ack, ack.Length, from);
+        SendHeaderOnlyPacketFireAndForget(PktPunchAck, 0, from);
 
         if (!IsConnected)
         {
@@ -348,22 +360,24 @@ public sealed class UdpHolePunchTransport : ITransport
     {
         if (packet.Length < PacketHeaderSize + FragmentHeaderSize) return;
 
-        var seq = BinaryPrimitives.ReadUInt32BigEndian(packet.AsSpan(1));
-        var msgId = BinaryPrimitives.ReadUInt32BigEndian(packet.AsSpan(5));
-        var fragIdx = BinaryPrimitives.ReadUInt16BigEndian(packet.AsSpan(9));
-        var fragCount = BinaryPrimitives.ReadUInt16BigEndian(packet.AsSpan(11));
+        // P-4: BinaryPrimitives.Read* を 1 度の AsSpan() からスライスして読む
+        var packetSpan = packet.AsSpan();
+        var seq = BinaryPrimitives.ReadUInt32BigEndian(packetSpan.Slice(1, 4));
+        var msgId = BinaryPrimitives.ReadUInt32BigEndian(packetSpan.Slice(5, 4));
+        var fragIdx = BinaryPrimitives.ReadUInt16BigEndian(packetSpan.Slice(9, 2));
+        var fragCount = BinaryPrimitives.ReadUInt16BigEndian(packetSpan.Slice(11, 2));
 
         // 攻撃者制御の生値を弾く（OOM・配列外アクセス防止）
         if (fragCount == 0 || fragCount > MaxFragments || fragIdx >= fragCount) return;
 
-        // ACK を即座に返す
-        var ack = MakeHeaderOnlyPacket(PktAck, seq);
+        // P-4: ACK は 5 バイトの固定長ヘッダのみ。byte[] を新規確保せず、fire-and-forget の
+        // 内部で ArrayPool 借用 → SendAsync(ReadOnlyMemory) → Return で alloc を 0 に近づける。
         if (_remoteEp != null)
-            _ = _udp.SendAsync(ack, ack.Length, _remoteEp);
+            SendHeaderOnlyPacketFireAndForget(PktAck, seq, _remoteEp);
 
         // フラグメントデータを抽出
         var dataOffset = PacketHeaderSize + FragmentHeaderSize;
-        var fragData = packet.AsSpan(dataOffset).ToArray();
+        var fragData = packetSpan.Slice(dataOffset).ToArray();
 
         // メッセージ再構築
         var msg = _receivingMessages.GetOrAdd(msgId, _ => new ReceivingMessage(fragCount));
@@ -402,7 +416,8 @@ public sealed class UdpHolePunchTransport : ITransport
 
     private void HandleAck(byte[] packet)
     {
-        var ackedSeq = BinaryPrimitives.ReadUInt32BigEndian(packet.AsSpan(1));
+        if (packet.Length < PacketHeaderSize) return;
+        var ackedSeq = BinaryPrimitives.ReadUInt32BigEndian(packet.AsSpan(1, 4));
 
         if (!_sentPackets.TryRemove(ackedSeq, out var info)) return;
 
@@ -429,8 +444,10 @@ public sealed class UdpHolePunchTransport : ITransport
 
     // === フラグメンテーション ===
 
-    /// <summary>メッセージをフラグメントに分割し、送信可能なパケットを生成する。</summary>
-    private static byte[][] FragmentMessage(byte[] data, uint msgId)
+    /// <summary>メッセージをフラグメントに分割し、送信可能なパケットを生成する。
+    /// P-1: 入力を <see cref="ReadOnlySpan{T}"/> に変更し、ArrayPool 借用バッファをコピーなしで読めるようにした。
+    /// 生成するパケット byte[] は再送ループで保持する必要があるためそのまま byte[] のまま。</summary>
+    private static byte[][] FragmentMessage(ReadOnlySpan<byte> data, uint msgId)
     {
         var fragCount = (data.Length + MaxFragmentData - 1) / MaxFragmentData;
         if (fragCount == 0) fragCount = 1; // 空メッセージでも1フラグメント
@@ -443,12 +460,13 @@ public sealed class UdpHolePunchTransport : ITransport
             var fragLen = Math.Min(MaxFragmentData, data.Length - fragOffset);
 
             var packet = new byte[PacketHeaderSize + FragmentHeaderSize + fragLen];
-            packet[0] = PktData;
+            var packetSpan = packet.AsSpan();
+            packetSpan[0] = PktData;
             // seq は送信時に書き込む（ここでは 0）
-            BinaryPrimitives.WriteUInt32BigEndian(packet.AsSpan(5), msgId);
-            BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(9), (ushort)i);
-            BinaryPrimitives.WriteUInt16BigEndian(packet.AsSpan(11), (ushort)fragCount);
-            data.AsSpan(fragOffset, fragLen).CopyTo(packet.AsSpan(PacketHeaderSize + FragmentHeaderSize));
+            BinaryPrimitives.WriteUInt32BigEndian(packetSpan.Slice(5, 4), msgId);
+            BinaryPrimitives.WriteUInt16BigEndian(packetSpan.Slice(9, 2), (ushort)i);
+            BinaryPrimitives.WriteUInt16BigEndian(packetSpan.Slice(11, 2), (ushort)fragCount);
+            data.Slice(fragOffset, fragLen).CopyTo(packetSpan.Slice(PacketHeaderSize + FragmentHeaderSize));
 
             packets[i] = packet;
         }
@@ -458,12 +476,50 @@ public sealed class UdpHolePunchTransport : ITransport
 
     // === バイナリヘルパー ===
 
+    /// <summary>
+    /// ヘッダーのみのパケット（PUNCH / PUNCH_ACK 用、5 byte）を生成する。
+    /// HolePunchAsync ループで使い回されるため byte[] のまま保持できる用途向け。
+    /// </summary>
     private static byte[] MakeHeaderOnlyPacket(byte type, uint seq)
     {
         var packet = new byte[PacketHeaderSize];
         packet[0] = type;
-        BinaryPrimitives.WriteUInt32BigEndian(packet.AsSpan(1), seq);
+        BinaryPrimitives.WriteUInt32BigEndian(packet.AsSpan(1, 4), seq);
         return packet;
+    }
+
+    /// <summary>
+    /// P-4: ACK / PUNCH_ACK 等の 5 バイト固定パケットを ArrayPool 借用バッファで送信する。
+    /// 受信ループのホットパスで <c>new byte[5]</c> を毎回 alloc するのを避けるため、
+    /// 借用 → <see cref="UdpClient.SendAsync(ReadOnlyMemory{byte}, IPEndPoint, CancellationToken)"/>
+    /// → 完了後 Return の fire-and-forget で発射する。
+    /// 失敗時のログは握りつぶす（ACK は冪等で再送ループ側がリカバリするため）。
+    /// </summary>
+    private void SendHeaderOnlyPacketFireAndForget(byte type, uint seq, IPEndPoint to)
+    {
+        var rented = System.Buffers.ArrayPool<byte>.Shared.Rent(PacketHeaderSize);
+        rented[0] = type;
+        BinaryPrimitives.WriteUInt32BigEndian(rented.AsSpan(1, 4), seq);
+
+        // Rent は要求以上の長さを返すため、明示的に PacketHeaderSize 分だけスライスして渡す。
+        _ = SendAndReturnAsync(_udp, new ReadOnlyMemory<byte>(rented, 0, PacketHeaderSize), to, rented);
+
+        static async Task SendAndReturnAsync(UdpClient udp, ReadOnlyMemory<byte> payload, IPEndPoint to, byte[] rented)
+        {
+            try
+            {
+                // .NET 6+ の ReadOnlyMemory オーバーロード。借用バッファを直接渡せる。
+                await udp.SendAsync(payload, to);
+            }
+            catch
+            {
+                // ACK 送信失敗は呼び出し側で握りつぶす（再送ループでリカバリ）
+            }
+            finally
+            {
+                System.Buffers.ArrayPool<byte>.Shared.Return(rented);
+            }
+        }
     }
 
     // === 内部クラス ===
