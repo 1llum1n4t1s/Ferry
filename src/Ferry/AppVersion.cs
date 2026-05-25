@@ -9,5 +9,5 @@ namespace Ferry;
 internal static class AppVersion
 {
     /// <summary>セマンティックバージョン（Directory.Build.props と同期）。</summary>
-    public const string Value = "1.0.33";
+    public const string Value = "1.0.34";
 }

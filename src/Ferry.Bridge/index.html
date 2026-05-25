@@ -18,7 +18,7 @@
             padding: 20px;
         }
         .container {
-            max-width: 400px;
+            max-width: 420px;
             width: 100%;
             text-align: center;
         }
@@ -29,21 +29,21 @@
         }
         .subtitle {
             color: #888;
-            margin-bottom: 32px;
+            margin-bottom: 24px;
         }
         .status {
             background: #16213e;
             border-radius: 12px;
-            padding: 24px;
-            margin-bottom: 24px;
+            padding: 20px;
+            margin-bottom: 20px;
         }
         .status-text {
-            font-size: 1.1rem;
-            margin-bottom: 12px;
+            font-size: 1rem;
+            margin-bottom: 8px;
         }
         .spinner {
-            width: 40px;
-            height: 40px;
+            width: 36px;
+            height: 36px;
             border: 3px solid #333;
             border-top-color: #0078d4;
             border-radius: 50%;
@@ -56,54 +56,121 @@
             border-radius: 8px;
             padding: 16px;
             margin-bottom: 16px;
+            text-align: left;
+        }
+        .session-info-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
         }
         .session-name {
-            font-size: 1.1rem;
+            font-size: 1rem;
             font-weight: bold;
             color: #fff;
-            margin-bottom: 4px;
         }
         .session-id {
             font-family: monospace;
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             word-break: break-all;
             color: #888;
         }
         .check-mark {
-            font-size: 1.2rem;
             color: #51cf66;
-            margin-right: 8px;
         }
+
+        /* ============================================================
+           モード選択カード — ユーザーが明示的に手段を選ぶ初期画面
+           カメラは「カメラで QR スキャン」を選んだ時だけ起動する。
+           自動でカメラを起動しないことで「いきなり権限ダイアログ」の
+           不安を解消する。
+           ============================================================ */
+        .mode-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .mode-card {
+            background: #16213e;
+            border: 1px solid #2d4870;
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+            text-align: left;
+            transition: background 0.15s, border-color 0.15s, transform 0.05s;
+            font-family: inherit;
+            color: inherit;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .mode-card:hover {
+            background: #1d2e54;
+            border-color: #0078d4;
+        }
+        .mode-card:active {
+            transform: translateY(1px);
+        }
+        .mode-icon {
+            font-size: 2rem;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+        .mode-text {
+            flex: 1;
+        }
+        .mode-title {
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+        .mode-desc {
+            font-size: 0.8rem;
+            color: #aaa;
+            line-height: 1.4;
+        }
+
+        /* ============================================================
+           戻るリンク (モード選択画面に戻る)
+           ============================================================ */
+        .back-link {
+            display: inline-block;
+            color: #888;
+            font-size: 0.85rem;
+            text-decoration: none;
+            margin-bottom: 12px;
+            cursor: pointer;
+            background: none;
+            border: none;
+            font-family: inherit;
+        }
+        .back-link:hover {
+            color: #0078d4;
+        }
+
+        /* ============================================================
+           QR スキャナー
+           ============================================================ */
         #qrReader {
             width: 100%;
             border-radius: 12px;
             overflow: hidden;
-            margin-bottom: 16px;
+            margin-bottom: 12px;
         }
         .scan-hint {
             font-size: 0.9rem;
             color: #aaa;
-            margin-bottom: 16px;
+            margin-bottom: 12px;
         }
-        .btn {
-            background: #0078d4;
-            color: #fff;
-            border: none;
-            border-radius: 8px;
-            padding: 12px 32px;
-            font-size: 1rem;
-            cursor: pointer;
-            width: 100%;
-            margin-top: 12px;
-        }
-        .btn:hover { background: #106ebe; }
-        .btn:disabled { background: #555; cursor: not-allowed; }
+
         /* ============================================================
-           URL ペースト経路 (カメラ無し PC ブラウザ向けの代替フロー)
+           URL ペースト経路
            ============================================================ */
         .paste-panel {
             background: #16213e;
-            border: 1px dashed #2d4870;
             border-radius: 12px;
             padding: 20px;
             margin-bottom: 16px;
@@ -149,22 +216,23 @@
         }
         .paste-status.ok { color: #51cf66; }
         .paste-status.err { color: #ff6b6b; }
-        .divider {
-            display: flex;
-            align-items: center;
-            color: #555;
-            font-size: 0.85rem;
-            margin: 16px 0;
+
+        /* ============================================================
+           ボタン / エラー / 完了
+           ============================================================ */
+        .btn {
+            background: #0078d4;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 32px;
+            font-size: 1rem;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 12px;
         }
-        .divider::before,
-        .divider::after {
-            content: '';
-            flex: 1;
-            height: 1px;
-            background: #333;
-        }
-        .divider::before { margin-right: 12px; }
-        .divider::after { margin-left: 12px; }
+        .btn:hover { background: #106ebe; }
+        .btn:disabled { background: #555; cursor: not-allowed; }
         .error-box {
             background: #2d1b1b;
             border: 1px solid #ff6b6b;
@@ -183,14 +251,53 @@
         <h1>Ferry</h1>
         <p class="subtitle">P2P ファイル転送ペアリング</p>
 
-        <!-- ペアリング先の QR スキャンエリア（カメラは最上部に表示） -->
+        <!-- 接続元のセッション情報 (sid_A 検証後に表示) -->
+        <div class="session-info hidden" id="sessionAInfo">
+            <div class="session-info-row">
+                <span class="check-mark">✓</span>
+                <span style="color: #aaa; font-size: 0.85rem;">接続元の PC:</span>
+                <span class="session-name" id="sessionAName"></span>
+            </div>
+            <p class="session-id" id="sessionAId"></p>
+        </div>
+
+        <!-- モード選択画面 (sessions/{sid_A} 検証完了後に表示) -->
+        <div class="hidden" id="modePanel">
+            <div class="mode-grid">
+                <button type="button" class="mode-card" id="modeCameraBtn">
+                    <span class="mode-icon">📷</span>
+                    <div class="mode-text">
+                        <div class="mode-title">カメラで QR スキャン</div>
+                        <div class="mode-desc">
+                            このデバイスのカメラを起動して、もう片方の PC の QR コードを読み取ります。<br>
+                            スマートフォンでの利用に最適です。
+                        </div>
+                    </div>
+                </button>
+                <button type="button" class="mode-card" id="modePasteBtn">
+                    <span class="mode-icon">📋</span>
+                    <div class="mode-text">
+                        <div class="mode-title">URL を貼り付けてペアリング</div>
+                        <div class="mode-desc">
+                            もう片方の PC に表示されているペアリングリンクを貼り付けます。<br>
+                            カメラ無しの PC ブラウザに最適です。
+                        </div>
+                    </div>
+                </button>
+            </div>
+        </div>
+
+        <!-- カメラスキャンパネル (モード A 選択時のみ表示) -->
         <div class="hidden" id="scanPanel">
+            <button type="button" class="back-link" id="backFromScan">← モード選択に戻る</button>
             <p class="scan-hint">ペアリング先の PC に表示されている QR コードにカメラを向けてください</p>
             <div id="qrReader"></div>
+        </div>
 
-            <!-- カメラが使えない場合のフォールバック / PC ブラウザ向けの代替経路 -->
-            <div class="divider" id="orDivider">または</div>
-            <div class="paste-panel" id="pastePanel">
+        <!-- URL ペーストパネル (モード B 選択時のみ表示) -->
+        <div class="hidden" id="pastePanel">
+            <button type="button" class="back-link" id="backFromPaste">← モード選択に戻る</button>
+            <div class="paste-panel">
                 <label class="paste-label" for="pasteInput">📋 ペアリング先の URL を貼り付け</label>
                 <p class="paste-hint">
                     両方の PC で QR 画面を開いた状態で、<br>
@@ -202,17 +309,11 @@
             </div>
         </div>
 
+        <!-- 進行状況パネル (初期表示 + ペアリング処理中) -->
         <div class="status" id="statusPanel">
             <p class="status-text" id="statusText">セッション情報を取得中…</p>
             <div class="spinner" id="spinner"></div>
             <p class="error hidden" id="errorDetail" style="margin-top: 12px; font-size: 0.9rem;"></p>
-        </div>
-
-        <!-- 接続元のセッション情報 -->
-        <div class="session-info hidden" id="sessionAInfo">
-            <p><span class="check-mark">✓</span>接続元の PC</p>
-            <p class="session-name" id="sessionAName"></p>
-            <p class="session-id" id="sessionAId"></p>
         </div>
 
         <!-- ペアリング完了 -->

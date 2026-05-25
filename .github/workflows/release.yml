@@ -109,3 +109,34 @@ jobs:
                  -o /dev/null -w "${channel}: HTTP %{http_code} (%{size_download} bytes)\n" \
                  "$url"
           done
+  firebase-deploy:
+    # release/X.Y.Z push 時に Firebase Hosting (Bridge ページ) も自動 deploy。
+    # 別途手動 `firebase deploy --only hosting` を不要にする。
+    # 要 Secrets: FIREBASE_TOKEN (`firebase login:ci` で取得、ローテーション不要な永続トークン)
+    name: Firebase Hosting Deploy (Bridge)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Node.js セットアップ (firebase-tools が Node.js >=20 を要求)
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: firebase-tools をインストール
+        # サプライチェーン攻撃防止のため明示的にバージョン固定
+        run: npm install -g firebase-tools@13.29.1
+      - name: Bridge ページを Firebase Hosting にデプロイ
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${FIREBASE_TOKEN:-}" ]; then
+            echo "::warning::FIREBASE_TOKEN が未設定です。Bridge ページの deploy をスキップしました。"
+            echo "ローカルで 'firebase login:ci' を実行してトークンを取得し、GitHub Secrets に FIREBASE_TOKEN として登録してください。"
+            exit 0
+          fi
+          cd src/Ferry.Bridge
+          firebase deploy --only hosting --token "$FIREBASE_TOKEN" --non-interactive
+          echo "✅ Bridge ページ deploy 完了: https://ferry-edf09.web.app/"

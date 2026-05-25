@@ -38,6 +38,12 @@ public sealed class StubConnectionService : IConnectionService
         return Task.FromResult(sessionId);
     }
 
+    public Task<(bool Success, string Message)> PairFromUrlAsync(string peerInviteUrl, CancellationToken ct = default)
+    {
+        // スタブ: 常に成功として扱う（開発用、実 Firebase 書き込みなし）
+        return Task.FromResult((true, "Stub: ペアリング成功（実際の書き込みなし）"));
+    }
+
     public Task CancelPairingAsync(CancellationToken ct = default)
     {
         _pairingCts?.Cancel();

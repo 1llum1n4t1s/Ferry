@@ -4,8 +4,8 @@
         x:Class="Ferry.Views.AddMemberWindow"
         x:DataType="vm:ConnectionViewModel"
         Title="{DynamicResource Text.Tab.AddMember}"
-        Width="360"
-        Height="480"
+        Width="380"
+        Height="640"
         WindowStartupLocation="CenterOwner"
         CanResize="False"
         Background="{StaticResource TahoeWindowBgBrush}"
@@ -40,7 +40,7 @@
                        RenderOptions.BitmapInterpolationMode="HighQuality" />
             </Border>
 
-            <!-- ペアリングURL 共有 -->
+            <!-- ペアリングURL 共有 (招待元として相手に送る側) -->
             <StackPanel Spacing="8"
                         IsVisible="{Binding PairingUrl, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                 <TextBlock Text="{DynamicResource Text.Connection.PairingLink}"
@@ -48,13 +48,14 @@
                            Foreground="{StaticResource TahoeTextTertiaryBrush}"
                            HorizontalAlignment="Center" />
                 <Border Classes="glass-inner" Padding="8,6">
-                    <Grid ColumnDefinitions="*,Auto">
+                    <Grid ColumnDefinitions="*,Auto,Auto">
                         <TextBlock Grid.Column="0"
                                    Text="{Binding PairingUrl}"
                                    FontSize="10"
                                    TextTrimming="CharacterEllipsis"
                                    Foreground="{StaticResource TahoeTextSecondaryBrush}"
                                    VerticalAlignment="Center" />
+                        <!-- 📋 コピー: 既存 -->
                         <Button Grid.Column="1"
                                 Classes="tahoe-primary"
                                 FontSize="11"
@@ -69,8 +70,53 @@
                                            HorizontalAlignment="Center" />
                             </Panel>
                         </Button>
+                        <!-- 🌐 ブラウザで開く: 新規。OS デフォルトブラウザで Bridge ページを開く -->
+                        <Button Grid.Column="2"
+                                FontSize="11"
+                                Margin="6,0,0,0"
+                                ToolTip.Tip="{DynamicResource Text.Connection.OpenInBrowser.Tooltip}"
+                                Command="{Binding OpenPairingLinkInBrowserCommand}">
+                            <TextBlock Text="{DynamicResource Text.Connection.OpenInBrowser}" />
+                        </Button>
                     </Grid>
                 </Border>
+            </StackPanel>
+
+            <!-- 区切り線 -->
+            <Border Height="1"
+                    Background="{StaticResource TahoeTextTertiaryBrush}"
+                    Opacity="0.3"
+                    Margin="0,4,0,4" />
+
+            <!-- 相手の URL を貼り付け (招待先として URL を受け取る側) -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="{DynamicResource Text.Connection.PairFromUrl.Header}"
+                           FontSize="11"
+                           Foreground="{StaticResource TahoeTextTertiaryBrush}"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="{DynamicResource Text.Connection.PairFromUrl.Hint}"
+                           FontSize="10"
+                           TextWrapping="Wrap"
+                           HorizontalAlignment="Center"
+                           Foreground="{StaticResource TahoeTextTertiaryBrush}" />
+                <TextBox x:Name="PairFromUrlInput"
+                         FontSize="10"
+                         PlaceholderText="https://ferry-edf09.web.app/?sid=..."
+                         Text="{Binding PairFromUrlText, Mode=TwoWay}" />
+                <TextBlock Text="{Binding PairFromUrlStatus}"
+                           FontSize="10"
+                           TextWrapping="Wrap"
+                           HorizontalAlignment="Center"
+                           Foreground="{Binding PairFromUrlStatusBrush}"
+                           IsVisible="{Binding PairFromUrlStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <Button Classes="tahoe-primary"
+                        FontSize="11"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        Command="{Binding PairFromUrlCommand}"
+                        IsEnabled="{Binding PairFromUrlText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                    <TextBlock Text="{DynamicResource Text.Connection.PairFromUrl.Button}" />
+                </Button>
             </StackPanel>
         </StackPanel>
     </Grid>

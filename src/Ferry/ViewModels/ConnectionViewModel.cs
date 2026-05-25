@@ -74,6 +74,18 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     public partial bool IsLinkCopied { get; set; }
 
+    /// <summary>「相手の URL を貼り付け」入力欄のテキスト (AddMemberWindow)。</summary>
+    [ObservableProperty]
+    public partial string PairFromUrlText { get; set; } = string.Empty;
+
+    /// <summary>URL ペアリングの結果メッセージ (成功/エラー)。</summary>
+    [ObservableProperty]
+    public partial string PairFromUrlStatus { get; set; } = string.Empty;
+
+    /// <summary>URL ペアリング結果メッセージの色 (success/error で切替)。</summary>
+    [ObservableProperty]
+    public partial Avalonia.Media.IBrush? PairFromUrlStatusBrush { get; set; }
+
     public ConnectionViewModel(
         IConnectionService connectionService,
         IQrCodeService qrCodeService,
@@ -213,6 +225,71 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         IsLinkCopied = true;
         Util.Logger.Log("ペアリングリンクをクリップボードにコピー");
         DispatcherTimer.RunOnce(() => IsLinkCopied = false, TimeSpan.FromSeconds(2));
+    }
+
+    /// <summary>
+    /// 自分の招待リンクを OS デフォルトブラウザで開く。
+    /// ユーザーはブラウザで「URL ペースト」モードを選択して、相手の URL を貼り付けてペアリングできる。
+    /// </summary>
+    [RelayCommand]
+    private void OpenPairingLinkInBrowser()
+    {
+        if (string.IsNullOrEmpty(PairingUrl)) return;
+        try
+        {
+            // UseShellExecute=true で OS のデフォルトブラウザを起動
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = PairingUrl,
+                UseShellExecute = true,
+            });
+            Util.Logger.Log("ペアリングリンクをブラウザで開いた");
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"ブラウザ起動失敗: {ex.Message}", Util.LogLevel.Warning);
+        }
+    }
+
+    /// <summary>
+    /// 「相手の URL を貼り付け」入力欄から URL を取得し、アプリ内でペアリングを実行する。
+    /// Bridge ページを介さない直接ペアリング (カメラ無し PC 同士向け)。
+    /// </summary>
+    [RelayCommand]
+    private async Task PairFromUrlAsync()
+    {
+        if (string.IsNullOrWhiteSpace(PairFromUrlText)) return;
+
+        PairFromUrlStatus = "処理中…";
+        PairFromUrlStatusBrush = Avalonia.Application.Current is { } app
+            && app.TryGetResource("TextSecondaryBrush", app.ActualThemeVariant, out var pendingBrush)
+            && pendingBrush is Avalonia.Media.IBrush pb ? pb : null;
+
+        try
+        {
+            var (success, message) = await _connectionService.PairFromUrlAsync(PairFromUrlText.Trim());
+            PairFromUrlStatus = message;
+
+            // 結果に応じて文字色を切り替え (success=Green, error=Red)
+            var brushKey = success ? "GreenBrush" : "RedBrush";
+            if (Avalonia.Application.Current is { } a
+                && a.TryGetResource(brushKey, a.ActualThemeVariant, out var b)
+                && b is Avalonia.Media.IBrush ib)
+            {
+                PairFromUrlStatusBrush = ib;
+            }
+
+            if (success)
+            {
+                // 成功時は入力欄をクリア (ペアリング検知は StartWatchingPairing で反映)
+                PairFromUrlText = string.Empty;
+            }
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"URL ペアリング失敗: {ex.Message}", Util.LogLevel.Warning);
+            PairFromUrlStatus = $"エラー: {ex.Message}";
+        }
     }
 
     /// <summary>

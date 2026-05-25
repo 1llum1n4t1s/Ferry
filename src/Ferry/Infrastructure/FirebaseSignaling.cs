@@ -59,6 +59,50 @@ public sealed class FirebaseSignaling : IDisposable
     }
 
     /// <summary>
+    /// Bridge ページ等が行う `pairings/{pairingId}` の書き込みをアプリ側から直接実行する。
+    /// カメラ無し PC 同士のアプリ内 URL 交換ペアリング (Bridge ページを経由しない) で使用。
+    /// 両 PC は <see cref="StartWatchingPairing"/> でこの書き込みを検知してペアリング成立を扱う。
+    /// </summary>
+    /// <param name="sidA">PC-A (招待元) の sessionId。</param>
+    /// <param name="nameA">PC-A の表示名。</param>
+    /// <param name="sidB">PC-B (招待先) の sessionId。</param>
+    /// <param name="nameB">PC-B の表示名。</param>
+    public async Task SubmitPairingAsync(string sidA, string nameA, string sidB, string nameB, CancellationToken ct = default)
+    {
+        // Bridge ページの ID 形式 (`${Date.now()}_${random(6)}`) に揃えた 20 文字 (13 + 1 + 6) で生成
+        var pairingId = $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}_{Guid.NewGuid():N}"[..20];
+        await _client
+            .Child("pairings")
+            .Child(pairingId)
+            .PutAsync(new PairingData
+            {
+                SidA = sidA,
+                NameA = string.IsNullOrEmpty(nameA) ? "PC-A" : nameA,
+                SidB = sidB,
+                NameB = string.IsNullOrEmpty(nameB) ? "PC-B" : nameB,
+                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            });
+        Util.Logger.Log($"ペアリング書き込み: {pairingId}, A={Util.Logger.MaskIp(sidA)}, B={Util.Logger.MaskIp(sidB)}");
+    }
+
+    /// <summary>
+    /// 指定 sessionId が存在するかを確認する (アプリ内 URL ペアリング前の事前チェック用)。
+    /// </summary>
+    public async Task<(bool Exists, string? DisplayName)> CheckSessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        try
+        {
+            var data = await _client.Child("sessions").Child(sessionId).OnceSingleAsync<SessionData>();
+            if (data == null) return (false, null);
+            return (true, data.DisplayName);
+        }
+        catch
+        {
+            return (false, null);
+        }
+    }
+
+    /// <summary>
     /// pairings ノードの変更を監視し、自分の sessionId を含むペアリングを検知する。
     /// </summary>
     public void StartWatchingPairing()

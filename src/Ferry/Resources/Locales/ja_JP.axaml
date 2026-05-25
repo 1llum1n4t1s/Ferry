@@ -25,6 +25,11 @@
   <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">ペアリング解除</x:String>
   <x:String x:Key="Text.Connection.Leave" xml:space="preserve">ネットワークを退出</x:String>
   <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">ペアリング済みのデバイスはありません</x:String>
+  <x:String x:Key="Text.Connection.OpenInBrowser" xml:space="preserve">🌐 ブラウザ</x:String>
+  <x:String x:Key="Text.Connection.OpenInBrowser.Tooltip" xml:space="preserve">OS のデフォルトブラウザでペアリングリンクを開きます</x:String>
+  <x:String x:Key="Text.Connection.PairFromUrl.Header" xml:space="preserve">📋 相手の URL を貼り付けてペアリング</x:String>
+  <x:String x:Key="Text.Connection.PairFromUrl.Hint" xml:space="preserve">カメラ無し PC 同士のペアリングはこちら。もう片方の PC に表示されているリンクを貼り付けてください。</x:String>
+  <x:String x:Key="Text.Connection.PairFromUrl.Button" xml:space="preserve">この URL でペアリング</x:String>
 
   <!-- Transfer Panel -->
   <x:String x:Key="Text.Transfer.Header" xml:space="preserve">転送履歴</x:String>

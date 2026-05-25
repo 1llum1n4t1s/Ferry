@@ -22,6 +22,11 @@
   <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">Remove Pairing</x:String>
   <x:String x:Key="Text.Connection.Leave" xml:space="preserve">Leave Network</x:String>
   <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">No paired devices yet</x:String>
+  <x:String x:Key="Text.Connection.OpenInBrowser" xml:space="preserve">🌐 Browser</x:String>
+  <x:String x:Key="Text.Connection.OpenInBrowser.Tooltip" xml:space="preserve">Open the pairing link in your default browser</x:String>
+  <x:String x:Key="Text.Connection.PairFromUrl.Header" xml:space="preserve">📋 Paste partner's URL to pair</x:String>
+  <x:String x:Key="Text.Connection.PairFromUrl.Hint" xml:space="preserve">For camera-less PC pairing. Paste the link shown on the other PC here.</x:String>
+  <x:String x:Key="Text.Connection.PairFromUrl.Button" xml:space="preserve">Pair with this URL</x:String>
 
   <!-- Transfer Panel -->
   <x:String x:Key="Text.Transfer.Header" xml:space="preserve">Transfer History</x:String>
