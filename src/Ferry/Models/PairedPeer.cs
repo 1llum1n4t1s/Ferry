@@ -37,7 +37,7 @@ public sealed partial class PairedPeer : ObservableObject
     [JsonIgnore]
     public partial bool IsOnline { get; set; }
 
-    /// <summary>接続経路の表示テキスト。</summary>
+    /// <summary>接続経路の表示テキスト（旧 UI / ログ用）。</summary>
     [JsonIgnore]
     public string RouteText => Route switch
     {
@@ -47,8 +47,63 @@ public sealed partial class PairedPeer : ObservableObject
         _ => string.Empty,
     };
 
+    // === 接続経路バッジ用派生プロパティ（MainWindow メンバーリストのピル型バッジで使用）===
+
+    /// <summary>接続経路バッジを表示するか（Unknown 以外）。</summary>
+    [JsonIgnore]
+    public bool IsConnected => Route != ConnectionRoute.Unknown;
+
+    /// <summary>LAN 直接接続中か（バッジ色切替用）。</summary>
+    [JsonIgnore]
+    public bool IsLanRoute => Route == ConnectionRoute.Direct;
+
+    /// <summary>STUN ホールパンチ経由接続中か（バッジ色切替用）。</summary>
+    [JsonIgnore]
+    public bool IsP2pRoute => Route == ConnectionRoute.StunAssisted;
+
+    /// <summary>WebSocket リレー経由接続中か（バッジ色切替用）。</summary>
+    [JsonIgnore]
+    public bool IsRelayRoute => Route == ConnectionRoute.Relay;
+
+    /// <summary>バッジに表示するアイコン文字（短縮、Material Symbol 風）。</summary>
+    [JsonIgnore]
+    public string RouteBadgeIcon => Route switch
+    {
+        ConnectionRoute.Direct => "⚡",       // ⚡ 高速ボルト = LAN 直接
+        ConnectionRoute.StunAssisted => "✧", // ✧ スター = NAT 越え P2P
+        ConnectionRoute.Relay => "↻",        // ↻ リトライ風矢印 = リレー経由
+        _ => string.Empty,
+    };
+
+    /// <summary>バッジに表示する短いラベル（全大文字、タイポグラフィー狙い）。</summary>
+    [JsonIgnore]
+    public string RouteBadgeLabel => Route switch
+    {
+        ConnectionRoute.Direct => "LAN",
+        ConnectionRoute.StunAssisted => "P2P",
+        ConnectionRoute.Relay => "RELAY",
+        _ => string.Empty,
+    };
+
+    /// <summary>ツールチップ用の詳細説明。</summary>
+    [JsonIgnore]
+    public string RouteBadgeTooltip => Route switch
+    {
+        ConnectionRoute.Direct => "LAN 直接接続（TCP）— 最速・最高帯域",
+        ConnectionRoute.StunAssisted => "P2P 直接接続（UDP ホールパンチ + STUN）— インターネット越え",
+        ConnectionRoute.Relay => "サーバー経由リレー（TURN/WebSocket）— ファイアウォール越え",
+        _ => string.Empty,
+    };
+
     partial void OnRouteChanged(ConnectionRoute value)
     {
         OnPropertyChanged(nameof(RouteText));
+        OnPropertyChanged(nameof(IsConnected));
+        OnPropertyChanged(nameof(IsLanRoute));
+        OnPropertyChanged(nameof(IsP2pRoute));
+        OnPropertyChanged(nameof(IsRelayRoute));
+        OnPropertyChanged(nameof(RouteBadgeIcon));
+        OnPropertyChanged(nameof(RouteBadgeLabel));
+        OnPropertyChanged(nameof(RouteBadgeTooltip));
     }
 }

@@ -31,9 +31,13 @@ const pairedPanel = document.getElementById("pairedPanel");
 const pairedNames = document.getElementById("pairedNames");
 const errorPanel = document.getElementById("errorPanel");
 const errorText = document.getElementById("errorText");
+const pasteInput = document.getElementById("pasteInput");
+const pasteStatus = document.getElementById("pasteStatus");
 
 let db = null;
 let html5QrCode = null;
+// ペアリング処理の重複実行を防ぐフラグ（カメラ/貼り付け両経路で参照）
+let pairingInProgress = false;
 
 /**
  * URL パラメータを取得する。
@@ -103,11 +107,101 @@ function parseQrUrl(text) {
 }
 
 /**
+ * sidA と sidB を Firebase pairings/ に書き込んでペアリングを成立させる。
+ * カメラ経路 / URL 貼り付け経路の共通処理。
+ */
+async function performPairing(sidA, nameA, sidB, nameB) {
+    // 重複実行防止（同時にカメラ読取 + 貼り付け確定が起きた場合の保険）
+    if (pairingInProgress) return;
+    pairingInProgress = true;
+
+    // カメラ停止 + 進行表示
+    stopCamera();
+    statusText.textContent = "ペアリング中…";
+    spinner.classList.remove("hidden");
+    scanPanel.classList.add("hidden");
+
+    try {
+        // sessions/{sidB} の存在を確認
+        const snapB = await db.ref(`sessions/${sidB}`).once("value");
+        if (!snapB.exists()) {
+            pairingInProgress = false;
+            showError("ペアリング先のセッションが見つかりません。PC でアプリが起動していることを確認してください。");
+            return;
+        }
+
+        // pairings/ にペアリング情報を書き込み
+        const pairingId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        await db.ref(`pairings/${pairingId}`).set({
+            SidA: sidA,
+            SidB: sidB,
+            NameA: nameA || "PC-A",
+            NameB: nameB || snapB.val().DisplayName || "PC-B",
+            CreatedAt: Date.now(),
+        });
+
+        showPaired(nameA || "PC-A", nameB || snapB.val().DisplayName || "PC-B");
+    } catch (err) {
+        pairingInProgress = false;
+        showError(`ペアリングエラー: ${err.message}`);
+    }
+}
+
+/**
+ * URL 貼り付け経路 — PC ブラウザでカメラが使えないケース向け。
+ * 入力欄に Ferry のペアリングリンクが入った瞬間に自動でペアリング処理を起動する。
+ */
+function setupPasteListener(sidA, nameA) {
+    if (!pasteInput) return;
+
+    const tryPair = async () => {
+        const text = (pasteInput.value || "").trim();
+        if (!text) {
+            pasteStatus.textContent = "";
+            pasteStatus.className = "paste-status";
+            return;
+        }
+
+        const { sid: sidB, name: nameB } = parseQrUrl(text);
+
+        if (!sidB) {
+            pasteStatus.textContent = "Ferry のペアリングリンクではないみたい…URL を確認してね";
+            pasteStatus.className = "paste-status err";
+            return;
+        }
+
+        if (sidB === sidA) {
+            pasteStatus.textContent = "同じ PC の URL です。もう片方の PC のリンクを貼り付けてください";
+            pasteStatus.className = "paste-status err";
+            return;
+        }
+
+        pasteStatus.textContent = "✓ URL を認識、ペアリング処理中…";
+        pasteStatus.className = "paste-status ok";
+        await performPairing(sidA, nameA, sidB, nameB);
+    };
+
+    // ペースト直後 / 入力変更時 / Enter 押下 で都度ペアリング試行
+    pasteInput.addEventListener("paste", () => {
+        // paste イベントは値の反映前に発火するので次フレームで読み取る
+        setTimeout(tryPair, 0);
+    });
+    pasteInput.addEventListener("input", tryPair);
+    pasteInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            tryPair();
+        }
+    });
+}
+
+/**
  * ペアリング先の QR スキャン用カメラを起動する。
+ * カメラ起動に失敗した場合（PC ブラウザ等）も貼り付け経路は使えるよう、scanPanel 自体は表示する。
  */
 async function startQrScanner(sidA, nameA) {
     scanPanel.classList.remove("hidden");
-    statusText.textContent = "ペアリング先の QR コードをスキャンしてください";
+    statusText.textContent = "ペアリング先の QR コードをスキャン、または URL を貼り付けてください";
     spinner.classList.add("hidden");
 
     html5QrCode = new Html5Qrcode("qrReader");
@@ -130,41 +224,23 @@ async function startQrScanner(sidA, nameA) {
                     return;
                 }
 
-                // カメラ停止
-                stopCamera();
-                statusText.textContent = "ペアリング中…";
-                spinner.classList.remove("hidden");
-                scanPanel.classList.add("hidden");
-
-                try {
-                    // sessions/{sidB} の存在を確認
-                    const snapB = await db.ref(`sessions/${sidB}`).once("value");
-                    if (!snapB.exists()) {
-                        showError("ペアリング先のセッションが見つかりません。PC でアプリが起動していることを確認してください。");
-                        return;
-                    }
-
-                    // pairings/ にペアリング情報を書き込み
-                    const pairingId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-                    await db.ref(`pairings/${pairingId}`).set({
-                        SidA: sidA,
-                        SidB: sidB,
-                        NameA: nameA || "PC-A",
-                        NameB: nameB || snapB.val().DisplayName || "PC-B",
-                        CreatedAt: Date.now(),
-                    });
-
-                    showPaired(nameA || "PC-A", nameB || snapB.val().DisplayName || "PC-B");
-                } catch (err) {
-                    showError(`ペアリングエラー: ${err.message}`);
-                }
+                await performPairing(sidA, nameA, sidB, nameB);
             },
             () => {
                 // QR コード未検出（スキャン中）
             }
         );
     } catch (err) {
-        showError(`カメラの起動に失敗しました: ${err.message}`);
+        // カメラ起動失敗 (PC ブラウザ / カメラ非搭載デバイス) でも URL 貼り付け経路は維持
+        console.warn("カメラ起動失敗:", err);
+        const qrReader = document.getElementById("qrReader");
+        if (qrReader) {
+            qrReader.innerHTML =
+                '<p style="color:#888; font-size:0.9rem; padding:24px; text-align:center; background:#0a1729; border-radius:8px;">' +
+                '📷 カメラが使えない環境のため、下の URL 貼り付け欄を使ってペアリングしてください' +
+                '</p>';
+        }
+        statusText.textContent = "URL を貼り付けてペアリングしてください";
     }
 }
 
@@ -199,8 +275,12 @@ async function main() {
             return;
         }
 
-        // 接続元の登録確認完了 → ペアリング先のスキャンへ
-        await startQrScanner(sidA, nameA || snapA.val().DisplayName || "PC-A");
+        // 接続元の登録確認完了 → ペアリング先の経路 2 通りを並行起動:
+        //   1. カメラで QR スキャン (スマホ向け)
+        //   2. URL ペースト入力 (PC ブラウザ向け、両方とも有効)
+        const resolvedNameA = nameA || snapA.val().DisplayName || "PC-A";
+        setupPasteListener(sidA, resolvedNameA);
+        await startQrScanner(sidA, resolvedNameA);
 
     } catch (err) {
         console.error("Bridge エラー:", err);

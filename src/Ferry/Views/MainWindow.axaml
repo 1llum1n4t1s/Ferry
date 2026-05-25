@@ -65,16 +65,42 @@
                                                  VerticalAlignment="Center"
                                                  Margin="0,0,8,0" />
 
-                                        <!-- ピア名と接続経路 -->
-                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding DisplayName}"
-                                                       FontSize="14" FontWeight="Medium"
-                                                       Foreground="{DynamicResource TextPrimaryBrush}"
-                                                       TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Text="{Binding RouteText}"
-                                                       FontSize="12"
-                                                       Foreground="{DynamicResource TextSecondaryBrush}"
-                                                       MaxLines="1" TextTrimming="CharacterEllipsis" />
+                                        <!-- ピア名 + 接続経路バッジ (Tahoe ピル型) -->
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                                            <!-- 1 段目: 名前 + 経路バッジを横並び -->
+                                            <Grid ColumnDefinitions="*,Auto">
+                                                <TextBlock Grid.Column="0"
+                                                           Text="{Binding DisplayName}"
+                                                           FontSize="14" FontWeight="Medium"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           VerticalAlignment="Center" />
+
+                                                <!-- 接続経路バッジ: Route が確定したときだけ表示
+                                                     Classes.lan/p2p/relay の bool バインドで色を切替 -->
+                                                <Border Grid.Column="1"
+                                                        Classes="route-badge"
+                                                        Classes.lan="{Binding IsLanRoute}"
+                                                        Classes.p2p="{Binding IsP2pRoute}"
+                                                        Classes.relay="{Binding IsRelayRoute}"
+                                                        IsVisible="{Binding IsConnected}"
+                                                        ToolTip.Tip="{Binding RouteBadgeTooltip}"
+                                                        Margin="6,0,0,0">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Classes="route-badge-icon route-badge-text"
+                                                                   Text="{Binding RouteBadgeIcon}" />
+                                                        <TextBlock Classes="route-badge-text"
+                                                                   Text="{Binding RouteBadgeLabel}" />
+                                                    </StackPanel>
+                                                </Border>
+                                            </Grid>
+
+                                            <!-- 2 段目: 接続状態テキスト (未接続時のヒント等) -->
+                                            <TextBlock Text="{Binding ConnectionStatusText}"
+                                                       FontSize="11"
+                                                       Foreground="{DynamicResource TextTertiaryBrush}"
+                                                       MaxLines="1" TextTrimming="CharacterEllipsis"
+                                                       IsVisible="{Binding ConnectionStatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                                         </StackPanel>
 
                                         <!-- 3 点リーダー → サブメニュー（削除など）。

@@ -98,6 +98,73 @@
         }
         .btn:hover { background: #106ebe; }
         .btn:disabled { background: #555; cursor: not-allowed; }
+        /* ============================================================
+           URL ペースト経路 (カメラ無し PC ブラウザ向けの代替フロー)
+           ============================================================ */
+        .paste-panel {
+            background: #16213e;
+            border: 1px dashed #2d4870;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+            text-align: left;
+        }
+        .paste-label {
+            display: block;
+            color: #ccc;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .paste-hint {
+            color: #888;
+            font-size: 0.8rem;
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+        .paste-input {
+            width: 100%;
+            background: #0a1729;
+            border: 1px solid #2d4870;
+            border-radius: 8px;
+            color: #e0e0e0;
+            font-family: monospace;
+            font-size: 0.85rem;
+            padding: 10px 12px;
+            outline: none;
+            transition: border-color 0.15s;
+            box-sizing: border-box;
+        }
+        .paste-input:focus {
+            border-color: #0078d4;
+        }
+        .paste-input::placeholder {
+            color: #555;
+        }
+        .paste-status {
+            margin-top: 8px;
+            font-size: 0.85rem;
+            color: #888;
+            min-height: 1.2em;
+        }
+        .paste-status.ok { color: #51cf66; }
+        .paste-status.err { color: #ff6b6b; }
+        .divider {
+            display: flex;
+            align-items: center;
+            color: #555;
+            font-size: 0.85rem;
+            margin: 16px 0;
+        }
+        .divider::before,
+        .divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: #333;
+        }
+        .divider::before { margin-right: 12px; }
+        .divider::after { margin-left: 12px; }
         .error-box {
             background: #2d1b1b;
             border: 1px solid #ff6b6b;
@@ -120,6 +187,19 @@
         <div class="hidden" id="scanPanel">
             <p class="scan-hint">ペアリング先の PC に表示されている QR コードにカメラを向けてください</p>
             <div id="qrReader"></div>
+
+            <!-- カメラが使えない場合のフォールバック / PC ブラウザ向けの代替経路 -->
+            <div class="divider" id="orDivider">または</div>
+            <div class="paste-panel" id="pastePanel">
+                <label class="paste-label" for="pasteInput">📋 ペアリング先の URL を貼り付け</label>
+                <p class="paste-hint">
+                    両方の PC で QR 画面を開いた状態で、<br>
+                    もう片方の PC に表示されているペアリングリンクをここに貼り付けてください。
+                </p>
+                <input type="url" id="pasteInput" class="paste-input"
+                       placeholder="https://ferry-edf09.web.app/?sid=..." autocomplete="off" />
+                <p class="paste-status" id="pasteStatus"></p>
+            </div>
         </div>
 
         <div class="status" id="statusPanel">

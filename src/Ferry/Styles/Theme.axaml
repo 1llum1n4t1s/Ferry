@@ -24,6 +24,17 @@
         <SolidColorBrush x:Key="GreenBrush" Color="#30D158" />
         <SolidColorBrush x:Key="RedBrush" Color="#FF453A" />
         <SolidColorBrush x:Key="YellowBrush" Color="#FFD60A" />
+        <SolidColorBrush x:Key="BlueBrush" Color="#0A84FF" />
+        <SolidColorBrush x:Key="OrangeBrush" Color="#FF9F0A" />
+
+        <!-- === 接続経路バッジ用ソフトカラー (背景・ボーダー tint) === -->
+        <!-- Tahoe / Apple のソフト tint パターン: メインカラーを 16-24% アルファで透過 -->
+        <SolidColorBrush x:Key="GreenBrushSoft" Color="#3030D158" />
+        <SolidColorBrush x:Key="GreenBrushBorder" Color="#6630D158" />
+        <SolidColorBrush x:Key="BlueBrushSoft" Color="#300A84FF" />
+        <SolidColorBrush x:Key="BlueBrushBorder" Color="#660A84FF" />
+        <SolidColorBrush x:Key="OrangeBrushSoft" Color="#30FF9F0A" />
+        <SolidColorBrush x:Key="OrangeBrushBorder" Color="#66FF9F0A" />
         <SolidColorBrush x:Key="BorderBrush" Color="#38383A" />
         <SolidColorBrush x:Key="SidebarBrush" Color="#1C1C1E" />
         <SolidColorBrush x:Key="OverlayBrush" Color="#80000000" />
@@ -189,6 +200,61 @@
         <Setter Property="Padding" Value="4,2" />
         <Setter Property="HorizontalAlignment" Value="Right" />
         <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- ====================================================================
+         接続経路バッジ (Route Badge) — メンバーリストで接続方式を可視化
+         Tahoe / Apple System Status pill 風: 薄い tint 背景 + 同色細枠 + 同色文字
+         クラス: route-badge + {lan|p2p|relay} の組み合わせ
+         ==================================================================== -->
+    <Style Selector="Border.route-badge">
+        <Setter Property="CornerRadius" Value="9" />
+        <Setter Property="Padding" Value="7,1" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="MinHeight" Value="18" />
+        <!-- 既定（接続経路未確定時）は透明にして実質非表示にする保険 -->
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+
+    <!-- LAN 直接 (TCP) — 緑 -->
+    <Style Selector="Border.route-badge.lan">
+        <Setter Property="Background" Value="{DynamicResource GreenBrushSoft}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource GreenBrushBorder}" />
+    </Style>
+    <Style Selector="Border.route-badge.lan TextBlock.route-badge-text">
+        <Setter Property="Foreground" Value="{DynamicResource GreenBrush}" />
+    </Style>
+
+    <!-- P2P (STUN ホールパンチ) — 青 -->
+    <Style Selector="Border.route-badge.p2p">
+        <Setter Property="Background" Value="{DynamicResource BlueBrushSoft}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BlueBrushBorder}" />
+    </Style>
+    <Style Selector="Border.route-badge.p2p TextBlock.route-badge-text">
+        <Setter Property="Foreground" Value="{DynamicResource BlueBrush}" />
+    </Style>
+
+    <!-- リレー (TURN/WebSocket) — オレンジ -->
+    <Style Selector="Border.route-badge.relay">
+        <Setter Property="Background" Value="{DynamicResource OrangeBrushSoft}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource OrangeBrushBorder}" />
+    </Style>
+    <Style Selector="Border.route-badge.relay TextBlock.route-badge-text">
+        <Setter Property="Foreground" Value="{DynamicResource OrangeBrush}" />
+    </Style>
+
+    <!-- バッジ内のテキスト共通スタイル -->
+    <Style Selector="TextBlock.route-badge-text">
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.route-badge-icon">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Margin" Value="0,0,3,0" />
     </Style>
 
 </Styles>
