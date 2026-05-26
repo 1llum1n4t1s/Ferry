@@ -7,7 +7,9 @@
              x:Class="Ferry.Views.SettingsView"
              x:DataType="vm:SettingsViewModel">
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,16">
+    <!-- Padding の bottom を 32 に増やして、最後の「アップデート確認」ボタンが
+         ウィンドウ最下部で見切れないよう余裕を持たせる -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,16,24,32">
         <StackPanel Spacing="4" MaxWidth="500">
 
             <!-- 一般 -->

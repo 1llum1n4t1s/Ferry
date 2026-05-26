@@ -144,7 +144,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         SetState(PeerState.Disconnected);
     }
 
-    private async void OnPairingDetected(object? sender, PairingInfo info)
+    private void OnPairingDetected(object? sender, PairingInfo info)
     {
         // async void のため例外は捕捉しないとプロセスを巻き込む。全体を try-catch で保護する
         try
@@ -167,7 +167,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             };
             PairingCompleted?.Invoke(this, peer);
 
-            await sig.CleanupAsync(info.PairingId, ct: default);
+            // pairings/{pairingId} は **削除しない** 。即削除すると、もう片方の PC が Firebase の
+            // InsertOrUpdate イベントを受け取る前にエントリが消え、ペアリング検知漏れが起きる
+            // (片方の画面に相手が表示されない症状)。CreatedAt ベースで GitHub Actions が
+            // 1 時間後に自動掃除するため、即時 cleanup は不要。
         }
         catch (Exception ex)
         {

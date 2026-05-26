@@ -48,14 +48,13 @@
                            Foreground="{StaticResource TahoeTextTertiaryBrush}"
                            HorizontalAlignment="Center" />
                 <Border Classes="glass-inner" Padding="8,6">
-                    <Grid ColumnDefinitions="*,Auto,Auto">
+                    <Grid ColumnDefinitions="*,Auto">
                         <TextBlock Grid.Column="0"
                                    Text="{Binding PairingUrl}"
                                    FontSize="10"
                                    TextTrimming="CharacterEllipsis"
                                    Foreground="{StaticResource TahoeTextSecondaryBrush}"
                                    VerticalAlignment="Center" />
-                        <!-- 📋 コピー: 既存 -->
                         <Button Grid.Column="1"
                                 Classes="tahoe-primary"
                                 FontSize="11"
@@ -69,14 +68,6 @@
                                            IsVisible="{Binding IsLinkCopied}"
                                            HorizontalAlignment="Center" />
                             </Panel>
-                        </Button>
-                        <!-- 🌐 ブラウザで開く: 新規。OS デフォルトブラウザで Bridge ページを開く -->
-                        <Button Grid.Column="2"
-                                FontSize="11"
-                                Margin="6,0,0,0"
-                                ToolTip.Tip="{DynamicResource Text.Connection.OpenInBrowser.Tooltip}"
-                                Command="{Binding OpenPairingLinkInBrowserCommand}">
-                            <TextBlock Text="{DynamicResource Text.Connection.OpenInBrowser}" />
                         </Button>
                     </Grid>
                 </Border>

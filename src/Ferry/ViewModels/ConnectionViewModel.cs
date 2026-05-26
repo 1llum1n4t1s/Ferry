@@ -228,30 +228,6 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// 自分の招待リンクを OS デフォルトブラウザで開く。
-    /// ユーザーはブラウザで「URL ペースト」モードを選択して、相手の URL を貼り付けてペアリングできる。
-    /// </summary>
-    [RelayCommand]
-    private void OpenPairingLinkInBrowser()
-    {
-        if (string.IsNullOrEmpty(PairingUrl)) return;
-        try
-        {
-            // UseShellExecute=true で OS のデフォルトブラウザを起動
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = PairingUrl,
-                UseShellExecute = true,
-            });
-            Util.Logger.Log("ペアリングリンクをブラウザで開いた");
-        }
-        catch (Exception ex)
-        {
-            Util.Logger.Log($"ブラウザ起動失敗: {ex.Message}", Util.LogLevel.Warning);
-        }
-    }
-
-    /// <summary>
     /// 「相手の URL を貼り付け」入力欄から URL を取得し、アプリ内でペアリングを実行する。
     /// Bridge ページを介さない直接ペアリング (カメラ無し PC 同士向け)。
     /// </summary>
@@ -298,11 +274,11 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     /// </summary>
     partial void OnSelectedPeerChanged(PairedPeer? oldValue, PairedPeer? newValue)
     {
-        // 前の選択ピアのステータスをクリア
+        // 前の選択ピアのステータスをクリア。
+        // Route は過去の接続実績として残し、メンバーリストにバッジを表示し続ける。
         if (oldValue != null)
         {
             oldValue.ConnectionStatusText = string.Empty;
-            oldValue.Route = ConnectionRoute.Unknown;
         }
 
         if (newValue != null)
@@ -392,12 +368,12 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                 };
             }
 
-            // 未接続時は経路表示をクリア
+            // 未接続時は TransferView の経路テキストだけクリア。
+            // ピアの Route バッジ (メンバーリスト) は過去の接続実績として残す方が、
+            // 次回どの経路で繋がりそうか予測できて UX が良い。次回接続時に新しい Route で上書きされる。
             if (state != PeerState.Connected)
             {
                 ConnectionRouteText = string.Empty;
-                if (SelectedPeer != null)
-                    SelectedPeer.Route = ConnectionRoute.Unknown;
             }
         });
     }

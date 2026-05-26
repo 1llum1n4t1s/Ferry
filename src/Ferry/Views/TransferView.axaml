@@ -41,9 +41,9 @@
                         <DataTemplate x:DataType="m:TransferItem">
                             <Border Background="{DynamicResource SurfaceVariantBrush}"
                                     CornerRadius="8" Padding="12,10" Margin="0,4">
-                                <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
+                                <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto">
                                     <!-- アイコン -->
-                                    <TextBlock Grid.Column="0" Grid.RowSpan="2"
+                                    <TextBlock Grid.Column="0" Grid.RowSpan="3"
                                                Text="📄" FontSize="24"
                                                VerticalAlignment="Center" Margin="0,0,12,0" />
 
@@ -55,7 +55,7 @@
                                                TextTrimming="CharacterEllipsis" />
                                     <StackPanel Grid.Column="1" Grid.Row="1"
                                                 Orientation="Horizontal" Spacing="8">
-                                        <TextBlock Text="{Binding FileSizeText}"
+                                        <TextBlock Text="{Binding DisplayInfo}"
                                                    FontSize="12"
                                                    Foreground="{DynamicResource TextSecondaryBrush}" />
                                         <TextBlock Text="{Binding StateText}"
@@ -63,8 +63,19 @@
                                                    Foreground="{DynamicResource TextTertiaryBrush}" />
                                     </StackPanel>
 
+                                    <!-- 進捗バー: 転送中のみ表示。Progress (0.0〜1.0) を 0〜100 にスケール -->
+                                    <ProgressBar Grid.Column="1" Grid.Row="2"
+                                                 Minimum="0" Maximum="1"
+                                                 Value="{Binding Progress}"
+                                                 IsVisible="{Binding IsInProgress}"
+                                                 Height="3"
+                                                 Margin="0,6,0,0"
+                                                 CornerRadius="2"
+                                                 Foreground="{DynamicResource TahoeAccentBrush}"
+                                                 Background="{DynamicResource BorderBrush}" />
+
                                     <!-- 方向アイコン -->
-                                    <TextBlock Grid.Column="2" Grid.RowSpan="2"
+                                    <TextBlock Grid.Column="2" Grid.RowSpan="3"
                                                Text="{Binding DirectionSymbol}"
                                                FontSize="16" VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextSecondaryBrush}" />
