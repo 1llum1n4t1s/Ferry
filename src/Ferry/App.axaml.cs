@@ -32,6 +32,12 @@ public partial class App : Application
     /// <summary>自動更新の配信元 URL（Cloudflare R2 ferry-updates 経由）。</summary>
     private const string UpdateBaseUrl = "https://ferry.nephilim.jp";
 
+    /// <summary>
+    /// WebSocket リレーサーバーの URL（NAT 越え用、Cloudflare Workers + Durable Objects 経由）。
+    /// 攻撃面削減のため settings.json から書き換え不可。UpdateBaseUrl と同方針のハードコード。
+    /// </summary>
+    private const string RelayUrl = "wss://relay.ferry.nephilim.jp/ferry-relay";
+
     /// <summary>サポートされているロケール一覧。</summary>
     public static readonly string[] SupportedLocales =
     [
@@ -103,11 +109,6 @@ public partial class App : Application
                 settings.BridgePageUrl = "https://ferry-edf09.web.app";
                 needsSave = true;
             }
-            if (string.IsNullOrEmpty(settings.RelayUrl))
-            {
-                settings.RelayUrl = "wss://1llum1n4t1.net/ferry-relay";
-                needsSave = true;
-            }
             if (string.IsNullOrEmpty(settings.SaveDirectory))
             {
                 settings.SaveDirectory = System.IO.Path.Combine(
@@ -128,9 +129,10 @@ public partial class App : Application
                     }
                 }
             }
-            var connectionService = new ConnectionService(settings.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName);
-            if (!string.IsNullOrEmpty(settings.RelayUrl))
-                connectionService.RelayUrl = settings.RelayUrl;
+            var connectionService = new ConnectionService(settings.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName)
+            {
+                RelayUrl = RelayUrl,
+            };
             var transferService = new TransferService(connectionService, settingsService);
             TransferService = transferService;
             var qrCodeService = new QrCodeGenerator();

@@ -6,14 +6,15 @@ QR コードでペアリングし、TCP 直接接続 / UDP ホールパンチ / 
 
 | レイヤー | 技術 |
 |---------|------|
-| UI | Avalonia UI 11.3 (Fluent テーマ) |
+| UI | Avalonia UI 12.0 (Fluent テーマ) |
 | アーキテクチャ | MVVM (CommunityToolkit.Mvvm) |
-| ランタイム | .NET 10 / Native AOT (win-x64) |
-| P2P 通信 | TCP 直接接続 / UDP ホールパンチ (STUN) / WebSocket リレー |
+| ランタイム | .NET 10 / Native AOT (win-x64 / win-arm64 / osx-arm64 / linux-x64 / linux-arm64) |
+| P2P 通信 | TCP 直接接続 / UDP ホールパンチ (STUN: Cloudflare + Google) / WebSocket リレー |
 | シグナリング | Firebase Realtime Database (FirebaseDatabase.net) |
 | ペアリング | QR コード (QRCoder) → Firebase Hosting Bridge ページ |
 | 自動更新 | Velopack (Cloudflare R2 ferry-updates) |
-| ログ | NLog (ローリングファイル) |
+| リレー | Cloudflare Workers + Durable Objects (Hibernation 対応) |
+| ログ | SuperLightLogger (Native AOT 互換のローリングファイル) |
 | テスト | xUnit v3 + NSubstitute |
 
 ## プロジェクト構成
@@ -29,8 +30,9 @@ Ferry/
 │   │   ├── Infrastructure/       # TCP/UDP/WebSocket トランスポート, Firebase, STUN, ファイルチャンカー
 │   │   ├── Converters/           # XAML コンバーター
 │   │   └── Util/                 # ログユーティリティ
-│   ├── Ferry.Bridge/             # Firebase Hosting (QR ペアリング用 Web ページ)
-│   └── Ferry.Relay/              # Node.js WebSocket リレーサーバー (VPS デプロイ)
+│   └── Ferry.Bridge/             # Firebase Hosting (QR ペアリング用 Web ページ)
+├── infra/
+│   └── cloudflare/relay/         # Cloudflare Workers + Durable Objects WebSocket リレー (TypeScript)
 ├── tests/
 │   └── Ferry.Tests/              # ユニットテスト (xUnit v3 + NSubstitute)
 ├── .github/workflows/            # CI/CD
@@ -68,7 +70,7 @@ Ferry/
 2. **Answer 側** が TCP 接続試行 → 結果を answer の `route` フィールドで通知
 3. TCP 成功 → 即完了（LAN 内、STUN 通信ゼロ）
 4. TCP 失敗 → STUN クエリ → UDP ホールパンチ（NAT 越え P2P、サーバー非経由）
-5. UDP 失敗 → WebSocket リレーにフォールバック（全データが VPS を経由）
+5. UDP 失敗 → WebSocket リレーにフォールバック（Cloudflare Workers + Durable Objects 経由）
 
 ### 接続経路の可視化
 
@@ -87,7 +89,7 @@ TCP / WebSocket ストリーム上の長さプレフィクス付きバイナリ�
 | メッセージ | コード | 内容 |
 |-----------|--------|------|
 | FileMeta | `0x01` | ファイル名・サイズ・SHA-256 (JSON) |
-| FileChunk | `0x02` | チャンクインデックス + データ (16KB) |
+| FileChunk | `0x02` | TransferId + チャンクインデックス + データ (64KB) |
 | FileAck | `0x03` | 受信完了確認 + SHA-256 検証 |
 | FileReject | `0x04` | 受信拒否 |
 | Ping/Pong | `0x10/0x11` | キープアライブ |
@@ -124,8 +126,9 @@ cd src/Ferry.Bridge && firebase deploy --only hosting
 ### 前提条件
 
 - .NET 10 SDK
-- Windows 10/11 (x64)
+- クロスプラットフォーム: Windows 10/11 (x64 / arm64), macOS (arm64), Linux (x64 / arm64)
 - Firebase CLI（Bridge ページデプロイ時のみ）
+- Cloudflare wrangler CLI（リレー Worker をデプロイ・更新する場合のみ）
 
 ## ライセンス
 

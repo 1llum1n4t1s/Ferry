@@ -75,13 +75,13 @@ public sealed class UdpHolePunchTransport : ITransport
     /// 複数の STUN サーバーに順次問い合わせて外部 IP:port を取得する。
     /// 1つのサーバーが応答しなければ次のサーバーにフォールバックする。
     /// このソケットと同じ NAT マッピングを使うため、結果はそのままホールパンチに利用可能。
-    /// 先頭は自前 coturn (1llum1n4t1.net VPS)。残りは coturn 単体障害時のフォールバックとして公開 STUN を残す。
+    /// 先頭は Cloudflare 公開 STUN (Tokyo PoP 近接、Anycast)。Cloudflare 障害時の従として Google 公開 STUN を残す。
+    /// 自前 coturn (旧 1llum1n4t1.net VPS) は Cloudflare 移行に伴い撤去済み。
     /// </summary>
     private static readonly (string host, int port)[] StunServers =
     [
-        ("1llum1n4t1.net", 3478),
-        ("stun.l.google.com", 19302),
         ("stun.cloudflare.com", 3478),
+        ("stun.l.google.com", 19302),
     ];
 
     public async Task<(string ip, int port)?> GetExternalEndpointAsync(CancellationToken ct = default)

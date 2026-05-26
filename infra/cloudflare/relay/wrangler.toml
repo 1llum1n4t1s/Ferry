@@ -1,0 +1,34 @@
+name = "ferry-relay"
+main = "src/index.ts"
+compatibility_date = "2026-05-26"
+
+# Workers Paid プラン必須 (Durable Objects 利用のため)。
+# Workers Paid $5/月は RealTimeTranslator と共有想定。Ferry のリレー DO 自体は無料枠で収まる試算。
+
+# workers.dev サブドメイン (ferry-relay.1llum1n4t1.workers.dev) と Preview URL を明示的に無効化。
+# Custom Domain (relay.ferry.nephilim.jp) でのみ公開し、口を増やさない。
+workers_dev = false
+preview_urls = false
+
+# === Durable Object ===
+[[durable_objects.bindings]]
+name = "RELAY"
+class_name = "RelayDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RelayDO"]
+
+# === カスタムドメイン ===
+# `relay.ferry.nephilim.jp` は Cloudflare Zone `nephilim.jp` (Yuro 所有) 配下。
+# wrangler.toml からの自動接続には Token に `Account:Workers Scripts:Edit` と `Zone:Workers Routes:Edit` が必要 (既に付与済み)。
+# DNS は Cloudflare が nephilim.jp Zone に自動で AAAA / CNAME を貼る。
+[[routes]]
+pattern = "relay.ferry.nephilim.jp"
+custom_domain = true
+
+# === Observability ===
+# Workers 標準のメトリクス + Logpush 連携時の保管設定。
+[observability]
+enabled = true
+head_sampling_rate = 1

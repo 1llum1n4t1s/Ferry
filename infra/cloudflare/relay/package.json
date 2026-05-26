@@ -1,0 +1,16 @@
+{
+  "name": "ferry-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ferry WebSocket リレー (Cloudflare Workers + Durable Objects, Hibernation 対応)",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250523.0",
+    "typescript": "^5.6.3",
+    "wrangler": "^4.0.0"
+  }
+}

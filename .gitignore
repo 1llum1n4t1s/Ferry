@@ -27,6 +27,13 @@ build/resources/app/App.icns
 
 # Claude local settings
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Machine-specific MCP server config (ssh ホストエイリアス等を含むためコミットしない)
 .mcp.json
+
+# Firebase Hosting デプロイキャッシュ
+.firebase/
+
+# Cloudflare Workers ローカル開発キャッシュ (infra/cloudflare/relay 配下)
+.wrangler/

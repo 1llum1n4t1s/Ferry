@@ -26,8 +26,8 @@ public sealed class AppSettings
     /// <summary>Firebase Hosting の橋渡しページ URL（プレースホルダー）。</summary>
     public string BridgePageUrl { get; set; } = string.Empty;
 
-    /// <summary>WebSocket リレーサーバーの URL（NAT 越え用）。</summary>
-    public string RelayUrl { get; set; } = string.Empty;
+    // WebSocket リレー URL は攻撃面削減のため settings.json から撤去 (2026-05 Cloudflare 移行)。
+    // App.axaml.cs の private const RelayUrl にハードコード。VelopackUpdateDialog の UpdateBaseUrl と同じ方針。
 
     // N-2: 旧 RunAtStartup は AutoStartWithWindows と意味が重複・実機能なしのため削除済み
 

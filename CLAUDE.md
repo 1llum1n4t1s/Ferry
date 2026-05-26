@@ -32,9 +32,8 @@ Ferry は QR コードでペアリングし、TCP 直接接続（LAN）/ UDP ホ
 
 - **`src/Ferry/`** — .NET 10 Avalonia UI デスクトップアプリ（Native AOT、クロスプラットフォーム: win-x64 / win-arm64 / osx-arm64 / linux-x64 / linux-arm64）
 - **`src/Ferry.Bridge/`** — Firebase Hosting にデプロイする Web ページ（スマホでQRスキャン→2台のPCをペアリング。`bridge.js` + `index.html`、ライブラリは CDN 直リンク）
+- **`infra/cloudflare/relay/`** — Cloudflare Workers + Durable Objects の WebSocket リレー実装 (TypeScript)。`wrangler deploy` で `wss://relay.ferry.nephilim.jp/ferry-relay` に配信
 - **`tests/Ferry.Tests/`** — xUnit v3 + NSubstitute によるユニットテスト
-
-> WebSocket リレーサーバー（Node.js）は **本リポジトリには無い**。別リポジトリ `1llum1n4t1.net` から VPS にデプロイする（後述「サーバー接続情報」）。
 
 ### Avalonia UI ネイティブ + MVVM サービス層
 
@@ -62,9 +61,9 @@ Infrastructure/         → FirebaseSignaling, TcpDirectTransport, UdpHolePunchT
    - TCP 成功 → `route = "direct"` → 両側 TCP で接続完了
    - TCP 失敗 → `route = "needRelay"` → Offer 側が即座に次ステップへ
 3. **TCP 失敗時**: Offer 側が STUN クエリ実行 → UDP ホールパンチ試行（8秒）
-4. **UDP 失敗時**: WebSocket リレーにフォールバック（`wss://1llum1n4t1.net/ferry-relay`）
+4. **UDP 失敗時**: WebSocket リレーにフォールバック（`wss://relay.ferry.nephilim.jp/ferry-relay`、Cloudflare Workers + Durable Objects、Hibernation 対応）
 
-STUN は **自前 coturn (`1llum1n4t1.net:3478`) を主、公開 STUN (Google / Cloudflare) を従** の 3 サーバーフォールバック。IPv4 明示指定（`AddressFamily.InterNetwork`、VPS は IPv4/IPv6 両対応だが `49.212.230.244` を引く）。TURN/TURNS は VPS に立ってるが、Ferry は現状 WebSocket リレーで代替しているため未使用（接続詳細は `1llum1n4t1.net/docs/server.md`）。
+STUN は **Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google STUN (`stun.l.google.com:19302`) を従** の 2 サーバーフォールバック。IPv4 明示指定（`AddressFamily.InterNetwork`）。旧 VPS 自前 coturn (`1llum1n4t1.net:3478`) は Cloudflare 移行に伴い 2026-05 に撤去済み。
 
 ### ペアリングフロー
 
@@ -147,7 +146,11 @@ xUnit v3 + NSubstitute。テスト内の非同期メソッドには `TestContext
 
 ## サーバー接続情報
 
-WebSocket リレーサーバー・STUN サーバーの接続情報・デプロイ手順は **`C:\Users\szk\Work\1llum1n4t1.net` リポジトリの `docs/server.md`** を参照。
+- **WebSocket リレー**: Cloudflare Workers + Durable Objects (`wss://relay.ferry.nephilim.jp/ferry-relay`)。実装・デプロイ手順は [`infra/cloudflare/relay/README.md`](infra/cloudflare/relay/README.md) を参照
+- **STUN**: Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google STUN (`stun.l.google.com:19302`) を従。自前運用は無し
+- **Firebase**: Realtime DB (シグナリング・プレゼンス) と Hosting (Bridge ページ) は Firebase 据え置き (Spark 無料枠内)
+
+旧 VPS (`C:\Users\IMT\dev\1llum1n4t1.net` リポジトリ管理) の `ferry-relay` (Node.js) と `coturn` コンテナは 2026-05 Cloudflare 移行に伴い撤去予定。撤去手順は [`docs/Cloudflare移行_作業依頼書_2026-05.md`](docs/Cloudflare移行_作業依頼書_2026-05.md) を参照。
 
 ## 既知の制限と注意事項
 
