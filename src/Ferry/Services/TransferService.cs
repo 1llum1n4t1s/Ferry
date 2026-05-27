@@ -247,6 +247,13 @@ public sealed class TransferService : ITransferService
             // (Ferry v1.0.37 以前は FileApprove メッセージを送らない → タイムアウト)
             item.ErrorMessage = $"承認待ちが {SendApprovalTimeoutSeconds} 秒でタイムアウトしました。" +
                 "相手の Ferry が古いバージョン (v1.0.37 以前) の可能性があります。両側で v1.0.38 以降に更新してください。";
+
+            // v1.0.38 review fix v8: 受信側にも FileReject を送って pending approval を expire させる。
+            // これを送らないと、受信側ユーザーが 60 秒後に承認ボタンを押した時、FileApprove は届くが
+            // 送信側はもう pending を破棄しているのでチャンクが来ず、受信側で空ファイルが in-progress
+            // のまま残ってしまう (Codex P2 指摘 v8)
+            SendRejectFireAndForget(item.TransferId, $"送信側がタイムアウト ({SendApprovalTimeoutSeconds}s)");
+
             TransferError?.Invoke(this, item);
             return false;
         }
@@ -765,6 +772,32 @@ public sealed class TransferService : ITransferService
             sendingItem.State = TransferState.Error;
             sendingItem.ErrorMessage = $"相手が受信を拒否しました: {reason}";
             TransferError?.Invoke(this, sendingItem);
+            return;
+        }
+
+        // v1.0.38 review fix v8: 受信側で pending approval として待機中のケース。
+        // 送信側がタイムアウト等で expire を通知してきた → 受信側 UI からも消す必要がある
+        // (これを処理しないと、ユーザーが後から承認ボタンを押した時に FileApprove を送って
+        // 空ファイルが in-progress のまま残ってしまう)
+        if (_pendingApprovals.TryRemove(transferId, out var pendingState))
+        {
+            Util.Logger.Log($"受信側 pending approval を expire (送信側通知): {pendingState.FileName} / 理由={reason}");
+            pendingState.Item.State = TransferState.Cancelled;
+            pendingState.Item.ErrorMessage = $"送信側がキャンセル: {reason}";
+            TransferError?.Invoke(this, pendingState.Item);
+            return;
+        }
+
+        // v1.0.38 review fix v8: race ケース — 受信側が timeout 直前で承認していて
+        // 既に _receiveStates に移行している状態で送信側 reject が到着。
+        // file stream は開いて空ファイルが空のまま残るので、ここで cleanup する
+        if (_receiveStates.TryRemove(transferId, out var receiveState))
+        {
+            Util.Logger.Log($"受信側 in-progress を expire (送信側通知 / race): {receiveState.FileName} / 理由={reason}");
+            receiveState.Item.State = TransferState.Cancelled;
+            receiveState.Item.ErrorMessage = $"送信側がキャンセル: {reason}";
+            CleanupReceiveState(receiveState);
+            TransferError?.Invoke(this, receiveState.Item);
         }
     }
 

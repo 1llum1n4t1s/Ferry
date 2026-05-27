@@ -374,6 +374,17 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     {
         Dispatcher.UIThread.Post(() =>
         {
+            // v1.0.38 review fix v8: 受信側 pending approval のキャンセル通知 (送信側タイムアウト等) を反映。
+            // PendingApprovals に同じ TransferId のエントリがあれば消す (再承認しても無意味になるため)
+            var pending = PendingApprovals.FirstOrDefault(t => t.TransferId == e.TransferId);
+            if (pending != null)
+            {
+                pending.State = TransferState.Cancelled;
+                pending.ErrorMessage = e.ErrorMessage;
+                PendingApprovals.Remove(pending);
+                HasPendingApproval = PendingApprovals.Count > 0;
+            }
+
             var item = Transfers.FirstOrDefault(t =>
                 t.Direction == e.Direction && t.State == TransferState.InProgress);
             if (item != null)
