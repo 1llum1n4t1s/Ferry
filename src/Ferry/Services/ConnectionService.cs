@@ -252,8 +252,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         Util.Logger.Log($"着信接続ポーリング開始: pairId={pairId}");
 
         var minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        // v1.0.38 review fix v4: probe 専用ノード (probeOffer) の独立 cutoff
+        // v1.0.38 review fix v4: probe 専用ノード (probeOffers) の独立 cutoff
         var minProbeCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        // v1.0.38 review fix v14: 既に処理した probe nonce を記録。Firebase 上 probe ノードは
+        // sender 側 finally で削除されるが、削除前にこちらが poll するとダブル処理になるため
+        var processedProbeNonces = new System.Collections.Generic.HashSet<string>();
 
         // ポーリング用 Firebase クライアントはループ全体で再利用する
         // （毎反復で new すると接続/TLS ハンドシェイクの churn が発生するため）
@@ -269,27 +272,27 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     continue;
                 }
 
-                // v1.0.38 review fix v4: probe offer は専用ノード (probeOffer) から取得。
-                // live offer slot を一切触らないので、real connection 中の offer/answer 待ちを壊さない。
-                // 通常 offer の WaitForSdpAsync は long-polling なので、その内部 1 秒間隔で
-                // probe offer もチェックする…のは複雑なので、ここで先に non-blocking で probeOffer を確認
-                var probeOfferJson = await pollingSignaling.TryReadProbeOfferAsync(pairId, minProbeCreatedAt, ct);
-                if (probeOfferJson != null)
+                // v1.0.38 review fix v14: per-nonce key 化により複数の同時 probe offer を全て処理。
+                // ReadProbeOffersAsync は probeOffers/<nonce>/ 配下を全部 OnceAsync で取得し、
+                // (nonce, sdp) のリストを返す。自分発 (From=self) と既処理 nonce はスキップ
+                var probeOffers = await pollingSignaling.ReadProbeOffersAsync(pairId, minProbeCreatedAt, ct);
+                foreach (var (probeNonce, probeOfferJson) in probeOffers)
                 {
+                    if (processedProbeNonces.Contains(probeNonce)) continue;
                     var probeOffer = DeserializeConnectionInfo(probeOfferJson);
-                    if (probeOffer != null && probeOffer.From != _deviceId)
+                    if (probeOffer == null || probeOffer.From == _deviceId) continue;
+                    try
                     {
-                        try
-                        {
-                            await HandleProbeOfferAsync(probeOffer, pairId, ct);
-                        }
-                        catch (Exception ex)
-                        {
-                            Util.Logger.Log($"Probe offer 処理エラー: {ex.Message}", Util.LogLevel.Warning);
-                        }
+                        await HandleProbeOfferAsync(probeOffer, pairId, probeNonce, ct);
+                        processedProbeNonces.Add(probeNonce);
                     }
-                    minProbeCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    catch (Exception ex)
+                    {
+                        Util.Logger.Log($"Probe offer 処理エラー (nonce={probeNonce}): {ex.Message}", Util.LogLevel.Warning);
+                    }
                 }
+                // 過剰な memory 占有を避けるため、最大 100 nonce で打ち切り (5min cooldown と整合)
+                if (processedProbeNonces.Count > 100) processedProbeNonces.Clear();
 
                 // 通常 offer は WaitForSdpAsync で長く待つが、最大 5 秒で抜けて probe offer 側も
                 // 定期的にチェックできるようにする (両者の polling を交互に進める)
@@ -426,9 +429,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// 通常の ListenForIncomingConnectionAsync 内フローと違って、TCP 接続試行だけ走らせて
     /// 結果を answer に書く。transport は確立せず即切断、State も変更しない。
     /// </summary>
-    private async Task HandleProbeOfferAsync(ConnectionInfo offer, string pairId, CancellationToken ct)
+    private async Task HandleProbeOfferAsync(ConnectionInfo offer, string pairId, string nonce, CancellationToken ct)
     {
-        Util.Logger.Log($"Probe offer 受信: pairId={pairId}, TCP 試行のみで応答");
+        Util.Logger.Log($"Probe offer 受信: pairId={pairId}, nonce={nonce}, TCP 試行のみで応答");
         var probeSig = new FirebaseSignaling(_databaseUrl);
         var connected = false;
         TcpDirectTransport? tcpTransport = null;
@@ -461,10 +464,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 From = _deviceId,
                 // v1.0.38 review fix v12: 受信した offer の Nonce をそのまま echo する。
                 // probe sender 側がこの nonce を見て「自分宛 answer か / 相手の別 probe か」を判別する
+                // v14: per-nonce key 化により nonce 一致は key で保証されるが、互換 / デバッグのため payload にも残す
                 Nonce = offer.Nonce,
             };
-            // v1.0.38 review fix v4: probe 専用 answer ノードに書き込む (live answer slot を上書きしない)
-            await probeSig.SendProbeAnswerAsync(pairId, SerializeConnectionInfo(answerInfo), ct);
+            // v1.0.38 review fix v14: per-nonce key 配下の answer に書き込む (旧 v4 の単一 slot 撤去)
+            await probeSig.SendProbeAnswerAsync(pairId, nonce, SerializeConnectionInfo(answerInfo), ct);
         }
         finally
         {
@@ -686,7 +690,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 From = _deviceId,  // listening 側で probeOffer.From == _deviceId は無視 (自己 probe スキップ)
                 Nonce = probeNonce,  // v12: answer 側に echo してもらって自分宛 answer かを判別
             };
-            await probeSig.SendProbeOfferAsync(pairId, SerializeConnectionInfo(offerInfo), ct);
+            // v1.0.38 review fix v14: per-nonce key 化 — probeOffers/<nonce>/{data, createdAt}
+            await probeSig.SendProbeOfferAsync(pairId, probeNonce, SerializeConnectionInfo(offerInfo), ct);
 
             // ② TCP accept + probe answer ポーリングを同時待機
             //   UDP ホールパンチ probe は撤去 (TCP 失敗時は StunAssisted 推定)
@@ -700,8 +705,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             using var stageCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             stageCts.CancelAfter(TimeSpan.FromSeconds(ProbeOverallTimeoutSeconds));
             var tcpAcceptTask = tcpTransport.AcceptAsync(stageCts.Token);
-            // v1.0.38 review fix v4: probe 専用 answer 待ち (live answer slot とは別)
-            var answerTask = probeSig.WaitForProbeAnswerAsync(pairId, minCreatedAt: probeCreatedAt, ct: stageCts.Token);
+            // v1.0.38 review fix v14: 自分の nonce 配下の answer のみ待つ
+            // (他 probe の answer は別 key なので絶対に混入しない)
+            var answerTask = probeSig.WaitForProbeAnswerAsync(pairId, probeNonce, minCreatedAt: probeCreatedAt, ct: stageCts.Token);
 
             Task completedTask;
             try
@@ -735,15 +741,14 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 if (answerJson != null)
                 {
                     var answer = DeserializeConnectionInfo(answerJson);
-                    // v1.0.38 review fix v12: nonce 不一致 = 相手の別 probe の answer を拾った状態。
-                    // bidirectional 同時 probe で自分の probeOffer が上書きされ、相手側 probe の
-                    // answer が単一スロットに残っていると起こる。誤った route 表示を避けて Unknown を返す
-                    if (answer?.Nonce != probeNonce)
+                    // v1.0.38 review fix v14: nonce 一致は key path (probeAnswers/<nonce>) で既に保証済み。
+                    // payload 内 Nonce 検証は二重防護のため残す (互換 / デバッグ用) が、key 検証で十分
+                    if (answer?.Nonce != null && answer.Nonce != probeNonce)
                     {
-                        Util.Logger.Log($"Probe: Answer nonce 不一致 (expected={probeNonce}, got={answer?.Nonce}) → Unknown (相手の別 probe の応答を拾った)");
+                        Util.Logger.Log($"Probe: Answer nonce 異常 (key={probeNonce}, payload={answer.Nonce}) → Unknown");
                         resultRoute = ConnectionRoute.Unknown;
                     }
-                    else if (answer.Route == RouteDirect)
+                    else if (answer?.Route == RouteDirect)
                     {
                         Util.Logger.Log("Probe: Answer 側で TCP 成功通知 → Direct");
                         resultRoute = ConnectionRoute.Direct;
@@ -782,8 +787,15 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             try { tcpTransport?.Close(); tcpTransport?.Dispose(); } catch { }
             try { udpTransport?.Close(); udpTransport?.Dispose(); } catch { }
 
-            // v1.0.38 review fix #7: probe cleanup は省略 (live signaling を壊さないため)。
-            // GitHub Actions の定期 cleanup に任せる
+            // v1.0.38 review fix v14: 自分の per-nonce probe ノードを即時 cleanup する。
+            // 旧 v7 は単一スロットだったので「live signaling を壊さないため省略」していたが、
+            // v14 では per-nonce key なので自分のノードだけ消せば他に影響なし。
+            // 残骸蓄積防止 + listener 側の "既処理 nonce" set のフラッシュタイミング短縮
+            if (probeSig != null)
+            {
+                try { await probeSig.CleanupProbeAsync(pairId, probeNonce); }
+                catch (Exception ex) { Util.Logger.Log($"Probe cleanup エラー: {ex.Message}", Util.LogLevel.Warning); }
+            }
             probeSig?.Dispose();
 
             // v1.0.38 review fix v2: listening は probe 中も停止していないので再開不要
