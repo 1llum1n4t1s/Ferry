@@ -248,6 +248,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         Util.Logger.Log($"着信接続ポーリング開始: pairId={pairId}");
 
         var minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        // v1.0.38 review fix v4: probe 専用ノード (probeOffer) の独立 cutoff
+        var minProbeCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
         // ポーリング用 Firebase クライアントはループ全体で再利用する
         // （毎反復で new すると接続/TLS ハンドシェイクの churn が発生するため）
@@ -263,8 +265,42 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     continue;
                 }
 
-                // Offer（接続情報 JSON）をポーリングで待つ
-                var offerJson = await pollingSignaling.WaitForSdpAsync(pairId, "offer", minCreatedAt: minCreatedAt, ct: ct);
+                // v1.0.38 review fix v4: probe offer は専用ノード (probeOffer) から取得。
+                // live offer slot を一切触らないので、real connection 中の offer/answer 待ちを壊さない。
+                // 通常 offer の WaitForSdpAsync は long-polling なので、その内部 1 秒間隔で
+                // probe offer もチェックする…のは複雑なので、ここで先に non-blocking で probeOffer を確認
+                var probeOfferJson = await pollingSignaling.TryReadProbeOfferAsync(pairId, minProbeCreatedAt, ct);
+                if (probeOfferJson != null)
+                {
+                    var probeOffer = DeserializeConnectionInfo(probeOfferJson);
+                    if (probeOffer != null && probeOffer.From != _deviceId)
+                    {
+                        try
+                        {
+                            await HandleProbeOfferAsync(probeOffer, pairId, ct);
+                        }
+                        catch (Exception ex)
+                        {
+                            Util.Logger.Log($"Probe offer 処理エラー: {ex.Message}", Util.LogLevel.Warning);
+                        }
+                    }
+                    minProbeCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                }
+
+                // 通常 offer は WaitForSdpAsync で長く待つが、最大 5 秒で抜けて probe offer 側も
+                // 定期的にチェックできるようにする (両者の polling を交互に進める)
+                using var offerCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                offerCts.CancelAfter(TimeSpan.FromSeconds(5));
+                string offerJson;
+                try
+                {
+                    offerJson = await pollingSignaling.WaitForSdpAsync(pairId, "offer", minCreatedAt: minCreatedAt, ct: offerCts.Token);
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    // 5 秒タイムアウト → 次の iteration で probe + offer 両方再 polling
+                    continue;
+                }
 
                 if (State is PeerState.Connected or PeerState.Connecting)
                 {
@@ -281,28 +317,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     continue;
                 }
 
-                // v1.0.38 review fix v2: 自分自身が送信した offer (probe など) は無視する。
-                // これにより probe 中も listening を停止する必要がなくなり、
-                // 同じ pairId を共有する selected peer からの real offer を見落とすバグが解消する
+                // v1.0.38 review fix v2: 自分自身が送信した offer は無視する (保険)
                 if (offer.From == _deviceId)
                 {
-                    Util.Logger.Log($"自己 offer を無視: pairId={pairId}, probe={offer.Probe}");
-                    minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    continue;
-                }
-
-                // v1.0.38 review fix #6: probe offer は通常の transport 確立フローに乗せない。
-                // TCP 試行結果だけ answer に書いて即切断し、State / _transport を一切触らない
-                if (offer.Probe)
-                {
-                    try
-                    {
-                        await HandleProbeOfferAsync(offer, pairId, ct);
-                    }
-                    catch (Exception ex)
-                    {
-                        Util.Logger.Log($"Probe offer 処理エラー: {ex.Message}", Util.LogLevel.Warning);
-                    }
+                    Util.Logger.Log($"自己 offer を無視: pairId={pairId}");
                     minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     continue;
                 }
@@ -425,9 +443,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 Probe = true,
                 Connected = connected,
                 Route = connected ? RouteDirect : RouteNeedRelay,
-                From = _deviceId,  // v1.0.38 review fix v2
+                From = _deviceId,
             };
-            await probeSig.SendSdpAnswerAsync(pairId, SerializeConnectionInfo(answerInfo), ct);
+            // v1.0.38 review fix v4: probe 専用 answer ノードに書き込む (live answer slot を上書きしない)
+            await probeSig.SendProbeAnswerAsync(pairId, SerializeConnectionInfo(answerInfo), ct);
         }
         finally
         {
@@ -622,14 +641,12 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             probeSig = new FirebaseSignaling(_databaseUrl);
             await probeSig.RegisterSessionAsync(_deviceId, _displayName, ct);
 
-            // v1.0.38 review fix v3 (stale answer 完全対策):
-            // SendSdpAnswerAsync は createdAt を更新しないので、minCreatedAt cutoff だけでは
-            // 前回 probe/接続の残骸 answer を排除できない。answer ノードだけ事前削除する
-            // (offer / candidates 等は残すので相手の進行中接続を壊さない、CleanupSignalingDataAsync
-            //  全削除とは違う限定的 cleanup)
-            await probeSig.CleanupAnswerAsync(pairId, ct);
+            // v1.0.38 review fix v4: probe を専用ノード (signaling/<pairId>/probeOffer +
+            // probeAnswer + probeCreatedAt + probeAnswerCreatedAt) に完全分離。
+            // 通常の offer / answer / createdAt スロットを一切触らないので、
+            // 同じ pair で real connection と probe が同時に走っても互いに干渉しない
 
-            // ① TCP リスナー起動 → offer 送信 (Probe=true フラグで相手側が probe モードで応答)
+            // ① TCP リスナー起動 → probe 専用 offer 送信
             tcpTransport = new TcpDirectTransport();
             var port = tcpTransport.StartListener();
             var localIps = TcpDirectTransport.GetLocalIpAddresses();
@@ -638,22 +655,18 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 Ips = localIps,
                 Port = port,
                 RelayUrl = RelayUrl,
-                Probe = true,  // v1.0.38 review fix #6: 相手側に probe であることを通知 (実 transport を確立させない)
-                From = _deviceId,  // v1.0.38 review fix v2: 自分の listening が拾わないように送信元明示
+                Probe = true,
+                From = _deviceId,  // listening 側で probeOffer.From == _deviceId は無視 (自己 probe スキップ)
             };
-            await probeSig.SendSdpOfferAsync(pairId, SerializeConnectionInfo(offerInfo), ct);
+            await probeSig.SendProbeOfferAsync(pairId, SerializeConnectionInfo(offerInfo), ct);
 
-            // ② TCP accept + Answer ポーリングを同時待機
-            //   v1.0.38 review fix: UDP ホールパンチ probe は撤去。理由:
-            //   (a) STUN クエリ + ホールパンチで実 socket と Firebase 操作が増え、リソース消費大
-            //   (b) Answer 側 (probe モード) も UDP 用 STUN を走らせる必要があり実装複雑度が上がる
-            //   (c) TCP 失敗時は StunAssisted を「推定」表示し、実 transfer で経路が確定したら overwrite される
-            //   → P2P と RELAY の区別精度は落ちるが、実用上は十分
+            // ② TCP accept + probe answer ポーリングを同時待機
+            //   UDP ホールパンチ probe は撤去 (TCP 失敗時は StunAssisted 推定)
             using var stageCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             stageCts.CancelAfter(TimeSpan.FromSeconds(TcpConnectTimeoutSeconds + 2));
             var tcpAcceptTask = tcpTransport.AcceptAsync(stageCts.Token);
-            // v1.0.38 review fix v2 (stale answer): minCreatedAt で probe 送信時刻より新しい answer だけ受ける
-            var answerTask = probeSig.WaitForSdpAsync(pairId, "answer", minCreatedAt: probeCreatedAt, ct: stageCts.Token);
+            // v1.0.38 review fix v4: probe 専用 answer 待ち (live answer slot とは別)
+            var answerTask = probeSig.WaitForProbeAnswerAsync(pairId, minCreatedAt: probeCreatedAt, ct: stageCts.Token);
 
             Task completedTask;
             try

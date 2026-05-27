@@ -315,23 +315,113 @@ public sealed class FirebaseSignaling : IDisposable
     }
 
     /// <summary>
-    /// v1.0.38 review fix v3: 指定 pairId の answer ノードだけを削除する (probe 用)。
-    /// SendSdpAnswerAsync は createdAt を更新しないため、minCreatedAt cutoff だけでは
-    /// 前回 probe/接続の残骸 answer を区別できない。新 probe の前にこれを呼ぶことで
-    /// stale answer を即座に拾うバグを根本回避する (offer / candidates 等は残すので
-    /// 相手の進行中接続を壊さない)。
+    /// v1.0.38 review fix v4: probe 専用 offer を `signaling/{pairId}/probeOffer` に書き込む。
+    /// 通常の offer ノードとは完全分離されており、同じ pair で probe と real connection が
+    /// 同時に走っても互いを上書き / 削除しない。createdAt も probe 用に分離 (probeCreatedAt)。
     /// </summary>
-    public async Task CleanupAnswerAsync(string pairId, CancellationToken ct = default)
+    public async Task SendProbeOfferAsync(string pairId, string sdp, CancellationToken ct = default)
+    {
+        await _client.Child("signaling").Child(pairId).Child("probeCreatedAt")
+            .PutAsync(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        var encoded = EncodeBase64(sdp);
+        await _client.Child("signaling").Child(pairId).Child("probeOffer")
+            .PutAsync(new SignalingValue { Data = encoded });
+    }
+
+    /// <summary>
+    /// v1.0.38 review fix v4: probe 専用 answer を `signaling/{pairId}/probeAnswer` に書き込む。
+    /// 通常の answer ノードを上書きしないので、real connection の answer 待機を壊さない。
+    /// </summary>
+    public async Task SendProbeAnswerAsync(string pairId, string sdp, CancellationToken ct = default)
+    {
+        await _client.Child("signaling").Child(pairId).Child("probeAnswerCreatedAt")
+            .PutAsync(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        var encoded = EncodeBase64(sdp);
+        await _client.Child("signaling").Child(pairId).Child("probeAnswer")
+            .PutAsync(new SignalingValue { Data = encoded });
+    }
+
+    /// <summary>
+    /// v1.0.38 review fix v4: probe 専用 answer を待つ。probeAnswerCreatedAt で freshness 判定。
+    /// </summary>
+    public async Task<string> WaitForProbeAnswerAsync(string pairId, long minCreatedAt, CancellationToken ct = default)
+    {
+        var pollCount = 0;
+        while (!ct.IsCancellationRequested)
+        {
+            pollCount++;
+            try
+            {
+                long? createdAt = null;
+                try
+                {
+                    createdAt = await _client.Child("signaling").Child(pairId)
+                        .Child("probeAnswerCreatedAt").OnceSingleAsync<long?>();
+                }
+                catch { }
+
+                if (createdAt == null || createdAt.Value < minCreatedAt)
+                {
+                    await Task.Delay(1000, ct);
+                    continue;
+                }
+
+                SignalingValue? value = null;
+                try
+                {
+                    value = await _client.Child("signaling").Child(pairId)
+                        .Child("probeAnswer").OnceSingleAsync<SignalingValue>();
+                }
+                catch { }
+
+                if (value != null && !string.IsNullOrEmpty(value.Data))
+                {
+                    return DecodeBase64(value.Data);
+                }
+            }
+            catch (OperationCanceledException) { throw; }
+            catch { /* ignore transient */ }
+
+            await Task.Delay(1000, ct);
+        }
+        throw new OperationCanceledException(ct);
+    }
+
+    /// <summary>
+    /// v1.0.38 review fix v4: probe 専用 offer の存在を 1 回だけチェックする (non-blocking)。
+    /// minCreatedAt より新しい probeOffer があれば JSON を返す、なければ null。
+    /// ListenForIncomingConnectionAsync の loop 内で通常 offer と並行 polling する用。
+    /// </summary>
+    public async Task<string?> TryReadProbeOfferAsync(string pairId, long minCreatedAt, CancellationToken ct = default)
     {
         try
         {
-            await _client.Child("signaling").Child(pairId).Child("answer").DeleteAsync();
-            Util.Logger.Log($"answer ノード削除 (probe 前掃除): {pairId}");
+            long? createdAt = null;
+            try
+            {
+                createdAt = await _client.Child("signaling").Child(pairId)
+                    .Child("probeCreatedAt").OnceSingleAsync<long?>();
+            }
+            catch { }
+
+            if (createdAt == null || createdAt.Value < minCreatedAt)
+                return null;
+
+            SignalingValue? value = null;
+            try
+            {
+                value = await _client.Child("signaling").Child(pairId)
+                    .Child("probeOffer").OnceSingleAsync<SignalingValue>();
+            }
+            catch { }
+
+            if (value != null && !string.IsNullOrEmpty(value.Data))
+                return DecodeBase64(value.Data);
+
+            return null;
         }
-        catch (Exception ex)
-        {
-            Util.Logger.Log($"answer 削除エラー: {ex.Message}", Util.LogLevel.Warning);
-        }
+        catch (OperationCanceledException) { throw; }
+        catch { return null; }
     }
 
     /// <summary>
