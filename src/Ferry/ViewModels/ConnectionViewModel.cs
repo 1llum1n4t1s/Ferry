@@ -320,6 +320,13 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                         // edge ではないので手動で発火
                         _ = Task.Run(() => ProbePeerRouteAsync(peer));
                     }
+                    else if (!isOnline)
+                    {
+                        // v1.0.38 review fix v13: offline になったら古い Route バッジを消す。
+                        // バッジ可視性は PairedPeer.IsConnected (Route != Unknown) で駆動されているため、
+                        // 旧 LAN/P2P/relay バッジが offline 後も残り続けて誤誘導するのを防ぐ
+                        peer.Route = ConnectionRoute.Unknown;
+                    }
                 });
             }
             catch (Exception ex)
@@ -580,7 +587,14 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                     Dispatcher.UIThread.Post(() =>
                     {
                         if (peer.IsOnline != isOnline)
+                        {
                             peer.IsOnline = isOnline;
+                            // v1.0.38 review fix v13: offline 遷移時に古い Route バッジを消す
+                            // (バッジ可視性は IsConnected = Route != Unknown で駆動されるため、
+                            // 古い LAN/P2P/relay バッジが offline 後も残り続けて誤誘導するのを防ぐ)
+                            if (!isOnline)
+                                peer.Route = ConnectionRoute.Unknown;
+                        }
 
                         // 相手の表示名が変わっていたら同期
                         if (presenceData != null &&
