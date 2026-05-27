@@ -10,7 +10,7 @@
     <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
 
     <Product>Ferry</Product>
-    <Version>1.0.36</Version>
+    <Version>1.0.37</Version>
     <Description>P2P File Transfer Application</Description>
   </PropertyGroup>
 
@@ -43,9 +43,9 @@
     <!-- 注意: Avalonia 本体は 12.0.3 だが、Avalonia.Diagnostics は本記事時点で 11.3.16 が最新 (12 系未公開)。
          Debug ビルド専用のデベロッパーツールで Release には含まれないため、互換性警告が出ても許容する。
          Avalonia.Diagnostics 12 が公開され次第バージョンを揃える -->
-    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.16" Condition="'$(Configuration)' == 'Debug'" />
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.17" Condition="'$(Configuration)' == 'Debug'" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <PackageReference Include="Velopack" Version="0.0.1298" />
+    <PackageReference Include="Velopack" Version="1.0.1" />
     <!-- Komorebi と同じローカライズ＆アイコン注入パターンで自動更新ダイアログを提供する。
          自前の SelfUpdateWindow/VM/Model は撤去し、このライブラリの UpdateDialogWindow に統一 -->
     <PackageReference Include="VelopackUpdateDialog.Avalonia" Version="1.0.3" />
@@ -54,7 +54,7 @@
     <PackageReference Include="SuperLightLogger" Version="1.0.7" />
     <!-- Avalonia の Linux サポートが Tmds.DBus.Protocol を transitive に引くため、
          CVE 対応版 (0.93.0) を直接指定して上書きする。-->
-    <PackageReference Include="Tmds.DBus.Protocol" Version="0.93.0" />
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.94.0" />
   </ItemGroup>
 
   <ItemGroup>
