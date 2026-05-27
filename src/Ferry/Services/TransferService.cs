@@ -236,7 +236,19 @@ public sealed class TransferService : ITransferService
 
         try
         {
-            return await approvalTcs.Task.WaitAsync(approvalCts.Token);
+            var approved = await approvalTcs.Task.WaitAsync(approvalCts.Token);
+            if (!approved)
+            {
+                // v1.0.38 review fix v12: 受信側拒否時も timeout branch と同じパターンで
+                // State=Cancelled + TransferError 発火 (catch では state==Cancelled で二重発火 skip)。
+                // ErrorMessage は HandleFileReject が事前に reason 付きで設定済み (fallback で generic)
+                Util.Logger.Log($"受信側が拒否: {displayName} / 理由={item.ErrorMessage}", Util.LogLevel.Warning);
+                item.State = TransferState.Cancelled;
+                if (string.IsNullOrEmpty(item.ErrorMessage))
+                    item.ErrorMessage = "相手が受信を拒否しました";
+                TransferError?.Invoke(this, item);
+            }
+            return approved;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -762,6 +774,13 @@ public sealed class TransferService : ITransferService
         // v1.0.38: 承認待ち TCS を完了させる (送信側が SendFileAsync で待機中)
         if (_pendingSendApprovals.TryRemove(transferId, out var tcs))
         {
+            // v1.0.38 review fix v12: 拒否理由を sender 側 item.ErrorMessage に設定してから TCS 解決。
+            // これで WaitForApprovalAsync が item.ErrorMessage を見て実際の理由 (例: パストラバーサル /
+            // dir 作成失敗) を UI に伝えられる。旧実装は generic な「受信が拒否されました」しか出なかった
+            if (_activeTransfers.TryGetValue(transferId, out var pendingSendItem))
+            {
+                pendingSendItem.ErrorMessage = $"相手が受信を拒否しました: {reason}";
+            }
             tcs.TrySetResult(false);
             return;
         }

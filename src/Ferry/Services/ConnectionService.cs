@@ -459,6 +459,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 Connected = connected,
                 Route = connected ? RouteDirect : RouteNeedRelay,
                 From = _deviceId,
+                // v1.0.38 review fix v12: 受信した offer の Nonce をそのまま echo する。
+                // probe sender 側がこの nonce を見て「自分宛 answer か / 相手の別 probe か」を判別する
+                Nonce = offer.Nonce,
             };
             // v1.0.38 review fix v4: probe 専用 answer ノードに書き込む (live answer slot を上書きしない)
             await probeSig.SendProbeAnswerAsync(pairId, SerializeConnectionInfo(answerInfo), ct);
@@ -651,10 +654,19 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         // 過去 probe/接続の残骸 answer を拾わないようにする
         var probeCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
+        // v1.0.38 review fix v12: 自分の probe を識別する nonce。bidirectional 同時 probe で
+        // 相手の probe の answer を誤認しないよう、answer 側が echo する nonce を発行する
+        var probeNonce = Guid.NewGuid().ToString("N")[..16];
+
         try
         {
             probeSig = new FirebaseSignaling(_databaseUrl);
-            await probeSig.RegisterSessionAsync(_deviceId, _displayName, ct);
+            // v1.0.38 review fix v12: probe では RegisterSessionAsync を呼ばない。
+            // 旧実装は sessions/{deviceId} を書き込んでいたため、probe 中の peer に対して
+            // 別デバイスが PairFromCodeAsync で deviceId を入力すると CheckSessionAsync が
+            // 通過してしまい、一方的 pairing 記録が残る (この peer は pairings/ entry を listen
+            // していないので異常状態) というセキュリティバグがあった。
+            // probe は signaling/<pairId>/probeOffer に書き込むだけで動くので session 不要。
 
             // v1.0.38 review fix v4: probe を専用ノード (signaling/<pairId>/probeOffer +
             // probeAnswer + probeCreatedAt + probeAnswerCreatedAt) に完全分離。
@@ -672,6 +684,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 RelayUrl = RelayUrl,
                 Probe = true,
                 From = _deviceId,  // listening 側で probeOffer.From == _deviceId は無視 (自己 probe スキップ)
+                Nonce = probeNonce,  // v12: answer 側に echo してもらって自分宛 answer かを判別
             };
             await probeSig.SendProbeOfferAsync(pairId, SerializeConnectionInfo(offerInfo), ct);
 
@@ -722,7 +735,15 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 if (answerJson != null)
                 {
                     var answer = DeserializeConnectionInfo(answerJson);
-                    if (answer?.Route == RouteDirect)
+                    // v1.0.38 review fix v12: nonce 不一致 = 相手の別 probe の answer を拾った状態。
+                    // bidirectional 同時 probe で自分の probeOffer が上書きされ、相手側 probe の
+                    // answer が単一スロットに残っていると起こる。誤った route 表示を避けて Unknown を返す
+                    if (answer?.Nonce != probeNonce)
+                    {
+                        Util.Logger.Log($"Probe: Answer nonce 不一致 (expected={probeNonce}, got={answer?.Nonce}) → Unknown (相手の別 probe の応答を拾った)");
+                        resultRoute = ConnectionRoute.Unknown;
+                    }
+                    else if (answer.Route == RouteDirect)
                     {
                         Util.Logger.Log("Probe: Answer 側で TCP 成功通知 → Direct");
                         resultRoute = ConnectionRoute.Direct;
@@ -1142,6 +1163,17 @@ public sealed class ConnectionInfo
     /// </summary>
     [JsonPropertyName("from")]
     public string? From { get; set; }
+
+    /// <summary>
+    /// v1.0.38 review fix v12: 双方向同時 probe の race を防ぐための probe 識別子。
+    /// 単一スロット (probeOffer/probeAnswer) を両側が共有しているので、
+    /// 後勝ち上書きで自分の offer が消され、相手の answer を自分の answer と誤認するレースが起きる。
+    /// 修正: 自分の probe ごとに nonce を発行し、answer 側はこれを echo する。
+    /// 受信側 (probe sender) は answer.Nonce が自分の発行 nonce と一致するときだけ採用、
+    /// 不一致なら Unknown (= 相手の別 probe の応答を拾った状態)。
+    /// </summary>
+    [JsonPropertyName("nonce")]
+    public string? Nonce { get; set; }
 }
 
 /// <summary>
