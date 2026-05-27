@@ -144,9 +144,14 @@ public sealed class TransferService : ITransferService
         catch (Exception ex)
         {
             Util.Logger.Log($"ファイル送信エラー: {ex.Message}", Util.LogLevel.Error);
-            item.State = TransferState.Error;
-            item.ErrorMessage = ex.Message;
-            TransferError?.Invoke(this, item);
+            // v1.0.38 review fix v6: 承認待ちタイムアウト / 拒否で既に Cancelled + TransferError 発火済みなら
+            // 二重発火を防ぐ (TransferViewModel に重複行が出る問題の根本対策)
+            if (item.State != TransferState.Cancelled)
+            {
+                item.State = TransferState.Error;
+                item.ErrorMessage = ex.Message;
+                TransferError?.Invoke(this, item);
+            }
             throw;
         }
         finally
@@ -827,6 +832,15 @@ public sealed class TransferService : ITransferService
             state.Item.State = TransferState.Error;
             state.Item.ErrorMessage = ex.Message;
             TransferError?.Invoke(this, state.Item);
+
+            // v1.0.38 review fix v6: file open 失敗時に sender へ FileReject を送って
+            // 60 秒の approval タイムアウト + 「相手が旧バージョン」の誤誘導エラーを防ぐ
+            var openFailRejectMessage = FileChunker.CreateRejectMessage(tid, $"受信ファイル作成エラー: {ex.Message}");
+            _ = Task.Run(async () =>
+            {
+                try { await _connectionService.SendAsync(openFailRejectMessage); }
+                catch (Exception rex) { Util.Logger.Log($"FileReject 送信エラー: {rex.Message}", Util.LogLevel.Warning); }
+            });
             return;
         }
 
