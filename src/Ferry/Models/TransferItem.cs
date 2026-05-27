@@ -38,6 +38,7 @@ public sealed partial class TransferItem : ObservableObject
     /// <summary>転送方向。</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DirectionSymbol))]
+    [NotifyPropertyChangedFor(nameof(DisplayFilePath))]
     public partial TransferDirection Direction { get; set; }
 
     /// <summary>転送状態。</summary>
@@ -66,11 +67,18 @@ public sealed partial class TransferItem : ObservableObject
     /// <summary>SHA-256 ハッシュ値（転送完了後の検証用）。</summary>
     public string? Sha256Hash { get; set; }
 
-    /// <summary>送信元ファイルパス（送信側で保持、レジューム時に使用）。</summary>
-    public string? SourceFilePath { get; set; }
+    /// <summary>送信元ファイルパス（送信側で保持、レジューム時に使用）。
+    /// v1.0.38 review fix v11: DisplayFilePath を UI に伝えるため ObservableProperty 化 +
+    /// 変更通知を DisplayFilePath / Direction にも伝播する</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayFilePath))]
+    public partial string? SourceFilePath { get; set; }
 
-    /// <summary>受信ファイルの保存先パス（受信完了後に設定）。</summary>
-    public string? SavedFilePath { get; set; }
+    /// <summary>受信ファイルの保存先パス（受信完了後に設定）。
+    /// v1.0.38 review fix v11: CompleteReceive で後付けされる値が UI に届くよう ObservableProperty 化</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayFilePath))]
+    public partial string? SavedFilePath { get; set; }
 
     /// <summary>UI 表示用のフルパス。送信なら SourceFilePath、受信なら SavedFilePath を返す (受信完了前は空)。</summary>
     public string DisplayFilePath => Direction switch

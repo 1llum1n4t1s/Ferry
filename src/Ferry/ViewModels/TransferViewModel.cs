@@ -162,6 +162,10 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 Direction = TransferDirection.Send,
                 State = TransferState.InProgress,
                 PeerName = peerName,
+                // v1.0.38 review fix v11: UI 表示用フルパスを即セット。
+                // TransferService 側の item は別インスタンスなので、ここで明示的に渡さないと
+                // TransferView の DisplayFilePath バインディングが永久に空になる
+                SourceFilePath = absolutePath,
             };
             Transfers.Add(item);
 
