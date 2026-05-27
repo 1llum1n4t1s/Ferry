@@ -40,6 +40,13 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     private string? _currentPairId;
     private CancellationTokenSource? _listeningCts;
 
+    /// <summary>
+    /// v1.0.38 review fix: 現在 StartListeningForConnection で監視中のピア ID。
+    /// ProbeRouteAsync 終了時にこの値を使って着信監視を再開する。
+    /// ConnectedPeer?.SessionId は接続成立後にしか入らないため復元用には使えない。
+    /// </summary>
+    private string? _currentListeningPeerId;
+
     /// <summary>WebSocket リレーサーバーの URL。null の場合はリレーなし（TCP 直接のみ）。</summary>
     public string? RelayUrl { get; set; }
 
@@ -214,6 +221,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     {
         StopListeningForConnection();
         _listeningCts = new CancellationTokenSource();
+        _currentListeningPeerId = peerId;  // v1.0.38 review fix: 監視中のピア ID を保持
         Util.Logger.Log($"着信接続監視開始: peer={peerId}");
         _ = ListenForIncomingConnectionAsync(peerId, _listeningCts.Token);
     }
@@ -226,6 +234,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             _listeningCts.Cancel();
             _listeningCts.Dispose();
             _listeningCts = null;
+            _currentListeningPeerId = null;  // v1.0.38 review fix: クリア
         }
     }
 
@@ -268,6 +277,22 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 if (offer == null)
                 {
                     Util.Logger.Log("着信接続情報のパースに失敗", Util.LogLevel.Warning);
+                    minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    continue;
+                }
+
+                // v1.0.38 review fix #6: probe offer は通常の transport 確立フローに乗せない。
+                // TCP 試行結果だけ answer に書いて即切断し、State / _transport を一切触らない
+                if (offer.Probe)
+                {
+                    try
+                    {
+                        await HandleProbeOfferAsync(offer, pairId, ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        Util.Logger.Log($"Probe offer 処理エラー: {ex.Message}", Util.LogLevel.Warning);
+                    }
                     minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     continue;
                 }
@@ -351,6 +376,53 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         }
 
         Util.Logger.Log("着信接続ポーリング終了");
+    }
+
+    /// <summary>
+    /// v1.0.38 review fix #6: probe 専用の応答処理。
+    /// 通常の ListenForIncomingConnectionAsync 内フローと違って、TCP 接続試行だけ走らせて
+    /// 結果を answer に書く。transport は確立せず即切断、State も変更しない。
+    /// </summary>
+    private async Task HandleProbeOfferAsync(ConnectionInfo offer, string pairId, CancellationToken ct)
+    {
+        Util.Logger.Log($"Probe offer 受信: pairId={pairId}, TCP 試行のみで応答");
+        var probeSig = new FirebaseSignaling(_databaseUrl);
+        var connected = false;
+        TcpDirectTransport? tcpTransport = null;
+
+        try
+        {
+            if (offer.Ips.Length > 0 && offer.Port > 0)
+            {
+                tcpTransport = new TcpDirectTransport();
+                using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                probeCts.CancelAfter(TimeSpan.FromSeconds(TcpConnectTimeoutSeconds));
+                try
+                {
+                    await tcpTransport.ConnectAsync(offer.Ips, offer.Port, probeCts.Token);
+                    connected = true;
+                }
+                catch
+                {
+                    // TCP 失敗 = 別ネットワーク。probe 側で StunAssisted / Relay 推定にフォールバック
+                }
+            }
+
+            var answerInfo = new ConnectionInfo
+            {
+                Ips = TcpDirectTransport.GetLocalIpAddresses(),
+                Port = 0,
+                Probe = true,
+                Connected = connected,
+                Route = connected ? RouteDirect : RouteNeedRelay,
+            };
+            await probeSig.SendSdpAnswerAsync(pairId, SerializeConnectionInfo(answerInfo), ct);
+        }
+        finally
+        {
+            try { tcpTransport?.Close(); tcpTransport?.Dispose(); } catch { }
+            probeSig.Dispose();
+        }
     }
 
     // === オンデマンド接続（送信側が呼ぶ） ===
@@ -503,17 +575,23 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// </summary>
     public async Task<ConnectionRoute> ProbeRouteAsync(string peerId, CancellationToken ct = default)
     {
-        // 既に通常接続中 / 接続試行中なら干渉せずに現在の Route を返す
+        // v1.0.38 review fix #5: 既に同じピアと通常接続中 / 接続試行中なら現 Route を返す。
+        // 他のピアに接続中の場合は他ピアの Route が混入するので Unknown を返してスキップ。
         if (State is PeerState.Connecting or PeerState.Connected)
         {
-            Util.Logger.Log($"Probe スキップ: 既に接続中 ({State}) → 現 Route={Route} を返す");
-            return Route;
+            if (ConnectedPeer?.SessionId == peerId)
+            {
+                Util.Logger.Log($"Probe スキップ: 同じピアに接続中 → 現 Route={Route} を返す");
+                return Route;
+            }
+            Util.Logger.Log($"Probe スキップ: 別のピアに接続中 (current={ConnectedPeer?.SessionId}, probe={peerId})");
+            return ConnectionRoute.Unknown;
         }
 
         Util.Logger.Log($"経路 Probe 開始: peer={peerId}");
 
-        // 着信監視の一時停止 (Probe 用 offer を自分で拾わないように)
-        var listeningPeerId = ConnectedPeer?.SessionId;  // 復元用 (現状常に null だが将来対応)
+        // v1.0.38 review fix #1: _currentListeningPeerId から復元 (ConnectedPeer は接続成立まで null)
+        var listeningPeerId = _currentListeningPeerId;
         StopListeningForConnection();
 
         FirebaseSignaling? probeSig = null;
@@ -526,10 +604,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             probeSig = new FirebaseSignaling(_databaseUrl);
             await probeSig.RegisterSessionAsync(_deviceId, _displayName, ct);
 
-            // 古いシグナリングデータを削除（前回 Probe / 接続の残骸を掃除）
-            await probeSig.CleanupSignalingDataAsync(pairId, ct);
+            // v1.0.38 review fix #7: probe 開始時の CleanupSignalingDataAsync を削除。
+            // 相手の進行中接続 (offer/answer) を消してしまう副作用があるため。
+            // 古い probe 残骸は GitHub Actions の 1 時間 cleanup に任せる
 
-            // ① TCP リスナー起動 → offer 送信
+            // ① TCP リスナー起動 → offer 送信 (Probe=true フラグで相手側が probe モードで応答)
             tcpTransport = new TcpDirectTransport();
             var port = tcpTransport.StartListener();
             var localIps = TcpDirectTransport.GetLocalIpAddresses();
@@ -537,11 +616,17 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             {
                 Ips = localIps,
                 Port = port,
-                RelayUrl = RelayUrl,  // Answer 側は通常フローで動くので一応セット
+                RelayUrl = RelayUrl,
+                Probe = true,  // v1.0.38 review fix #6: 相手側に probe であることを通知 (実 transport を確立させない)
             };
             await probeSig.SendSdpOfferAsync(pairId, SerializeConnectionInfo(offerInfo), ct);
 
             // ② TCP accept + Answer ポーリングを同時待機
+            //   v1.0.38 review fix: UDP ホールパンチ probe は撤去。理由:
+            //   (a) STUN クエリ + ホールパンチで実 socket と Firebase 操作が増え、リソース消費大
+            //   (b) Answer 側 (probe モード) も UDP 用 STUN を走らせる必要があり実装複雑度が上がる
+            //   (c) TCP 失敗時は StunAssisted を「推定」表示し、実 transfer で経路が確定したら overwrite される
+            //   → P2P と RELAY の区別精度は落ちるが、実用上は十分
             using var stageCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             stageCts.CancelAfter(TimeSpan.FromSeconds(TcpConnectTimeoutSeconds + 2));
             var tcpAcceptTask = tcpTransport.AcceptAsync(stageCts.Token);
@@ -554,8 +639,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             }
             catch (OperationCanceledException)
             {
-                Util.Logger.Log("Probe: TCP/Answer 待機タイムアウト → Relay 推定");
-                return ConnectionRoute.Relay;
+                Util.Logger.Log("Probe: TCP/Answer 待機タイムアウト → StunAssisted 推定");
+                return ConnectionRoute.StunAssisted;
             }
 
             if (completedTask == tcpAcceptTask && tcpAcceptTask.IsCompletedSuccessfully)
@@ -564,70 +649,25 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 return ConnectionRoute.Direct;
             }
 
-            // Answer 側が TCP 失敗を通知 → UDP ホールパンチを試す
+            // Answer 側が TCP 結果を通知
             string? answerJson = null;
             try { answerJson = await answerTask; }
-            catch { /* Answer 取得失敗 = TCP/UDP どちらも判定不能 → Relay 推定 */ }
+            catch { /* Answer 取得失敗 → StunAssisted 推定 */ }
 
-            if (answerJson == null)
+            if (answerJson != null)
             {
-                Util.Logger.Log("Probe: Answer 受信失敗 → Relay 推定");
-                return ConnectionRoute.Relay;
-            }
-
-            // ③ STUN + UDP ホールパンチ
-            udpTransport = new UdpHolePunchTransport();
-            var stunResult = await udpTransport.GetExternalEndpointAsync(ct);
-            if (stunResult == null)
-            {
-                Util.Logger.Log("Probe: STUN 失敗 → Relay 推定");
-                return ConnectionRoute.Relay;
+                var answer = DeserializeConnectionInfo(answerJson);
+                if (answer?.Route == RouteDirect)
+                {
+                    Util.Logger.Log("Probe: Answer 側で TCP 成功通知 → Direct");
+                    return ConnectionRoute.Direct;
+                }
             }
 
-            var updatedOffer = new ConnectionInfo
-            {
-                Ips = localIps,
-                Port = port,
-                ExternalIp = stunResult.Value.ip,
-                ExternalPort = stunResult.Value.port,
-                RelayUrl = RelayUrl,
-            };
-            await probeSig.SendSdpOfferAsync(pairId, SerializeConnectionInfo(updatedOffer), ct);
-
-            // Answer 側の外部エンドポイントを取得 → HolePunch
-            using var epCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            epCts.CancelAfter(TimeSpan.FromSeconds(8));
-            string endpointStr;
-            try
-            {
-                endpointStr = await probeSig.WaitForEndpointAsync(pairId, "answer", epCts.Token);
-            }
-            catch
-            {
-                Util.Logger.Log("Probe: Answer エンドポイント取得失敗 → Relay 推定");
-                return ConnectionRoute.Relay;
-            }
-
-            var parts = endpointStr.Split(':');
-            if (parts.Length != 2 || !int.TryParse(parts[1], out var remotePort))
-            {
-                Util.Logger.Log("Probe: Answer エンドポイントパース失敗 → Relay 推定");
-                return ConnectionRoute.Relay;
-            }
-
-            using var punchCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            punchCts.CancelAfter(TimeSpan.FromSeconds(UdpHolePunchTimeoutSeconds));
-            try
-            {
-                await udpTransport.HolePunchAsync(parts[0], remotePort, punchCts.Token);
-                Util.Logger.Log("Probe: UDP ホールパンチ成功 → StunAssisted");
-                return ConnectionRoute.StunAssisted;
-            }
-            catch
-            {
-                Util.Logger.Log("Probe: UDP ホールパンチ失敗 → Relay 推定");
-                return ConnectionRoute.Relay;
-            }
+            // TCP 失敗 = 異ネットワーク。P2P または Relay のどちらかだが probe では区別できないため
+            // 楽観的に StunAssisted (P2P) を推定で返す。実 transfer 時に確定経路で overwrite される
+            Util.Logger.Log("Probe: TCP 失敗 → StunAssisted 推定 (実 transfer で確定)");
+            return ConnectionRoute.StunAssisted;
         }
         catch (Exception ex)
         {
@@ -640,12 +680,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             try { tcpTransport?.Close(); tcpTransport?.Dispose(); } catch { }
             try { udpTransport?.Close(); udpTransport?.Dispose(); } catch { }
 
-            // Probe 用シグナリングデータを掃除
-            if (probeSig != null)
-            {
-                try { await probeSig.CleanupSignalingDataAsync(pairId, default); } catch { }
-                probeSig.Dispose();
-            }
+            // v1.0.38 review fix #7: probe cleanup は省略 (live signaling を壊さないため)。
+            // GitHub Actions の定期 cleanup に任せる
+            probeSig?.Dispose();
 
             // 着信監視を再開
             if (listeningPeerId != null)
@@ -1008,6 +1045,15 @@ public sealed class ConnectionInfo
     /// </summary>
     [JsonPropertyName("route")]
     public string? Route { get; set; }
+
+    /// <summary>
+    /// v1.0.38 review fix #6: 経路 Probe 用 offer/answer を識別するフラグ。
+    /// true の場合、相手側 (ListenForIncomingConnectionAsync) は通常の transport 確立ではなく
+    /// TCP 接続試行のみで answer を返し、_transport / State を変更しない。
+    /// これで Probe が通常接続フローに混入する事故を防ぐ。
+    /// </summary>
+    [JsonPropertyName("probe")]
+    public bool Probe { get; set; }
 }
 
 /// <summary>

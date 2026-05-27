@@ -50,6 +50,34 @@ public class TransferViewModelTests : IDisposable
         return new TransferViewModel(_connectionService, _transferService, _connectionViewModel, _settingsService);
     }
 
+    /// <summary>v1.0.38 review nitpick: AutoAccept=true で UI を経由せず即承認、PendingApprovals に積まれないこと。</summary>
+    [Fact(Skip = "UI スレッド (Dispatcher.UIThread) を必要とするためテスト環境では Skip。実機で検証")]
+    public void OnApprovalRequested_AutoAccept有効時はPendingApprovalsに積まれず即ApproveTransferが呼ばれること()
+    {
+        _settingsService.Settings.Returns(new AppSettings { AutoAcceptFileTransfer = true, DisplayName = "TestPC", BridgePageUrl = "https://example.com" });
+        var vm = CreateViewModel(withSelectedPeer: true);
+        var item = new TransferItem { TransferId = Guid.NewGuid(), FileName = "a.txt", FileSize = 100 };
+
+        _transferService.ApprovalRequested += Raise.Event<EventHandler<TransferItem>>(_transferService, item);
+
+        Assert.Empty(vm.PendingApprovals);
+        _transferService.Received(1).ApproveTransfer(item.TransferId.ToString());
+    }
+
+    /// <summary>v1.0.38 review nitpick: AutoAccept=false で従来通り PendingApprovals に積まれること。</summary>
+    [Fact(Skip = "UI スレッド (Dispatcher.UIThread) を必要とするためテスト環境では Skip。実機で検証")]
+    public void OnApprovalRequested_AutoAccept無効時はPendingApprovalsに積まれApproveTransferは呼ばれないこと()
+    {
+        _settingsService.Settings.Returns(new AppSettings { AutoAcceptFileTransfer = false, DisplayName = "TestPC", BridgePageUrl = "https://example.com" });
+        var vm = CreateViewModel(withSelectedPeer: true);
+        var item = new TransferItem { TransferId = Guid.NewGuid(), FileName = "b.txt", FileSize = 200 };
+
+        _transferService.ApprovalRequested += Raise.Event<EventHandler<TransferItem>>(_transferService, item);
+
+        Assert.Single(vm.PendingApprovals);
+        _transferService.DidNotReceive().ApproveTransfer(Arg.Any<string>());
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_tempDir))

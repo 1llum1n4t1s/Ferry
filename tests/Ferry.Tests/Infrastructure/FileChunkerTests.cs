@@ -202,6 +202,28 @@ public class FileChunkerTests : IDisposable
         Assert.Null(FileChunker.ParseApprove(new byte[] { 0x06, 0x01, 0x02 }));
     }
 
+    [Fact]
+    public void ParseReject_短すぎるメッセージはnullを返すこと()
+    {
+        // v1.0.38 review nitpick: ParseApprove 異常系と対称な負系テスト追加
+        Assert.Null(FileChunker.ParseReject(new byte[] { TransferProtocol.FileReject }));
+        Assert.Null(FileChunker.ParseReject(new byte[] { TransferProtocol.FileReject, 0x01, 0x02 }));
+    }
+
+    [Fact]
+    public void ParseReject_TransferIdだけのメッセージはreason空文字を返す()
+    {
+        // 17 バイトちょうど (種別 1 + TransferId 16) で reason 空
+        var transferId = Guid.NewGuid();
+        var msg = new byte[17];
+        msg[0] = TransferProtocol.FileReject;
+        transferId.TryWriteBytes(msg.AsSpan(1, 16));
+        var parsed = FileChunker.ParseReject(msg);
+        Assert.NotNull(parsed);
+        Assert.Equal(transferId, parsed.Value.TransferId);
+        Assert.Equal(string.Empty, parsed.Value.Reason);
+    }
+
     // ==================== Ping / Pong ====================
 
     [Fact]

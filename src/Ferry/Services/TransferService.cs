@@ -23,6 +23,10 @@ public sealed class TransferService : ITransferService
     /// <summary>承認待ち中にバッファできるチャンクの合計上限（OOM 防止）。</summary>
     private const long MaxApprovalBufferBytes = 64L * 1024 * 1024;
 
+    /// <summary>v1.0.38 review fix #2: 送信側が FileApprove を待つ最大秒数。
+    /// このタイムアウトを超えたら送信を Cancelled に遷移させる (永久停止を防ぐ)。</summary>
+    private const int SendApprovalTimeoutSeconds = 60;
+
     private readonly IConnectionService _connectionService;
     private readonly ISettingsService _settingsService;
 
@@ -110,24 +114,14 @@ public sealed class TransferService : ITransferService
 
             // 2. 相手側の承認 (FileApprove) または拒否 (FileReject) を待つ
             //    AutoAcceptFileTransfer=true の場合は受信側が即承認するので体感ラグなし
-            bool approved;
-            try
-            {
-                approved = await approvalTcs.Task.WaitAsync(ct);
-            }
-            catch (OperationCanceledException)
-            {
-                Util.Logger.Log($"承認待ち中にキャンセル: {displayName}", Util.LogLevel.Warning);
-                throw;
-            }
-
+            //    v1.0.38 review fix #2: 60 秒タイムアウトを追加。FileApprove/FileReject が欠落しても
+            //    永久停止せず Cancelled に遷移させる
+            bool approved = await WaitForApprovalAsync(displayName, item, approvalTcs, ct);
             if (!approved)
             {
-                Util.Logger.Log($"送信が拒否されました: {displayName}");
-                item.State = TransferState.Cancelled;
-                item.ErrorMessage = "相手が受信を拒否しました";
-                TransferError?.Invoke(this, item);
-                return;
+                // v1.0.38 review fix #4: 拒否時は throw して呼び出し側 (TransferViewModel) の
+                // 「正常 return = Completed」扱いを防ぐ。state は WaitForApprovalAsync で既に Cancelled 済
+                throw new OperationCanceledException(item.ErrorMessage ?? "受信が拒否されました");
             }
 
             Util.Logger.Log($"承認受信、チャンク送信開始: {displayName}");
@@ -164,6 +158,8 @@ public sealed class TransferService : ITransferService
 
     /// <summary>
     /// 中断された転送をレジュームする。
+    /// v1.0.38 review fix #3: SendFileAsync と同じく FileApprove 待ちを挟む。
+    /// (resume も受信側で承認待ちに入るため、待たずにチャンクを送ると 64MB バッファ破棄バグが再発する)
     /// </summary>
     public async Task<bool> ResumeTransferAsync(Guid transferId, CancellationToken ct = default)
     {
@@ -179,21 +175,33 @@ public sealed class TransferService : ITransferService
             return false;
         }
 
-        // 受信側はレジューム時にファイルを再作成するため、部分再送ではなく先頭から安全に再送する
-        // （途中チャンクだけ送ると受信ファイルが破損するのを防ぐ）
         var startChunk = 0;
         Util.Logger.Log($"転送レジューム: {item.FileName}, 先頭から再送 (全 {item.TotalChunks} チャンク)");
 
-        item.State = TransferState.InProgress;
+        // v1.0.38 review fix #3: 承認待ち TCS を準備
+        var approvalTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingSendApprovals[transferId] = approvalTcs;
+        item.State = TransferState.Pending;
+        ProgressChanged?.Invoke(this, item);
 
         try
         {
-            // メタデータを再送信（相手側でレジューム状態を認識させる）
             var metaMessage = FileChunker.CreateFileMetaMessage(
                 item.FileName, item.FileSize, item.TotalChunks, item.Sha256Hash ?? "", item.TransferId);
             await _connectionService.SendAsync(metaMessage, ct);
+            Util.Logger.Log($"レジューム: メタデータ送信完了、相手の承認待ち…");
 
-            // チャンクを再開位置から送信
+            bool approved = await WaitForApprovalAsync(item.FileName, item, approvalTcs, ct);
+            if (!approved)
+            {
+                // resume の場合は throw せず false を返す (SendFileAsync と挙動を分ける)
+                Util.Logger.Log($"レジューム拒否: {item.FileName}");
+                return false;
+            }
+
+            item.State = TransferState.InProgress;
+            ProgressChanged?.Invoke(this, item);
+
             await SendChunksAsync(item.SourceFilePath, item.TransferId, startChunk, item, ct);
             return true;
         }
@@ -204,6 +212,41 @@ public sealed class TransferService : ITransferService
             item.ErrorMessage = ex.Message;
             TransferError?.Invoke(this, item);
             return false;
+        }
+        finally
+        {
+            _pendingSendApprovals.TryRemove(transferId, out _);
+        }
+    }
+
+    /// <summary>
+    /// v1.0.38 review fix #2/#3: 送信側の FileApprove/FileReject 待ち共通ロジック。
+    /// 60 秒タイムアウトで TransferState.Cancelled に遷移、TransferError 発火。
+    /// 戻り値: true=承認、false=拒否 or タイムアウト。
+    /// </summary>
+    private async Task<bool> WaitForApprovalAsync(string displayName, TransferItem item, TaskCompletionSource<bool> approvalTcs, CancellationToken ct)
+    {
+        using var approvalCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        approvalCts.CancelAfter(TimeSpan.FromSeconds(SendApprovalTimeoutSeconds));
+
+        try
+        {
+            return await approvalTcs.Task.WaitAsync(approvalCts.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // タイムアウト (外部 ct はキャンセルされてない = 内部 CancelAfter のみ発火)
+            Util.Logger.Log($"承認待ちタイムアウト ({SendApprovalTimeoutSeconds}s): {displayName}", Util.LogLevel.Warning);
+            item.State = TransferState.Cancelled;
+            item.ErrorMessage = $"承認待ちが {SendApprovalTimeoutSeconds} 秒でタイムアウトしました";
+            TransferError?.Invoke(this, item);
+            return false;
+        }
+        catch (OperationCanceledException)
+        {
+            // 外部 ct によるキャンセル → そのまま伝播
+            Util.Logger.Log($"承認待ち中にキャンセル: {displayName}", Util.LogLevel.Warning);
+            throw;
         }
     }
 
