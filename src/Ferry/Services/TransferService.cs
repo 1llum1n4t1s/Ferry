@@ -391,6 +391,21 @@ public sealed class TransferService : ITransferService
 
     // === 受信ハンドラ ===
 
+    /// <summary>
+    /// HandleFileMeta の early-return パス（パストラバーサル / 保存先異常等）で送信側に
+    /// FileReject を投げて 60 秒の approval タイムアウト + 「相手が旧バージョン」誤エラーを防ぐためのヘルパー。
+    /// fire-and-forget で握り潰してハンドラ側をブロックしない。
+    /// </summary>
+    private void SendRejectFireAndForget(Guid transferId, string reason)
+    {
+        var rejectMessage = FileChunker.CreateRejectMessage(transferId, reason);
+        _ = Task.Run(async () =>
+        {
+            try { await _connectionService.SendAsync(rejectMessage); }
+            catch (Exception ex) { Util.Logger.Log($"FileReject 送信エラー: {ex.Message}", Util.LogLevel.Warning); }
+        });
+    }
+
     private void HandleFileMeta(byte[] data)
     {
         var meta = FileChunker.ParseFileMeta(data);
@@ -405,6 +420,15 @@ public sealed class TransferService : ITransferService
         if (meta.FileSize < 0 || meta.TotalChunks != FileChunker.CalculateTotalChunks(meta.FileSize))
         {
             Util.Logger.Log($"不正なメタデータを拒否: FileSize={meta.FileSize}, TotalChunks={meta.TotalChunks}", Util.LogLevel.Warning);
+            // この時点では TransferId のパース可否すら未確認なので Reject 送信はスキップ
+            // (送信側にとって不明な TransferId の Reject は無視されるだけだが、無駄な通信なので避ける)
+            return;
+        }
+
+        // TransferId は以降の Reject 送信・state 構築で必要なため、ここで早期にパース
+        if (!Guid.TryParse(meta.TransferId, out var transferIdGuid))
+        {
+            Util.Logger.Log($"不正な TransferId 形式: {meta.TransferId}", Util.LogLevel.Warning);
             return;
         }
 
@@ -422,6 +446,7 @@ public sealed class TransferService : ITransferService
             if (normalized.Contains(".."))
             {
                 Util.Logger.Log($"不正な RelativePath を検出: {meta.RelativePath}", Util.LogLevel.Warning);
+                SendRejectFireAndForget(transferIdGuid, "不正なファイルパス (パストラバーサル)");
                 return;
             }
 
@@ -469,6 +494,7 @@ public sealed class TransferService : ITransferService
         if (!Path.GetFullPath(savePath).StartsWith(dirWithSep, StringComparison.OrdinalIgnoreCase))
         {
             Util.Logger.Log($"保存パスが保存先ディレクトリ外を指しています: {savePath}", Util.LogLevel.Warning);
+            SendRejectFireAndForget(transferIdGuid, "保存パスが許可範囲外です");
             return;
         }
 
@@ -480,6 +506,7 @@ public sealed class TransferService : ITransferService
             catch (Exception ex)
             {
                 Util.Logger.Log($"保存先ディレクトリ作成失敗: {ex.Message}", Util.LogLevel.Error);
+                SendRejectFireAndForget(transferIdGuid, $"保存先ディレクトリ作成失敗: {ex.Message}");
                 return;
             }
         }
@@ -488,12 +515,7 @@ public sealed class TransferService : ITransferService
         if (!string.IsNullOrEmpty(meta.RelativePath))
             savePath = GetUniquePath(savePath);
 
-        // P-6: meta.TransferId (string) を 1 度だけ Guid 化し、以降の dictionary 操作で再利用
-        if (!Guid.TryParse(meta.TransferId, out var transferIdGuid))
-        {
-            Util.Logger.Log($"不正な TransferId 形式: {meta.TransferId}", Util.LogLevel.Warning);
-            return;
-        }
+        // (transferIdGuid は冒頭でパース済み)
 
         var state = new ReceiveState
         {

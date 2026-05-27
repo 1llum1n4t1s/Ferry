@@ -686,14 +686,13 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             }
             catch (OperationCanceledException)
             {
-                Util.Logger.Log("Probe: TCP/Answer 待機タイムアウト → StunAssisted 推定");
-                return ConnectionRoute.StunAssisted;
+                // v1.0.38 review fix v7: タイムアウト = answer 来てない = 相手がこちらを listening していない可能性あり。
+                // 経路をテストできていないので StunAssisted 推定ではなく Unknown を返す
+                Util.Logger.Log("Probe: TCP/Answer 待機タイムアウト → Unknown (相手が listening していない可能性)");
+                return ConnectionRoute.Unknown;
             }
 
             // v1.0.38 review fix v5: 負け task をキャンセルして観察する (background loop 累積防止)。
-            // stageCts.Cancel() で残り task をキャンセル、ObserveAsync で例外を握りつぶしながら完了を待つ。
-            // 旧実装は using stageCts の Dispose のみで Cancel しなかったため、disposed Firebase client への
-            // polling が repeated probe で累積していた
             stageCts.Cancel();
 
             ConnectionRoute resultRoute;
@@ -707,7 +706,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 // Answer 側が TCP 結果を通知
                 string? answerJson = null;
                 try { answerJson = await answerTask; }
-                catch { /* Answer 取得失敗 → StunAssisted 推定 */ }
+                catch { /* Answer 取得失敗 → Unknown (相手が listening していない可能性) */ }
 
                 if (answerJson != null)
                 {
@@ -719,14 +718,18 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     }
                     else
                     {
-                        Util.Logger.Log("Probe: TCP 失敗 → StunAssisted 推定 (実 transfer で確定)");
+                        // v1.0.38 review fix v7: Answer 側が TCP 失敗を実際に報告した時のみ StunAssisted 推定
+                        // (relay 可能性もあるが実 transfer で確定 / overwrite される)
+                        Util.Logger.Log("Probe: Answer 側で TCP 失敗報告 → StunAssisted 推定 (実 transfer で確定)");
                         resultRoute = ConnectionRoute.StunAssisted;
                     }
                 }
                 else
                 {
-                    Util.Logger.Log("Probe: TCP 失敗 → StunAssisted 推定 (実 transfer で確定)");
-                    resultRoute = ConnectionRoute.StunAssisted;
+                    // v1.0.38 review fix v7: Answer 未到着 = 相手がこちらを listening していない =
+                    // 経路がテストされていない → Unknown を返す (StunAssisted 誤表示を避ける)
+                    Util.Logger.Log("Probe: Answer 未到着 → Unknown (経路未テスト)");
+                    resultRoute = ConnectionRoute.Unknown;
                 }
             }
 
