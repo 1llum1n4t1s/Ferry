@@ -655,6 +655,11 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     private readonly Dictionary<string, DateTimeOffset> _lastProbeAt = new();
     /// <summary>同時 Probe を 1 件に絞るセマフォ (シグナリングノード競合防止)。</summary>
     private readonly SemaphoreSlim _probeSemaphore = new(1, 1);
+    /// <summary>v1.0.38 review fix v10: セマフォ取得失敗で skip された peer の待ちキュー。
+    /// Release 時に dequeue して順次処理する (複数 peer 同時 Online 時に最初の 1 つしか
+    /// probe されないバグの修正)。lock(_probeQueueLock) で保護。</summary>
+    private readonly Queue<PairedPeer> _probeQueue = new();
+    private readonly object _probeQueueLock = new();
     /// <summary>同じピアへの Probe 連発を防ぐクールダウン (Online flap 対策)。</summary>
     private static readonly TimeSpan ProbeCooldown = TimeSpan.FromMinutes(5);
 
@@ -686,11 +691,20 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         }
 
         // 同時 Probe は 1 件まで (シグナリング pairId ノード競合防止)。
-        // 待たずに既に他で実行中ならスキップする (await すると Online flap で行列ができる)。
-        // skip された peer は cooldown 未記録 → 次の手動更新 / Online edge で retry 可能
+        // v1.0.38 review fix v10: 既に他で実行中の場合は cooldown を記録せずに待ちキューへ。
+        // Release 時に dequeue して順次処理されるので、複数 peer 同時 Online でも全 peer が probe される
+        // (旧実装は skip した peer を放置 → IsOnline edge が再 fire されないので永久 unknown だった)
         if (!await _probeSemaphore.WaitAsync(0))
         {
-            Util.Logger.Log($"経路 Probe スキップ (他で実行中、cooldown 未記録): peer={peer.PeerId}");
+            lock (_probeQueueLock)
+            {
+                // 同一 peer の重複 enqueue を避ける
+                if (!_probeQueue.Contains(peer))
+                {
+                    _probeQueue.Enqueue(peer);
+                    Util.Logger.Log($"経路 Probe 待ちキューに追加 (他で実行中): peer={peer.PeerId}, queue={_probeQueue.Count}");
+                }
+            }
             return;
         }
 
@@ -703,8 +717,9 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         try
         {
             var route = await _connectionService.ProbeRouteAsync(peer.PeerId);
-            if (route == ConnectionRoute.Unknown) return;
-
+            // v1.0.38 review fix v10: Unknown 結果でも peer.Route を更新する。
+            // 旧実装は Unknown で early return → 古い LAN/P2P/relay バッジが残り続けて誤誘導していた。
+            // Unknown 自体が「経路を verify できなかった」という有用な情報なので、上書きが正解
             Dispatcher.UIThread.Post(() => peer.Route = route);
             Util.Logger.Log($"経路 Probe 完了: peer={peer.PeerId}, route={route}");
         }
@@ -715,6 +730,21 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         finally
         {
             _probeSemaphore.Release();
+
+            // v1.0.38 review fix v10: 待ちキューに peer があれば順次処理
+            // (Release 直後に別の Online edge が走り込んでも、その peer は WaitAsync(0) で成功するか
+            // queue に入るので最終的に必ず処理される)
+            PairedPeer? next = null;
+            lock (_probeQueueLock)
+            {
+                if (_probeQueue.Count > 0)
+                    next = _probeQueue.Dequeue();
+            }
+            if (next != null)
+            {
+                Util.Logger.Log($"経路 Probe 待ちキューから取り出し: peer={next.PeerId}");
+                _ = Task.Run(() => ProbePeerRouteAsync(next));
+            }
         }
     }
 }

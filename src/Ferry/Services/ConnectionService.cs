@@ -22,6 +22,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 {
     /// <summary>TCP 直接接続のタイムアウト（秒）。</summary>
     private const int TcpConnectTimeoutSeconds = 5;
+    /// <summary>v1.0.38 review fix v10: probe 側全体タイムアウト。
+    /// listener の WaitForSdpAsync(5s) + HandleProbeOfferAsync の TCP connect(5s) + Firebase write を
+    /// カバーできる長さに設定 (旧 TcpConnectTimeoutSeconds+2=7s では answer 間に合わず Unknown 連発)。</summary>
+    private const int ProbeOverallTimeoutSeconds = 15;
 
     /// <summary>UDP ホールパンチのタイムアウト（秒）。</summary>
     private const int UdpHolePunchTimeoutSeconds = 8;
@@ -673,8 +677,15 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
             // ② TCP accept + probe answer ポーリングを同時待機
             //   UDP ホールパンチ probe は撤去 (TCP 失敗時は StunAssisted 推定)
+            // v1.0.38 review fix v10: タイムアウトを listener の最悪ケースに合わせて延長。
+            //   listener 側 polling iteration 内訳 (worst case):
+            //     - WaitForSdpAsync(offer, 5s) で待機中に probe offer 到着 → 5s 後 next iter
+            //     - TryReadProbeOfferAsync で検出 (即時)
+            //     - HandleProbeOfferAsync の TCP connect 5s (TcpConnectTimeoutSeconds)
+            //     - probeSig.SendProbeAnswerAsync (Firebase write 1-2s)
+            //   合計 ~13s なので 15s に設定 (旧 7s では非 LAN ピアで answer が間に合わずに Unknown)
             using var stageCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            stageCts.CancelAfter(TimeSpan.FromSeconds(TcpConnectTimeoutSeconds + 2));
+            stageCts.CancelAfter(TimeSpan.FromSeconds(ProbeOverallTimeoutSeconds));
             var tcpAcceptTask = tcpTransport.AcceptAsync(stageCts.Token);
             // v1.0.38 review fix v4: probe 専用 answer 待ち (live answer slot とは別)
             var answerTask = probeSig.WaitForProbeAnswerAsync(pairId, minCreatedAt: probeCreatedAt, ct: stageCts.Token);
