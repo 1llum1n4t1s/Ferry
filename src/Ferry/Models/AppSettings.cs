@@ -43,9 +43,6 @@ public sealed class AppSettings
     /// <summary>表示言語ロケール（"ja_JP", "en_US" など）。空の場合はシステムロケールを自動検出。</summary>
     public string Locale { get; set; } = string.Empty;
 
-    /// <summary>起動時に自動更新チェックを行うか。</summary>
-    public bool Check4UpdatesOnStartup { get; set; } = true;
-
     /// <summary>無視する更新バージョンタグ（例: "v1.0.7"）。このバージョンの更新通知は表示されない。</summary>
     public string IgnoreUpdateTag { get; set; } = string.Empty;
 
@@ -58,9 +55,7 @@ public sealed class AppSettings
     public HashSet<string> MutedPeerIds { get; set; } = [];
 
     // --- ファイル転送設定 ---
-
-    /// <summary>受信ファイルの保存先フォルダ。空の場合はダウンロードフォルダ。</summary>
-    public string ReceiveFileSavePath { get; set; } = string.Empty;
+    // ReceiveFileSavePath は v1.0.38 で SaveDirectory と重複していたため削除済み (受信側でも SaveDirectory を使う)
 
     /// <summary>ファイル受信を自動承認するか。</summary>
     public bool AutoAcceptFileTransfer { get; set; } = true;

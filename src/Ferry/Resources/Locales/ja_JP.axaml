@@ -10,6 +10,16 @@
   <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 転送履歴</x:String>
   <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ 設定</x:String>
 
+  <!-- Sidebar bottom menu (v1.0.38) -->
+  <x:String x:Key="Text.Sidebar.AddPeer" xml:space="preserve">ペアリング先追加</x:String>
+  <x:String x:Key="Text.Sidebar.Settings" xml:space="preserve">設定</x:String>
+  <x:String x:Key="Text.Sidebar.RefreshPeers" xml:space="preserve">ピア一覧を更新</x:String>
+  <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">ペアリングコード</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 相手のコードを貼り付けてペアリング</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">もう片方の PC に表示されているコードを貼り付けてください。</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Button" xml:space="preserve">このコードでペアリング</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">32 文字のペアリングコード</x:String>
+
   <!-- Drop Overlay -->
   <x:String x:Key="Text.Drop.Message" xml:space="preserve">ファイルをドロップして転送</x:String>
   <x:String x:Key="Text.Drop.Description" xml:space="preserve">ドロップしたファイルを接続先に送信します</x:String>

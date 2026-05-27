@@ -72,6 +72,14 @@ public sealed partial class TransferItem : ObservableObject
     /// <summary>受信ファイルの保存先パス（受信完了後に設定）。</summary>
     public string? SavedFilePath { get; set; }
 
+    /// <summary>UI 表示用のフルパス。送信なら SourceFilePath、受信なら SavedFilePath を返す (受信完了前は空)。</summary>
+    public string DisplayFilePath => Direction switch
+    {
+        TransferDirection.Send => SourceFilePath ?? string.Empty,
+        TransferDirection.Receive => SavedFilePath ?? string.Empty,
+        _ => string.Empty,
+    };
+
     /// <summary>ファイルサイズの表示テキスト。</summary>
     public string FileSizeText => Util.Formatting.FormatBytes(FileSize);
 

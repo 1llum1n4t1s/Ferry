@@ -59,6 +59,13 @@ public interface IConnectionService
     Task<(bool Success, string Message)> PairFromUrlAsync(string peerInviteUrl, CancellationToken ct = default);
 
     /// <summary>
+    /// v1.0.38: アプリ内ペアリングコード貼り付け。URL ではなく 32 文字 hex (相手の sessionId) を受け取る。
+    /// ブラウザでうっかり開かれる事故を防ぐため URL から GUID 風文字列に変更。
+    /// </summary>
+    Task<(bool Success, string Message)> PairFromCodeAsync(string code, CancellationToken ct = default)
+        => Task.FromResult((false, "未実装"));
+
+    /// <summary>
     /// ペアリングセッションをキャンセルする。
     /// </summary>
     Task CancelPairingAsync(CancellationToken ct = default);
@@ -83,6 +90,18 @@ public interface IConnectionService
     /// Firebase シグナリングで SDP/ICE 交換 → WebRTC 確立。
     /// </summary>
     Task ConnectToPeerAsync(string peerId, CancellationToken ct = default);
+
+    /// <summary>
+    /// 軽量プローブで経路だけ判定して返す（データチャンネルは確立せず即切断）。
+    /// TCP → UDP ホールパンチの順で試行し、両方失敗した場合は <see cref="ConnectionRoute.Relay"/> を推定で返す
+    /// （リレーへの実接続は Cloudflare Workers の DO duration コスト回避のため行わない）。
+    /// 既に通常接続中（<see cref="PeerState.Connecting"/> / <see cref="PeerState.Connected"/>）の場合は
+    /// 現在の <see cref="Route"/> をそのまま返し、何もしない。
+    /// メンバーリストの経路バッジを「ファイル送信前から」表示する用途。
+    /// </summary>
+    /// <returns>判定された接続経路。判定不能（例外時）は <see cref="ConnectionRoute.Unknown"/>。</returns>
+    Task<ConnectionRoute> ProbeRouteAsync(string peerId, CancellationToken ct = default)
+        => Task.FromResult(ConnectionRoute.Unknown);
 
     /// <summary>
     /// DataChannel 経由でバイナリデータを送信する。

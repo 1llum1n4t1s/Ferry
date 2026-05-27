@@ -40,26 +40,28 @@
                        RenderOptions.BitmapInterpolationMode="HighQuality" />
             </Border>
 
-            <!-- ペアリングURL 共有 (招待元として相手に送る側) -->
+            <!-- v1.0.38: ペアリングコード共有 (URL ではなく 32 文字 hex)。
+                 ブラウザに URL を開かれる事故を防ぐ目的でただの文字列に変更 -->
             <StackPanel Spacing="8"
-                        IsVisible="{Binding PairingUrl, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                <TextBlock Text="{DynamicResource Text.Connection.PairingLink}"
+                        IsVisible="{Binding PairingCode, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <TextBlock Text="{DynamicResource Text.Connection.PairingCode}"
                            FontSize="11"
                            Foreground="{StaticResource TahoeTextTertiaryBrush}"
                            HorizontalAlignment="Center" />
                 <Border Classes="glass-inner" Padding="8,6">
                     <Grid ColumnDefinitions="*,Auto">
                         <TextBlock Grid.Column="0"
-                                   Text="{Binding PairingUrl}"
-                                   FontSize="10"
+                                   Text="{Binding PairingCode}"
+                                   FontSize="11"
+                                   FontFamily="Consolas, 'Courier New', monospace"
                                    TextTrimming="CharacterEllipsis"
-                                   Foreground="{StaticResource TahoeTextSecondaryBrush}"
+                                   Foreground="{StaticResource TahoeTextPrimaryBrush}"
                                    VerticalAlignment="Center" />
                         <Button Grid.Column="1"
                                 Classes="tahoe-primary"
                                 FontSize="11"
                                 Margin="8,0,0,0"
-                                Command="{Binding CopyPairingLinkCommand}">
+                                Command="{Binding CopyPairingCodeCommand}">
                             <Panel>
                                 <TextBlock Text="{DynamicResource Text.Connection.Copy}"
                                            IsVisible="{Binding !IsLinkCopied}"
@@ -79,34 +81,35 @@
                     Opacity="0.3"
                     Margin="0,4,0,4" />
 
-            <!-- 相手の URL を貼り付け (招待先として URL を受け取る側) -->
+            <!-- v1.0.38: 相手のペアリングコードを貼り付け (URL ではなく 32 文字 hex) -->
             <StackPanel Spacing="6">
-                <TextBlock Text="{DynamicResource Text.Connection.PairFromUrl.Header}"
+                <TextBlock Text="{DynamicResource Text.Connection.PairFromCode.Header}"
                            FontSize="11"
                            Foreground="{StaticResource TahoeTextTertiaryBrush}"
                            HorizontalAlignment="Center" />
-                <TextBlock Text="{DynamicResource Text.Connection.PairFromUrl.Hint}"
+                <TextBlock Text="{DynamicResource Text.Connection.PairFromCode.Hint}"
                            FontSize="10"
                            TextWrapping="Wrap"
                            HorizontalAlignment="Center"
                            Foreground="{StaticResource TahoeTextTertiaryBrush}" />
-                <TextBox x:Name="PairFromUrlInput"
-                         FontSize="10"
-                         PlaceholderText="https://ferry-edf09.web.app/?sid=..."
-                         Text="{Binding PairFromUrlText, Mode=TwoWay}" />
-                <TextBlock Text="{Binding PairFromUrlStatus}"
+                <TextBox x:Name="PairFromCodeInput"
+                         FontSize="11"
+                         FontFamily="Consolas, 'Courier New', monospace"
+                         PlaceholderText="{DynamicResource Text.Connection.PairFromCode.Placeholder}"
+                         Text="{Binding PairFromCodeText, Mode=TwoWay}" />
+                <TextBlock Text="{Binding PairFromCodeStatus}"
                            FontSize="10"
                            TextWrapping="Wrap"
                            HorizontalAlignment="Center"
-                           Foreground="{Binding PairFromUrlStatusBrush}"
-                           IsVisible="{Binding PairFromUrlStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                           Foreground="{Binding PairFromCodeStatusBrush}"
+                           IsVisible="{Binding PairFromCodeStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 <Button Classes="tahoe-primary"
                         FontSize="11"
                         HorizontalAlignment="Stretch"
                         HorizontalContentAlignment="Center"
-                        Command="{Binding PairFromUrlCommand}"
-                        IsEnabled="{Binding PairFromUrlText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                    <TextBlock Text="{DynamicResource Text.Connection.PairFromUrl.Button}" />
+                        Command="{Binding PairFromCodeCommand}"
+                        IsEnabled="{Binding PairFromCodeText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                    <TextBlock Text="{DynamicResource Text.Connection.PairFromCode.Button}" />
                 </Button>
             </StackPanel>
         </StackPanel>

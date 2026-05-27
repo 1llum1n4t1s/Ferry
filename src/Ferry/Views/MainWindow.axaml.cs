@@ -97,7 +97,7 @@ public partial class MainWindow : Window
         if (_subscribedConnectionVm != null)
         {
             _subscribedConnectionVm.PropertyChanged -= OnConnectionVmPropertyChanged;
-            _subscribedConnectionVm.CopyPairingLinkRequested -= OnCopyPairingLinkRequested;
+            _subscribedConnectionVm.CopyPairingCodeRequested -= OnCopyPairingCodeRequested;
         }
         if (_subscribedMainVm != null)
         {
@@ -114,7 +114,7 @@ public partial class MainWindow : Window
         {
             ConnectionVm.PropertyChanged += OnConnectionVmPropertyChanged;
             // N-5: ペアリングリンクのクリップボードコピーは View 責務
-            ConnectionVm.CopyPairingLinkRequested += OnCopyPairingLinkRequested;
+            ConnectionVm.CopyPairingCodeRequested += OnCopyPairingCodeRequested;
             _subscribedConnectionVm = ConnectionVm;
 
             // AddNewPeerCommand 完了後に AddMemberWindow を表示。
@@ -375,10 +375,10 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// N-5: ConnectionViewModel.CopyPairingLinkRequested を受けて TopLevel.Clipboard 経由でコピーする。
+    /// N-5: ConnectionViewModel.CopyPairingCodeRequested を受けて TopLevel.Clipboard 経由でコピーする。
     /// MVVM 規約遵守: ViewModel は Avalonia の TopLevel/Clipboard に依存しない。
     /// </summary>
-    private async void OnCopyPairingLinkRequested(object? sender, string url)
+    private async void OnCopyPairingCodeRequested(object? sender, string url)
     {
         try
         {

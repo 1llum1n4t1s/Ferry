@@ -39,6 +39,11 @@ public sealed class TransferService : ITransferService
     /// <summary>承認待ちの転送状態（TransferId → ReceiveState）。承認/拒否後に _receiveStates へ移動。</summary>
     private readonly ConcurrentDictionary<Guid, ReceiveState> _pendingApprovals = new();
 
+    /// <summary>送信側の承認待ち（TransferId → TaskCompletionSource）。
+    /// v1.0.38: 送信側は FileMeta 送信後、FileApprove または FileReject を受信するまで
+    /// チャンク送信を待機する。これで承認前の大量チャンク到着 → バッファ上限超過バグを解決する。</summary>
+    private readonly ConcurrentDictionary<Guid, TaskCompletionSource<bool>> _pendingSendApprovals = new();
+
     public event EventHandler<TransferItem>? ProgressChanged;
     public event EventHandler<TransferItem>? FileReceived;
     public event EventHandler<TransferItem>? TransferError;
@@ -86,20 +91,55 @@ public sealed class TransferService : ITransferService
         };
         _activeTransfers[transferId] = item;
 
+        // 送信側の承認待ち TCS を準備 (FileMeta 送信前に登録する)
+        var approvalTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingSendApprovals[transferId] = approvalTcs;
+
         try
         {
-            // 1. メタデータを送信（ハッシュは空、後送り）
+            // 1. メタデータを送信（ハッシュは空、後送り）→ 受信側で承認待ち状態になる
             var metaMessage = FileChunker.CreateFileMetaMessage(
                 fileInfo.Name, fileInfo.Length, totalChunks, string.Empty, transferId, relativePath);
-            await _connectionService.SendAsync(metaMessage, ct);
-            Util.Logger.Log("ファイルメタデータ送信完了");
 
-            // 2. チャンクを順次送信しつつハッシュを並行計算
+            // 承認待ち UI 用に送信状態を Pending に
+            item.State = TransferState.Pending;
+            ProgressChanged?.Invoke(this, item);
+
+            await _connectionService.SendAsync(metaMessage, ct);
+            Util.Logger.Log("ファイルメタデータ送信完了、相手の承認待ち…");
+
+            // 2. 相手側の承認 (FileApprove) または拒否 (FileReject) を待つ
+            //    AutoAcceptFileTransfer=true の場合は受信側が即承認するので体感ラグなし
+            bool approved;
+            try
+            {
+                approved = await approvalTcs.Task.WaitAsync(ct);
+            }
+            catch (OperationCanceledException)
+            {
+                Util.Logger.Log($"承認待ち中にキャンセル: {displayName}", Util.LogLevel.Warning);
+                throw;
+            }
+
+            if (!approved)
+            {
+                Util.Logger.Log($"送信が拒否されました: {displayName}");
+                item.State = TransferState.Cancelled;
+                item.ErrorMessage = "相手が受信を拒否しました";
+                TransferError?.Invoke(this, item);
+                return;
+            }
+
+            Util.Logger.Log($"承認受信、チャンク送信開始: {displayName}");
+            item.State = TransferState.InProgress;
+            ProgressChanged?.Invoke(this, item);
+
+            // 3. チャンクを順次送信しつつハッシュを並行計算
             using var hashSink = System.Security.Cryptography.IncrementalHash.CreateHash(
                 System.Security.Cryptography.HashAlgorithmName.SHA256);
             await SendChunksAsync(filePath, transferId, startChunk: 0, item, ct, hashSink);
 
-            // 3. 確定したハッシュを後送り
+            // 4. 確定したハッシュを後送り
             var sha256Bytes = hashSink.GetHashAndReset();
             item.Sha256Hash = Convert.ToHexString(sha256Bytes).ToLowerInvariant();
             var hashMessage = FileChunker.CreateFileHashMessage(sha256Bytes);
@@ -117,6 +157,7 @@ public sealed class TransferService : ITransferService
         }
         finally
         {
+            _pendingSendApprovals.TryRemove(transferId, out _);
             _activeTransfers.TryRemove(transferId, out _);
         }
     }
@@ -195,6 +236,10 @@ public sealed class TransferService : ITransferService
 
             case TransferProtocol.FileHash:
                 HandleFileHash(data);
+                break;
+
+            case TransferProtocol.FileApprove:
+                HandleFileApprove(data);
                 break;
 
             case TransferProtocol.Ping:
@@ -625,19 +670,46 @@ public sealed class TransferService : ITransferService
 
     private void HandleFileReject(byte[] data)
     {
-        var reason = data.Length > 1
-            ? Encoding.UTF8.GetString(data, 1, data.Length - 1)
-            : "不明な理由";
-        Util.Logger.Log($"ファイル拒否: {reason}", Util.LogLevel.Warning);
+        var parsed = FileChunker.ParseReject(data);
+        if (parsed == null)
+        {
+            Util.Logger.Log("FileReject のパースに失敗", Util.LogLevel.Warning);
+            return;
+        }
+        var (transferId, reason) = parsed.Value;
+        Util.Logger.Log($"ファイル拒否: transferId={transferId}, 理由={reason}", Util.LogLevel.Warning);
 
-        // 送信中のアイテムにエラーを通知
-        var sendingItem = _activeTransfers.Values.FirstOrDefault(t => t.State == TransferState.InProgress);
-        if (sendingItem != null)
+        // v1.0.38: 承認待ち TCS を完了させる (送信側が SendFileAsync で待機中)
+        if (_pendingSendApprovals.TryRemove(transferId, out var tcs))
+        {
+            tcs.TrySetResult(false);
+            return;
+        }
+
+        // 既に送信中だった場合のエラー通知 (後方互換、通常は到達しない)
+        if (_activeTransfers.TryGetValue(transferId, out var sendingItem))
         {
             sendingItem.State = TransferState.Error;
             sendingItem.ErrorMessage = $"相手が受信を拒否しました: {reason}";
             TransferError?.Invoke(this, sendingItem);
         }
+    }
+
+    /// <summary>
+    /// v1.0.38: FileApprove メッセージを受信して、送信側の承認待ち TCS を完了させる。
+    /// これによって SendFileAsync の `await approvalTcs.Task` が解放され、チャンク送信が開始される。
+    /// </summary>
+    private void HandleFileApprove(byte[] data)
+    {
+        var transferId = FileChunker.ParseApprove(data);
+        if (transferId == null)
+        {
+            Util.Logger.Log("FileApprove のパースに失敗", Util.LogLevel.Warning);
+            return;
+        }
+        Util.Logger.Log($"FileApprove 受信: transferId={transferId}");
+        if (_pendingSendApprovals.TryRemove(transferId.Value, out var tcs))
+            tcs.TrySetResult(true);
     }
 
     private void HandlePing()
@@ -719,7 +791,8 @@ public sealed class TransferService : ITransferService
         state.ReceivedChunks = 0;
         _receiveStates[tid] = state;
 
-        // 承認前にバッファされたチャンクを処理
+        // 承認前にバッファされたチャンクを処理 (v1.0.38 で送信側が承認待ちになったので通常は空だが、
+        // 旧バージョン送信側との互換 / セーフティネットとして残す)
         if (state.BufferedChunks is { Count: > 0 })
         {
             foreach (var chunkData in state.BufferedChunks)
@@ -727,6 +800,15 @@ public sealed class TransferService : ITransferService
             state.BufferedChunks = null;
             state.BufferedBytes = 0;
         }
+
+        // v1.0.38: 送信側に FileApprove を送って、チャンク送信を開始させる
+        // (送信側は FileMeta 送信後にこれを待っている)
+        var approveMessage = FileChunker.CreateApproveMessage(tid);
+        _ = Task.Run(async () =>
+        {
+            try { await _connectionService.SendAsync(approveMessage); }
+            catch (Exception ex) { Util.Logger.Log($"FileApprove 送信エラー: {ex.Message}", Util.LogLevel.Warning); }
+        });
     }
 
     /// <summary>受信承認待ちの転送を拒否する。送信側に FileReject を送信する。</summary>
@@ -744,7 +826,8 @@ public sealed class TransferService : ITransferService
         state.Item.ErrorMessage = "受信を拒否しました";
 
         // FileReject メッセージを送信側に通知 — fire-and-forget でブロッキングを回避
-        var rejectMessage = FileChunker.CreateRejectMessage("受信側が拒否しました");
+        // v1.0.38: TransferId プレフィックス付きに変更 (同時複数転送の区別のため)
+        var rejectMessage = FileChunker.CreateRejectMessage(tid, "受信側が拒否しました");
         _ = Task.Run(async () =>
         {
             try

@@ -22,6 +22,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     private readonly IConnectionService _connectionService;
     private readonly ITransferService _transferService;
     private readonly ConnectionViewModel _connectionViewModel;
+    private readonly ISettingsService _settingsService;
 
     [ObservableProperty]
     public partial bool IsDragOver { get; set; }
@@ -56,11 +57,13 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     public TransferViewModel(
         IConnectionService connectionService,
         ITransferService transferService,
-        ConnectionViewModel connectionViewModel)
+        ConnectionViewModel connectionViewModel,
+        ISettingsService settingsService)
     {
         _connectionService = connectionService;
         _transferService = transferService;
         _connectionViewModel = connectionViewModel;
+        _settingsService = settingsService;
 
         _transferService.ProgressChanged += OnProgressChanged;
         _transferService.FileReceived += OnFileReceived;
@@ -390,12 +393,26 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
 
     /// <summary>
     /// ファイル受信承認要求イベント。承認待ちアイテムを UI に追加する。
+    /// AutoAcceptFileTransfer=true の場合は UI に出さず即承認する (送信側へ FileApprove を返す)。
     /// </summary>
     private void OnApprovalRequested(object? sender, TransferItem e)
     {
         Dispatcher.UIThread.Post(() =>
         {
             e.PeerName = _connectionViewModel.SelectedPeer?.DisplayName ?? string.Empty;
+
+            // v1.0.38: AutoAccept なら UI に出さず即 ApproveTransfer
+            // (ApproveTransfer 内で TransferService.ApproveTransfer → FileApprove 送信 → 送信側がチャンク送信開始)
+            if (_settingsService.Settings.AutoAcceptFileTransfer)
+            {
+                Util.Logger.Log($"AutoAccept: 即承認: {e.FileName}");
+                Transfers.Add(e);
+                _transferService.ApproveTransfer(e.TransferId.ToString());
+                IsTransferring = true;
+                _currentReceiveItem = e;
+                return;
+            }
+
             PendingApprovals.Add(e);
             HasPendingApproval = PendingApprovals.Count > 0;
         });

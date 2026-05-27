@@ -14,7 +14,8 @@ public static class TransferProtocol
     /// <summary>ファイル受信完了確認 [status (1byte)] [sha256 (32byte)]。</summary>
     public const byte FileAck = 0x03;
 
-    /// <summary>ファイル受信拒否 [reason (UTF-8)]。</summary>
+    /// <summary>ファイル受信拒否 [TransferId (16byte)] [reason (UTF-8)]。
+    /// v1.0.38 で TransferId プレフィックスを追加 (同時複数転送の承認待ちを区別するため)。</summary>
     public const byte FileReject = 0x04;
 
     /// <summary>ファイル SHA-256 ハッシュ後送り [sha256 (32byte)]。
@@ -22,6 +23,12 @@ public static class TransferProtocol
     /// 送信側でファイルを 2 度読み (ハッシュ計算 + 送信) する必要があった。
     /// 新プロトコルではチャンク送信中に IncrementalHash で並行計算し、最後にこのメッセージで送る。</summary>
     public const byte FileHash = 0x05;
+
+    /// <summary>受信側がファイル受信を承認したことを送信側に通知する [TransferId (16byte)]。
+    /// v1.0.38 で追加。送信側はこのメッセージを受信するまでチャンクを送らないので、
+    /// 承認前の大量チャンク到着 → バッファ上限超過破棄 → ファイル破損というバグを根本解決する。
+    /// AutoAcceptFileTransfer=true の場合、受信側は FileMeta 受信直後に自動で送信する。</summary>
+    public const byte FileApprove = 0x06;
 
     /// <summary>キープアライブ送信。</summary>
     public const byte Ping = 0x10;

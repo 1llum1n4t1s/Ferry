@@ -9,20 +9,39 @@
              x:DataType="vm:TransferViewModel">
 
     <Grid RowDefinitions="Auto,*,Auto">
-        <!-- ヘッダー: ピア名 + 送信ボタン -->
+        <!-- ヘッダー: ピア名 + 経路バッジ + 送信ボタン -->
         <Border Grid.Row="0" Background="{DynamicResource SurfaceVariantBrush}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
                 Padding="16,12">
             <Grid ColumnDefinitions="*,Auto">
-                <StackPanel VerticalAlignment="Center">
+                <StackPanel VerticalAlignment="Center" Spacing="4">
                     <TextBlock Text="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.DisplayName,
                                               RelativeSource={RelativeSource AncestorType=Window}}"
                                FontSize="16" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextPrimaryBrush}" />
-                    <TextBlock Text="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.RouteText,
-                                              RelativeSource={RelativeSource AncestorType=Window}}"
-                               FontSize="12"
-                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                    <!-- v1.0.38: 経路バッジを右ペイン (ピア名直下) に移動。
+                         未接続時は IsConnected=false で非表示 -->
+                    <Border Classes="route-badge"
+                            Classes.lan="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.IsLanRoute,
+                                                  RelativeSource={RelativeSource AncestorType=Window}}"
+                            Classes.p2p="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.IsP2pRoute,
+                                                  RelativeSource={RelativeSource AncestorType=Window}}"
+                            Classes.relay="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.IsRelayRoute,
+                                                    RelativeSource={RelativeSource AncestorType=Window}}"
+                            IsVisible="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.IsConnected,
+                                                RelativeSource={RelativeSource AncestorType=Window}}"
+                            ToolTip.Tip="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.RouteBadgeTooltip,
+                                                  RelativeSource={RelativeSource AncestorType=Window}}"
+                            HorizontalAlignment="Left">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Classes="route-badge-icon route-badge-text"
+                                       Text="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.RouteBadgeIcon,
+                                                      RelativeSource={RelativeSource AncestorType=Window}}" />
+                            <TextBlock Classes="route-badge-text"
+                                       Text="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.RouteBadgeLabel,
+                                                      RelativeSource={RelativeSource AncestorType=Window}}" />
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
                 <Button Grid.Column="1" Classes="accent"
                         Content="{DynamicResource Text.Transfer.SendFile}"
@@ -41,9 +60,9 @@
                         <DataTemplate x:DataType="m:TransferItem">
                             <Border Background="{DynamicResource SurfaceVariantBrush}"
                                     CornerRadius="8" Padding="12,10" Margin="0,4">
-                                <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto">
+                                <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
                                     <!-- アイコン -->
-                                    <TextBlock Grid.Column="0" Grid.RowSpan="3"
+                                    <TextBlock Grid.Column="0" Grid.RowSpan="4"
                                                Text="📄" FontSize="24"
                                                VerticalAlignment="Center" Margin="0,0,12,0" />
 
@@ -63,8 +82,17 @@
                                                    Foreground="{DynamicResource TextTertiaryBrush}" />
                                     </StackPanel>
 
+                                    <!-- v1.0.38: ファイルのフルパス (送信なら元、受信なら保存先) -->
+                                    <TextBlock Grid.Column="1" Grid.Row="2"
+                                               Text="{Binding DisplayFilePath}"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource TextTertiaryBrush}"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip.Tip="{Binding DisplayFilePath}"
+                                               IsVisible="{Binding DisplayFilePath, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
                                     <!-- 進捗バー: 転送中のみ表示。Progress (0.0〜1.0) を 0〜100 にスケール -->
-                                    <ProgressBar Grid.Column="1" Grid.Row="2"
+                                    <ProgressBar Grid.Column="1" Grid.Row="3"
                                                  Minimum="0" Maximum="1"
                                                  Value="{Binding Progress}"
                                                  IsVisible="{Binding IsInProgress}"
@@ -75,7 +103,7 @@
                                                  Background="{DynamicResource BorderBrush}" />
 
                                     <!-- 方向アイコン -->
-                                    <TextBlock Grid.Column="2" Grid.RowSpan="3"
+                                    <TextBlock Grid.Column="2" Grid.RowSpan="4"
                                                Text="{Binding DirectionSymbol}"
                                                FontSize="16" VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextSecondaryBrush}" />

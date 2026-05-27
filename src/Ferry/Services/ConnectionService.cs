@@ -132,6 +132,36 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         return (true, $"「{_displayName}」と「{resolvedNameB}」をペアリングしました。");
     }
 
+    /// <summary>
+    /// v1.0.38: ペアリングコード (32 文字 hex = sessionId) を直接受け取ってペアリングする。
+    /// URL を貼り付ける旧 PairFromUrlAsync と違ってブラウザで開かれる事故が起きない。
+    /// </summary>
+    public async Task<(bool Success, string Message)> PairFromCodeAsync(string code, CancellationToken ct = default)
+    {
+        if (_signaling == null)
+            return (false, "ペアリング待機を開始してから実行してください。");
+        if (string.IsNullOrWhiteSpace(code))
+            return (false, "コードが空です。");
+
+        var sidB = code.Trim();
+
+        // 32 文字 hex (Guid "N" 形式) の検証
+        if (!Guid.TryParseExact(sidB, "N", out _))
+            return (false, "Ferry のペアリングコードではありません (32 文字の英数字)。");
+
+        if (sidB == _deviceId)
+            return (false, "これは自分の PC のコードです。もう片方の PC のコードを貼り付けてください。");
+
+        // 相手セッションの存在確認
+        var (exists, displayName) = await _signaling.CheckSessionAsync(sidB, ct);
+        if (!exists)
+            return (false, "ペアリング先のセッションが見つかりません。相手の PC でアプリが起動していることを確認してください。");
+
+        var resolvedNameB = displayName ?? "PC-B";
+        await _signaling.SubmitPairingAsync(_deviceId, _displayName, sidB, resolvedNameB, ct);
+        return (true, $"「{_displayName}」と「{resolvedNameB}」をペアリングしました。");
+    }
+
     public async Task CancelPairingAsync(CancellationToken ct = default)
     {
         if (_signaling != null)
@@ -461,6 +491,167 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             Util.Logger.Log($"接続エラー: {ex.Message}", Util.LogLevel.Error);
             SetState(PeerState.Error);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// 軽量プローブで経路だけ判定する（データチャンネルは確立せず即切断）。
+    /// メインの <see cref="_signaling"/> / <see cref="_transport"/> / <see cref="State"/> には触らず、
+    /// 一時的な FirebaseSignaling と transport を使う。着信監視 (StartListeningForConnection) は
+    /// Probe 中だけ停止して、競合を避ける。
+    /// TCP/UDP のみ実試行、リレーは推定（Cloudflare Workers の DO duration コスト回避）。
+    /// </summary>
+    public async Task<ConnectionRoute> ProbeRouteAsync(string peerId, CancellationToken ct = default)
+    {
+        // 既に通常接続中 / 接続試行中なら干渉せずに現在の Route を返す
+        if (State is PeerState.Connecting or PeerState.Connected)
+        {
+            Util.Logger.Log($"Probe スキップ: 既に接続中 ({State}) → 現 Route={Route} を返す");
+            return Route;
+        }
+
+        Util.Logger.Log($"経路 Probe 開始: peer={peerId}");
+
+        // 着信監視の一時停止 (Probe 用 offer を自分で拾わないように)
+        var listeningPeerId = ConnectedPeer?.SessionId;  // 復元用 (現状常に null だが将来対応)
+        StopListeningForConnection();
+
+        FirebaseSignaling? probeSig = null;
+        TcpDirectTransport? tcpTransport = null;
+        UdpHolePunchTransport? udpTransport = null;
+        var pairId = GeneratePairId(_deviceId, peerId);
+
+        try
+        {
+            probeSig = new FirebaseSignaling(_databaseUrl);
+            await probeSig.RegisterSessionAsync(_deviceId, _displayName, ct);
+
+            // 古いシグナリングデータを削除（前回 Probe / 接続の残骸を掃除）
+            await probeSig.CleanupSignalingDataAsync(pairId, ct);
+
+            // ① TCP リスナー起動 → offer 送信
+            tcpTransport = new TcpDirectTransport();
+            var port = tcpTransport.StartListener();
+            var localIps = TcpDirectTransport.GetLocalIpAddresses();
+            var offerInfo = new ConnectionInfo
+            {
+                Ips = localIps,
+                Port = port,
+                RelayUrl = RelayUrl,  // Answer 側は通常フローで動くので一応セット
+            };
+            await probeSig.SendSdpOfferAsync(pairId, SerializeConnectionInfo(offerInfo), ct);
+
+            // ② TCP accept + Answer ポーリングを同時待機
+            using var stageCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            stageCts.CancelAfter(TimeSpan.FromSeconds(TcpConnectTimeoutSeconds + 2));
+            var tcpAcceptTask = tcpTransport.AcceptAsync(stageCts.Token);
+            var answerTask = probeSig.WaitForSdpAsync(pairId, "answer", ct: stageCts.Token);
+
+            Task completedTask;
+            try
+            {
+                completedTask = await Task.WhenAny(tcpAcceptTask, answerTask);
+            }
+            catch (OperationCanceledException)
+            {
+                Util.Logger.Log("Probe: TCP/Answer 待機タイムアウト → Relay 推定");
+                return ConnectionRoute.Relay;
+            }
+
+            if (completedTask == tcpAcceptTask && tcpAcceptTask.IsCompletedSuccessfully)
+            {
+                Util.Logger.Log("Probe: TCP 直接接続成功 → Direct");
+                return ConnectionRoute.Direct;
+            }
+
+            // Answer 側が TCP 失敗を通知 → UDP ホールパンチを試す
+            string? answerJson = null;
+            try { answerJson = await answerTask; }
+            catch { /* Answer 取得失敗 = TCP/UDP どちらも判定不能 → Relay 推定 */ }
+
+            if (answerJson == null)
+            {
+                Util.Logger.Log("Probe: Answer 受信失敗 → Relay 推定");
+                return ConnectionRoute.Relay;
+            }
+
+            // ③ STUN + UDP ホールパンチ
+            udpTransport = new UdpHolePunchTransport();
+            var stunResult = await udpTransport.GetExternalEndpointAsync(ct);
+            if (stunResult == null)
+            {
+                Util.Logger.Log("Probe: STUN 失敗 → Relay 推定");
+                return ConnectionRoute.Relay;
+            }
+
+            var updatedOffer = new ConnectionInfo
+            {
+                Ips = localIps,
+                Port = port,
+                ExternalIp = stunResult.Value.ip,
+                ExternalPort = stunResult.Value.port,
+                RelayUrl = RelayUrl,
+            };
+            await probeSig.SendSdpOfferAsync(pairId, SerializeConnectionInfo(updatedOffer), ct);
+
+            // Answer 側の外部エンドポイントを取得 → HolePunch
+            using var epCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            epCts.CancelAfter(TimeSpan.FromSeconds(8));
+            string endpointStr;
+            try
+            {
+                endpointStr = await probeSig.WaitForEndpointAsync(pairId, "answer", epCts.Token);
+            }
+            catch
+            {
+                Util.Logger.Log("Probe: Answer エンドポイント取得失敗 → Relay 推定");
+                return ConnectionRoute.Relay;
+            }
+
+            var parts = endpointStr.Split(':');
+            if (parts.Length != 2 || !int.TryParse(parts[1], out var remotePort))
+            {
+                Util.Logger.Log("Probe: Answer エンドポイントパース失敗 → Relay 推定");
+                return ConnectionRoute.Relay;
+            }
+
+            using var punchCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            punchCts.CancelAfter(TimeSpan.FromSeconds(UdpHolePunchTimeoutSeconds));
+            try
+            {
+                await udpTransport.HolePunchAsync(parts[0], remotePort, punchCts.Token);
+                Util.Logger.Log("Probe: UDP ホールパンチ成功 → StunAssisted");
+                return ConnectionRoute.StunAssisted;
+            }
+            catch
+            {
+                Util.Logger.Log("Probe: UDP ホールパンチ失敗 → Relay 推定");
+                return ConnectionRoute.Relay;
+            }
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"Probe 例外: {ex.Message} → Unknown", Util.LogLevel.Warning);
+            return ConnectionRoute.Unknown;
+        }
+        finally
+        {
+            // 確立した transport は全て即切断（データチャンネルは使わない）
+            try { tcpTransport?.Close(); tcpTransport?.Dispose(); } catch { }
+            try { udpTransport?.Close(); udpTransport?.Dispose(); } catch { }
+
+            // Probe 用シグナリングデータを掃除
+            if (probeSig != null)
+            {
+                try { await probeSig.CleanupSignalingDataAsync(pairId, default); } catch { }
+                probeSig.Dispose();
+            }
+
+            // 着信監視を再開
+            if (listeningPeerId != null)
+                StartListeningForConnection(listeningPeerId);
+
+            Util.Logger.Log($"経路 Probe 終了: peer={peerId}");
         }
     }
 

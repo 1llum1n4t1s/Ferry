@@ -22,6 +22,8 @@ public class TransferViewModelTests : IDisposable
     private readonly ConnectionViewModel _connectionViewModel;
     private readonly string _tempDir;
 
+    private readonly ISettingsService _settingsService;
+
     public TransferViewModelTests()
     {
         _connectionService = Substitute.For<IConnectionService>();
@@ -31,11 +33,11 @@ public class TransferViewModelTests : IDisposable
 
         // ConnectionViewModel のスタブ依存
         var qrCodeService = Substitute.For<IQrCodeService>();
-        var settingsService = Substitute.For<ISettingsService>();
-        settingsService.Settings.Returns(new AppSettings { DisplayName = "TestPC", BridgePageUrl = "https://example.com" });
+        _settingsService = Substitute.For<ISettingsService>();
+        _settingsService.Settings.Returns(new AppSettings { DisplayName = "TestPC", BridgePageUrl = "https://example.com" });
         var peerRegistry = Substitute.For<IPeerRegistryService>();
         peerRegistry.GetPairedPeers().Returns(new List<PairedPeer>());
-        _connectionViewModel = new ConnectionViewModel(_connectionService, qrCodeService, settingsService, peerRegistry);
+        _connectionViewModel = new ConnectionViewModel(_connectionService, qrCodeService, _settingsService, peerRegistry);
     }
 
     private TransferViewModel CreateViewModel(bool withSelectedPeer = false)
@@ -44,7 +46,8 @@ public class TransferViewModelTests : IDisposable
         {
             _connectionViewModel.SelectedPeer = new PairedPeer { PeerId = "test-peer", DisplayName = "TestPeer" };
         }
-        return new TransferViewModel(_connectionService, _transferService, _connectionViewModel);
+        // v1.0.38: TransferViewModel が ISettingsService に依存するようになった (AutoAccept チェック用)
+        return new TransferViewModel(_connectionService, _transferService, _connectionViewModel, _settingsService);
     }
 
     public void Dispose()

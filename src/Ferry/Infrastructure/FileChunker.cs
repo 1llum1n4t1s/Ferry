@@ -82,15 +82,47 @@ public static class FileChunker
     }
 
     /// <summary>
-    /// ファイル拒否メッセージを生成する。
+    /// ファイル拒否メッセージを生成する [種別 1byte] [TransferId 16byte] [reason UTF-8]。
+    /// v1.0.38 で TransferId を追加 (同時複数転送のうちどれの拒否か区別するため)。
     /// </summary>
-    public static byte[] CreateRejectMessage(string reason)
+    public static byte[] CreateRejectMessage(Guid transferId, string reason)
     {
         var reasonBytes = Encoding.UTF8.GetBytes(reason);
-        var message = new byte[1 + reasonBytes.Length];
+        var message = new byte[1 + 16 + reasonBytes.Length];
         message[0] = TransferProtocol.FileReject;
-        reasonBytes.CopyTo(message.AsSpan(1));
+        transferId.TryWriteBytes(message.AsSpan(1, 16));
+        reasonBytes.CopyTo(message.AsSpan(17));
         return message;
+    }
+
+    /// <summary>FileReject メッセージから TransferId と理由を抽出する。</summary>
+    public static (Guid TransferId, string Reason)? ParseReject(ReadOnlySpan<byte> message)
+    {
+        if (message.Length < 1 + 16) return null;
+        var transferId = new Guid(message.Slice(1, 16));
+        var reason = message.Length > 17
+            ? Encoding.UTF8.GetString(message.Slice(17))
+            : string.Empty;
+        return (transferId, reason);
+    }
+
+    /// <summary>
+    /// ファイル承認メッセージを生成する [種別 1byte] [TransferId 16byte]。v1.0.38 追加。
+    /// 受信側が ApproveTransfer 時に送信側へ送る。これを受け取った送信側がチャンク送信を開始する。
+    /// </summary>
+    public static byte[] CreateApproveMessage(Guid transferId)
+    {
+        var message = new byte[1 + 16];
+        message[0] = TransferProtocol.FileApprove;
+        transferId.TryWriteBytes(message.AsSpan(1, 16));
+        return message;
+    }
+
+    /// <summary>FileApprove メッセージから TransferId を抽出する。</summary>
+    public static Guid? ParseApprove(ReadOnlySpan<byte> message)
+    {
+        if (message.Length < 1 + 16) return null;
+        return new Guid(message.Slice(1, 16));
     }
 
     /// <summary>

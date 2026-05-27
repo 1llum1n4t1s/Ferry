@@ -37,19 +37,27 @@
             <!-- Row 0: タイトルバー（透明） -->
             <Border Grid.Row="0" Background="Transparent" IsHitTestVisible="False" />
 
-            <!-- Row 1: メインコンテンツ 2カラム -->
-            <Grid Grid.Row="1" ColumnDefinitions="220,*">
+            <!-- Row 1: メインコンテンツ 2カラム (v1.0.38: GridSplitter でドラッグ可) -->
+            <Grid Grid.Row="1" ColumnDefinitions="220,Auto,*">
 
                 <!-- Col 0: サイドバー -->
                 <Border Grid.Column="0" Background="{DynamicResource SidebarBrush}"
                         CornerRadius="12" Margin="8,4,4,8"
+                        MinWidth="180"
                         ClipToBounds="True">
                     <Grid RowDefinitions="Auto,*,Auto">
 
-                        <!-- 検索ボックス -->
-                        <TextBox Grid.Row="0" Classes="search"
-                                 PlaceholderText="{DynamicResource Text.Transfer.SearchPeer}"
-                                 Margin="8,8" />
+                        <!-- 検索ボックス + 手動更新ボタン (v1.0.38) -->
+                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="8,8">
+                            <TextBox Grid.Column="0" Classes="search"
+                                     PlaceholderText="{DynamicResource Text.Transfer.SearchPeer}" />
+                            <Button Grid.Column="1" Classes="icon"
+                                    Content="🔄"
+                                    FontSize="14"
+                                    Margin="6,0,0,0"
+                                    ToolTip.Tip="{DynamicResource Text.Sidebar.RefreshPeers}"
+                                    Command="{Binding Connection.RefreshPeersCommand}" />
+                        </Grid>
 
                         <!-- ピアリスト -->
                         <ListBox Grid.Row="1" Classes="peerList"
@@ -129,24 +137,43 @@
                             </ListBox.ItemTemplate>
                         </ListBox>
 
-                        <!-- サイドバー下部ツールバー -->
+                        <!-- v1.0.38: サイドバー下部メニューをリスト風に (下詰めアイコン + ラベル) -->
                         <Border Grid.Row="2" BorderBrush="{DynamicResource BorderBrush}"
                                 BorderThickness="0,1,0,0" Padding="0,4">
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="16">
-                                <Button Classes="icon" FontSize="20"
-                                        Content="+" ToolTip.Tip="メンバー追加"
-                                        Command="{Binding Connection.AddNewPeerCommand}" />
-                                <Button Classes="icon" FontSize="18"
-                                        Content="&#x2699;" ToolTip.Tip="設定"
-                                        Command="{Binding ToggleSettingsCommand}" />
+                            <StackPanel Orientation="Vertical" Spacing="2">
+                                <Button Classes="sidebarMenuItem"
+                                        Command="{Binding Connection.AddNewPeerCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <TextBlock Text="➕" FontSize="14" VerticalAlignment="Center" />
+                                        <TextBlock Text="{DynamicResource Text.Sidebar.AddPeer}"
+                                                   FontSize="13" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="sidebarMenuItem"
+                                        Command="{Binding ToggleSettingsCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <TextBlock Text="⚙" FontSize="14" VerticalAlignment="Center" />
+                                        <TextBlock Text="{DynamicResource Text.Sidebar.Settings}"
+                                                   FontSize="13" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
                         </Border>
                     </Grid>
                 </Border>
 
-                <!-- Col 1: メインパネル（排他制御） -->
-                <Border Grid.Column="1" Background="{DynamicResource SurfaceBrush}"
-                        CornerRadius="12" Margin="4,4,8,8" ClipToBounds="True">
+                <!-- v1.0.38: 左右ペイン仕切り (GridSplitter でドラッグ可) -->
+                <GridSplitter Grid.Column="1"
+                              Width="4"
+                              Background="Transparent"
+                              ResizeBehavior="PreviousAndNext"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Stretch" />
+
+                <!-- Col 2: メインパネル（排他制御） -->
+                <Border Grid.Column="2" Background="{DynamicResource SurfaceBrush}"
+                        CornerRadius="12" Margin="4,4,8,8" ClipToBounds="True"
+                        MinWidth="300">
                 <Panel>
                     <!-- 転送ビュー -->
                     <v:TransferView x:Name="TransferViewControl"
