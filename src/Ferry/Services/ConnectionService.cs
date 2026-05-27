@@ -622,9 +622,12 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             probeSig = new FirebaseSignaling(_databaseUrl);
             await probeSig.RegisterSessionAsync(_deviceId, _displayName, ct);
 
-            // v1.0.38 review fix #7: probe 開始時の CleanupSignalingDataAsync を削除。
-            // 相手の進行中接続 (offer/answer) を消してしまう副作用があるため。
-            // 古い probe 残骸は GitHub Actions の 1 時間 cleanup に任せる
+            // v1.0.38 review fix v3 (stale answer 完全対策):
+            // SendSdpAnswerAsync は createdAt を更新しないので、minCreatedAt cutoff だけでは
+            // 前回 probe/接続の残骸 answer を排除できない。answer ノードだけ事前削除する
+            // (offer / candidates 等は残すので相手の進行中接続を壊さない、CleanupSignalingDataAsync
+            //  全削除とは違う限定的 cleanup)
+            await probeSig.CleanupAnswerAsync(pairId, ct);
 
             // ① TCP リスナー起動 → offer 送信 (Probe=true フラグで相手側が probe モードで応答)
             tcpTransport = new TcpDirectTransport();

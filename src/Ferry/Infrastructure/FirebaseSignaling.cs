@@ -315,6 +315,26 @@ public sealed class FirebaseSignaling : IDisposable
     }
 
     /// <summary>
+    /// v1.0.38 review fix v3: 指定 pairId の answer ノードだけを削除する (probe 用)。
+    /// SendSdpAnswerAsync は createdAt を更新しないため、minCreatedAt cutoff だけでは
+    /// 前回 probe/接続の残骸 answer を区別できない。新 probe の前にこれを呼ぶことで
+    /// stale answer を即座に拾うバグを根本回避する (offer / candidates 等は残すので
+    /// 相手の進行中接続を壊さない)。
+    /// </summary>
+    public async Task CleanupAnswerAsync(string pairId, CancellationToken ct = default)
+    {
+        try
+        {
+            await _client.Child("signaling").Child(pairId).Child("answer").DeleteAsync();
+            Util.Logger.Log($"answer ノード削除 (probe 前掃除): {pairId}");
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"answer 削除エラー: {ex.Message}", Util.LogLevel.Warning);
+        }
+    }
+
+    /// <summary>
     /// 指定した pairId のシグナリングデータのみを Firebase から削除する。
     /// 再接続時に古い offer/answer/candidates が残っていると接続失敗するため。
     /// </summary>
