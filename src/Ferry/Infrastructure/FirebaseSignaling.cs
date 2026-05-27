@@ -320,34 +320,42 @@ public sealed class FirebaseSignaling : IDisposable
     /// 旧 v4-v12 の単一スロット (probeOffer) では bidirectional 同時 probe で
     /// 後勝ち上書きが起き、自分の offer が消されて相手の answer を誤採用する race が
     /// あった。per-nonce にすることで複数 probe が共存可能になり、その race を根絶する。
-    /// 書き込み順序は v5 と同じく data 先 → createdAt 後 (waiting 側 freshness race 回避)。
+    /// v14 review fix (Codex): TimedSignalingValue を 1 オブジェクトとして atomic 書き込み
+    /// (旧実装は data 子ノードに SignalingValue を書いて nested `data.data` 構造になり
+    /// reader が空文字を引いていた)。atomic 書き込みなので v5 の payload→timestamp race も解消。
     /// </summary>
     public async Task SendProbeOfferAsync(string pairId, string nonce, string sdp, CancellationToken ct = default)
     {
         var encoded = EncodeBase64(sdp);
-        await _client.Child("signaling").Child(pairId).Child("probeOffers").Child(nonce).Child("data")
-            .PutAsync(new SignalingValue { Data = encoded });
-        await _client.Child("signaling").Child(pairId).Child("probeOffers").Child(nonce).Child("createdAt")
-            .PutAsync(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        await _client.Child("signaling").Child(pairId).Child("probeOffers").Child(nonce)
+            .PutAsync(new TimedSignalingValue
+            {
+                Data = encoded,
+                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            });
     }
 
     /// <summary>
     /// v1.0.38 review fix v14: probe 専用 answer を per-nonce key
     /// `signaling/{pairId}/probeAnswers/{nonce}` に書き込む。
     /// 該当 offer の nonce をそのまま使うので、probe sender 側は自分の nonce で答えだけを正確に読める。
+    /// v14 review fix (Codex): SendProbeOfferAsync と同じく TimedSignalingValue を atomic 書き込み
     /// </summary>
     public async Task SendProbeAnswerAsync(string pairId, string nonce, string sdp, CancellationToken ct = default)
     {
         var encoded = EncodeBase64(sdp);
-        await _client.Child("signaling").Child(pairId).Child("probeAnswers").Child(nonce).Child("data")
-            .PutAsync(new SignalingValue { Data = encoded });
-        await _client.Child("signaling").Child(pairId).Child("probeAnswers").Child(nonce).Child("createdAt")
-            .PutAsync(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        await _client.Child("signaling").Child(pairId).Child("probeAnswers").Child(nonce)
+            .PutAsync(new TimedSignalingValue
+            {
+                Data = encoded,
+                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            });
     }
 
     /// <summary>
     /// v1.0.38 review fix v14: 自分の probe nonce 専用 answer を待つ。
     /// 他 probe の answer は別 key (別 nonce) に書かれるので絶対に混入しない。
+    /// v14 review fix (Codex): TimedSignalingValue 全体を 1 オブジェクトとして読む形に統一
     /// </summary>
     public async Task<string> WaitForProbeAnswerAsync(string pairId, string nonce, long minCreatedAt, CancellationToken ct = default)
     {
