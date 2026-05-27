@@ -407,6 +407,17 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     }
 
     /// <summary>
+    /// v1.0.38 review fix v5: Task の例外を観察して握りつぶす helper。
+    /// 既に完了している task はそのまま、未完了の task は cancel 後の完了を待つ。
+    /// background loop 累積防止 (disposed Firebase client への polling 等を確実に止める)。
+    /// </summary>
+    private static async Task ObserveTaskAsync(Task task)
+    {
+        try { await task; }
+        catch { /* キャンセル / 失敗を握りつぶす (呼び出し側が既に結果判定済み) */ }
+    }
+
+    /// <summary>
     /// v1.0.38 review fix #6: probe 専用の応答処理。
     /// 通常の ListenForIncomingConnectionAsync 内フローと違って、TCP 接続試行だけ走らせて
     /// 結果を answer に書く。transport は確立せず即切断、State も変更しない。
@@ -679,31 +690,51 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 return ConnectionRoute.StunAssisted;
             }
 
+            // v1.0.38 review fix v5: 負け task をキャンセルして観察する (background loop 累積防止)。
+            // stageCts.Cancel() で残り task をキャンセル、ObserveAsync で例外を握りつぶしながら完了を待つ。
+            // 旧実装は using stageCts の Dispose のみで Cancel しなかったため、disposed Firebase client への
+            // polling が repeated probe で累積していた
+            stageCts.Cancel();
+
+            ConnectionRoute resultRoute;
             if (completedTask == tcpAcceptTask && tcpAcceptTask.IsCompletedSuccessfully)
             {
                 Util.Logger.Log("Probe: TCP 直接接続成功 → Direct");
-                return ConnectionRoute.Direct;
+                resultRoute = ConnectionRoute.Direct;
             }
-
-            // Answer 側が TCP 結果を通知
-            string? answerJson = null;
-            try { answerJson = await answerTask; }
-            catch { /* Answer 取得失敗 → StunAssisted 推定 */ }
-
-            if (answerJson != null)
+            else
             {
-                var answer = DeserializeConnectionInfo(answerJson);
-                if (answer?.Route == RouteDirect)
+                // Answer 側が TCP 結果を通知
+                string? answerJson = null;
+                try { answerJson = await answerTask; }
+                catch { /* Answer 取得失敗 → StunAssisted 推定 */ }
+
+                if (answerJson != null)
                 {
-                    Util.Logger.Log("Probe: Answer 側で TCP 成功通知 → Direct");
-                    return ConnectionRoute.Direct;
+                    var answer = DeserializeConnectionInfo(answerJson);
+                    if (answer?.Route == RouteDirect)
+                    {
+                        Util.Logger.Log("Probe: Answer 側で TCP 成功通知 → Direct");
+                        resultRoute = ConnectionRoute.Direct;
+                    }
+                    else
+                    {
+                        Util.Logger.Log("Probe: TCP 失敗 → StunAssisted 推定 (実 transfer で確定)");
+                        resultRoute = ConnectionRoute.StunAssisted;
+                    }
+                }
+                else
+                {
+                    Util.Logger.Log("Probe: TCP 失敗 → StunAssisted 推定 (実 transfer で確定)");
+                    resultRoute = ConnectionRoute.StunAssisted;
                 }
             }
 
-            // TCP 失敗 = 異ネットワーク。P2P または Relay のどちらかだが probe では区別できないため
-            // 楽観的に StunAssisted (P2P) を推定で返す。実 transfer 時に確定経路で overwrite される
-            Util.Logger.Log("Probe: TCP 失敗 → StunAssisted 推定 (実 transfer で確定)");
-            return ConnectionRoute.StunAssisted;
+            // 負け task が disposed Firebase client を polling し続けないよう observe (例外は握りつぶす)
+            await ObserveTaskAsync(tcpAcceptTask);
+            await ObserveTaskAsync(answerTask);
+
+            return resultRoute;
         }
         catch (Exception ex)
         {

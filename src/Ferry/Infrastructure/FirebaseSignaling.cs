@@ -318,27 +318,32 @@ public sealed class FirebaseSignaling : IDisposable
     /// v1.0.38 review fix v4: probe 専用 offer を `signaling/{pairId}/probeOffer` に書き込む。
     /// 通常の offer ノードとは完全分離されており、同じ pair で probe と real connection が
     /// 同時に走っても互いを上書き / 削除しない。createdAt も probe 用に分離 (probeCreatedAt)。
+    /// v5: 書き込み順序は payload 先 → timestamp 後。 freshness check は timestamp で行われるため
+    /// 順序逆にすると waiting 側が「fresh」と判定してから古い payload を読むレース条件が発生する。
     /// </summary>
     public async Task SendProbeOfferAsync(string pairId, string sdp, CancellationToken ct = default)
     {
-        await _client.Child("signaling").Child(pairId).Child("probeCreatedAt")
-            .PutAsync(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         var encoded = EncodeBase64(sdp);
+        // 1. payload を先に書く (この時点では timestamp はまだ古い → waiting 側 freshness check fail)
         await _client.Child("signaling").Child(pairId).Child("probeOffer")
             .PutAsync(new SignalingValue { Data = encoded });
+        // 2. timestamp を後に書く (この瞬間以降は waiting 側が新 payload を確実に読める)
+        await _client.Child("signaling").Child(pairId).Child("probeCreatedAt")
+            .PutAsync(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
     }
 
     /// <summary>
     /// v1.0.38 review fix v4: probe 専用 answer を `signaling/{pairId}/probeAnswer` に書き込む。
     /// 通常の answer ノードを上書きしないので、real connection の answer 待機を壊さない。
+    /// v5: payload 先 → timestamp 後の順序 (上の SendProbeOfferAsync と同じレース条件回避)
     /// </summary>
     public async Task SendProbeAnswerAsync(string pairId, string sdp, CancellationToken ct = default)
     {
-        await _client.Child("signaling").Child(pairId).Child("probeAnswerCreatedAt")
-            .PutAsync(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         var encoded = EncodeBase64(sdp);
         await _client.Child("signaling").Child(pairId).Child("probeAnswer")
             .PutAsync(new SignalingValue { Data = encoded });
+        await _client.Child("signaling").Child(pairId).Child("probeAnswerCreatedAt")
+            .PutAsync(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
     }
 
     /// <summary>

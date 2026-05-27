@@ -672,7 +672,10 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     {
         var now = DateTimeOffset.UtcNow;
 
-        // クールダウンチェック (Online flap で連発するのを抑制)
+        // クールダウン**チェックのみ** (Online flap で連発するのを抑制)
+        // v1.0.38 review fix v5: cooldown の記録はセマフォ取得後に移動。
+        // 旧実装は WaitAsync(0) 失敗で skip された peer も cooldown に乗ってしまい、
+        // 複数 peer 同時 Online 時に最初の 1 つを除いて永久 refresh されないバグがあった
         lock (_lastProbeAt)
         {
             if (_lastProbeAt.TryGetValue(peer.PeerId, out var last) && now - last < ProbeCooldown)
@@ -680,15 +683,21 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                 Util.Logger.Log($"経路 Probe スキップ (cooldown): peer={peer.PeerId}, last={last:O}");
                 return;
             }
-            _lastProbeAt[peer.PeerId] = now;
         }
 
         // 同時 Probe は 1 件まで (シグナリング pairId ノード競合防止)。
-        // 待たずに既に他で実行中ならスキップする (await すると Online flap で行列ができる)
+        // 待たずに既に他で実行中ならスキップする (await すると Online flap で行列ができる)。
+        // skip された peer は cooldown 未記録 → 次の手動更新 / Online edge で retry 可能
         if (!await _probeSemaphore.WaitAsync(0))
         {
-            Util.Logger.Log($"経路 Probe スキップ (他で実行中): peer={peer.PeerId}");
+            Util.Logger.Log($"経路 Probe スキップ (他で実行中、cooldown 未記録): peer={peer.PeerId}");
             return;
+        }
+
+        // セマフォ取得成功 → ここで初めて cooldown を記録 (実際に probe を走らせる peer のみ)
+        lock (_lastProbeAt)
+        {
+            _lastProbeAt[peer.PeerId] = DateTimeOffset.UtcNow;
         }
 
         try
