@@ -890,12 +890,8 @@ public sealed class TransferService : ITransferService
 
             // v1.0.38 review fix v6: file open 失敗時に sender へ FileReject を送って
             // 60 秒の approval タイムアウト + 「相手が旧バージョン」の誤誘導エラーを防ぐ
-            var openFailRejectMessage = FileChunker.CreateRejectMessage(tid, $"受信ファイル作成エラー: {ex.Message}");
-            _ = Task.Run(async () =>
-            {
-                try { await _connectionService.SendAsync(openFailRejectMessage); }
-                catch (Exception rex) { Util.Logger.Log($"FileReject 送信エラー: {rex.Message}", Util.LogLevel.Warning); }
-            });
+            // v1.0.38 review fix v9: SendRejectFireAndForget ヘルパーに統一 (重複削減)
+            SendRejectFireAndForget(tid, $"受信ファイル作成エラー: {ex.Message}");
             return;
         }
 
@@ -942,18 +938,8 @@ public sealed class TransferService : ITransferService
 
         // FileReject メッセージを送信側に通知 — fire-and-forget でブロッキングを回避
         // v1.0.38: TransferId プレフィックス付きに変更 (同時複数転送の区別のため)
-        var rejectMessage = FileChunker.CreateRejectMessage(tid, "受信側が拒否しました");
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await _connectionService.SendAsync(rejectMessage);
-            }
-            catch (Exception ex)
-            {
-                Util.Logger.Log($"拒否メッセージ送信エラー: {ex.Message}", Util.LogLevel.Warning);
-            }
-        });
+        // v1.0.38 review fix v9: SendRejectFireAndForget ヘルパーに統一 (重複削減)
+        SendRejectFireAndForget(tid, "受信側が拒否しました");
     }
 
     /// <summary>進行中の転送をキャンセルする。</summary>
