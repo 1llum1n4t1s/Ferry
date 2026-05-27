@@ -281,6 +281,16 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     continue;
                 }
 
+                // v1.0.38 review fix v2: 自分自身が送信した offer (probe など) は無視する。
+                // これにより probe 中も listening を停止する必要がなくなり、
+                // 同じ pairId を共有する selected peer からの real offer を見落とすバグが解消する
+                if (offer.From == _deviceId)
+                {
+                    Util.Logger.Log($"自己 offer を無視: pairId={pairId}, probe={offer.Probe}");
+                    minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    continue;
+                }
+
                 // v1.0.38 review fix #6: probe offer は通常の transport 確立フローに乗せない。
                 // TCP 試行結果だけ answer に書いて即切断し、State / _transport を一切触らない
                 if (offer.Probe)
@@ -415,6 +425,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 Probe = true,
                 Connected = connected,
                 Route = connected ? RouteDirect : RouteNeedRelay,
+                From = _deviceId,  // v1.0.38 review fix v2
             };
             await probeSig.SendSdpAnswerAsync(pairId, SerializeConnectionInfo(answerInfo), ct);
         }
@@ -462,6 +473,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 Ips = localIps,
                 Port = port,
                 RelayUrl = RelayUrl,
+                From = _deviceId,  // v1.0.38 review fix v2: 通常 offer にも From をセット (受信側が自己 offer を無視するため)
             };
             var offerJson = SerializeConnectionInfo(offerInfo);
             Util.Logger.Log($"接続情報送信: ips=[{string.Join(", ", localIps.Select(Util.Logger.MaskIp))}], port={port}");
@@ -526,6 +538,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                             ExternalIp = stunResult.Value.ip,
                             ExternalPort = stunResult.Value.port,
                             RelayUrl = RelayUrl,
+                            From = _deviceId,  // v1.0.38 review fix v2
                         };
                         await _signaling.SendSdpOfferAsync(pairId, SerializeConnectionInfo(updatedOffer), ct);
 
@@ -590,14 +603,19 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
         Util.Logger.Log($"経路 Probe 開始: peer={peerId}");
 
-        // v1.0.38 review fix #1: _currentListeningPeerId から復元 (ConnectedPeer は接続成立まで null)
-        var listeningPeerId = _currentListeningPeerId;
-        StopListeningForConnection();
+        // v1.0.38 review fix v2: probe 中も listening を維持する。
+        // 自分の probe offer は ConnectionInfo.From=_deviceId で識別して
+        // ListenForIncomingConnectionAsync が自己 offer として無視するので競合しない。
+        // これで probe 中に selected peer の real transfer offer を見落とすバグが解消する
 
         FirebaseSignaling? probeSig = null;
         TcpDirectTransport? tcpTransport = null;
         UdpHolePunchTransport? udpTransport = null;
         var pairId = GeneratePairId(_deviceId, peerId);
+
+        // v1.0.38 review fix v2 (stale answer): probe 送信前の時刻を保存し、
+        // 過去 probe/接続の残骸 answer を拾わないようにする
+        var probeCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
         try
         {
@@ -618,6 +636,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 Port = port,
                 RelayUrl = RelayUrl,
                 Probe = true,  // v1.0.38 review fix #6: 相手側に probe であることを通知 (実 transport を確立させない)
+                From = _deviceId,  // v1.0.38 review fix v2: 自分の listening が拾わないように送信元明示
             };
             await probeSig.SendSdpOfferAsync(pairId, SerializeConnectionInfo(offerInfo), ct);
 
@@ -630,7 +649,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             using var stageCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             stageCts.CancelAfter(TimeSpan.FromSeconds(TcpConnectTimeoutSeconds + 2));
             var tcpAcceptTask = tcpTransport.AcceptAsync(stageCts.Token);
-            var answerTask = probeSig.WaitForSdpAsync(pairId, "answer", ct: stageCts.Token);
+            // v1.0.38 review fix v2 (stale answer): minCreatedAt で probe 送信時刻より新しい answer だけ受ける
+            var answerTask = probeSig.WaitForSdpAsync(pairId, "answer", minCreatedAt: probeCreatedAt, ct: stageCts.Token);
 
             Task completedTask;
             try
@@ -684,10 +704,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             // GitHub Actions の定期 cleanup に任せる
             probeSig?.Dispose();
 
-            // 着信監視を再開
-            if (listeningPeerId != null)
-                StartListeningForConnection(listeningPeerId);
-
+            // v1.0.38 review fix v2: listening は probe 中も停止していないので再開不要
             Util.Logger.Log($"経路 Probe 終了: peer={peerId}");
         }
     }
@@ -1054,6 +1071,16 @@ public sealed class ConnectionInfo
     /// </summary>
     [JsonPropertyName("probe")]
     public bool Probe { get; set; }
+
+    /// <summary>
+    /// v1.0.38 review fix v2: offer の送信元 deviceId。
+    /// 同じ pairId を共有する自分の probe offer を ListenForIncomingConnectionAsync が
+    /// 自分で拾わないように区別する用 (From == 自分の deviceId なら無視)。
+    /// これで probe 中も listening を停止する必要がなくなり、
+    /// "probe 中に selected peer の real offer を見落とす" バグが解消する。
+    /// </summary>
+    [JsonPropertyName("from")]
+    public string? From { get; set; }
 }
 
 /// <summary>

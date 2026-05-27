@@ -238,7 +238,10 @@ public sealed class TransferService : ITransferService
             // タイムアウト (外部 ct はキャンセルされてない = 内部 CancelAfter のみ発火)
             Util.Logger.Log($"承認待ちタイムアウト ({SendApprovalTimeoutSeconds}s): {displayName}", Util.LogLevel.Warning);
             item.State = TransferState.Cancelled;
-            item.ErrorMessage = $"承認待ちが {SendApprovalTimeoutSeconds} 秒でタイムアウトしました";
+            // v1.0.38 review fix v2: 旧バージョンとの混在で起きうるため、ヒントを含める
+            // (Ferry v1.0.37 以前は FileApprove メッセージを送らない → タイムアウト)
+            item.ErrorMessage = $"承認待ちが {SendApprovalTimeoutSeconds} 秒でタイムアウトしました。" +
+                "相手の Ferry が古いバージョン (v1.0.37 以前) の可能性があります。両側で v1.0.38 以降に更新してください。";
             TransferError?.Invoke(this, item);
             return false;
         }
