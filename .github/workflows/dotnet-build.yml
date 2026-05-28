@@ -12,6 +12,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# rere レビュー #A2-009: workflow level の最小権限を明示
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build

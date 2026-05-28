@@ -152,10 +152,11 @@ public class FileChunkerTests : IDisposable
 
     // ==================== CreateRejectMessage ====================
 
+    // v1.0.38: CreateRejectMessage は [種別 1] [TransferId 16] [reason UTF-8] の形式に変更
     [Fact]
     public void CreateRejectMessage_先頭バイトがFileRejectであること()
     {
-        var msg = FileChunker.CreateRejectMessage("容量不足");
+        var msg = FileChunker.CreateRejectMessage(Guid.NewGuid(), "容量不足");
         Assert.Equal(TransferProtocol.FileReject, msg[0]);
     }
 
@@ -163,16 +164,64 @@ public class FileChunkerTests : IDisposable
     public void CreateRejectMessage_理由文字列がUTF8でエンコードされること()
     {
         var reason = "ディスク容量不足です";
-        var msg = FileChunker.CreateRejectMessage(reason);
-        var decoded = Encoding.UTF8.GetString(msg.AsSpan(1));
+        var transferId = Guid.NewGuid();
+        var msg = FileChunker.CreateRejectMessage(transferId, reason);
+        // v1.0.38: 種別(1) + TransferId(16) のあとに reason
+        var decoded = Encoding.UTF8.GetString(msg.AsSpan(17));
         Assert.Equal(reason, decoded);
+        // TransferId も正しくシリアライズされていること
+        var parsed = FileChunker.ParseReject(msg);
+        Assert.NotNull(parsed);
+        Assert.Equal(transferId, parsed.Value.TransferId);
+        Assert.Equal(reason, parsed.Value.Reason);
     }
 
     [Fact]
     public void CreateRejectMessage_空文字列でも動作すること()
     {
-        var msg = FileChunker.CreateRejectMessage("");
-        Assert.Single(msg);
+        var msg = FileChunker.CreateRejectMessage(Guid.NewGuid(), "");
+        // 種別(1) + TransferId(16) = 17 バイト
+        Assert.Equal(17, msg.Length);
+    }
+
+    [Fact]
+    public void CreateApproveMessage_先頭バイトがFileApproveでTransferIdが復元できること()
+    {
+        var transferId = Guid.NewGuid();
+        var msg = FileChunker.CreateApproveMessage(transferId);
+        Assert.Equal(TransferProtocol.FileApprove, msg[0]);
+        Assert.Equal(17, msg.Length);
+        var parsed = FileChunker.ParseApprove(msg);
+        Assert.Equal(transferId, parsed);
+    }
+
+    [Fact]
+    public void ParseApprove_短すぎるメッセージはnullを返すこと()
+    {
+        Assert.Null(FileChunker.ParseApprove(new byte[] { 0x06 }));
+        Assert.Null(FileChunker.ParseApprove(new byte[] { 0x06, 0x01, 0x02 }));
+    }
+
+    [Fact]
+    public void ParseReject_短すぎるメッセージはnullを返すこと()
+    {
+        // v1.0.38 review nitpick: ParseApprove 異常系と対称な負系テスト追加
+        Assert.Null(FileChunker.ParseReject(new byte[] { TransferProtocol.FileReject }));
+        Assert.Null(FileChunker.ParseReject(new byte[] { TransferProtocol.FileReject, 0x01, 0x02 }));
+    }
+
+    [Fact]
+    public void ParseReject_TransferIdだけのメッセージはreason空文字を返す()
+    {
+        // 17 バイトちょうど (種別 1 + TransferId 16) で reason 空
+        var transferId = Guid.NewGuid();
+        var msg = new byte[17];
+        msg[0] = TransferProtocol.FileReject;
+        transferId.TryWriteBytes(msg.AsSpan(1, 16));
+        var parsed = FileChunker.ParseReject(msg);
+        Assert.NotNull(parsed);
+        Assert.Equal(transferId, parsed.Value.TransferId);
+        Assert.Equal(string.Empty, parsed.Value.Reason);
     }
 
     // ==================== Ping / Pong ====================

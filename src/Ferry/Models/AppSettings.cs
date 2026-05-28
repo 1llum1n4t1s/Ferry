@@ -43,9 +43,6 @@ public sealed class AppSettings
     /// <summary>表示言語ロケール（"ja_JP", "en_US" など）。空の場合はシステムロケールを自動検出。</summary>
     public string Locale { get; set; } = string.Empty;
 
-    /// <summary>起動時に自動更新チェックを行うか。</summary>
-    public bool Check4UpdatesOnStartup { get; set; } = true;
-
     /// <summary>無視する更新バージョンタグ（例: "v1.0.7"）。このバージョンの更新通知は表示されない。</summary>
     public string IgnoreUpdateTag { get; set; } = string.Empty;
 
@@ -58,12 +55,14 @@ public sealed class AppSettings
     public HashSet<string> MutedPeerIds { get; set; } = [];
 
     // --- ファイル転送設定 ---
+    // ReceiveFileSavePath は v1.0.38 で SaveDirectory と重複していたため削除済み (受信側でも SaveDirectory を使う)
 
-    /// <summary>受信ファイルの保存先フォルダ。空の場合はダウンロードフォルダ。</summary>
-    public string ReceiveFileSavePath { get; set; } = string.Empty;
-
-    /// <summary>ファイル受信を自動承認するか。</summary>
-    public bool AutoAcceptFileTransfer { get; set; } = true;
+    /// <summary>ファイル受信を自動承認するか。
+    /// rere レビュー #A1-005: 旧デフォルト true は #A1-001 (Firebase 匿名ペアリング強制成立)
+    /// と組み合わせで「攻撃者が peer になりすまし → 確認なしで Downloads に投下」経路を作っていた。
+    /// 既定 false に変更してユーザー明示承認を必須に。既存ユーザーの settings.json に保存済みの
+    /// 値は維持されるので、自動承認したい人は設定画面で明示的に ON できる。</summary>
+    public bool AutoAcceptFileTransfer { get; set; } = false;
 
     // N-1: 旧 Theme / AccentColor / FontSize は ThemeMode と二重定義 + 未実装だったため削除済み
     // テーマは ThemeMode で一元管理する

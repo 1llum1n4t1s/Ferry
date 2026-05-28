@@ -37,6 +37,19 @@ public sealed partial class PairedPeer : ObservableObject
     [JsonIgnore]
     public partial bool IsOnline { get; set; }
 
+    /// <summary>
+    /// IsOnline が false → true に切り替わった瞬間に発火するエッジトリガーイベント。
+    /// ConnectionViewModel がこれを購読して、Online になった瞬間に経路 Probe を 1 回だけ走らせる。
+    /// event は JSON シリアライズの対象外なので JsonIgnore 不要。
+    /// </summary>
+    public event EventHandler? WentOnline;
+
+    partial void OnIsOnlineChanged(bool oldValue, bool newValue)
+    {
+        if (!oldValue && newValue)
+            WentOnline?.Invoke(this, EventArgs.Empty);
+    }
+
     /// <summary>接続経路の表示テキスト（旧 UI / ログ用）。</summary>
     [JsonIgnore]
     public string RouteText => Route switch

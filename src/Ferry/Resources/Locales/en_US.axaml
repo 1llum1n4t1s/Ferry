@@ -7,6 +7,16 @@
   <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 Transfer</x:String>
   <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ Settings</x:String>
 
+  <!-- Sidebar bottom menu (v1.0.38) -->
+  <x:String x:Key="Text.Sidebar.AddPeer" xml:space="preserve">Add pairing</x:String>
+  <x:String x:Key="Text.Sidebar.Settings" xml:space="preserve">Settings</x:String>
+  <x:String x:Key="Text.Sidebar.RefreshPeers" xml:space="preserve">Refresh peers</x:String>
+  <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">Pairing code</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 Paste partner's code to pair</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">Paste the code shown on the other PC.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Button" xml:space="preserve">Pair with this code</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">32-character pairing code</x:String>
+
   <!-- Drop Overlay -->
   <x:String x:Key="Text.Drop.Message" xml:space="preserve">Drop files to transfer</x:String>
   <x:String x:Key="Text.Drop.Description" xml:space="preserve">Dropped files will be sent to the connected device</x:String>

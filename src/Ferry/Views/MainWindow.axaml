@@ -23,33 +23,59 @@
 
 
     <Panel>
-        <!-- アクリル背景 -->
+        <!-- ROG NEON: 深宇宙黒アクリルベース -->
         <ExperimentalAcrylicBorder IsHitTestVisible="False">
             <ExperimentalAcrylicBorder.Material>
                 <ExperimentalAcrylicMaterial BackgroundSource="Digger"
-                                             TintColor="#161618"
-                                             TintOpacity="0.85"
-                                             MaterialOpacity="0.65" />
+                                             TintColor="#04060E"
+                                             TintOpacity="0.92"
+                                             MaterialOpacity="0.75" />
             </ExperimentalAcrylicBorder.Material>
         </ExperimentalAcrylicBorder>
+
+        <!-- ROG NEON: 左上シアン → 右下ピンク 斜め走る大型グロー
+             (上下のビームは UI 要素と重なって読みにくかったので撤去、
+              背景は控えめな斜めグラデだけにして、ボタン視認性を優先) -->
+        <Border IsHitTestVisible="False">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                    <GradientStop Color="#1800F0FF" Offset="0.0" />
+                    <GradientStop Color="#0008101F" Offset="0.5" />
+                    <GradientStop Color="#18FF2D8A" Offset="1.0" />
+                </LinearGradientBrush>
+            </Border.Background>
+        </Border>
 
         <Grid RowDefinitions="36,*">
             <!-- Row 0: タイトルバー（透明） -->
             <Border Grid.Row="0" Background="Transparent" IsHitTestVisible="False" />
 
-            <!-- Row 1: メインコンテンツ 2カラム -->
-            <Grid Grid.Row="1" ColumnDefinitions="220,*">
+            <!-- Row 1: メインコンテンツ 2カラム (v1.0.38: GridSplitter でドラッグ可) -->
+            <Grid Grid.Row="1" ColumnDefinitions="220,Auto,*">
 
-                <!-- Col 0: サイドバー -->
+                <!-- Col 0: サイドバー (ROG NEON: cyan 枠 + ほんのり glow) -->
                 <Border Grid.Column="0" Background="{DynamicResource SidebarBrush}"
-                        CornerRadius="12" Margin="8,4,4,8"
+                        CornerRadius="4" Margin="8,4,4,8"
+                        MinWidth="180"
+                        BorderBrush="#3300F0FF"
+                        BorderThickness="1"
                         ClipToBounds="True">
+                    <Border.Effect>
+                        <DropShadowEffect Color="#00F0FF" BlurRadius="20" Opacity="0.35" OffsetX="0" OffsetY="0" />
+                    </Border.Effect>
                     <Grid RowDefinitions="Auto,*,Auto">
 
-                        <!-- 検索ボックス -->
-                        <TextBox Grid.Row="0" Classes="search"
-                                 PlaceholderText="{DynamicResource Text.Transfer.SearchPeer}"
-                                 Margin="8,8" />
+                        <!-- 検索ボックス + 手動更新ボタン (v1.0.38) -->
+                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="8,8">
+                            <TextBox Grid.Column="0" Classes="search"
+                                     PlaceholderText="{DynamicResource Text.Transfer.SearchPeer}" />
+                            <Button Grid.Column="1" Classes="icon"
+                                    Content="🔄"
+                                    FontSize="14"
+                                    Margin="6,0,0,0"
+                                    ToolTip.Tip="{DynamicResource Text.Sidebar.RefreshPeers}"
+                                    Command="{Binding Connection.RefreshPeersCommand}" />
+                        </Grid>
 
                         <!-- ピアリスト -->
                         <ListBox Grid.Row="1" Classes="peerList"
@@ -129,24 +155,48 @@
                             </ListBox.ItemTemplate>
                         </ListBox>
 
-                        <!-- サイドバー下部ツールバー -->
+                        <!-- v1.0.38: サイドバー下部メニューをリスト風に (下詰めアイコン + ラベル) -->
                         <Border Grid.Row="2" BorderBrush="{DynamicResource BorderBrush}"
                                 BorderThickness="0,1,0,0" Padding="0,4">
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="16">
-                                <Button Classes="icon" FontSize="20"
-                                        Content="+" ToolTip.Tip="メンバー追加"
-                                        Command="{Binding Connection.AddNewPeerCommand}" />
-                                <Button Classes="icon" FontSize="18"
-                                        Content="&#x2699;" ToolTip.Tip="設定"
-                                        Command="{Binding ToggleSettingsCommand}" />
+                            <StackPanel Orientation="Vertical" Spacing="2">
+                                <Button Classes="sidebarMenuItem"
+                                        Command="{Binding Connection.AddNewPeerCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <TextBlock Text="➕" FontSize="14" VerticalAlignment="Center" />
+                                        <TextBlock Text="{DynamicResource Text.Sidebar.AddPeer}"
+                                                   FontSize="13" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Classes="sidebarMenuItem"
+                                        Command="{Binding ToggleSettingsCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <TextBlock Text="⚙" FontSize="14" VerticalAlignment="Center" />
+                                        <TextBlock Text="{DynamicResource Text.Sidebar.Settings}"
+                                                   FontSize="13" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
                         </Border>
                     </Grid>
                 </Border>
 
-                <!-- Col 1: メインパネル（排他制御） -->
-                <Border Grid.Column="1" Background="{DynamicResource SurfaceBrush}"
-                        CornerRadius="12" Margin="4,4,8,8" ClipToBounds="True">
+                <!-- v1.0.38: 左右ペイン仕切り (ROG NEON: 中央にシアンライン) -->
+                <GridSplitter Grid.Column="1"
+                              Width="4"
+                              Background="#5500F0FF"
+                              ResizeBehavior="PreviousAndNext"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Stretch" />
+
+                <!-- Col 2: メインパネル (ROG NEON: pink 枠 + ほんのり glow) -->
+                <Border Grid.Column="2" Background="{DynamicResource SurfaceBrush}"
+                        CornerRadius="4" Margin="4,4,8,8" ClipToBounds="True"
+                        MinWidth="300"
+                        BorderBrush="#33FF2D8A"
+                        BorderThickness="1">
+                    <Border.Effect>
+                        <DropShadowEffect Color="#FF2D8A" BlurRadius="20" Opacity="0.3" OffsetX="0" OffsetY="0" />
+                    </Border.Effect>
                 <Panel>
                     <!-- 転送ビュー -->
                     <v:TransferView x:Name="TransferViewControl"
@@ -181,15 +231,18 @@
             </Grid>
         </Grid>
 
-        <!-- ドロップオーバーレイ -->
+        <!-- ドロップオーバーレイ (ROG NEON: シアン枠 + ピンクグロー、ドロップ＝戦闘モード突入感) -->
         <Border x:Name="DropOverlay" IsVisible="False" ZIndex="100"
                 Background="{DynamicResource OverlayBrush}" IsHitTestVisible="True"
                 DragDrop.AllowDrop="True">
-            <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="16"
+            <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="4"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
-                    Padding="48,32"
-                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1">
+                    Padding="56,40"
+                    BorderBrush="#00F0FF" BorderThickness="2">
+                <Border.Effect>
+                    <DropShadowEffect Color="#FF2D8A" BlurRadius="40" Opacity="0.85" OffsetX="0" OffsetY="0" />
+                </Border.Effect>
                 <StackPanel Spacing="16" HorizontalAlignment="Center">
                     <TextBlock Text="{DynamicResource Text.Drop.Message}"
                                FontSize="16" Foreground="{DynamicResource TextPrimaryBrush}"

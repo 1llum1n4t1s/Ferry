@@ -151,7 +151,7 @@ public partial class App : Application
             };
 
             var connectionVm = new ConnectionViewModel(connectionService, qrCodeService, settingsService, peerRegistry);
-            var transferVm = new TransferViewModel(connectionService, transferService, connectionVm);
+            var transferVm = new TransferViewModel(connectionService, transferService, connectionVm, settingsService);
             var settingsVm = new SettingsViewModel(settingsService);
 
             // N-6: SettingsViewModel から MVVM 違反を除去するため、テーマ切替 / 更新チェックは App 側で実行する
@@ -212,12 +212,9 @@ public partial class App : Application
             }
 
             // 起動時の自動更新チェック（更新がある場合のみダイアログ表示）。
-            // Komorebi と仕様を揃え「起動時 1 回のみ」。トレイ常駐ユーザーへは
-            // トレイ右クリックメニューの「アップデートを確認」から手動チェックしてもらう
-            if (_settingsService!.Settings.Check4UpdatesOnStartup)
-            {
-                Check4Update(false);
-            }
+            // v1.0.38: 起動時 OFF オプションを撤去し一律有効化。トレイ常駐ユーザーへは
+            // トレイ右クリックメニューの「アップデートを確認」から手動チェックも可能
+            Check4Update(false);
         }
 
         base.OnFrameworkInitializationCompleted();

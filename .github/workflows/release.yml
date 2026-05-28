@@ -3,6 +3,16 @@ on:
   push:
     branches:
       - 'release/**'
+
+# 複数 release/** push が overlap した場合、古い run の cleanup step が新しい run が
+# upload した nupkg を「manifest 外」として削除する race condition を起こしうるため、
+# workflow level の concurrency で release ジョブを直列化する。
+# cancel-in-progress: false にする理由: 削除途中で中断するとオブジェクト整合性が壊れるので、
+# 走っている run を最後まで完走させて次の run を queue する (transfer-cf スキル 8-2.5 準拠)。
+concurrency:
+  group: release-r2
+  cancel-in-progress: false
+
 jobs:
   build:
     name: Build
@@ -109,6 +119,121 @@ jobs:
                  -o /dev/null -w "${channel}: HTTP %{http_code} (%{size_download} bytes)\n" \
                  "$url"
           done
+
+      # 旧バージョン nupkg のクリーンアップ (Aggressive 保持戦略 / transfer-cf スキル 8-3 準拠):
+      # - releases.<channel>.json (manifest) に含まれない *.nupkg を削除
+      # - Setup.exe / *.zip / *.deb / *.rpm / *.AppImage / RELEASES / assets.*.json /
+      #   releases.*.json は固定ファイル名で毎リリース上書きされる Velopack 内部 &
+      #   ランディング DL 用 (= packages/ 由来のインストーラ含む) なので保護
+      # - 削除対象を「.nupkg かつ manifest 外」に絞ることで、想定外のファイル
+      #   (誰かが手動 put した object) や packages/ 系インストーラを誤って消さない安全側設計
+      # - 配信確認ステップ後に走る (manifest 取得不能なら手前で fail し cleanup は走らない)
+      # - API: Cloudflare V4 で完結 (CLOUDFLARE_API_TOKEN だけで動く / R2 S3 互換 Access Key 不要)
+      - name: 旧バージョン nupkg を削除 (manifest 外をクリーンアップ)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/r2/buckets/ferry-updates"
+          auth_header="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+
+          # 1. ローカル velopack-packages/ の manifest (= 今アップロードしたものと同一) から
+          #    keep set を構築。public endpoint から fetch すると CDN/R2 の伝播タイミング次第で
+          #    「アップロード前の旧 manifest」が返り、新 nupkg が keep_map に入らずに削除される
+          #    race condition がある (transfer-cf スキル Codex P1 指摘対応)。ローカル artifact
+          #    から読めば伝播遅延に依存しない。
+          declare -A keep_map
+          shopt -s nullglob
+          local_manifests=(velopack-packages/releases.*.json)
+          shopt -u nullglob
+
+          if [[ "${#local_manifests[@]}" -eq 0 ]]; then
+            echo "::error::velopack-packages/releases.*.json が見つかりません。Velopack 成果物のダウンロードに失敗している可能性があります。"
+            exit 1
+          fi
+
+          for manifest_path in "${local_manifests[@]}"; do
+            echo "Reading local manifest: $manifest_path"
+            while IFS= read -r filename; do
+              if [[ -n "$filename" && "$filename" != "null" ]]; then
+                keep_map["$filename"]=1
+              fi
+            done < <(jq -r '.Assets[]?.FileName // empty' "$manifest_path")
+          done
+
+          echo "::group::manifest 内の保持対象 nupkg (${#keep_map[@]} files)"
+          for k in "${!keep_map[@]}"; do echo "  $k"; done | sort
+          echo "::endgroup::"
+
+          # 2. R2 上の全 object を cursor ページネーション付きで取得
+          #    継続判定は result_info.is_truncated を明示利用 (意図を明確化)
+          all_keys=()
+          cursor=""
+          while true; do
+            if [[ -n "$cursor" ]]; then
+              resp=$(curl --fail --silent --max-time 30 "${api}/objects?per_page=1000&cursor=${cursor}" -H "$auth_header")
+            else
+              resp=$(curl --fail --silent --max-time 30 "${api}/objects?per_page=1000" -H "$auth_header")
+            fi
+            while IFS= read -r k; do
+              [[ -n "$k" ]] && all_keys+=("$k")
+            done < <(echo "$resp" | jq -r '.result[]?.key')
+            truncated=$(echo "$resp" | jq -r '.result_info.is_truncated // false')
+            [[ "$truncated" != "true" ]] && break
+            cursor=$(echo "$resp" | jq -r '.result_info.cursor // ""')
+            [[ -z "$cursor" || "$cursor" == "null" ]] && break
+          done
+
+          echo "::group::R2 内全オブジェクト (${#all_keys[@]} files)"
+          printf '  %s\n' "${all_keys[@]}"
+          echo "::endgroup::"
+
+          # 3. 削除対象判定: 拡張子 .nupkg のもののみ対象 + keep_map 外
+          #    Ferry の packages/ 由来 (deb/rpm/AppImage/zip 等のインストーラ) は
+          #    .nupkg 拡張子ではないので絶対に削除対象にならない
+          to_delete=()
+          for key in "${all_keys[@]}"; do
+            [[ "$key" != *.nupkg ]] && continue
+            [[ -n "${keep_map[$key]:-}" ]] && continue
+            to_delete+=("$key")
+          done
+
+          if [[ "${#to_delete[@]}" -eq 0 ]]; then
+            echo "✅ 削除対象なし - R2 上の全 nupkg が manifest に含まれています"
+            exit 0
+          fi
+
+          echo "::group::削除対象 (${#to_delete[@]} files)"
+          printf '  %s\n' "${to_delete[@]}"
+          echo "::endgroup::"
+
+          # 4. 一個ずつ DELETE
+          #    --max-time 30 でハング防止 (他の curl 呼び出しと統一)
+          deleted=0
+          failed=0
+          for key in "${to_delete[@]}"; do
+            encoded=$(jq -nr --arg k "$key" '$k|@uri')
+            resp=$(curl --silent --max-time 30 -X DELETE "${api}/objects/${encoded}" -H "$auth_header")
+            success=$(echo "$resp" | jq -r '.success')
+            if [[ "$success" == "true" ]]; then
+              echo "  🗑️  Deleted: $key"
+              deleted=$((deleted + 1))
+            else
+              echo "  ❌ Failed: $key"
+              echo "$resp" | jq -r '.errors[]?.message' | sed 's/^/      /'
+              failed=$((failed + 1))
+            fi
+          done
+
+          echo ""
+          echo "🧹 R2 クリーンアップ完了: $deleted / ${#to_delete[@]} 削除  (失敗: $failed)"
+          # 失敗があってもリリース自体は成功扱い (削除失敗は次回リリースで再試行される)
+          # ただし全件失敗の場合はワークフロー失敗にして気付けるようにする
+          if [[ "$failed" -gt 0 && "$deleted" -eq 0 ]]; then
+            echo "::error::すべての削除が失敗しました。API token の権限・bucket 名を確認してください。"
+            exit 1
+          fi
   firebase-deploy:
     # release/X.Y.Z push 時に Firebase Hosting (Bridge ページ) も自動 deploy。
     # 別途手動 `firebase deploy --only hosting` を不要にする。
@@ -133,10 +258,23 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${FIREBASE_TOKEN:-}" ]; then
-            echo "::warning::FIREBASE_TOKEN が未設定です。Bridge ページの deploy をスキップしました。"
+            # rere レビュー #F-006: 旧 exit 0 だと release 全体が成功扱いになり Bridge
+            # プロトコル変更入りのリリースで全ユーザーがペアリング不能でも誰も気付けない
+            echo "::error::FIREBASE_TOKEN が未設定です。Bridge ページの deploy は必須。"
             echo "ローカルで 'firebase login:ci' を実行してトークンを取得し、GitHub Secrets に FIREBASE_TOKEN として登録してください。"
-            exit 0
+            exit 1
           fi
           cd src/Ferry.Bridge
+          # Codex P1 指摘 (rere Round 3 fix): database rules は --only hosting と分離して
+          # 自動 deploy しない。理由: 現状の Bridge と .NET クライアントは Firebase Auth を
+          # 呼んでおらず、auth.uid を要求する database.rules.json をいきなり deploy すると
+          # 全クライアントが permission_denied で死ぬ。
+          # 段階移行戦略 (Round 2 Phase B、別 PR):
+          #   1. Anonymous Auth を Bridge + .NET 両方に実装してリリース
+          #   2. ユーザー浸透 (1〜2 週間) を待つ
+          #   3. その後に手動で `firebase deploy --only database --token <token>` を実行
+          # database.rules.json + firebase.json の database セクションは保持する
+          # (`firebase deploy --only database` で個別に deploy できる準備)
           firebase deploy --only hosting --token "$FIREBASE_TOKEN" --non-interactive
           echo "✅ Bridge ページ deploy 完了: https://ferry-edf09.web.app/"
+          echo "ℹ️  database rules は Anonymous Auth 実装まで自動 deploy せず (Codex P1 対応)"

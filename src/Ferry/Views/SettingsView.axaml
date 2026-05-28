@@ -62,18 +62,7 @@
                         </Grid>
                     </StackPanel>
 
-                    <!-- 受信ファイル保存先 -->
-                    <StackPanel Spacing="4">
-                        <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.ReceiveFileSavePath}" />
-                        <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                            <TextBox Grid.Column="0" Text="{Binding ReceiveFileSavePath, Mode=TwoWay}"
-                                     Classes="search"
-                                     PlaceholderText="{DynamicResource Text.Settings.ReceiveFileSavePath.Default}" />
-                            <Button Grid.Column="1" Content="{DynamicResource Text.Settings.SaveDirectory.Browse}"
-                                    Classes="accent" Margin="8,0,0,0"
-                                    x:Name="BrowseReceivePathButton" />
-                        </Grid>
-                    </StackPanel>
+                    <!-- v1.0.38: ReceiveFileSavePath は SaveDirectory と重複していたため UI から撤去 -->
 
                     <!-- ファイル自動承認 -->
                     <Grid ColumnDefinitions="*,Auto">
@@ -133,15 +122,15 @@
                 </Grid>
             </Border>
 
-            <!-- バージョン -->
+            <!-- バージョン (v1.0.38: VersionText が "Ferry v1.0.xx" 形式で確実に表示される) -->
             <TextBlock Classes="sectionHeader" Text="{DynamicResource Text.Settings.Version}" />
             <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,16">
-                <Grid ColumnDefinitions="*,Auto">
-                    <StackPanel>
-                        <TextBlock Classes="settingLabel" Text="Ferry" />
-                        <TextBlock Text="{Binding VersionText}" FontSize="12"
-                                   Foreground="{DynamicResource TextSecondaryBrush}" />
-                    </StackPanel>
+                <Grid ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding VersionText}"
+                               FontSize="14" FontWeight="Medium"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               VerticalAlignment="Center" />
                     <Button Grid.Column="1" Classes="accent"
                             Content="{DynamicResource Text.Settings.CheckUpdate}"
                             Command="{Binding CheckForUpdateCommand}" />

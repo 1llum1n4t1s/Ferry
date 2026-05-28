@@ -18,10 +18,14 @@ namespace Ferry.Services;
 /// FileChunker / TransferProtocol を使って、接続済みの IConnectionService 経由で
 /// チャンクベースのファイル送受信、プログレス通知、SHA-256 検証、レジュームを行う。
 /// </summary>
-public sealed class TransferService : ITransferService
+public sealed class TransferService : ITransferService, IDisposable
 {
     /// <summary>承認待ち中にバッファできるチャンクの合計上限（OOM 防止）。</summary>
     private const long MaxApprovalBufferBytes = 64L * 1024 * 1024;
+
+    /// <summary>v1.0.38 review fix #2: 送信側が FileApprove を待つ最大秒数。
+    /// このタイムアウトを超えたら送信を Cancelled に遷移させる (永久停止を防ぐ)。</summary>
+    private const int SendApprovalTimeoutSeconds = 60;
 
     private readonly IConnectionService _connectionService;
     private readonly ISettingsService _settingsService;
@@ -39,6 +43,11 @@ public sealed class TransferService : ITransferService
     /// <summary>承認待ちの転送状態（TransferId → ReceiveState）。承認/拒否後に _receiveStates へ移動。</summary>
     private readonly ConcurrentDictionary<Guid, ReceiveState> _pendingApprovals = new();
 
+    /// <summary>送信側の承認待ち（TransferId → TaskCompletionSource）。
+    /// v1.0.38: 送信側は FileMeta 送信後、FileApprove または FileReject を受信するまで
+    /// チャンク送信を待機する。これで承認前の大量チャンク到着 → バッファ上限超過バグを解決する。</summary>
+    private readonly ConcurrentDictionary<Guid, TaskCompletionSource<bool>> _pendingSendApprovals = new();
+
     public event EventHandler<TransferItem>? ProgressChanged;
     public event EventHandler<TransferItem>? FileReceived;
     public event EventHandler<TransferItem>? TransferError;
@@ -51,6 +60,75 @@ public sealed class TransferService : ITransferService
 
         // 受信データハンドラを登録
         _connectionService.DataReceived += OnDataReceived;
+        // rere レビュー #D-005 / #F-014: 切断時に進行中転送と承認待ちを全部 cleanup する。
+        // 旧実装は ConnectionLost を購読しておらず、Wi-Fi 瞬断等で部分受信ファイルが
+        // Downloads にゴミとして残り続けていた。さらに UI 状態も整合性が崩れる。
+        _connectionService.ConnectionLost += OnConnectionLost;
+    }
+
+    /// <summary>
+    /// rere レビュー #C2-005: TransferService が DataReceived / ConnectionLost を購読するので、
+    /// IDisposable で明示的に unsubscribe する。Singleton 想定では本番影響なしだが、テスト時の
+    /// 偽陽性および将来のマルチピア化対応のために必須。
+    /// </summary>
+    public void Dispose()
+    {
+        _connectionService.DataReceived -= OnDataReceived;
+        _connectionService.ConnectionLost -= OnConnectionLost;
+    }
+
+    /// <summary>
+    /// rere レビュー #D-005 / #F-014: 切断検知時の cleanup。受信中ファイル (_receiveStates) を
+    /// 全削除 + 部分ファイル削除、承認待ち (_pendingApprovals) も Cancelled に遷移して
+    /// UI に通知する。送信中 (_activeTransfers) は SendFileAsync 内の SendAsync 例外で
+    /// 既に catch されるのでここでは触らない。
+    /// CodeRabbit 指摘: 送信側承認待ち (_pendingSendApprovals) も解放しないと、FileMeta 送信後の
+    /// 切断で最大 60 秒 Pending が残り UX が悪化する。TCS を TrySetResult(false) で完了させて
+    /// WaitForApprovalAsync が Cancelled に遷移するようにする。
+    /// </summary>
+    private void OnConnectionLost(object? sender, EventArgs e)
+    {
+        Util.Logger.Log($"接続切断検知: 受信中 {_receiveStates.Count} 件 + 承認待ち(受) {_pendingApprovals.Count} 件 + 承認待ち(送) {_pendingSendApprovals.Count} 件を cleanup", Util.LogLevel.Warning);
+
+        // 受信中の部分ファイルを削除
+        foreach (var tid in _receiveStates.Keys.ToArray())
+        {
+            if (_receiveStates.TryRemove(tid, out var state))
+            {
+                state.Item.State = TransferState.Cancelled;
+                state.Item.ErrorMessage = "接続が切断されました";
+                CleanupReceiveState(state);
+                TransferError?.Invoke(this, state.Item);
+            }
+        }
+
+        // 受信側承認待ちもキャンセル扱い (送信側はもう存在しないので承認しても無意味)
+        foreach (var tid in _pendingApprovals.Keys.ToArray())
+        {
+            if (_pendingApprovals.TryRemove(tid, out var pending))
+            {
+                pending.Item.State = TransferState.Cancelled;
+                pending.Item.ErrorMessage = "接続が切断されました";
+                TransferError?.Invoke(this, pending.Item);
+            }
+        }
+
+        // CodeRabbit 指摘: 送信側承認待ち TCS も解放。
+        // FileMeta 送信後 → 受信側からの FileApprove 待ちで切断したケース、TCS を false で完了させて
+        // WaitForApprovalAsync を抜けさせる。WaitForApprovalAsync の wait 完了分岐 (approved=false)
+        // で State=Cancelled / TransferError 発火が自動的に走る (v12 で実装済み経路)
+        foreach (var tid in _pendingSendApprovals.Keys.ToArray())
+        {
+            if (_pendingSendApprovals.TryRemove(tid, out var tcs))
+            {
+                // ErrorMessage は WaitForApprovalAsync の fallback ("相手が受信を拒否しました") を上書き
+                if (_activeTransfers.TryGetValue(tid, out var sendItem))
+                {
+                    sendItem.ErrorMessage = "接続が切断されました";
+                }
+                tcs.TrySetResult(false);
+            }
+        }
     }
 
     /// <summary>
@@ -86,20 +164,45 @@ public sealed class TransferService : ITransferService
         };
         _activeTransfers[transferId] = item;
 
+        // 送信側の承認待ち TCS を準備 (FileMeta 送信前に登録する)
+        var approvalTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingSendApprovals[transferId] = approvalTcs;
+
         try
         {
-            // 1. メタデータを送信（ハッシュは空、後送り）
+            // 1. メタデータを送信（ハッシュは空、後送り）→ 受信側で承認待ち状態になる
             var metaMessage = FileChunker.CreateFileMetaMessage(
                 fileInfo.Name, fileInfo.Length, totalChunks, string.Empty, transferId, relativePath);
-            await _connectionService.SendAsync(metaMessage, ct);
-            Util.Logger.Log("ファイルメタデータ送信完了");
 
-            // 2. チャンクを順次送信しつつハッシュを並行計算
+            // 承認待ち UI 用に送信状態を Pending に
+            item.State = TransferState.Pending;
+            ProgressChanged?.Invoke(this, item);
+
+            await _connectionService.SendAsync(metaMessage, ct);
+            Util.Logger.Log("ファイルメタデータ送信完了、相手の承認待ち…");
+
+            // 2. 相手側の承認 (FileApprove) または拒否 (FileReject) を待つ
+            //    AutoAcceptFileTransfer=true の場合は受信側が即承認するので体感ラグなし
+            //    v1.0.38 review fix #2: 60 秒タイムアウトを追加。FileApprove/FileReject が欠落しても
+            //    永久停止せず Cancelled に遷移させる
+            bool approved = await WaitForApprovalAsync(displayName, item, approvalTcs, ct);
+            if (!approved)
+            {
+                // v1.0.38 review fix #4: 拒否時は throw して呼び出し側 (TransferViewModel) の
+                // 「正常 return = Completed」扱いを防ぐ。state は WaitForApprovalAsync で既に Cancelled 済
+                throw new OperationCanceledException(item.ErrorMessage ?? "受信が拒否されました");
+            }
+
+            Util.Logger.Log($"承認受信、チャンク送信開始: {displayName}");
+            item.State = TransferState.InProgress;
+            ProgressChanged?.Invoke(this, item);
+
+            // 3. チャンクを順次送信しつつハッシュを並行計算
             using var hashSink = System.Security.Cryptography.IncrementalHash.CreateHash(
                 System.Security.Cryptography.HashAlgorithmName.SHA256);
             await SendChunksAsync(filePath, transferId, startChunk: 0, item, ct, hashSink);
 
-            // 3. 確定したハッシュを後送り
+            // 4. 確定したハッシュを後送り
             var sha256Bytes = hashSink.GetHashAndReset();
             item.Sha256Hash = Convert.ToHexString(sha256Bytes).ToLowerInvariant();
             var hashMessage = FileChunker.CreateFileHashMessage(sha256Bytes);
@@ -110,19 +213,27 @@ public sealed class TransferService : ITransferService
         catch (Exception ex)
         {
             Util.Logger.Log($"ファイル送信エラー: {ex.Message}", Util.LogLevel.Error);
-            item.State = TransferState.Error;
-            item.ErrorMessage = ex.Message;
-            TransferError?.Invoke(this, item);
+            // v1.0.38 review fix v6: 承認待ちタイムアウト / 拒否で既に Cancelled + TransferError 発火済みなら
+            // 二重発火を防ぐ (TransferViewModel に重複行が出る問題の根本対策)
+            if (item.State != TransferState.Cancelled)
+            {
+                item.State = TransferState.Error;
+                item.ErrorMessage = ex.Message;
+                TransferError?.Invoke(this, item);
+            }
             throw;
         }
         finally
         {
+            _pendingSendApprovals.TryRemove(transferId, out _);
             _activeTransfers.TryRemove(transferId, out _);
         }
     }
 
     /// <summary>
     /// 中断された転送をレジュームする。
+    /// v1.0.38 review fix #3: SendFileAsync と同じく FileApprove 待ちを挟む。
+    /// (resume も受信側で承認待ちに入るため、待たずにチャンクを送ると 64MB バッファ破棄バグが再発する)
     /// </summary>
     public async Task<bool> ResumeTransferAsync(Guid transferId, CancellationToken ct = default)
     {
@@ -138,21 +249,33 @@ public sealed class TransferService : ITransferService
             return false;
         }
 
-        // 受信側はレジューム時にファイルを再作成するため、部分再送ではなく先頭から安全に再送する
-        // （途中チャンクだけ送ると受信ファイルが破損するのを防ぐ）
         var startChunk = 0;
         Util.Logger.Log($"転送レジューム: {item.FileName}, 先頭から再送 (全 {item.TotalChunks} チャンク)");
 
-        item.State = TransferState.InProgress;
+        // v1.0.38 review fix #3: 承認待ち TCS を準備
+        var approvalTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingSendApprovals[transferId] = approvalTcs;
+        item.State = TransferState.Pending;
+        ProgressChanged?.Invoke(this, item);
 
         try
         {
-            // メタデータを再送信（相手側でレジューム状態を認識させる）
             var metaMessage = FileChunker.CreateFileMetaMessage(
                 item.FileName, item.FileSize, item.TotalChunks, item.Sha256Hash ?? "", item.TransferId);
             await _connectionService.SendAsync(metaMessage, ct);
+            Util.Logger.Log($"レジューム: メタデータ送信完了、相手の承認待ち…");
 
-            // チャンクを再開位置から送信
+            bool approved = await WaitForApprovalAsync(item.FileName, item, approvalTcs, ct);
+            if (!approved)
+            {
+                // resume の場合は throw せず false を返す (SendFileAsync と挙動を分ける)
+                Util.Logger.Log($"レジューム拒否: {item.FileName}");
+                return false;
+            }
+
+            item.State = TransferState.InProgress;
+            ProgressChanged?.Invoke(this, item);
+
             await SendChunksAsync(item.SourceFilePath, item.TransferId, startChunk, item, ct);
             return true;
         }
@@ -163,6 +286,63 @@ public sealed class TransferService : ITransferService
             item.ErrorMessage = ex.Message;
             TransferError?.Invoke(this, item);
             return false;
+        }
+        finally
+        {
+            _pendingSendApprovals.TryRemove(transferId, out _);
+        }
+    }
+
+    /// <summary>
+    /// v1.0.38 review fix #2/#3: 送信側の FileApprove/FileReject 待ち共通ロジック。
+    /// 60 秒タイムアウトで TransferState.Cancelled に遷移、TransferError 発火。
+    /// 戻り値: true=承認、false=拒否 or タイムアウト。
+    /// </summary>
+    private async Task<bool> WaitForApprovalAsync(string displayName, TransferItem item, TaskCompletionSource<bool> approvalTcs, CancellationToken ct)
+    {
+        using var approvalCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        approvalCts.CancelAfter(TimeSpan.FromSeconds(SendApprovalTimeoutSeconds));
+
+        try
+        {
+            var approved = await approvalTcs.Task.WaitAsync(approvalCts.Token);
+            if (!approved)
+            {
+                // v1.0.38 review fix v12: 受信側拒否時も timeout branch と同じパターンで
+                // State=Cancelled + TransferError 発火 (catch では state==Cancelled で二重発火 skip)。
+                // ErrorMessage は HandleFileReject が事前に reason 付きで設定済み (fallback で generic)
+                Util.Logger.Log($"受信側が拒否: {displayName} / 理由={item.ErrorMessage}", Util.LogLevel.Warning);
+                item.State = TransferState.Cancelled;
+                if (string.IsNullOrEmpty(item.ErrorMessage))
+                    item.ErrorMessage = "相手が受信を拒否しました";
+                TransferError?.Invoke(this, item);
+            }
+            return approved;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // タイムアウト (外部 ct はキャンセルされてない = 内部 CancelAfter のみ発火)
+            Util.Logger.Log($"承認待ちタイムアウト ({SendApprovalTimeoutSeconds}s): {displayName}", Util.LogLevel.Warning);
+            item.State = TransferState.Cancelled;
+            // v1.0.38 review fix v2: 旧バージョンとの混在で起きうるため、ヒントを含める
+            // (Ferry v1.0.37 以前は FileApprove メッセージを送らない → タイムアウト)
+            item.ErrorMessage = $"承認待ちが {SendApprovalTimeoutSeconds} 秒でタイムアウトしました。" +
+                "相手の Ferry が古いバージョン (v1.0.37 以前) の可能性があります。両側で v1.0.38 以降に更新してください。";
+
+            // v1.0.38 review fix v8: 受信側にも FileReject を送って pending approval を expire させる。
+            // これを送らないと、受信側ユーザーが 60 秒後に承認ボタンを押した時、FileApprove は届くが
+            // 送信側はもう pending を破棄しているのでチャンクが来ず、受信側で空ファイルが in-progress
+            // のまま残ってしまう (Codex P2 指摘 v8)
+            SendRejectFireAndForget(item.TransferId, $"送信側がタイムアウト ({SendApprovalTimeoutSeconds}s)");
+
+            TransferError?.Invoke(this, item);
+            return false;
+        }
+        catch (OperationCanceledException)
+        {
+            // 外部 ct によるキャンセル → そのまま伝播
+            Util.Logger.Log($"承認待ち中にキャンセル: {displayName}", Util.LogLevel.Warning);
+            throw;
         }
     }
 
@@ -195,6 +375,10 @@ public sealed class TransferService : ITransferService
 
             case TransferProtocol.FileHash:
                 HandleFileHash(data);
+                break;
+
+            case TransferProtocol.FileApprove:
+                HandleFileApprove(data);
                 break;
 
             case TransferProtocol.Ping:
@@ -295,6 +479,21 @@ public sealed class TransferService : ITransferService
 
     // === 受信ハンドラ ===
 
+    /// <summary>
+    /// HandleFileMeta の early-return パス（パストラバーサル / 保存先異常等）で送信側に
+    /// FileReject を投げて 60 秒の approval タイムアウト + 「相手が旧バージョン」誤エラーを防ぐためのヘルパー。
+    /// fire-and-forget で握り潰してハンドラ側をブロックしない。
+    /// </summary>
+    private void SendRejectFireAndForget(Guid transferId, string reason)
+    {
+        var rejectMessage = FileChunker.CreateRejectMessage(transferId, reason);
+        _ = Task.Run(async () =>
+        {
+            try { await _connectionService.SendAsync(rejectMessage); }
+            catch (Exception ex) { Util.Logger.Log($"FileReject 送信エラー: {ex.Message}", Util.LogLevel.Warning); }
+        });
+    }
+
     private void HandleFileMeta(byte[] data)
     {
         var meta = FileChunker.ParseFileMeta(data);
@@ -309,6 +508,15 @@ public sealed class TransferService : ITransferService
         if (meta.FileSize < 0 || meta.TotalChunks != FileChunker.CalculateTotalChunks(meta.FileSize))
         {
             Util.Logger.Log($"不正なメタデータを拒否: FileSize={meta.FileSize}, TotalChunks={meta.TotalChunks}", Util.LogLevel.Warning);
+            // この時点では TransferId のパース可否すら未確認なので Reject 送信はスキップ
+            // (送信側にとって不明な TransferId の Reject は無視されるだけだが、無駄な通信なので避ける)
+            return;
+        }
+
+        // TransferId は以降の Reject 送信・state 構築で必要なため、ここで早期にパース
+        if (!Guid.TryParse(meta.TransferId, out var transferIdGuid))
+        {
+            Util.Logger.Log($"不正な TransferId 形式: {meta.TransferId}", Util.LogLevel.Warning);
             return;
         }
 
@@ -326,6 +534,7 @@ public sealed class TransferService : ITransferService
             if (normalized.Contains(".."))
             {
                 Util.Logger.Log($"不正な RelativePath を検出: {meta.RelativePath}", Util.LogLevel.Warning);
+                SendRejectFireAndForget(transferIdGuid, "不正なファイルパス (パストラバーサル)");
                 return;
             }
 
@@ -373,6 +582,7 @@ public sealed class TransferService : ITransferService
         if (!Path.GetFullPath(savePath).StartsWith(dirWithSep, StringComparison.OrdinalIgnoreCase))
         {
             Util.Logger.Log($"保存パスが保存先ディレクトリ外を指しています: {savePath}", Util.LogLevel.Warning);
+            SendRejectFireAndForget(transferIdGuid, "保存パスが許可範囲外です");
             return;
         }
 
@@ -383,7 +593,10 @@ public sealed class TransferService : ITransferService
             try { Directory.CreateDirectory(saveFileDir); }
             catch (Exception ex)
             {
+                // CodeRabbit 指摘: ex.Message に保存先絶対パス / ユーザー名等のローカル PII が含まれうるため、
+                // 詳細はローカルログだけに残し、ネットワーク越しの FileReject 理由は固定文言に絞る
                 Util.Logger.Log($"保存先ディレクトリ作成失敗: {ex.Message}", Util.LogLevel.Error);
+                SendRejectFireAndForget(transferIdGuid, "保存先ディレクトリ作成失敗");
                 return;
             }
         }
@@ -392,12 +605,7 @@ public sealed class TransferService : ITransferService
         if (!string.IsNullOrEmpty(meta.RelativePath))
             savePath = GetUniquePath(savePath);
 
-        // P-6: meta.TransferId (string) を 1 度だけ Guid 化し、以降の dictionary 操作で再利用
-        if (!Guid.TryParse(meta.TransferId, out var transferIdGuid))
-        {
-            Util.Logger.Log($"不正な TransferId 形式: {meta.TransferId}", Util.LogLevel.Warning);
-            return;
-        }
+        // (transferIdGuid は冒頭でパース済み)
 
         var state = new ReceiveState
         {
@@ -625,19 +833,79 @@ public sealed class TransferService : ITransferService
 
     private void HandleFileReject(byte[] data)
     {
-        var reason = data.Length > 1
-            ? Encoding.UTF8.GetString(data, 1, data.Length - 1)
-            : "不明な理由";
-        Util.Logger.Log($"ファイル拒否: {reason}", Util.LogLevel.Warning);
+        var parsed = FileChunker.ParseReject(data);
+        if (parsed == null)
+        {
+            Util.Logger.Log("FileReject のパースに失敗", Util.LogLevel.Warning);
+            return;
+        }
+        var (transferId, reason) = parsed.Value;
+        Util.Logger.Log($"ファイル拒否: transferId={transferId}, 理由={reason}", Util.LogLevel.Warning);
 
-        // 送信中のアイテムにエラーを通知
-        var sendingItem = _activeTransfers.Values.FirstOrDefault(t => t.State == TransferState.InProgress);
-        if (sendingItem != null)
+        // v1.0.38: 承認待ち TCS を完了させる (送信側が SendFileAsync で待機中)
+        if (_pendingSendApprovals.TryRemove(transferId, out var tcs))
+        {
+            // v1.0.38 review fix v12: 拒否理由を sender 側 item.ErrorMessage に設定してから TCS 解決。
+            // これで WaitForApprovalAsync が item.ErrorMessage を見て実際の理由 (例: パストラバーサル /
+            // dir 作成失敗) を UI に伝えられる。旧実装は generic な「受信が拒否されました」しか出なかった
+            if (_activeTransfers.TryGetValue(transferId, out var pendingSendItem))
+            {
+                pendingSendItem.ErrorMessage = $"相手が受信を拒否しました: {reason}";
+            }
+            tcs.TrySetResult(false);
+            return;
+        }
+
+        // 既に送信中だった場合のエラー通知 (後方互換、通常は到達しない)
+        if (_activeTransfers.TryGetValue(transferId, out var sendingItem))
         {
             sendingItem.State = TransferState.Error;
             sendingItem.ErrorMessage = $"相手が受信を拒否しました: {reason}";
             TransferError?.Invoke(this, sendingItem);
+            return;
         }
+
+        // v1.0.38 review fix v8: 受信側で pending approval として待機中のケース。
+        // 送信側がタイムアウト等で expire を通知してきた → 受信側 UI からも消す必要がある
+        // (これを処理しないと、ユーザーが後から承認ボタンを押した時に FileApprove を送って
+        // 空ファイルが in-progress のまま残ってしまう)
+        if (_pendingApprovals.TryRemove(transferId, out var pendingState))
+        {
+            Util.Logger.Log($"受信側 pending approval を expire (送信側通知): {pendingState.FileName} / 理由={reason}");
+            pendingState.Item.State = TransferState.Cancelled;
+            pendingState.Item.ErrorMessage = $"送信側がキャンセル: {reason}";
+            TransferError?.Invoke(this, pendingState.Item);
+            return;
+        }
+
+        // v1.0.38 review fix v8: race ケース — 受信側が timeout 直前で承認していて
+        // 既に _receiveStates に移行している状態で送信側 reject が到着。
+        // file stream は開いて空ファイルが空のまま残るので、ここで cleanup する
+        if (_receiveStates.TryRemove(transferId, out var receiveState))
+        {
+            Util.Logger.Log($"受信側 in-progress を expire (送信側通知 / race): {receiveState.FileName} / 理由={reason}");
+            receiveState.Item.State = TransferState.Cancelled;
+            receiveState.Item.ErrorMessage = $"送信側がキャンセル: {reason}";
+            CleanupReceiveState(receiveState);
+            TransferError?.Invoke(this, receiveState.Item);
+        }
+    }
+
+    /// <summary>
+    /// v1.0.38: FileApprove メッセージを受信して、送信側の承認待ち TCS を完了させる。
+    /// これによって SendFileAsync の `await approvalTcs.Task` が解放され、チャンク送信が開始される。
+    /// </summary>
+    private void HandleFileApprove(byte[] data)
+    {
+        var transferId = FileChunker.ParseApprove(data);
+        if (transferId == null)
+        {
+            Util.Logger.Log("FileApprove のパースに失敗", Util.LogLevel.Warning);
+            return;
+        }
+        Util.Logger.Log($"FileApprove 受信: transferId={transferId}");
+        if (_pendingSendApprovals.TryRemove(transferId.Value, out var tcs))
+            tcs.TrySetResult(true);
     }
 
     private void HandlePing()
@@ -709,6 +977,13 @@ public sealed class TransferService : ITransferService
             state.Item.State = TransferState.Error;
             state.Item.ErrorMessage = ex.Message;
             TransferError?.Invoke(this, state.Item);
+
+            // v1.0.38 review fix v6: file open 失敗時に sender へ FileReject を送って
+            // 60 秒の approval タイムアウト + 「相手が旧バージョン」の誤誘導エラーを防ぐ
+            // v1.0.38 review fix v9: SendRejectFireAndForget ヘルパーに統一 (重複削減)
+            // CodeRabbit 指摘: ex.Message に保存先絶対パス / ファイル名等のローカル PII が
+            // 含まれうるため、ネットワーク越しの理由は固定文言に絞る
+            SendRejectFireAndForget(tid, "受信ファイル作成エラー");
             return;
         }
 
@@ -719,7 +994,8 @@ public sealed class TransferService : ITransferService
         state.ReceivedChunks = 0;
         _receiveStates[tid] = state;
 
-        // 承認前にバッファされたチャンクを処理
+        // 承認前にバッファされたチャンクを処理 (v1.0.38 で送信側が承認待ちになったので通常は空だが、
+        // 旧バージョン送信側との互換 / セーフティネットとして残す)
         if (state.BufferedChunks is { Count: > 0 })
         {
             foreach (var chunkData in state.BufferedChunks)
@@ -727,6 +1003,15 @@ public sealed class TransferService : ITransferService
             state.BufferedChunks = null;
             state.BufferedBytes = 0;
         }
+
+        // v1.0.38: 送信側に FileApprove を送って、チャンク送信を開始させる
+        // (送信側は FileMeta 送信後にこれを待っている)
+        var approveMessage = FileChunker.CreateApproveMessage(tid);
+        _ = Task.Run(async () =>
+        {
+            try { await _connectionService.SendAsync(approveMessage); }
+            catch (Exception ex) { Util.Logger.Log($"FileApprove 送信エラー: {ex.Message}", Util.LogLevel.Warning); }
+        });
     }
 
     /// <summary>受信承認待ちの転送を拒否する。送信側に FileReject を送信する。</summary>
@@ -744,18 +1029,9 @@ public sealed class TransferService : ITransferService
         state.Item.ErrorMessage = "受信を拒否しました";
 
         // FileReject メッセージを送信側に通知 — fire-and-forget でブロッキングを回避
-        var rejectMessage = FileChunker.CreateRejectMessage("受信側が拒否しました");
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await _connectionService.SendAsync(rejectMessage);
-            }
-            catch (Exception ex)
-            {
-                Util.Logger.Log($"拒否メッセージ送信エラー: {ex.Message}", Util.LogLevel.Warning);
-            }
-        });
+        // v1.0.38: TransferId プレフィックス付きに変更 (同時複数転送の区別のため)
+        // v1.0.38 review fix v9: SendRejectFireAndForget ヘルパーに統一 (重複削減)
+        SendRejectFireAndForget(tid, "受信側が拒否しました");
     }
 
     /// <summary>進行中の転送をキャンセルする。</summary>
@@ -785,6 +1061,14 @@ public sealed class TransferService : ITransferService
             sendItem.State = TransferState.Cancelled;
             sendItem.ErrorMessage = "キャンセルされました";
             TransferError?.Invoke(this, sendItem);
+
+            // CodeRabbit 指摘: 送信側承認待ち TCS も解放しないと、FileMeta 送信後の承認待ち中に
+            // CancelTransfer されても 60 秒タイムアウトまで pending が残る。TrySetResult(false) で
+            // WaitForApprovalAsync を抜けさせる
+            if (_pendingSendApprovals.TryRemove(tid, out var tcs))
+            {
+                tcs.TrySetResult(false);
+            }
         }
     }
 

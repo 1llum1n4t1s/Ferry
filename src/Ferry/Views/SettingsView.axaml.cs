@@ -13,8 +13,8 @@ namespace Ferry.Views;
 public partial class SettingsView : UserControl
 {
     // OnUnloaded で対称に解除するため、購読対象の参照とハンドラを保持する
+    // v1.0.38: _browseReceivePathButton は ReceiveFileSavePath 削除に伴い撤去
     private ComboBox? _localeCombo;
-    private Button? _browseReceivePathButton;
     private SettingsViewModel? _subscribedVm;
     private EventHandler<SelectionChangedEventArgs>? _localeChanged;
 
@@ -57,13 +57,6 @@ public partial class SettingsView : UserControl
             svm.BrowseSaveDirectoryRequested += OnBrowseSaveDirectoryRequested;
             _subscribedVm = svm;
         }
-
-        // 受信ファイル保存先の参照ボタン
-        _browseReceivePathButton = this.FindControl<Button>("BrowseReceivePathButton");
-        if (_browseReceivePathButton != null)
-        {
-            _browseReceivePathButton.Click += OnBrowseReceivePathClick;
-        }
     }
 
     protected override void OnUnloaded(RoutedEventArgs e)
@@ -77,11 +70,6 @@ public partial class SettingsView : UserControl
             _localeCombo.SelectionChanged -= _localeChanged;
         }
         _localeChanged = null;
-
-        if (_browseReceivePathButton != null)
-        {
-            _browseReceivePathButton.Click -= OnBrowseReceivePathClick;
-        }
 
         if (_subscribedVm != null)
         {
@@ -109,22 +97,5 @@ public partial class SettingsView : UserControl
         }
     }
 
-    private async void OnBrowseReceivePathClick(object? sender, RoutedEventArgs e)
-    {
-        var topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel == null || DataContext is not SettingsViewModel vm) return;
-
-        var dirs = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
-        {
-            AllowMultiple = false,
-            Title = App.Text("Settings.ReceiveFileSavePath"),
-        });
-
-        if (dirs.Count > 0)
-        {
-            var path = dirs[0].TryGetLocalPath();
-            if (path != null)
-                vm.ReceiveFileSavePath = path;
-        }
-    }
+    // v1.0.38: OnBrowseReceivePathClick は ReceiveFileSavePath 削除に伴い撤去
 }

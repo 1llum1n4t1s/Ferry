@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Ferry.Infrastructure;
 using Ferry.Models;
@@ -68,6 +69,30 @@ public sealed class SettingsService : ISettingsService
                 var backup = _filePath + $".corrupt-{DateTime.Now:yyyyMMddHHmmss}";
                 File.Move(_filePath, backup, overwrite: true);
                 Util.Logger.Log($"破損した settings.json を退避しました: {backup}", Util.LogLevel.Warning);
+
+                // rere レビュー #F-009: 破損ファイルから DeviceId だけサルベージ。
+                // 旧実装は corrupt 退避するだけで DeviceId は新規採番されていたため、
+                // ペア相手側の peers.json に書かれた旧 DeviceId と一致せず「自分は B を見ているが
+                // B からは自分が居ない」という壊滅的状態に陥った (CLAUDE.md 既知制限通り)。
+                // 退避ファイルから regex で DeviceId フィールドだけ抜き出して新 Settings に
+                // 注入することで、JSON 全体は壊れていても ID は救出できる
+                try
+                {
+                    var corruptContent = File.ReadAllText(backup);
+                    var match = Regex.Match(corruptContent, "\"DeviceId\"\\s*:\\s*\"([a-fA-F0-9]{32})\"");
+                    if (match.Success)
+                    {
+                        Settings.DeviceId = match.Groups[1].Value.ToLowerInvariant();
+                        // CodeRabbit 指摘: MaskIp は IP 形式以外素通し → DeviceId が丸出しだったため
+                        // 専用の MaskDeviceId (先頭 4 + ... + 末尾 4) に変更
+                        Util.Logger.Log($"破損ファイルから DeviceId をサルベージ: {Util.Logger.MaskDeviceId(Settings.DeviceId)}", Util.LogLevel.Warning);
+                        Save(); // 復元した DeviceId で新 settings.json を書き出し
+                    }
+                }
+                catch (Exception salvageEx)
+                {
+                    Util.Logger.Log($"DeviceId サルベージ失敗: {salvageEx.Message}", Util.LogLevel.Warning);
+                }
             }
             catch { /* 退避失敗は無視 */ }
         }

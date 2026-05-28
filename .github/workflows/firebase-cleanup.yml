@@ -6,6 +6,11 @@ on:
     - cron: '0 */6 * * *'
   workflow_dispatch: # 手動実行も可能
 
+# rere レビュー #A2-009: workflow level の最小権限を明示。
+# このジョブは Firebase REST へ curl するだけで repo contents への write 不要
+permissions:
+  contents: read
+
 jobs:
   cleanup:
     runs-on: ubuntu-latest
@@ -44,8 +49,48 @@ jobs:
             echo "  完了"
           }
 
+          # Codex P2 (firebase-cleanup.yml:40-43): ProbeRouteAsync が finally に到達せず中断
+          # (process kill / network hang / crash) した場合、signaling/<pairId>/probeOffers/<nonce> と
+          # probeAnswers/<nonce> が残骸として残る。これらは top-level の signaling/<pairId>/createdAt
+          # を見ない probe-only セッションでは cleanup_node "signaling" の判定 (`>0` filter) で
+          # スキップされてしまい、ListenForIncomingConnectionAsync が再起動後に stale offer を
+          # 拾って TCP probe timeout 5s 分を空回しする原因になる。
+          # per-nonce の CreatedAt (TimedSignalingValue.CreatedAt) を見て個別に削除する。
+          cleanup_probe_subtree() {
+            local subnode="$1"  # "probeOffers" または "probeAnswers"
+            echo "--- signaling/*/${subnode} をチェック中 ---"
+
+            local sig
+            sig=$(curl -sf "${FIREBASE_DB_URL}/signaling.json?shallow=true")
+            if [ "$sig" = "null" ] || [ -z "$sig" ]; then
+              echo "  signaling/ データなし、スキップ"
+              return
+            fi
+
+            echo "$sig" | jq -r 'keys[]' | while read -r pair_id; do
+              local probe_data
+              probe_data=$(curl -sf "${FIREBASE_DB_URL}/signaling/${pair_id}/${subnode}.json")
+              if [ "$probe_data" = "null" ] || [ -z "$probe_data" ]; then
+                continue
+              fi
+
+              echo "$probe_data" | jq -r 'to_entries[] | select(
+                (.value.CreatedAt // 0) < '"$THRESHOLD"' and
+                (.value.CreatedAt // 0) > 0
+              ) | .key' | while read -r nonce; do
+                echo "  削除: signaling/${pair_id}/${subnode}/${nonce}"
+                curl -sf -X DELETE "${FIREBASE_DB_URL}/signaling/${pair_id}/${subnode}/${nonce}.json" > /dev/null
+              done
+            done
+
+            echo "  完了"
+          }
+
           cleanup_node "sessions"
           cleanup_node "pairings"
           cleanup_node "signaling"
+          # nested probe nodes は cleanup_node の top-level CreatedAt 判定では取りこぼすため別途
+          cleanup_probe_subtree "probeOffers"
+          cleanup_probe_subtree "probeAnswers"
 
           echo "=== クリーンアップ完了 ==="

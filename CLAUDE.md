@@ -76,15 +76,27 @@ STUN は **Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google S
 ### Firebase 構造
 
 ```
-sessions/{sessionId}                    = { DisplayName, CreatedAt }
-pairings/{pairingId}                    = { SidA, SidB, NameA, NameB, CreatedAt }
-signaling/{pairId}/offer                = ConnectionInfo JSON (ips, port, externalIp, externalPort, relayUrl, route)
-signaling/{pairId}/answer               = ConnectionInfo JSON
-signaling/{pairId}/{role}Endpoint       = "ip:port"（UDP ホールパンチ用外部エンドポイント）
-signaling/{pairId}/createdAt            = タイムスタンプ
+sessions/{sessionId}                                = { DisplayName, CreatedAt }
+pairings/{pairingId}                                = { SidA, SidB, NameA, NameB, CreatedAt }
+presence/{deviceId}                                 = { LastSeen, DisplayName }   # オンライン検出
+signaling/{pairId}/offer                            = ConnectionInfo JSON (ips, port, externalIp, externalPort, relayUrl, route, probe, from, nonce)
+signaling/{pairId}/answer                           = ConnectionInfo JSON
+signaling/{pairId}/{role}Endpoint                   = "ip:port"（UDP ホールパンチ用外部エンドポイント）
+signaling/{pairId}/createdAt                        = タイムスタンプ
+signaling/{pairId}/probeOffers/{nonce}              = TimedSignalingValue { Data, CreatedAt }  # 経路 Probe v14: per-nonce key
+signaling/{pairId}/probeAnswers/{nonce}             = TimedSignalingValue { Data, CreatedAt }  # 同上
 ```
 
-全ノードに `CreatedAt` を入れており、GitHub Actions（6時間おき）で1時間超の古いデータを自動削除。
+**Cleanup ポリシーごとのノード分類**:
+
+- **`sessions/{sessionId}` / `pairings/{pairingId}` / `signaling/{pairId}/...`**: 各エントリに `CreatedAt` フィールドを含み、GitHub Actions (`firebase-cleanup.yml`、6 時間おき) で 1 時間超の古いデータを自動削除
+- **`presence/{deviceId}`**: `CreatedAt` ではなく `LastSeen` (heartbeat 30 秒で更新) を使う。`FirebaseSignaling.UpdatePresenceAsync` が書き込み、`OfflineThresholdMs=60s` 経過で UI 側で offline 判定。cleanup 対象外 (オンライン検出専用なので時間経過 = 削除でなく、`LastSeen` 老化 = offline 表示)
+- **`signaling/<pairId>/probeOffers/<nonce>` / `probeAnswers/<nonce>`**: probe sender の finally で `CleanupProbeAsync(nonce)` により **即時削除**。タイムアウト経過待ちなし
+
+`ConnectionInfo` の `Probe / From / Nonce` フィールド (v12-v14 追加):
+- `Probe: bool` — true なら listening 側は経路 Probe 用と判定して通常 transport 確立をスキップ
+- `From: string?` — 送信元 deviceId。自己 probe offer の listening 側スキップ用識別子
+- `Nonce: string?` — bidirectional 同時 probe race 対策の per-probe 識別子 (v12 追加、v14 で key path として正規化)
 
 ### Native AOT 制約
 
@@ -107,15 +119,39 @@ Velopack による自動更新の配信元は **Cloudflare R2**（カスタム�
 
 ### 転送プロトコル
 
-TCP / WebSocket 上の長さプレフィクス付きバイナリプロトコル（`TransferProtocol.cs` + `FileChunker.cs` + `LengthPrefixedStream.cs`）。チャンクサイズ 16KB。
+TCP / WebSocket 上の長さプレフィクス付きバイナリプロトコル（`TransferProtocol.cs` + `FileChunker.cs` + `LengthPrefixedStream.cs`）。チャンクサイズ **64KB** (P-15 で旧 16KB から 4 倍化、`TransferProtocol.ChunkSize` 定数参照)。
 
-チャンクメッセージは `[0x02 FileChunk][TransferId 16byte][chunkIndex 4byte][data]`（ヘッダ長 `ChunkHeaderSize`=21）。受信側（`TransferService.HandleFileChunk`）は **TransferId で受信状態を引き、`chunkIndex × 16KB` のオフセットへ `Seek` して書き込む**ため、UDP の順不同到着でも正しく再構成できる。受信完了は全 chunkIndex 受信（ビットマップ `ReceivedChunkSet`）で判定し、最後に SHA-256 でファイル整合性を検証する。受信ファイル名・相対パスはパストラバーサル防止のため保存先ディレクトリ配下に収まることを検証する。
+メッセージ種別一覧 (`TransferProtocol.cs` の `const byte` で定義):
+
+| 種別 | 値 | 用途 |
+|------|------|------|
+| FileMeta | 0x01 | ファイル名 / サイズ / チャンク数 / TransferId / 相対パス |
+| FileChunk | 0x02 | `[0x02][TransferId 16byte][chunkIndex 4byte][data]` (ヘッダ長 ChunkHeaderSize=21) |
+| FileAck | 0x03 | 受信側が SHA-256 検証結果を送信側に通知 |
+| FileReject | 0x04 | 拒否通知 (`[0x04][TransferId 16byte][reason UTF-8]`) — v12 で TransferId プレフィクス追加 |
+| **FileHash** | **0x05** | SHA-256 ハッシュ後送り (送信側が全 chunk 送信後に送付、P-3 で導入) |
+| **FileApprove** | **0x06** | 受信承認通知 (受信側が承認時に送信、送信側はこれを待ってチャンク送信開始、v1 で導入) |
+| Ping / Pong | 0x10 / 0x11 | キープアライブ |
+| ResumeRequest / ResumeResponse | 0x20 / 0x21 | レジューム関連 (現状応答は false 固定) |
+
+受信側（`TransferService.HandleFileChunk`）は **TransferId で受信状態を引き、`chunkIndex × ChunkSize` のオフセットへ `Seek` して書き込む**ため、UDP の順不同到着でも正しく再構成できる。受信完了は全 chunkIndex 受信（ビットマップ `ReceivedChunkSet`）で判定し、最後に SHA-256 でファイル整合性を検証する。受信ファイル名・相対パスはパストラバーサル防止のため保存先ディレクトリ配下に収まることを検証する。
 
 UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レイヤー（選択的 ACK・フラグメンテーション 1187 bytes・スライディングウィンドウ 128）を提供する。順序保証はトランスポート層ではなく上記の chunkIndex ベース書き込みで担保している。
 
 > **レジュームは「先頭から再送」方式**（`ResumeTransferAsync`、`startChunk=0`）。受信側は承認時にファイルを再作成するため、部分再送ではなく全チャンクを送り直す。
 >
 > チャンクメッセージ形式は 2026-05 に `chunkIndex` 単独から `TransferId + chunkIndex` に変更済み。**旧形式とは非互換**（既存の配布クライアントは存在しないため移行問題なし）。形式を再度変える場合は送受信（`FileChunker.CreateChunkMessage` ↔ `HandleFileChunk`）と `FileChunkerTests` のオフセットを揃えること。
+
+### 承認プロトコル (v1〜v8 で大改修)
+
+ファイル送信は送信側が `FileMeta` 送信 → **受信側の `FileApprove` (0x06) を 60 秒待つ** → 承認受信後にチャンク送信開始、というフロー。AutoAcceptFileTransfer 有効時は受信側が即承認を返す。
+
+- 受信側拒否時は `FileReject (0x04, TransferId プレフィクス付き)` を送信
+- 送信側 60s タイムアウト時も `FileReject` を受信側に投げて **symmetric expiry** (v8)
+- `HandleFileMeta` の early return (パストラバーサル / 保存パス異常 / dir 作成失敗) でも `FileReject` を sender に送信 (v7)
+- `HandleFileReject` は 4 ケース対応: `_pendingSendApprovals` / `_activeTransfers` / `_pendingApprovals` / `_receiveStates` (race ケース) (v8)
+- 拒否理由は `item.ErrorMessage` に詰めてから TCS 解決して UI に伝える (v12)
+- `SendRejectFireAndForget(Guid, string)` ヘルパーで `TransferService` 内の FileReject 送信を統一 (v9)
 
 ### プレゼンス監視（オンライン検出）
 

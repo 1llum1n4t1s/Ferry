@@ -48,10 +48,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public partial bool EnableNotificationSound { get; set; } = true;
 
     // --- ファイル転送設定 ---
-
-    /// <summary>受信ファイルの保存先フォルダ。空の場合はダウンロードフォルダ。</summary>
-    [ObservableProperty]
-    public partial string ReceiveFileSavePath { get; set; } = string.Empty;
+    // ReceiveFileSavePath は v1.0.38 で SaveDirectory と重複していたため削除済み
 
     /// <summary>ファイル受信を自動承認するか。</summary>
     [ObservableProperty]
@@ -67,7 +64,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     // === バージョン ===
 
-    /// <summary>バージョン表示テキスト。</summary>
+    /// <summary>バージョン表示テキスト (例: "Ferry v1.0.38")。</summary>
     [ObservableProperty]
     public partial string VersionText { get; set; } = string.Empty;
 
@@ -104,7 +101,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
             StartMinimized = s.StartMinimized;
             MinimizeToTray = s.MinimizeToTray;
             EnableNotificationSound = s.EnableNotificationSound;
-            ReceiveFileSavePath = s.ReceiveFileSavePath;
             AutoAcceptFileTransfer = s.AutoAcceptFileTransfer;
             AutoStartWithWindows = s.AutoStartWithWindows;
         }
@@ -135,7 +131,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         s.StartMinimized = StartMinimized;
         s.MinimizeToTray = MinimizeToTray;
         s.EnableNotificationSound = EnableNotificationSound;
-        s.ReceiveFileSavePath = ReceiveFileSavePath;
         s.AutoAcceptFileTransfer = AutoAcceptFileTransfer;
         s.AutoStartWithWindows = AutoStartWithWindows;
         await _settingsService.SaveAsync();
@@ -180,7 +175,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
     partial void OnMinimizeToTrayChanged(bool value) => SaveIfNotLoading();
     partial void OnSaveDirectoryChanged(string value) => SaveIfNotLoading();
     partial void OnEnableNotificationSoundChanged(bool value) => SaveIfNotLoading();
-    partial void OnReceiveFileSavePathChanged(string value) => SaveIfNotLoading();
     partial void OnAutoAcceptFileTransferChanged(bool value) => SaveIfNotLoading();
     partial void OnAutoStartWithWindowsChanged(bool value)
     {
@@ -203,7 +197,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
     private void LoadVersionInfo()
     {
         // N-9: Reflection (`AssemblyInformationalVersion`) を Native AOT 安全な static 定数に置換
-        VersionText = AppVersion.Value;
+        // v1.0.38: バージョン文字列を「Ferry v1.0.38」形式に整形 (Lhamiel と同等)
+        VersionText = $"Ferry v{AppVersion.Value}";
     }
 
     partial void OnSelectedThemeIndexChanged(int value)

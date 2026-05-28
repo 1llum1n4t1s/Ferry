@@ -105,6 +105,17 @@ public sealed class FirebaseSignaling : IDisposable
     /// <summary>
     /// pairings ノードの変更を監視し、自分の sessionId を含むペアリングを検知する。
     /// </summary>
+    /// <remarks>
+    /// Codex P2 (#3318454466) Phase B blocker: 現実装は `pairings/` の **parent collection** に
+    /// AsObservable で購読する。Realtime DB rules は parent collection read を子 ID で filter
+    /// できないため、Anonymous Auth 移行後に `pairings/$pid` 個別の `.read` ルールだけを deploy
+    /// しても、この購読自体が deny されて pairing が成立しない。
+    ///
+    /// Phase B 移行案: pairings を per-device path (`pairings/$deviceId/$pid`) に restructure
+    /// し、各 client は自分の sessionId 配下のみ購読する。Bridge JS は SidA / SidB の両 path
+    /// に mirror write する (Bridge 側の auth はゲートを別途設計)。詳細は
+    /// `src/Ferry.Bridge/database.rules.json` の `_comment_phase_b_pairings_blocker` を参照。
+    /// </remarks>
     public void StartWatchingPairing()
     {
         _pairingSubscription?.Dispose();
@@ -144,6 +155,7 @@ public sealed class FirebaseSignaling : IDisposable
         Util.Logger.Log($"SDP ポーリング開始 ({watchField}): pairId={pairId}, minCreatedAt={minCreatedAt}");
         var pollCount = 0;
         var lastErrorLog = 0; // エラーログ抑制用カウンタ
+        var consecutiveErrors = 0; // rere #F-012: exponential backoff 用カウンタ
 
         while (!ct.IsCancellationRequested)
         {
@@ -216,8 +228,18 @@ public sealed class FirebaseSignaling : IDisposable
                     Util.Logger.Log($"SDP ポーリングエラー ({watchField}): {ex.Message}", Util.LogLevel.Warning);
                     lastErrorLog = pollCount;
                 }
+                // rere レビュー #F-012: 例外発生時は exponential backoff + jitter で
+                // Firebase rate limit (429) や一時的なネットワーク不調時に hammer しない。
+                // 連続成功で backoff はリセットされる
+                consecutiveErrors++;
+                var backoffMs = Math.Min(1000 * (1 << Math.Min(consecutiveErrors - 1, 5)), 30_000);
+                var jitter = Random.Shared.Next(0, 500);
+                await Task.Delay(backoffMs + jitter, ct);
+                continue;
             }
 
+            // 正常 path 完了 (受信成功 or 待機継続)
+            consecutiveErrors = 0;
             await Task.Delay(1000, ct);
         }
 
@@ -312,6 +334,142 @@ public sealed class FirebaseSignaling : IDisposable
         }
 
         throw new OperationCanceledException(ct);
+    }
+
+    /// <summary>
+    /// v1.0.38 review fix v14: probe 専用 offer を per-nonce key
+    /// `signaling/{pairId}/probeOffers/{nonce}` に書き込む。
+    /// 旧 v4-v12 の単一スロット (probeOffer) では bidirectional 同時 probe で
+    /// 後勝ち上書きが起き、自分の offer が消されて相手の answer を誤採用する race が
+    /// あった。per-nonce にすることで複数 probe が共存可能になり、その race を根絶する。
+    /// v14 review fix (Codex): TimedSignalingValue を 1 オブジェクトとして atomic 書き込み
+    /// (旧実装は data 子ノードに SignalingValue を書いて nested `data.data` 構造になり
+    /// reader が空文字を引いていた)。atomic 書き込みなので v5 の payload→timestamp race も解消。
+    /// </summary>
+    public async Task SendProbeOfferAsync(string pairId, string nonce, string sdp, CancellationToken ct = default)
+    {
+        var encoded = EncodeBase64(sdp);
+        await _client.Child("signaling").Child(pairId).Child("probeOffers").Child(nonce)
+            .PutAsync(new TimedSignalingValue
+            {
+                Data = encoded,
+                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            });
+    }
+
+    /// <summary>
+    /// v1.0.38 review fix v14: probe 専用 answer を per-nonce key
+    /// `signaling/{pairId}/probeAnswers/{nonce}` に書き込む。
+    /// 該当 offer の nonce をそのまま使うので、probe sender 側は自分の nonce で答えだけを正確に読める。
+    /// v14 review fix (Codex): SendProbeOfferAsync と同じく TimedSignalingValue を atomic 書き込み
+    /// </summary>
+    public async Task SendProbeAnswerAsync(string pairId, string nonce, string sdp, CancellationToken ct = default)
+    {
+        var encoded = EncodeBase64(sdp);
+        await _client.Child("signaling").Child(pairId).Child("probeAnswers").Child(nonce)
+            .PutAsync(new TimedSignalingValue
+            {
+                Data = encoded,
+                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            });
+    }
+
+    /// <summary>
+    /// v1.0.38 review fix v14: 自分の probe nonce 専用 answer を待つ。
+    /// 他 probe の answer は別 key (別 nonce) に書かれるので絶対に混入しない。
+    /// v14 review fix (Codex): TimedSignalingValue 全体を 1 オブジェクトとして読む形に統一
+    /// v15 review fix (Codex P2 #3318349010): per-nonce key 化以降、stale answer の隔離は
+    /// nonce (Guid.NewGuid hex, sender が毎 probe で発行) で完全に効いている。`CreatedAt`
+    /// (answer-side clock) と sender 側 clock を跨いで比較していた旧 `minCreatedAt` フィルタは、
+    /// answer 側 PC の時計が遅れているだけで fresh answer が捨てられて `Unknown` タイムアウトする
+    /// 回帰を産んでいた。nonce-specific existence + payload check のみに変更。
+    /// </summary>
+    public async Task<string> WaitForProbeAnswerAsync(string pairId, string nonce, CancellationToken ct = default)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                TimedSignalingValue? entry = null;
+                try
+                {
+                    entry = await _client.Child("signaling").Child(pairId)
+                        .Child("probeAnswers").Child(nonce).OnceSingleAsync<TimedSignalingValue>();
+                }
+                catch { }
+
+                if (entry == null || string.IsNullOrEmpty(entry.Data))
+                {
+                    await Task.Delay(1000, ct);
+                    continue;
+                }
+
+                return DecodeBase64(entry.Data);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch { /* ignore transient */ }
+
+            await Task.Delay(1000, ct);
+        }
+        throw new OperationCanceledException(ct);
+    }
+
+    /// <summary>
+    /// v1.0.38 review fix v14: pair 配下の全 probe offer を 1 回読む (non-blocking)。
+    /// (nonce, sdp) のリストを返す。旧 TryReadProbeOfferAsync (単一スロット) の置き換え。
+    /// ListenForIncomingConnectionAsync は返ってきた offer を nonce ごとに HandleProbeOfferAsync で処理し、
+    /// 既処理 nonce は呼び出し側の HashSet で dedupe する。
+    /// v15 review fix (Codex P2 #3318349010): 旧 `minCreatedAt` フィルタは sender-clock /
+    /// listener-clock の cross-device 時計差で fresh offer を捨てる回帰を作っていた。
+    /// per-nonce key (sender 毎 Guid) と呼び出し側の processedProbeNonces HashSet で
+    /// stale dedupe は十分。`CreatedAt` 比較は撤廃。
+    /// </summary>
+    public async Task<System.Collections.Generic.IReadOnlyList<(string Nonce, string Sdp)>> ReadProbeOffersAsync(
+        string pairId, CancellationToken ct = default)
+    {
+        var results = new System.Collections.Generic.List<(string, string)>();
+        try
+        {
+            var entries = await _client.Child("signaling").Child(pairId).Child("probeOffers")
+                .OnceAsync<TimedSignalingValue>();
+            foreach (var entry in entries)
+            {
+                if (entry.Object == null) continue;
+                if (string.IsNullOrEmpty(entry.Object.Data)) continue;
+                // v15 review fix (Codex P2 #3318454476): per-nonce key 化以降、probeOffers/ は
+                // 同一 pair 内の複数 sender の offer が共存する collection になった。1 件でも壊れた
+                // base64 (古い不正書き込み / 部分書き込み残骸) があると、旧実装の単一 try/catch では
+                // foreach 全体が中断され、全 sender の probe が無視される (= peer 全体の経路 probe
+                // が永久 stall する) 経路があった。entry 単位で例外を握りつぶし、不正 1 件は捨てて
+                // 残りを処理し続ける。
+                string sdp;
+                try
+                {
+                    sdp = DecodeBase64(entry.Object.Data);
+                }
+                catch (Exception ex)
+                {
+                    Util.Logger.Log(
+                        $"probe offer decode 失敗 (nonce={entry.Key}): {ex.GetType().Name} - {ex.Message} → スキップ",
+                        Util.LogLevel.Warning);
+                    continue;
+                }
+                results.Add((entry.Key, sdp));
+            }
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { /* ノード未生成 / transient → 空リスト */ }
+        return results;
+    }
+
+    /// <summary>
+    /// v1.0.38 review fix v14: probe sender が成功 / タイムアウト後に自分の probe ノードを削除する。
+    /// 残骸が大量に Firebase に溜まるのを防ぐ (GitHub Actions cleanup は時間がかかるため即時 cleanup する)。
+    /// </summary>
+    public async Task CleanupProbeAsync(string pairId, string nonce, CancellationToken ct = default)
+    {
+        try { await _client.Child("signaling").Child(pairId).Child("probeOffers").Child(nonce).DeleteAsync(); } catch { }
+        try { await _client.Child("signaling").Child(pairId).Child("probeAnswers").Child(nonce).DeleteAsync(); } catch { }
     }
 
     /// <summary>
@@ -446,6 +604,15 @@ public sealed class PairingData
 public sealed class SignalingValue
 {
     public string Data { get; set; } = string.Empty;
+}
+
+/// <summary>v1.0.38 review fix v14: probe 専用、子要素 data + createdAt を 1 オブジェクトで持つ。
+/// per-nonce key (signaling/{pairId}/probeOffers/{nonce}) 配下の全フィールドを一括 OnceAsync で
+/// 取得するため、Data と CreatedAt を同一型に packed する。</summary>
+public sealed class TimedSignalingValue
+{
+    public string Data { get; set; } = string.Empty;
+    public long CreatedAt { get; set; }
 }
 
 /// <summary>Firebase に書き込むプレゼンスデータ。</summary>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
@@ -44,11 +45,17 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     public partial Bitmap? QrCodeImage { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PairingCode))]
     public partial string SessionId { get; set; } = string.Empty;
 
-    /// <summary>ペアリング用 URL（QR コード下に表示してコピー共有可能にする）。</summary>
+    /// <summary>ペアリング用 URL (Bridge ページ + sid/name クエリ)。QR コード生成にのみ使用、UI のテキスト表示は廃止。
+    /// v1.0.38: いたずらでブラウザに開かれないよう、UI からの「コピー」対象は <see cref="PairingCode"/> (32 文字 hex) に変更</summary>
     [ObservableProperty]
     public partial string PairingUrl { get; set; } = string.Empty;
+
+    /// <summary>UI 表示・コピー・貼り付け用のペアリングコード (= SessionId, 32 文字 hex)。
+    /// v1.0.38 追加: URL を渡すとブラウザでうっかり開かれる事故が起きるため、ただの文字列に変更</summary>
+    public string PairingCode => SessionId;
 
     [ObservableProperty]
     public partial string PeerName { get; set; } = string.Empty;
@@ -74,17 +81,18 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     public partial bool IsLinkCopied { get; set; }
 
-    /// <summary>「相手の URL を貼り付け」入力欄のテキスト (AddMemberWindow)。</summary>
+    /// <summary>「相手のペアリングコードを貼り付け」入力欄のテキスト (AddMemberWindow)。
+    /// v1.0.38: PairFromUrlText から rename。コードは 32 文字 hex (sessionId)。</summary>
     [ObservableProperty]
-    public partial string PairFromUrlText { get; set; } = string.Empty;
+    public partial string PairFromCodeText { get; set; } = string.Empty;
 
-    /// <summary>URL ペアリングの結果メッセージ (成功/エラー)。</summary>
+    /// <summary>コードペアリングの結果メッセージ (成功/エラー)。</summary>
     [ObservableProperty]
-    public partial string PairFromUrlStatus { get; set; } = string.Empty;
+    public partial string PairFromCodeStatus { get; set; } = string.Empty;
 
-    /// <summary>URL ペアリング結果メッセージの色 (success/error で切替)。</summary>
+    /// <summary>コードペアリング結果メッセージの色 (success/error で切替)。</summary>
     [ObservableProperty]
-    public partial Avalonia.Media.IBrush? PairFromUrlStatusBrush { get; set; }
+    public partial Avalonia.Media.IBrush? PairFromCodeStatusBrush { get; set; }
 
     public ConnectionViewModel(
         IConnectionService connectionService,
@@ -102,9 +110,10 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         _connectionService.PairingCompleted += OnPairingCompleted;
         _connectionService.StatusMessageChanged += OnStatusMessageChanged;
 
-        // 保存済みピアを読み込み
+        // 保存済みピアを読み込み + WentOnline 購読 (Online エッジで経路 Probe 発火用)
         foreach (var peer in _peerRegistry.GetPairedPeers())
         {
+            peer.WentOnline += OnPeerWentOnline;
             PairedPeers.Add(peer);
         }
         UpdateHasPairedPeers();
@@ -156,7 +165,11 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     {
         var peer = PairedPeers.FirstOrDefault(p => p.PeerId == peerId);
         await _peerRegistry.RemovePeerAsync(peerId);
-        if (peer != null) PairedPeers.Remove(peer);
+        if (peer != null)
+        {
+            peer.WentOnline -= OnPeerWentOnline;
+            PairedPeers.Remove(peer);
+        }
         UpdateHasPairedPeers();
 
         if (SelectedPeer?.PeerId == peerId)
@@ -205,18 +218,19 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         await StartSessionAsync();
     }
 
-    /// <summary>ペアリングリンクのクリップボード書き込み要求イベント (View 側で TopLevel.Clipboard 経由処理)。</summary>
-    public event EventHandler<string>? CopyPairingLinkRequested;
+    /// <summary>ペアリングコードのクリップボード書き込み要求イベント (View 側で TopLevel.Clipboard 経由処理)。
+    /// v1.0.38: 旧 CopyPairingLinkRequested から rename。値は PairingCode (= SessionId)。</summary>
+    public event EventHandler<string>? CopyPairingCodeRequested;
 
     /// <summary>
-    /// ペアリングリンクのコピーを要求する。実際のクリップボード操作は View 側で行う (N-5: MVVM 厳密化)。
+    /// ペアリングコードのコピーを要求する。実際のクリップボード操作は View 側で行う (N-5: MVVM 厳密化)。
     /// View 側はコピー成功後に <see cref="NotifyPairingLinkCopied"/> を呼んで UI を更新する。
     /// </summary>
     [RelayCommand]
-    private void CopyPairingLink()
+    private void CopyPairingCode()
     {
-        if (string.IsNullOrEmpty(PairingUrl)) return;
-        CopyPairingLinkRequested?.Invoke(this, PairingUrl);
+        if (string.IsNullOrEmpty(PairingCode)) return;
+        CopyPairingCodeRequested?.Invoke(this, PairingCode);
     }
 
     /// <summary>View 側のクリップボード書き込み成功後に呼び出され、「コピー済み」表示を 2 秒間表示する。</summary>
@@ -228,44 +242,101 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// 「相手の URL を貼り付け」入力欄から URL を取得し、アプリ内でペアリングを実行する。
-    /// Bridge ページを介さない直接ペアリング (カメラ無し PC 同士向け)。
+    /// 「相手のペアリングコードを貼り付け」入力欄からコードを取得し、アプリ内でペアリングを実行する。
+    /// v1.0.38: 旧 PairFromUrlAsync から rename。Bridge ページ URL ではなく 32 文字 hex (sessionId) を受け取る形に変更。
     /// </summary>
     [RelayCommand]
-    private async Task PairFromUrlAsync()
+    private async Task PairFromCodeAsync()
     {
-        if (string.IsNullOrWhiteSpace(PairFromUrlText)) return;
+        if (string.IsNullOrWhiteSpace(PairFromCodeText)) return;
 
-        PairFromUrlStatus = "処理中…";
-        PairFromUrlStatusBrush = Avalonia.Application.Current is { } app
+        PairFromCodeStatus = "処理中…";
+        PairFromCodeStatusBrush = Avalonia.Application.Current is { } app
             && app.TryGetResource("TextSecondaryBrush", app.ActualThemeVariant, out var pendingBrush)
             && pendingBrush is Avalonia.Media.IBrush pb ? pb : null;
 
         try
         {
-            var (success, message) = await _connectionService.PairFromUrlAsync(PairFromUrlText.Trim());
-            PairFromUrlStatus = message;
+            var (success, message) = await _connectionService.PairFromCodeAsync(PairFromCodeText.Trim());
+            PairFromCodeStatus = message;
 
-            // 結果に応じて文字色を切り替え (success=Green, error=Red)
             var brushKey = success ? "GreenBrush" : "RedBrush";
             if (Avalonia.Application.Current is { } a
                 && a.TryGetResource(brushKey, a.ActualThemeVariant, out var b)
                 && b is Avalonia.Media.IBrush ib)
             {
-                PairFromUrlStatusBrush = ib;
+                PairFromCodeStatusBrush = ib;
             }
 
             if (success)
             {
                 // 成功時は入力欄をクリア (ペアリング検知は StartWatchingPairing で反映)
-                PairFromUrlText = string.Empty;
+                PairFromCodeText = string.Empty;
             }
         }
         catch (Exception ex)
         {
-            Util.Logger.Log($"URL ペアリング失敗: {ex.Message}", Util.LogLevel.Warning);
-            PairFromUrlStatus = $"エラー: {ex.Message}";
+            Util.Logger.Log($"コードペアリング失敗: {ex.Message}", Util.LogLevel.Warning);
+            PairFromCodeStatus = $"エラー: {ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// v1.0.38: ピア一覧を手動更新する。全ピアの presence を即取得して IsOnline を反映、
+    /// Online ピアの経路 Probe クールダウンをリセットして経路バッジを再判定する。
+    /// </summary>
+    [RelayCommand]
+    private async Task RefreshPeersAsync()
+    {
+        var sig = _presenceSignaling;
+        if (sig is null)
+        {
+            Util.Logger.Log("RefreshPeers スキップ: presence signaling 未初期化");
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var peers = PairedPeers.ToArray();
+        Util.Logger.Log($"ピア一覧を手動更新: {peers.Length} 件");
+
+        // Probe クールダウン全リセット (手動更新時は最新化を優先)
+        lock (_lastProbeAt) { _lastProbeAt.Clear(); }
+
+        var tasks = peers.Select(async peer =>
+        {
+            try
+            {
+                var presenceData = await sig.GetPresenceAsync(peer.PeerId);
+                var isOnline = presenceData != null && (now - presenceData.LastSeen) < OfflineThresholdMs;
+
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    // IsOnline edge トリガーで Probe 走る (false → true の場合) ので、
+                    // 既に true の場合は明示的に Probe 呼び出し
+                    var wasOnline = peer.IsOnline;
+                    peer.IsOnline = isOnline;
+                    if (isOnline && wasOnline)
+                    {
+                        // edge ではないので手動で発火
+                        _ = Task.Run(() => ProbePeerRouteAsync(peer));
+                    }
+                    else if (!isOnline)
+                    {
+                        // v1.0.38 review fix v13: offline になったら古い Route バッジを消す。
+                        // バッジ可視性は PairedPeer.IsConnected (Route != Unknown) で駆動されているため、
+                        // 旧 LAN/P2P/relay バッジが offline 後も残り続けて誤誘導するのを防ぐ
+                        peer.Route = ConnectionRoute.Unknown;
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Util.Logger.Log($"RefreshPeers ピア更新エラー: {peer.PeerId}, {ex.Message}", Util.LogLevel.Warning);
+            }
+        });
+
+        await Task.WhenAll(tasks);
+        Util.Logger.Log("ピア一覧の手動更新完了");
     }
 
     /// <summary>
@@ -419,6 +490,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             {
                 if (PairedPeers.All(p => p.PeerId != peer.PeerId))
                 {
+                    peer.WentOnline += OnPeerWentOnline;
                     PairedPeers.Add(peer);
                 }
                 UpdateHasPairedPeers();
@@ -515,7 +587,14 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                     Dispatcher.UIThread.Post(() =>
                     {
                         if (peer.IsOnline != isOnline)
+                        {
                             peer.IsOnline = isOnline;
+                            // v1.0.38 review fix v13: offline 遷移時に古い Route バッジを消す
+                            // (バッジ可視性は IsConnected = Route != Unknown で駆動されるため、
+                            // 古い LAN/P2P/relay バッジが offline 後も残り続けて誤誘導するのを防ぐ)
+                            if (!isOnline)
+                                peer.Route = ConnectionRoute.Unknown;
+                        }
 
                         // 相手の表示名が変わっていたら同期
                         if (presenceData != null &&
@@ -568,6 +647,11 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         _connectionService.StatusMessageChanged -= OnStatusMessageChanged;
         ClearQrCodeImage();
 
+        // 全ピアの WentOnline 購読を解除
+        foreach (var peer in PairedPeers)
+            peer.WentOnline -= OnPeerWentOnline;
+        _probeSemaphore.Dispose();
+
         // プレゼンス監視を停止し、自分のプレゼンスを削除
         _presenceCts?.Cancel();
         _presenceCts?.Dispose();
@@ -576,6 +660,105 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             var deviceId = _settingsService.Settings.DeviceId;
             _ = _presenceSignaling.RemovePresenceAsync(deviceId);
             _presenceSignaling.Dispose();
+        }
+    }
+
+    // === 経路 Probe (オンラインエッジで 1 回、ファイル送信前から経路バッジを表示するため) ===
+
+    /// <summary>peer.PeerId → 最終 Probe 時刻。cooldown 判定で使う。</summary>
+    private readonly Dictionary<string, DateTimeOffset> _lastProbeAt = new();
+    /// <summary>同時 Probe を 1 件に絞るセマフォ (シグナリングノード競合防止)。</summary>
+    private readonly SemaphoreSlim _probeSemaphore = new(1, 1);
+    /// <summary>v1.0.38 review fix v10: セマフォ取得失敗で skip された peer の待ちキュー。
+    /// Release 時に dequeue して順次処理する (複数 peer 同時 Online 時に最初の 1 つしか
+    /// probe されないバグの修正)。lock(_probeQueueLock) で保護。</summary>
+    private readonly Queue<PairedPeer> _probeQueue = new();
+    private readonly object _probeQueueLock = new();
+    /// <summary>同じピアへの Probe 連発を防ぐクールダウン (Online flap 対策)。</summary>
+    private static readonly TimeSpan ProbeCooldown = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// PairedPeer.IsOnline が false → true に切り替わった瞬間に呼ばれる。
+    /// 5 分クールダウン + 単一実行ガードを通過したら ProbeRouteAsync を 1 回だけ走らせる。
+    /// </summary>
+    private void OnPeerWentOnline(object? sender, EventArgs e)
+    {
+        if (sender is not PairedPeer peer) return;
+        _ = Task.Run(() => ProbePeerRouteAsync(peer));
+    }
+
+    private async Task ProbePeerRouteAsync(PairedPeer peer)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        // クールダウン**チェックのみ** (Online flap で連発するのを抑制)
+        // v1.0.38 review fix v5: cooldown の記録はセマフォ取得後に移動。
+        // 旧実装は WaitAsync(0) 失敗で skip された peer も cooldown に乗ってしまい、
+        // 複数 peer 同時 Online 時に最初の 1 つを除いて永久 refresh されないバグがあった
+        lock (_lastProbeAt)
+        {
+            if (_lastProbeAt.TryGetValue(peer.PeerId, out var last) && now - last < ProbeCooldown)
+            {
+                Util.Logger.Log($"経路 Probe スキップ (cooldown): peer={peer.PeerId}, last={last:O}");
+                return;
+            }
+        }
+
+        // 同時 Probe は 1 件まで (シグナリング pairId ノード競合防止)。
+        // v1.0.38 review fix v10: 既に他で実行中の場合は cooldown を記録せずに待ちキューへ。
+        // Release 時に dequeue して順次処理されるので、複数 peer 同時 Online でも全 peer が probe される
+        // (旧実装は skip した peer を放置 → IsOnline edge が再 fire されないので永久 unknown だった)
+        if (!await _probeSemaphore.WaitAsync(0))
+        {
+            lock (_probeQueueLock)
+            {
+                // 同一 peer の重複 enqueue を避ける
+                if (!_probeQueue.Contains(peer))
+                {
+                    _probeQueue.Enqueue(peer);
+                    Util.Logger.Log($"経路 Probe 待ちキューに追加 (他で実行中): peer={peer.PeerId}, queue={_probeQueue.Count}");
+                }
+            }
+            return;
+        }
+
+        // セマフォ取得成功 → ここで初めて cooldown を記録 (実際に probe を走らせる peer のみ)
+        lock (_lastProbeAt)
+        {
+            _lastProbeAt[peer.PeerId] = DateTimeOffset.UtcNow;
+        }
+
+        try
+        {
+            var route = await _connectionService.ProbeRouteAsync(peer.PeerId);
+            // v1.0.38 review fix v10: Unknown 結果でも peer.Route を更新する。
+            // 旧実装は Unknown で early return → 古い LAN/P2P/relay バッジが残り続けて誤誘導していた。
+            // Unknown 自体が「経路を verify できなかった」という有用な情報なので、上書きが正解
+            Dispatcher.UIThread.Post(() => peer.Route = route);
+            Util.Logger.Log($"経路 Probe 完了: peer={peer.PeerId}, route={route}");
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"経路 Probe エラー: peer={peer.PeerId}, {ex.Message}", Util.LogLevel.Warning);
+        }
+        finally
+        {
+            _probeSemaphore.Release();
+
+            // v1.0.38 review fix v10: 待ちキューに peer があれば順次処理
+            // (Release 直後に別の Online edge が走り込んでも、その peer は WaitAsync(0) で成功するか
+            // queue に入るので最終的に必ず処理される)
+            PairedPeer? next = null;
+            lock (_probeQueueLock)
+            {
+                if (_probeQueue.Count > 0)
+                    next = _probeQueue.Dequeue();
+            }
+            if (next != null)
+            {
+                Util.Logger.Log($"経路 Probe 待ちキューから取り出し: peer={next.PeerId}");
+                _ = Task.Run(() => ProbePeerRouteAsync(next));
+            }
         }
     }
 }

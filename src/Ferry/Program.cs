@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using Avalonia;
 using Ferry.Util;
 using Velopack;
@@ -46,6 +47,35 @@ internal sealed class Program
             }
             catch { /* ログ無しで続行 */ }
         }
+
+        // rere レビュー #F-003: 未捕捉例外をログに残す。
+        // 旧実装は AppDomain.UnhandledException / TaskScheduler.UnobservedTaskException
+        // のいずれも登録しておらず、`_ = Task.Run(...)` 系のクラッシュが silent kill 経路を作り、
+        // 「アプリが突然消えた、ログ見ても何も残ってない」ユーザー報告の原因到達を不能にしていた。
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            try
+            {
+                var ex = e.ExceptionObject as Exception;
+                // CodeRabbit 指摘: 例外メッセージ / StackTrace に IP アドレスが含まれうるので
+                // MaskIp で末尾オクテットを伏せてからログ出力 (PII 保護)
+                var raw = $"FATAL UnhandledException (terminating={e.IsTerminating}): {ex?.GetType().Name} - {ex?.Message}\n{ex?.StackTrace}";
+                Logger.Log(Logger.MaskIp(raw), LogLevel.Error);
+            }
+            catch { /* ログ自体が落ちる経路は何もできない */ }
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            try
+            {
+                // CodeRabbit 指摘: 同上、MaskIp 経由で PII 保護
+                var raw = $"UnobservedTaskException: {e.Exception.GetType().Name} - {e.Exception.Message}\n{e.Exception.StackTrace}";
+                Logger.Log(Logger.MaskIp(raw), LogLevel.Error);
+                e.SetObserved(); // プロセス終了を阻止 (TaskScheduler が default で AppDomain 終了させるのを避ける)
+            }
+            catch { }
+        };
+
         Logger.LogStartup(args);
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);

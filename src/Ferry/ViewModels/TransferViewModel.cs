@@ -22,6 +22,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     private readonly IConnectionService _connectionService;
     private readonly ITransferService _transferService;
     private readonly ConnectionViewModel _connectionViewModel;
+    private readonly ISettingsService _settingsService;
 
     [ObservableProperty]
     public partial bool IsDragOver { get; set; }
@@ -56,11 +57,13 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     public TransferViewModel(
         IConnectionService connectionService,
         ITransferService transferService,
-        ConnectionViewModel connectionViewModel)
+        ConnectionViewModel connectionViewModel,
+        ISettingsService settingsService)
     {
         _connectionService = connectionService;
         _transferService = transferService;
         _connectionViewModel = connectionViewModel;
+        _settingsService = settingsService;
 
         _transferService.ProgressChanged += OnProgressChanged;
         _transferService.FileReceived += OnFileReceived;
@@ -159,6 +162,10 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 Direction = TransferDirection.Send,
                 State = TransferState.InProgress,
                 PeerName = peerName,
+                // v1.0.38 review fix v11: UI 表示用フルパスを即セット。
+                // TransferService 側の item は別インスタンスなので、ここで明示的に渡さないと
+                // TransferView の DisplayFilePath バインディングが永久に空になる
+                SourceFilePath = absolutePath,
             };
             Transfers.Add(item);
 
@@ -169,6 +176,25 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 item.State = TransferState.Completed;
                 item.TransferredBytes = item.FileSize;
                 item.CompletedAt = DateTime.UtcNow;
+            }
+            catch (OperationCanceledException ex)
+            {
+                // Codex P2 (comment 3318762005) 指摘: SendFileAsync は approval reject /
+                // approval timeout / 切断 (OnConnectionLost 経由) の cancellation 経路を
+                // OperationCanceledException で通知する。これらのケースでは事前に
+                // WaitForApprovalAsync が State=Cancelled + TransferError fire 済みで、
+                // OnTransferError 経路で VM item.State も既に Cancelled に遷移している
+                // (Direction+InProgress フォールバック照合が成功する race 順)。
+                // ここで一律 Error に書き戻すと、正常な拒否/タイムアウト/切断が UI 上
+                // 「失敗」と表示されてユーザーに混乱を与える。
+                // race insurance: OnTransferError 未到達なら自分で Cancelled に遷移
+                Util.Logger.Log($"ファイル送信キャンセル ({displayName}): {ex.Message}", Util.LogLevel.Warning);
+                if (item.State == TransferState.InProgress || item.State == TransferState.Pending)
+                {
+                    item.State = TransferState.Cancelled;
+                    item.ErrorMessage = ex.Message;
+                }
+                // else: 既に terminal state (Cancelled / Error / Completed) なら尊重
             }
             catch (Exception ex)
             {
@@ -371,16 +397,42 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     {
         Dispatcher.UIThread.Post(() =>
         {
-            var item = Transfers.FirstOrDefault(t =>
-                t.Direction == e.Direction && t.State == TransferState.InProgress);
+            // v1.0.38 review fix v8: 受信側 pending approval のキャンセル通知 (送信側タイムアウト等) を反映。
+            // PendingApprovals に同じ TransferId のエントリがあれば消す (再承認しても無意味になるため)
+            var pending = PendingApprovals.FirstOrDefault(t => t.TransferId == e.TransferId);
+            if (pending != null)
+            {
+                pending.State = TransferState.Cancelled;
+                pending.ErrorMessage = e.ErrorMessage;
+                PendingApprovals.Remove(pending);
+                HasPendingApproval = PendingApprovals.Count > 0;
+            }
+
+            // Codex P2 (comment 3318228874) 指摘: 受信中に切断が発生すると、TransferService 側で
+            // 既に state.Item.State = Cancelled をセットしてから TransferError を発火しているため、
+            // 旧来の `Direction + State==InProgress` 照合だと既存行を発見できず重複行が追加されていた。
+            // 受信側は service と VM が同一インスタンスを共有しているので TransferId で一意に同定できる。
+            // 送信側 VM item は独自インスタンス (TransferId=Empty) なので旧フォールバックを残す。
+            var item = Transfers.FirstOrDefault(t => t.TransferId != Guid.Empty && t.TransferId == e.TransferId)
+                       ?? Transfers.FirstOrDefault(t => t.Direction == e.Direction && t.State == TransferState.InProgress);
+            // Codex P2 (comment 3318684934) 指摘: e.State を保持する。
+            // TransferService は cancellation 経路 (approval timeout / disconnect / reject / pending expire)
+            // で State = Cancelled を、本物のエラー経路 (write fail / decode error 等) で State = Error を
+            // 設定済みのまま fire してくる。ここで一律 Error に書き換えると、Cancelled 表示が「失敗扱い」
+            // で UI 上ユーザーに混乱を与える (拒否したつもりが「エラー」と表示される等)。
+            // service 側の terminal state をそのまま尊重する。non-terminal (InProgress / Pending) で
+            // 来た場合のみ防御的に Error に昇格。
             if (item != null)
             {
-                item.State = TransferState.Error;
+                item.State = e.State;
                 item.ErrorMessage = e.ErrorMessage;
             }
             else
             {
-                e.State = TransferState.Error;
+                if (e.State == TransferState.InProgress || e.State == TransferState.Pending)
+                {
+                    e.State = TransferState.Error;
+                }
                 Transfers.Add(e);
             }
 
@@ -390,12 +442,26 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
 
     /// <summary>
     /// ファイル受信承認要求イベント。承認待ちアイテムを UI に追加する。
+    /// AutoAcceptFileTransfer=true の場合は UI に出さず即承認する (送信側へ FileApprove を返す)。
     /// </summary>
     private void OnApprovalRequested(object? sender, TransferItem e)
     {
         Dispatcher.UIThread.Post(() =>
         {
             e.PeerName = _connectionViewModel.SelectedPeer?.DisplayName ?? string.Empty;
+
+            // v1.0.38: AutoAccept なら UI に出さず即 ApproveTransfer
+            // (ApproveTransfer 内で TransferService.ApproveTransfer → FileApprove 送信 → 送信側がチャンク送信開始)
+            if (_settingsService.Settings.AutoAcceptFileTransfer)
+            {
+                Util.Logger.Log($"AutoAccept: 即承認: {e.FileName}");
+                Transfers.Add(e);
+                _transferService.ApproveTransfer(e.TransferId.ToString());
+                IsTransferring = true;
+                _currentReceiveItem = e;
+                return;
+            }
+
             PendingApprovals.Add(e);
             HasPendingApproval = PendingApprovals.Count > 0;
         });

@@ -88,10 +88,12 @@ TCP / WebSocket ストリーム上の長さプレフィクス付きバイナリ�
 
 | メッセージ | コード | 内容 |
 |-----------|--------|------|
-| FileMeta | `0x01` | ファイル名・サイズ・SHA-256 (JSON) |
+| FileMeta | `0x01` | ファイル名・サイズ・TransferId・相対パス (JSON) |
 | FileChunk | `0x02` | TransferId + チャンクインデックス + データ (64KB) |
-| FileAck | `0x03` | 受信完了確認 + SHA-256 検証 |
-| FileReject | `0x04` | 受信拒否 |
+| FileAck | `0x03` | 受信完了確認 + SHA-256 検証結果 |
+| FileReject | `0x04` | 受信拒否 (TransferId プレフィクス付き) |
+| FileHash | `0x05` | SHA-256 ハッシュ後送り (送信側がチャンク送信後に送付) |
+| FileApprove | `0x06` | 受信承認通知 (受信側が承認時に送信、送信側はこれを待ってチャンク送信開始) |
 | Ping/Pong | `0x10/0x11` | キープアライブ |
 | ResumeRequest | `0x20` | 転送再開リクエスト |
 | ResumeResponse | `0x21` | 転送再開応答 |
