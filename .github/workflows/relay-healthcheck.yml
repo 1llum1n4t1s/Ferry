@@ -1,0 +1,88 @@
+name: Relay Healthcheck
+
+# rere レビュー #F-011: Cloudflare Workers Relay (https://relay.ferry.nephilim.jp)
+# の /health endpoint を 15 分間隔で polling する。失敗時に Issue を自動作成して
+# 「気付かないまま部分障害が続く」状態を防ぐ。
+# 「200 を返し続けるが機能不全」の部分障害も検出するため、将来的には実 WebSocket
+# 接続テストにも拡張する余地あり。
+
+on:
+  schedule:
+    # 15 分間隔で実行 (Cloudflare Workers の billing 影響なし、cron は GitHub 側)
+    - cron: '*/15 * * * *'
+  workflow_dispatch: # 手動実行も可能
+
+permissions:
+  contents: read
+  issues: write  # 失敗時の Issue 作成のため
+
+jobs:
+  healthcheck:
+    name: Relay /health endpoint check
+    runs-on: ubuntu-latest
+    steps:
+      - name: /health の HTTP 200 を確認
+        id: probe
+        run: |
+          set +e
+          url="https://relay.ferry.nephilim.jp/health"
+          status=$(curl --silent --max-time 30 --retry 3 --retry-delay 5 \
+                       --output /dev/null --write-out "%{http_code}" \
+                       "$url")
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [[ "$status" != "200" ]]; then
+            echo "::error::Relay /health が ${status} を返しました (期待: 200)"
+            exit 1
+          fi
+          echo "✅ Relay /health OK"
+
+      - name: 失敗時に Issue を作成
+        if: failure()
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const status = '${{ steps.probe.outputs.status }}';
+            const title = `[Auto] Relay healthcheck failed (HTTP ${status})`;
+            const body = `## 障害発生通知\n\n` +
+              `- **時刻**: ${new Date().toISOString()}\n` +
+              `- **HTTP ステータス**: ${status}\n` +
+              `- **対象**: https://relay.ferry.nephilim.jp/health\n\n` +
+              `## 確認手順\n\n` +
+              `1. Cloudflare ステータス: https://www.cloudflarestatus.com/\n` +
+              `2. wrangler tail で実時間ログ確認:\n` +
+              `   \`\`\`bash\n` +
+              `   cd infra/cloudflare/relay && wrangler tail --name ferry-relay\n` +
+              `   \`\`\`\n` +
+              `3. SALT secret が正しく設定されているか確認:\n` +
+              `   \`\`\`bash\n` +
+              `   cd infra/cloudflare/relay && wrangler secret list\n` +
+              `   \`\`\`\n\n` +
+              `## 復旧手順 (詳細は docs/operations/runbook.md シナリオ B 参照)\n\n` +
+              `- 直前 deploy で発生したなら: \`wrangler rollback --name ferry-relay\`\n` +
+              `- SALT 消失なら: \`wrangler secret put SALT\`\n\n` +
+              `この Issue は relay-healthcheck workflow が自動作成しました。`;
+
+            // 既存の未 close な auto-created issue があれば重複作成しない
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'relay-healthcheck',
+              per_page: 5
+            });
+            if (existing.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing[0].number,
+                body: `## 再発通知\n\n- 時刻: ${new Date().toISOString()}\n- HTTP: ${status}`
+              });
+              return;
+            }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['relay-healthcheck', 'incident', 'auto-generated']
+            });

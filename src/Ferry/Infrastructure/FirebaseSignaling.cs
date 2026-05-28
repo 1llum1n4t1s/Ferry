@@ -144,6 +144,7 @@ public sealed class FirebaseSignaling : IDisposable
         Util.Logger.Log($"SDP ポーリング開始 ({watchField}): pairId={pairId}, minCreatedAt={minCreatedAt}");
         var pollCount = 0;
         var lastErrorLog = 0; // エラーログ抑制用カウンタ
+        var consecutiveErrors = 0; // rere #F-012: exponential backoff 用カウンタ
 
         while (!ct.IsCancellationRequested)
         {
@@ -216,8 +217,18 @@ public sealed class FirebaseSignaling : IDisposable
                     Util.Logger.Log($"SDP ポーリングエラー ({watchField}): {ex.Message}", Util.LogLevel.Warning);
                     lastErrorLog = pollCount;
                 }
+                // rere レビュー #F-012: 例外発生時は exponential backoff + jitter で
+                // Firebase rate limit (429) や一時的なネットワーク不調時に hammer しない。
+                // 連続成功で backoff はリセットされる
+                consecutiveErrors++;
+                var backoffMs = Math.Min(1000 * (1 << Math.Min(consecutiveErrors - 1, 5)), 30_000);
+                var jitter = Random.Shared.Next(0, 500);
+                await Task.Delay(backoffMs + jitter, ct);
+                continue;
             }
 
+            // 正常 path 完了 (受信成功 or 待機継続)
+            consecutiveErrors = 0;
             await Task.Delay(1000, ct);
         }
 

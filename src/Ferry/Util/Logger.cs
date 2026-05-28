@@ -178,7 +178,56 @@ public static class Logger
         if (level < MinLogLevel || _logger == null)
             return;
 
-        Dispatch(_logger, level, message);
+        // rere レビュー #F-001: 相関 ID (pairId / transferId / nonce) を AsyncLocal Scope から取り、
+        // メッセージ末尾に `[pairId=... transferId=...]` 形式で付与する。複数並行イベントの
+        // ログ追跡を可能にする
+        var scope = _currentScope.Value;
+        if (scope != null)
+        {
+            Dispatch(_logger, level, $"{message} [{scope}]");
+        }
+        else
+        {
+            Dispatch(_logger, level, message);
+        }
+    }
+
+    // === rere #F-001: 相関 ID Scope (AsyncLocal で async 経路を跨いで継承) ===
+    private static readonly System.Threading.AsyncLocal<string?> _currentScope = new();
+
+    /// <summary>
+    /// rere レビュー #F-001: 相関 ID Scope の確立。
+    /// using で囲んだ範囲のログ末尾に `[key=value ...]` を自動付与する。
+    /// 入れ子可能 (親スコープに追記)。
+    /// 使用例: <c>using (Logger.Scope(("pairId", pairId), ("transferId", tid))) { ... }</c>
+    /// </summary>
+    public static IDisposable Scope(params (string Key, object? Value)[] tags)
+    {
+        var previous = _currentScope.Value;
+        var formatted = string.Join(" ", System.Linq.Enumerable.Select(tags, t => $"{t.Key}={t.Value ?? "null"}"));
+        _currentScope.Value = previous != null ? $"{previous} {formatted}" : formatted;
+        return new ScopeReleaser(previous);
+    }
+
+    private sealed class ScopeReleaser : IDisposable
+    {
+        private readonly string? _previous;
+        public ScopeReleaser(string? previous) => _previous = previous;
+        public void Dispose() => _currentScope.Value = _previous;
+    }
+
+    /// <summary>
+    /// rere レビュー #F-002: ファイル名の PII マスキング。
+    /// `2026Q1_売上.xlsx` → `20*****.xlsx` のように、拡張子のみ残して中身を伏字化。
+    /// 短すぎる名前 (3 文字以下) は MaskIp と同様に素通し。
+    /// </summary>
+    public static string MaskFilename(string? filename)
+    {
+        if (string.IsNullOrEmpty(filename)) return filename ?? "";
+        var ext = System.IO.Path.GetExtension(filename);
+        var stem = System.IO.Path.GetFileNameWithoutExtension(filename);
+        if (stem.Length <= 3) return filename;
+        return $"{stem[..2]}***{ext}";
     }
 
     /// <summary>
