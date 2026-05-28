@@ -36,6 +36,40 @@ jobs:
           fi
           echo "✅ Relay /health OK"
 
+      # Codex P2 (#3318349018): labels が存在しないリポジトリで Issue 作成が 422 / 権限経路で
+      # 失敗すると、初回 outage が「アラートが届かない」事故になる。
+      # createLabel を idempotent に先行実行 (already-exists の 422 は無視) し、本作成 step は
+      # 必ず labels 揃った状態で実行できるようにする。
+      - name: ラベルが未存在なら事前作成 (idempotent)
+        if: failure()
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          script: |
+            const labels = [
+              { name: 'relay-healthcheck', color: 'd73a4a', description: 'Cloudflare Workers Relay /health 監視' },
+              { name: 'incident', color: 'b60205', description: '本番障害 / 過去のインシデント記録' },
+              { name: 'auto-generated', color: 'cccccc', description: 'CI ワークフローが自動作成した Issue' },
+            ];
+            for (const lbl of labels) {
+              try {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: lbl.name,
+                  color: lbl.color,
+                  description: lbl.description,
+                });
+                core.info(`Created label: ${lbl.name}`);
+              } catch (e) {
+                // 422 Unprocessable Entity = 既存ラベル → 想定内
+                if (e.status === 422) {
+                  core.info(`Label already exists: ${lbl.name}`);
+                } else {
+                  core.warning(`Label createLabel failed (${lbl.name}): ${e.status} ${e.message}`);
+                }
+              }
+            }
+
       - name: 失敗時に Issue を作成
         if: failure()
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1

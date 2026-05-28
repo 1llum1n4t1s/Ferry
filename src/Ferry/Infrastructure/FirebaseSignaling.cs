@@ -367,8 +367,13 @@ public sealed class FirebaseSignaling : IDisposable
     /// v1.0.38 review fix v14: 自分の probe nonce 専用 answer を待つ。
     /// 他 probe の answer は別 key (別 nonce) に書かれるので絶対に混入しない。
     /// v14 review fix (Codex): TimedSignalingValue 全体を 1 オブジェクトとして読む形に統一
+    /// v15 review fix (Codex P2 #3318349010): per-nonce key 化以降、stale answer の隔離は
+    /// nonce (Guid.NewGuid hex, sender が毎 probe で発行) で完全に効いている。`CreatedAt`
+    /// (answer-side clock) と sender 側 clock を跨いで比較していた旧 `minCreatedAt` フィルタは、
+    /// answer 側 PC の時計が遅れているだけで fresh answer が捨てられて `Unknown` タイムアウトする
+    /// 回帰を産んでいた。nonce-specific existence + payload check のみに変更。
     /// </summary>
-    public async Task<string> WaitForProbeAnswerAsync(string pairId, string nonce, long minCreatedAt, CancellationToken ct = default)
+    public async Task<string> WaitForProbeAnswerAsync(string pairId, string nonce, CancellationToken ct = default)
     {
         while (!ct.IsCancellationRequested)
         {
@@ -382,7 +387,7 @@ public sealed class FirebaseSignaling : IDisposable
                 }
                 catch { }
 
-                if (entry == null || entry.CreatedAt < minCreatedAt || string.IsNullOrEmpty(entry.Data))
+                if (entry == null || string.IsNullOrEmpty(entry.Data))
                 {
                     await Task.Delay(1000, ct);
                     continue;
@@ -400,12 +405,16 @@ public sealed class FirebaseSignaling : IDisposable
 
     /// <summary>
     /// v1.0.38 review fix v14: pair 配下の全 probe offer を 1 回読む (non-blocking)。
-    /// minCreatedAt より新しい offer 全てを (nonce, sdp) のリストで返す。
-    /// 旧 TryReadProbeOfferAsync (単一スロット) の置き換え。
-    /// ListenForIncomingConnectionAsync は返ってきた offer を nonce ごとに HandleProbeOfferAsync で処理する。
+    /// (nonce, sdp) のリストを返す。旧 TryReadProbeOfferAsync (単一スロット) の置き換え。
+    /// ListenForIncomingConnectionAsync は返ってきた offer を nonce ごとに HandleProbeOfferAsync で処理し、
+    /// 既処理 nonce は呼び出し側の HashSet で dedupe する。
+    /// v15 review fix (Codex P2 #3318349010): 旧 `minCreatedAt` フィルタは sender-clock /
+    /// listener-clock の cross-device 時計差で fresh offer を捨てる回帰を作っていた。
+    /// per-nonce key (sender 毎 Guid) と呼び出し側の processedProbeNonces HashSet で
+    /// stale dedupe は十分。`CreatedAt` 比較は撤廃。
     /// </summary>
     public async Task<System.Collections.Generic.IReadOnlyList<(string Nonce, string Sdp)>> ReadProbeOffersAsync(
-        string pairId, long minCreatedAt, CancellationToken ct = default)
+        string pairId, CancellationToken ct = default)
     {
         var results = new System.Collections.Generic.List<(string, string)>();
         try
@@ -415,7 +424,6 @@ public sealed class FirebaseSignaling : IDisposable
             foreach (var entry in entries)
             {
                 if (entry.Object == null) continue;
-                if (entry.Object.CreatedAt < minCreatedAt) continue;
                 if (string.IsNullOrEmpty(entry.Object.Data)) continue;
                 results.Add((entry.Key, DecodeBase64(entry.Object.Data)));
             }

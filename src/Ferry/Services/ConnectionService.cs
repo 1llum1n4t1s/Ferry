@@ -252,10 +252,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         Util.Logger.Log($"着信接続ポーリング開始: pairId={pairId}");
 
         var minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        // v1.0.38 review fix v4: probe 専用ノード (probeOffers) の独立 cutoff
-        var minProbeCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        // v1.0.38 review fix v14: 既に処理した probe nonce を記録。Firebase 上 probe ノードは
-        // sender 側 finally で削除されるが、削除前にこちらが poll するとダブル処理になるため
+        // v1.0.38 review fix v14 / v15 (Codex P2 #3318349010): 既に処理した probe nonce を記録。
+        // sender 側 finally で削除されるが、削除前にこちらが poll するとダブル処理になるため。
+        // 旧 minProbeCreatedAt (cross-device clock 比較) は時計差で fresh offer を捨てる回帰を
+        // 招いていたため撤去。per-nonce key + 本 HashSet のみで stale dedupe する。
         var processedProbeNonces = new System.Collections.Generic.HashSet<string>();
 
         // ポーリング用 Firebase クライアントはループ全体で再利用する
@@ -275,7 +275,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 // v1.0.38 review fix v14: per-nonce key 化により複数の同時 probe offer を全て処理。
                 // ReadProbeOffersAsync は probeOffers/<nonce>/ 配下を全部 OnceAsync で取得し、
                 // (nonce, sdp) のリストを返す。自分発 (From=self) と既処理 nonce はスキップ
-                var probeOffers = await pollingSignaling.ReadProbeOffersAsync(pairId, minProbeCreatedAt, ct);
+                var probeOffers = await pollingSignaling.ReadProbeOffersAsync(pairId, ct);
                 foreach (var (probeNonce, probeOfferJson) in probeOffers)
                 {
                     if (processedProbeNonces.Contains(probeNonce)) continue;
@@ -654,12 +654,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         UdpHolePunchTransport? udpTransport = null;
         var pairId = GeneratePairId(_deviceId, peerId);
 
-        // v1.0.38 review fix v2 (stale answer): probe 送信前の時刻を保存し、
-        // 過去 probe/接続の残骸 answer を拾わないようにする
-        var probeCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-
         // v1.0.38 review fix v12: 自分の probe を識別する nonce。bidirectional 同時 probe で
-        // 相手の probe の answer を誤認しないよう、answer 側が echo する nonce を発行する
+        // 相手の probe の answer を誤認しないよう、answer 側が echo する nonce を発行する。
+        // v15 review fix (Codex P2 #3318349010): 旧 `probeCreatedAt` (cross-device clock 比較
+        // 用 cutoff) は撤去。per-nonce key (毎 probe 新規 GUID) で stale answer は構造的に隔離
+        // されるため、答え側 PC の時計が遅れていても fresh answer を正しく拾えるようになった。
         var probeNonce = Guid.NewGuid().ToString("N")[..16];
 
         try
@@ -707,7 +706,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             var tcpAcceptTask = tcpTransport.AcceptAsync(stageCts.Token);
             // v1.0.38 review fix v14: 自分の nonce 配下の answer のみ待つ
             // (他 probe の answer は別 key なので絶対に混入しない)
-            var answerTask = probeSig.WaitForProbeAnswerAsync(pairId, probeNonce, minCreatedAt: probeCreatedAt, ct: stageCts.Token);
+            // v15 review fix (Codex P2 #3318349010): cross-device clock 比較は撤廃。
+            // nonce が毎 probe で fresh GUID なので、probeAnswers/<nonce> に entries が存在する
+            // = 自分宛 fresh answer と確定する (stale answer の混入経路がない)。
+            var answerTask = probeSig.WaitForProbeAnswerAsync(pairId, probeNonce, ct: stageCts.Token);
 
             Task completedTask;
             try
