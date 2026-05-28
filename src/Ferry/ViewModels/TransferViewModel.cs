@@ -177,6 +177,25 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 item.TransferredBytes = item.FileSize;
                 item.CompletedAt = DateTime.UtcNow;
             }
+            catch (OperationCanceledException ex)
+            {
+                // Codex P2 (comment 3318762005) 指摘: SendFileAsync は approval reject /
+                // approval timeout / 切断 (OnConnectionLost 経由) の cancellation 経路を
+                // OperationCanceledException で通知する。これらのケースでは事前に
+                // WaitForApprovalAsync が State=Cancelled + TransferError fire 済みで、
+                // OnTransferError 経路で VM item.State も既に Cancelled に遷移している
+                // (Direction+InProgress フォールバック照合が成功する race 順)。
+                // ここで一律 Error に書き戻すと、正常な拒否/タイムアウト/切断が UI 上
+                // 「失敗」と表示されてユーザーに混乱を与える。
+                // race insurance: OnTransferError 未到達なら自分で Cancelled に遷移
+                Util.Logger.Log($"ファイル送信キャンセル ({displayName}): {ex.Message}", Util.LogLevel.Warning);
+                if (item.State == TransferState.InProgress || item.State == TransferState.Pending)
+                {
+                    item.State = TransferState.Cancelled;
+                    item.ErrorMessage = ex.Message;
+                }
+                // else: 既に terminal state (Cancelled / Error / Completed) なら尊重
+            }
             catch (Exception ex)
             {
                 Util.Logger.Log($"ファイル送信エラー ({displayName}): {ex.Message}", Util.LogLevel.Error);
