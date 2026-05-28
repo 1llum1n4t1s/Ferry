@@ -105,6 +105,17 @@ public sealed class FirebaseSignaling : IDisposable
     /// <summary>
     /// pairings ノードの変更を監視し、自分の sessionId を含むペアリングを検知する。
     /// </summary>
+    /// <remarks>
+    /// Codex P2 (#3318454466) Phase B blocker: 現実装は `pairings/` の **parent collection** に
+    /// AsObservable で購読する。Realtime DB rules は parent collection read を子 ID で filter
+    /// できないため、Anonymous Auth 移行後に `pairings/$pid` 個別の `.read` ルールだけを deploy
+    /// しても、この購読自体が deny されて pairing が成立しない。
+    ///
+    /// Phase B 移行案: pairings を per-device path (`pairings/$deviceId/$pid`) に restructure
+    /// し、各 client は自分の sessionId 配下のみ購読する。Bridge JS は SidA / SidB の両 path
+    /// に mirror write する (Bridge 側の auth はゲートを別途設計)。詳細は
+    /// `src/Ferry.Bridge/database.rules.json` の `_comment_phase_b_pairings_blocker` を参照。
+    /// </remarks>
     public void StartWatchingPairing()
     {
         _pairingSubscription?.Dispose();
@@ -425,7 +436,25 @@ public sealed class FirebaseSignaling : IDisposable
             {
                 if (entry.Object == null) continue;
                 if (string.IsNullOrEmpty(entry.Object.Data)) continue;
-                results.Add((entry.Key, DecodeBase64(entry.Object.Data)));
+                // v15 review fix (Codex P2 #3318454476): per-nonce key 化以降、probeOffers/ は
+                // 同一 pair 内の複数 sender の offer が共存する collection になった。1 件でも壊れた
+                // base64 (古い不正書き込み / 部分書き込み残骸) があると、旧実装の単一 try/catch では
+                // foreach 全体が中断され、全 sender の probe が無視される (= peer 全体の経路 probe
+                // が永久 stall する) 経路があった。entry 単位で例外を握りつぶし、不正 1 件は捨てて
+                // 残りを処理し続ける。
+                string sdp;
+                try
+                {
+                    sdp = DecodeBase64(entry.Object.Data);
+                }
+                catch (Exception ex)
+                {
+                    Util.Logger.Log(
+                        $"probe offer decode 失敗 (nonce={entry.Key}): {ex.GetType().Name} - {ex.Message} → スキップ",
+                        Util.LogLevel.Warning);
+                    continue;
+                }
+                results.Add((entry.Key, sdp));
             }
         }
         catch (OperationCanceledException) { throw; }
