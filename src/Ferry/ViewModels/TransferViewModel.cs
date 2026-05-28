@@ -389,8 +389,13 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 HasPendingApproval = PendingApprovals.Count > 0;
             }
 
-            var item = Transfers.FirstOrDefault(t =>
-                t.Direction == e.Direction && t.State == TransferState.InProgress);
+            // Codex P2 (comment 3318228874) 指摘: 受信中に切断が発生すると、TransferService 側で
+            // 既に state.Item.State = Cancelled をセットしてから TransferError を発火しているため、
+            // 旧来の `Direction + State==InProgress` 照合だと既存行を発見できず重複行が追加されていた。
+            // 受信側は service と VM が同一インスタンスを共有しているので TransferId で一意に同定できる。
+            // 送信側 VM item は独自インスタンス (TransferId=Empty) なので旧フォールバックを残す。
+            var item = Transfers.FirstOrDefault(t => t.TransferId != Guid.Empty && t.TransferId == e.TransferId)
+                       ?? Transfers.FirstOrDefault(t => t.Direction == e.Direction && t.State == TransferState.InProgress);
             if (item != null)
             {
                 item.State = TransferState.Error;
