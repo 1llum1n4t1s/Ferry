@@ -8,8 +8,11 @@ namespace Ferry.Services;
 
 /// <summary>
 /// ファイル転送サービス。チャンク分割・送受信・プログレス管理・レジュームを行う。
+/// rere レビュー #C2-005: DataReceived / ConnectionLost イベント購読を持つので
+/// IDisposable を必須化する。本番は Singleton で leak しないが、テスト / 将来の
+/// マルチピア化対応で確実に unsubscribe できるようにしておく。
 /// </summary>
-public interface ITransferService
+public interface ITransferService : IDisposable
 {
     /// <summary>転送の進捗が更新されたときに発火するイベント。</summary>
     event EventHandler<TransferItem>? ProgressChanged;

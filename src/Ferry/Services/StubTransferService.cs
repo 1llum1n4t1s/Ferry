@@ -24,4 +24,5 @@ public sealed class StubTransferService : ITransferService
     public void ApproveTransfer(string transferId) { }
     public void RejectTransfer(string transferId) { }
     public void CancelTransfer(string transferId) { }
+    public void Dispose() { } // rere #C2-005: IDisposable 必須化
 }

@@ -1,0 +1,48 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "_comment": "rere レビュー #A1-001 / #A1-003 / #A1-004 / #A1-006 / #A2-006 同一 root cause 緩和。匿名 R/W を遮断し、自身の deviceId 配下のみ書き込み可能にする。Anonymous Auth (auth.uid = deviceId) の導入後に適用すること。",
+
+    "sessions": {
+      "$sid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid == $sid && (!data.exists() || newData.child('CreatedAt').val() > data.child('CreatedAt').val() - 60000)",
+        "DisplayName": { ".validate": "newData.isString() && newData.val().length <= 64" },
+        "CreatedAt": { ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false }
+      }
+    },
+
+    "pairings": {
+      "$pid": {
+        ".read": "auth != null && (data.child('SidA').val() == auth.uid || data.child('SidB').val() == auth.uid || newData.child('SidA').val() == auth.uid || newData.child('SidB').val() == auth.uid)",
+        ".write": "auth != null && (newData.child('SidA').val() == auth.uid || newData.child('SidB').val() == auth.uid)",
+        "SidA": { ".validate": "newData.isString() && newData.val().matches(/^[a-f0-9]{32}$/)" },
+        "SidB": { ".validate": "newData.isString() && newData.val().matches(/^[a-f0-9]{32}$/)" },
+        "NameA": { ".validate": "newData.isString() && newData.val().length <= 64" },
+        "NameB": { ".validate": "newData.isString() && newData.val().length <= 64" },
+        "CreatedAt": { ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false }
+      }
+    },
+
+    "signaling": {
+      "$pairId": {
+        ".read": "auth != null && $pairId.contains(auth.uid)",
+        ".write": "auth != null && $pairId.contains(auth.uid)"
+      }
+    },
+
+    "presence": {
+      "$deviceId": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid == $deviceId",
+        "LastSeen": { ".validate": "newData.isNumber()" },
+        "DisplayName": { ".validate": "newData.isString() && newData.val().length <= 64" },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}

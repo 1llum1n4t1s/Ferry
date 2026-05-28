@@ -258,10 +258,14 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${FIREBASE_TOKEN:-}" ]; then
-            echo "::warning::FIREBASE_TOKEN が未設定です。Bridge ページの deploy をスキップしました。"
+            # rere レビュー #F-006: 旧 exit 0 だと release 全体が成功扱いになり Bridge
+            # プロトコル変更入りのリリースで全ユーザーがペアリング不能でも誰も気付けない
+            echo "::error::FIREBASE_TOKEN が未設定です。Bridge / database rules の deploy は必須。"
             echo "ローカルで 'firebase login:ci' を実行してトークンを取得し、GitHub Secrets に FIREBASE_TOKEN として登録してください。"
-            exit 0
+            exit 1
           fi
           cd src/Ferry.Bridge
-          firebase deploy --only hosting --token "$FIREBASE_TOKEN" --non-interactive
-          echo "✅ Bridge ページ deploy 完了: https://ferry-edf09.web.app/"
+          # rere レビュー #A1-004 / #A2-006: database.rules.json も同時 deploy で
+          # 匿名 R/W 遮断ルールをリポジトリ管理下に置く (rules ドリフト防止)
+          firebase deploy --only hosting,database --token "$FIREBASE_TOKEN" --non-interactive
+          echo "✅ Bridge ページ + database rules deploy 完了: https://ferry-edf09.web.app/"

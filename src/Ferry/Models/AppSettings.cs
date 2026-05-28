@@ -57,8 +57,12 @@ public sealed class AppSettings
     // --- ファイル転送設定 ---
     // ReceiveFileSavePath は v1.0.38 で SaveDirectory と重複していたため削除済み (受信側でも SaveDirectory を使う)
 
-    /// <summary>ファイル受信を自動承認するか。</summary>
-    public bool AutoAcceptFileTransfer { get; set; } = true;
+    /// <summary>ファイル受信を自動承認するか。
+    /// rere レビュー #A1-005: 旧デフォルト true は #A1-001 (Firebase 匿名ペアリング強制成立)
+    /// と組み合わせで「攻撃者が peer になりすまし → 確認なしで Downloads に投下」経路を作っていた。
+    /// 既定 false に変更してユーザー明示承認を必須に。既存ユーザーの settings.json に保存済みの
+    /// 値は維持されるので、自動承認したい人は設定画面で明示的に ON できる。</summary>
+    public bool AutoAcceptFileTransfer { get; set; } = false;
 
     // N-1: 旧 Theme / AccentColor / FontSize は ThemeMode と二重定義 + 未実装だったため削除済み
     // テーマは ThemeMode で一元管理する

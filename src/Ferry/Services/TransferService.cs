@@ -18,7 +18,7 @@ namespace Ferry.Services;
 /// FileChunker / TransferProtocol を使って、接続済みの IConnectionService 経由で
 /// チャンクベースのファイル送受信、プログレス通知、SHA-256 検証、レジュームを行う。
 /// </summary>
-public sealed class TransferService : ITransferService
+public sealed class TransferService : ITransferService, IDisposable
 {
     /// <summary>承認待ち中にバッファできるチャンクの合計上限（OOM 防止）。</summary>
     private const long MaxApprovalBufferBytes = 64L * 1024 * 1024;
@@ -60,6 +60,55 @@ public sealed class TransferService : ITransferService
 
         // 受信データハンドラを登録
         _connectionService.DataReceived += OnDataReceived;
+        // rere レビュー #D-005 / #F-014: 切断時に進行中転送と承認待ちを全部 cleanup する。
+        // 旧実装は ConnectionLost を購読しておらず、Wi-Fi 瞬断等で部分受信ファイルが
+        // Downloads にゴミとして残り続けていた。さらに UI 状態も整合性が崩れる。
+        _connectionService.ConnectionLost += OnConnectionLost;
+    }
+
+    /// <summary>
+    /// rere レビュー #C2-005: TransferService が DataReceived / ConnectionLost を購読するので、
+    /// IDisposable で明示的に unsubscribe する。Singleton 想定では本番影響なしだが、テスト時の
+    /// 偽陽性および将来のマルチピア化対応のために必須。
+    /// </summary>
+    public void Dispose()
+    {
+        _connectionService.DataReceived -= OnDataReceived;
+        _connectionService.ConnectionLost -= OnConnectionLost;
+    }
+
+    /// <summary>
+    /// rere レビュー #D-005 / #F-014: 切断検知時の cleanup。受信中ファイル (_receiveStates) を
+    /// 全削除 + 部分ファイル削除、承認待ち (_pendingApprovals) も Cancelled に遷移して
+    /// UI に通知する。送信中 (_activeTransfers) は SendFileAsync 内の SendAsync 例外で
+    /// 既に catch されるのでここでは触らない。
+    /// </summary>
+    private void OnConnectionLost(object? sender, EventArgs e)
+    {
+        Util.Logger.Log($"接続切断検知: 進行中転送 {_receiveStates.Count} 件 + 承認待ち {_pendingApprovals.Count} 件を cleanup", Util.LogLevel.Warning);
+
+        // 受信中の部分ファイルを削除
+        foreach (var tid in _receiveStates.Keys.ToArray())
+        {
+            if (_receiveStates.TryRemove(tid, out var state))
+            {
+                state.Item.State = TransferState.Cancelled;
+                state.Item.ErrorMessage = "接続が切断されました";
+                CleanupReceiveState(state);
+                TransferError?.Invoke(this, state.Item);
+            }
+        }
+
+        // 承認待ちもキャンセル扱い (送信側はもう存在しないので承認しても無意味)
+        foreach (var tid in _pendingApprovals.Keys.ToArray())
+        {
+            if (_pendingApprovals.TryRemove(tid, out var pending))
+            {
+                pending.Item.State = TransferState.Cancelled;
+                pending.Item.ErrorMessage = "接続が切断されました";
+                TransferError?.Invoke(this, pending.Item);
+            }
+        }
     }
 
     /// <summary>
