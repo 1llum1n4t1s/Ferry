@@ -87,8 +87,11 @@ signaling/{pairId}/probeOffers/{nonce}              = TimedSignalingValue { Data
 signaling/{pairId}/probeAnswers/{nonce}             = TimedSignalingValue { Data, CreatedAt }  # 同上
 ```
 
-全ノードに `CreatedAt` を入れており、GitHub Actions（6時間おき）で1時間超の古いデータを自動削除。
-probe ノードは sender finally で `CleanupProbeAsync(nonce)` により即時削除される。
+**Cleanup ポリシーごとのノード分類**:
+
+- **`sessions/{sessionId}` / `pairings/{pairingId}` / `signaling/{pairId}/...`**: 各エントリに `CreatedAt` フィールドを含み、GitHub Actions (`firebase-cleanup.yml`、6 時間おき) で 1 時間超の古いデータを自動削除
+- **`presence/{deviceId}`**: `CreatedAt` ではなく `LastSeen` (heartbeat 30 秒で更新) を使う。`FirebaseSignaling.UpdatePresenceAsync` が書き込み、`OfflineThresholdMs=60s` 経過で UI 側で offline 判定。cleanup 対象外 (オンライン検出専用なので時間経過 = 削除でなく、`LastSeen` 老化 = offline 表示)
+- **`signaling/<pairId>/probeOffers/<nonce>` / `probeAnswers/<nonce>`**: probe sender の finally で `CleanupProbeAsync(nonce)` により **即時削除**。タイムアウト経過待ちなし
 
 `ConnectionInfo` の `Probe / From / Nonce` フィールド (v12-v14 追加):
 - `Probe: bool` — true なら listening 側は経路 Probe 用と判定して通常 transport 確立をスキップ

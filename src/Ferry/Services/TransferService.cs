@@ -82,10 +82,13 @@ public sealed class TransferService : ITransferService, IDisposable
     /// 全削除 + 部分ファイル削除、承認待ち (_pendingApprovals) も Cancelled に遷移して
     /// UI に通知する。送信中 (_activeTransfers) は SendFileAsync 内の SendAsync 例外で
     /// 既に catch されるのでここでは触らない。
+    /// CodeRabbit 指摘: 送信側承認待ち (_pendingSendApprovals) も解放しないと、FileMeta 送信後の
+    /// 切断で最大 60 秒 Pending が残り UX が悪化する。TCS を TrySetResult(false) で完了させて
+    /// WaitForApprovalAsync が Cancelled に遷移するようにする。
     /// </summary>
     private void OnConnectionLost(object? sender, EventArgs e)
     {
-        Util.Logger.Log($"接続切断検知: 進行中転送 {_receiveStates.Count} 件 + 承認待ち {_pendingApprovals.Count} 件を cleanup", Util.LogLevel.Warning);
+        Util.Logger.Log($"接続切断検知: 受信中 {_receiveStates.Count} 件 + 承認待ち(受) {_pendingApprovals.Count} 件 + 承認待ち(送) {_pendingSendApprovals.Count} 件を cleanup", Util.LogLevel.Warning);
 
         // 受信中の部分ファイルを削除
         foreach (var tid in _receiveStates.Keys.ToArray())
@@ -99,7 +102,7 @@ public sealed class TransferService : ITransferService, IDisposable
             }
         }
 
-        // 承認待ちもキャンセル扱い (送信側はもう存在しないので承認しても無意味)
+        // 受信側承認待ちもキャンセル扱い (送信側はもう存在しないので承認しても無意味)
         foreach (var tid in _pendingApprovals.Keys.ToArray())
         {
             if (_pendingApprovals.TryRemove(tid, out var pending))
@@ -107,6 +110,23 @@ public sealed class TransferService : ITransferService, IDisposable
                 pending.Item.State = TransferState.Cancelled;
                 pending.Item.ErrorMessage = "接続が切断されました";
                 TransferError?.Invoke(this, pending.Item);
+            }
+        }
+
+        // CodeRabbit 指摘: 送信側承認待ち TCS も解放。
+        // FileMeta 送信後 → 受信側からの FileApprove 待ちで切断したケース、TCS を false で完了させて
+        // WaitForApprovalAsync を抜けさせる。WaitForApprovalAsync の wait 完了分岐 (approved=false)
+        // で State=Cancelled / TransferError 発火が自動的に走る (v12 で実装済み経路)
+        foreach (var tid in _pendingSendApprovals.Keys.ToArray())
+        {
+            if (_pendingSendApprovals.TryRemove(tid, out var tcs))
+            {
+                // ErrorMessage は WaitForApprovalAsync の fallback ("相手が受信を拒否しました") を上書き
+                if (_activeTransfers.TryGetValue(tid, out var sendItem))
+                {
+                    sendItem.ErrorMessage = "接続が切断されました";
+                }
+                tcs.TrySetResult(false);
             }
         }
     }
@@ -573,8 +593,10 @@ public sealed class TransferService : ITransferService, IDisposable
             try { Directory.CreateDirectory(saveFileDir); }
             catch (Exception ex)
             {
+                // CodeRabbit 指摘: ex.Message に保存先絶対パス / ユーザー名等のローカル PII が含まれうるため、
+                // 詳細はローカルログだけに残し、ネットワーク越しの FileReject 理由は固定文言に絞る
                 Util.Logger.Log($"保存先ディレクトリ作成失敗: {ex.Message}", Util.LogLevel.Error);
-                SendRejectFireAndForget(transferIdGuid, $"保存先ディレクトリ作成失敗: {ex.Message}");
+                SendRejectFireAndForget(transferIdGuid, "保存先ディレクトリ作成失敗");
                 return;
             }
         }
@@ -959,7 +981,9 @@ public sealed class TransferService : ITransferService, IDisposable
             // v1.0.38 review fix v6: file open 失敗時に sender へ FileReject を送って
             // 60 秒の approval タイムアウト + 「相手が旧バージョン」の誤誘導エラーを防ぐ
             // v1.0.38 review fix v9: SendRejectFireAndForget ヘルパーに統一 (重複削減)
-            SendRejectFireAndForget(tid, $"受信ファイル作成エラー: {ex.Message}");
+            // CodeRabbit 指摘: ex.Message に保存先絶対パス / ファイル名等のローカル PII が
+            // 含まれうるため、ネットワーク越しの理由は固定文言に絞る
+            SendRejectFireAndForget(tid, "受信ファイル作成エラー");
             return;
         }
 
@@ -1037,6 +1061,14 @@ public sealed class TransferService : ITransferService, IDisposable
             sendItem.State = TransferState.Cancelled;
             sendItem.ErrorMessage = "キャンセルされました";
             TransferError?.Invoke(this, sendItem);
+
+            // CodeRabbit 指摘: 送信側承認待ち TCS も解放しないと、FileMeta 送信後の承認待ち中に
+            // CancelTransfer されても 60 秒タイムアウトまで pending が残る。TrySetResult(false) で
+            // WaitForApprovalAsync を抜けさせる
+            if (_pendingSendApprovals.TryRemove(tid, out var tcs))
+            {
+                tcs.TrySetResult(false);
+            }
         }
     }
 

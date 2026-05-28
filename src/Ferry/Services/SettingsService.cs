@@ -83,7 +83,9 @@ public sealed class SettingsService : ISettingsService
                     if (match.Success)
                     {
                         Settings.DeviceId = match.Groups[1].Value.ToLowerInvariant();
-                        Util.Logger.Log($"破損ファイルから DeviceId をサルベージ: {Util.Logger.MaskIp(Settings.DeviceId)}", Util.LogLevel.Warning);
+                        // CodeRabbit 指摘: MaskIp は IP 形式以外素通し → DeviceId が丸出しだったため
+                        // 専用の MaskDeviceId (先頭 4 + ... + 末尾 4) に変更
+                        Util.Logger.Log($"破損ファイルから DeviceId をサルベージ: {Util.Logger.MaskDeviceId(Settings.DeviceId)}", Util.LogLevel.Warning);
                         Save(); // 復元した DeviceId で新 settings.json を書き出し
                     }
                 }

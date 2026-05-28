@@ -204,9 +204,18 @@ public static class Logger
     public static IDisposable Scope(params (string Key, object? Value)[] tags)
     {
         var previous = _currentScope.Value;
-        var formatted = string.Join(" ", System.Linq.Enumerable.Select(tags, t => $"{t.Key}={t.Value ?? "null"}"));
+        // CodeRabbit nitpick: 値に改行 / `]` (Scope 区切り文字) を含むとログ整形が壊れるので
+        // サニタイズしてから連結する
+        var formatted = string.Join(" ", System.Linq.Enumerable.Select(tags, t => $"{t.Key}={SanitizeScopeValue(t.Value)}"));
         _currentScope.Value = previous != null ? $"{previous} {formatted}" : formatted;
         return new ScopeReleaser(previous);
+    }
+
+    private static string SanitizeScopeValue(object? value)
+    {
+        var s = value?.ToString() ?? "null";
+        // 改行 (CR/LF) + Scope 区切り文字 `]` をエスケープ
+        return s.Replace("\r", "\\r").Replace("\n", "\\n").Replace("]", "\\]");
     }
 
     private sealed class ScopeReleaser : IDisposable
@@ -228,6 +237,18 @@ public static class Logger
         var stem = System.IO.Path.GetFileNameWithoutExtension(filename);
         if (stem.Length <= 3) return filename;
         return $"{stem[..2]}***{ext}";
+    }
+
+    /// <summary>
+    /// CodeRabbit 指摘: DeviceId (32 文字 hex) の専用マスキング。
+    /// MaskIp は IP 形式以外を素通しするため DeviceId に効かず、ログに ID が丸出しになっていた。
+    /// 先頭 4 文字 + "..." + 末尾 4 文字 で識別性は保ちつつ大半を伏字化。
+    /// </summary>
+    public static string MaskDeviceId(string? deviceId)
+    {
+        if (string.IsNullOrEmpty(deviceId)) return deviceId ?? "";
+        if (deviceId.Length < 8) return "***";
+        return $"{deviceId[..4]}...{deviceId[^4..]}";
     }
 
     /// <summary>

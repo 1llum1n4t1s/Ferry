@@ -105,7 +105,7 @@ firebase hosting:clone <site-id>:<version> <site-id>:live
 ### 漏洩時の対応
 
 - **GitHub Secrets が PR 経由で漏洩した可能性**: 即時 revoke + 新トークン作成 + GitHub Secrets 更新を順に実行
-- **`.cf_token` ファイル (ローカル) が漏洩した可能性**: 即時 revoke + 再発行 + `notepad C:\Users\IMT\.cf_token` で再保存
+- **`.cf_token` ファイル (ローカル) が漏洩した可能性**: 即時 revoke + 再発行 + `notepad %USERPROFILE%\.cf_token` で再保存 (Linux/macOS なら `~/.cf_token`)
 - **チャットに貼ってしまった場合**: 漏洩 token を生かしたまま新 token を作らない (revoke → 再発行 → 再保存 の順)
 
 ---

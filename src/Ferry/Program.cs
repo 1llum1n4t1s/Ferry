@@ -57,7 +57,10 @@ internal sealed class Program
             try
             {
                 var ex = e.ExceptionObject as Exception;
-                Logger.Log($"FATAL UnhandledException (terminating={e.IsTerminating}): {ex?.GetType().Name} - {ex?.Message}\n{ex?.StackTrace}", LogLevel.Error);
+                // CodeRabbit 指摘: 例外メッセージ / StackTrace に IP アドレスが含まれうるので
+                // MaskIp で末尾オクテットを伏せてからログ出力 (PII 保護)
+                var raw = $"FATAL UnhandledException (terminating={e.IsTerminating}): {ex?.GetType().Name} - {ex?.Message}\n{ex?.StackTrace}";
+                Logger.Log(Logger.MaskIp(raw), LogLevel.Error);
             }
             catch { /* ログ自体が落ちる経路は何もできない */ }
         };
@@ -65,7 +68,9 @@ internal sealed class Program
         {
             try
             {
-                Logger.Log($"UnobservedTaskException: {e.Exception.GetType().Name} - {e.Exception.Message}\n{e.Exception.StackTrace}", LogLevel.Error);
+                // CodeRabbit 指摘: 同上、MaskIp 経由で PII 保護
+                var raw = $"UnobservedTaskException: {e.Exception.GetType().Name} - {e.Exception.Message}\n{e.Exception.StackTrace}";
+                Logger.Log(Logger.MaskIp(raw), LogLevel.Error);
                 e.SetObserved(); // プロセス終了を阻止 (TaskScheduler が default で AppDomain 終了させるのを避ける)
             }
             catch { }
