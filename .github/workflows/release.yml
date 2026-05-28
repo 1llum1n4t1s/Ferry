@@ -237,7 +237,16 @@ jobs:
   firebase-deploy:
     # release/X.Y.Z push 時に Firebase Hosting (Bridge ページ) も自動 deploy。
     # 別途手動 `firebase deploy --only hosting` を不要にする。
-    # 要 Secrets: FIREBASE_TOKEN (`firebase login:ci` で取得、ローテーション不要な永続トークン)
+    #
+    # 認証方式: Service Account JSON (Firebase 公式 GitHub Action 経由)
+    # 旧 FIREBASE_TOKEN (`firebase login:ci`) は Google アカウント全権限相当の
+    # legacy 認証で、Firebase 公式が non-recommended に分類。Service Account は
+    # 権限を Firebase Hosting Admin だけに絞れて、漏洩時の影響範囲が限定的。
+    #
+    # 要 Secrets:
+    #   - FIREBASE_SERVICE_ACCOUNT_FERRY_EDF09: Firebase Console → プロジェクト設定 →
+    #     サービスアカウント → 「新しい秘密鍵を生成」で取得した JSON 全文。
+    #     SA に付与する権限は `roles/firebasehosting.admin` のみで十分。
     name: Firebase Hosting Deploy (Bridge)
     runs-on: ubuntu-latest
     permissions:
@@ -245,36 +254,38 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - name: Node.js セットアップ (firebase-tools が Node.js >=20 を要求)
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: '22'
-      - name: firebase-tools をインストール
-        # サプライチェーン攻撃防止のため明示的にバージョン固定
-        run: npm install -g firebase-tools@13.29.1
-      - name: Bridge ページを Firebase Hosting にデプロイ
+      - name: Service Account 登録確認
         env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_FERRY_EDF09 }}
         run: |
           set -euo pipefail
-          if [ -z "${FIREBASE_TOKEN:-}" ]; then
+          if [ -z "${SA:-}" ]; then
             # rere レビュー #F-006: 旧 exit 0 だと release 全体が成功扱いになり Bridge
             # プロトコル変更入りのリリースで全ユーザーがペアリング不能でも誰も気付けない
-            echo "::error::FIREBASE_TOKEN が未設定です。Bridge ページの deploy は必須。"
-            echo "ローカルで 'firebase login:ci' を実行してトークンを取得し、GitHub Secrets に FIREBASE_TOKEN として登録してください。"
+            echo "::error::FIREBASE_SERVICE_ACCOUNT_FERRY_EDF09 が未設定です。Bridge ページの deploy は必須。"
+            echo "Firebase Console → プロジェクト設定 → サービスアカウント → 新しい秘密鍵を生成 で JSON を取得し、"
+            echo "GitHub Secrets に FIREBASE_SERVICE_ACCOUNT_FERRY_EDF09 として登録してください。"
+            echo "詳細: docs/operations/runbook.md (Secret rotation セクション)"
             exit 1
           fi
-          cd src/Ferry.Bridge
-          # Codex P1 指摘 (rere Round 3 fix): database rules は --only hosting と分離して
-          # 自動 deploy しない。理由: 現状の Bridge と .NET クライアントは Firebase Auth を
-          # 呼んでおらず、auth.uid を要求する database.rules.json をいきなり deploy すると
-          # 全クライアントが permission_denied で死ぬ。
-          # 段階移行戦略 (Round 2 Phase B、別 PR):
-          #   1. Anonymous Auth を Bridge + .NET 両方に実装してリリース
-          #   2. ユーザー浸透 (1〜2 週間) を待つ
-          #   3. その後に手動で `firebase deploy --only database --token <token>` を実行
-          # database.rules.json + firebase.json の database セクションは保持する
-          # (`firebase deploy --only database` で個別に deploy できる準備)
-          firebase deploy --only hosting --token "$FIREBASE_TOKEN" --non-interactive
+      - name: Bridge ページを Firebase Hosting にデプロイ
+        # FirebaseExtended/action-hosting-deploy@v0.10.0 (Firebase 公式 GitHub Action)
+        # 内部で Service Account JSON を ADC として展開 → firebase-tools 実行
+        # channelId: live → 本番チャンネル deploy (省略すると preview channel になる)
+        # entryPoint → firebase.json があるディレクトリ
+        #
+        # Codex P1 指摘 (rere Round 3 fix): database rules は本 step で deploy しない。
+        # 公式 Action は内部で `firebase deploy --only hosting` 相当を実行するので
+        # database セクションは触らない。Anonymous Auth 浸透後に手動で
+        # `firebase deploy --only database` 実行する Phase B 戦略を維持。
+        uses: FirebaseExtended/action-hosting-deploy@e2eda2e106cfa35cdbcf4ac9ddaf6c4756df2c8c # v0.10.0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_FERRY_EDF09 }}
+          projectId: ferry-edf09
+          channelId: live
+          entryPoint: ./src/Ferry.Bridge
+      - name: Deploy 完了通知
+        run: |
           echo "✅ Bridge ページ deploy 完了: https://ferry-edf09.web.app/"
           echo "ℹ️  database rules は Anonymous Auth 実装まで自動 deploy せず (Codex P1 対応)"

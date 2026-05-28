@@ -89,12 +89,24 @@ firebase hosting:clone <site-id>:<version> <site-id>:live
 
 通常 rotation 不要 (アカウント変更時のみ)。
 
-### FIREBASE_TOKEN
+### FIREBASE_SERVICE_ACCOUNT_FERRY_EDF09
 
-1. **新トークン作成**: ローカル PC で `firebase login:ci` を実行 → ブラウザで認証 → ターミナルに表示されるトークンを取得
-2. **GitHub Secrets 更新**: `FIREBASE_TOKEN` を新値で上書き
-3. **動作確認**: release branch を push して firebase-deploy が通ることを確認
-4. **旧トークン revoke**: `firebase logout:ci <token>` を実行
+> 2026-05-29 認証方式移行: 旧 `FIREBASE_TOKEN` (`firebase login:ci`) は Google アカウント全権限相当の legacy 認証で Firebase 公式が non-recommended 化したため、Service Account JSON + 公式 GitHub Action (`FirebaseExtended/action-hosting-deploy@v0`) に置換した。
+
+1. **Service Account 作成**: [Firebase Console](https://console.firebase.google.com/project/ferry-edf09) → ⚙️プロジェクト設定 → サービスアカウント タブ → 「新しい秘密鍵を生成」 → JSON ダウンロード
+2. **権限確認**: 作成された SA は自動で `roles/firebase.developAdmin` 等が付与される。最小権限化したい場合は [GCP IAM Console](https://console.cloud.google.com/iam-admin/iam?project=ferry-edf09) で `roles/firebasehosting.admin` だけ残す
+3. **GitHub Secrets 更新**: `gh secret set FIREBASE_SERVICE_ACCOUNT_FERRY_EDF09 --repo 1llum1n4t1s/Ferry < path/to/sa.json` で JSON 全文を登録 (ローカル JSON ファイルは登録後に **削除** すること)
+4. **動作確認**: release branch を push して `Firebase Hosting Deploy (Bridge)` job が通ることを確認
+5. **旧 Key 無効化**: Firebase Console → サービスアカウント → 過去の Key を「削除」
+
+#### 旧 FIREBASE_TOKEN の片付け (移行直後のみ)
+
+旧 `FIREBASE_TOKEN` がもし環境に残っていれば revoke + secret 削除:
+
+```bash
+firebase logout:ci <旧トークン値>         # ローカルで実行
+gh secret delete FIREBASE_TOKEN --repo 1llum1n4t1s/Ferry  # 残っていれば削除
+```
 
 ### Firebase Database SALT (Cloudflare Workers Relay)
 
@@ -132,7 +144,7 @@ firebase database:get / --shallow=true
 
 **復旧手順**:
 - (1) なら Firebase 復旧待ち
-- (2) なら `firebase deploy --only database --token "$FIREBASE_TOKEN"` で正規版を再適用
+- (2) なら `gcloud auth activate-service-account --key-file=<sa.json>` で SA 認証 → `firebase deploy --only database --project ferry-edf09` で正規版を再適用 (旧 `--token "$FIREBASE_TOKEN"` 経路は legacy のため非推奨)
 - (3) なら firebase-cleanup.yml の対象 path を確認、誤削除した pair は再ペアリング案内
 
 ### シナリオ B: 「Cloudflare Workers Relay に繋がらない」
