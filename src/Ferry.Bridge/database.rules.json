@@ -3,6 +3,7 @@
     ".read": false,
     ".write": false,
 
+    "_comment_DO_NOT_DEPLOY_YET": "⚠️ このルールは Anonymous Auth が Bridge + .NET 両方に実装されるまで Firebase に deploy してはいけない。現状の Bridge (src/Ferry.Bridge/bridge.js) と .NET (src/Ferry/Infrastructure/FirebaseSignaling.cs) は Firebase Auth を呼ばずに匿名で書き込みしているため、auth.uid を要求するルールを deploy すると permission_denied で全ペアリング・転送が停止する (Codex P1 指摘)。段階移行: 1) Anonymous Auth 実装 + リリース 2) ユーザー浸透待ち 3) 手動 firebase deploy --only database で適用。",
     "_comment": "rere レビュー #A1-001 / #A1-003 / #A1-004 / #A1-006 / #A2-006 同一 root cause 緩和。匿名 R/W を遮断し、自身の deviceId 配下のみ書き込み可能にする。Anonymous Auth (auth.uid = deviceId) の導入後に適用すること。",
 
     "sessions": {
