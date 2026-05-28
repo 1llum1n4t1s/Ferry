@@ -1,75 +1,171 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
+    <!--
+    ================================================================================
+    Ferry — ROG NEON GAMING THEME (v1.0.38)
+    水色 (cyan) × ピンク (magenta) のネオン融合。ASUS ROG / サイバーパンク風
+    暗黒宇宙背景 + Cyan→Pink 斜めグラデアクセント + ネオングロー
+    リソースキー名は既存と互換維持 (View 側 DynamicResource を壊さない)
+    ================================================================================
+    -->
+
     <Styles.Resources>
-        <!-- === Avalonia FluentTheme アクセントカラー上書き === -->
-        <Color x:Key="SystemAccentColor">#007AFF</Color>
-        <Color x:Key="SystemAccentColorDark1">#0A84FF</Color>
-        <Color x:Key="SystemAccentColorDark2">#409CFF</Color>
-        <Color x:Key="SystemAccentColorDark3">#66B3FF</Color>
-        <Color x:Key="SystemAccentColorLight1">#0064D2</Color>
-        <Color x:Key="SystemAccentColorLight2">#004DA6</Color>
-        <Color x:Key="SystemAccentColorLight3">#003580</Color>
+        <!-- ============================================================
+             RAW NEON PALETTE (この 5 色を組み合わせて全体を構成)
+             ============================================================ -->
+        <Color x:Key="NeonCyan">#00F0FF</Color>
+        <Color x:Key="NeonCyanDeep">#0099CC</Color>
+        <Color x:Key="NeonPink">#FF2D8A</Color>
+        <Color x:Key="NeonPinkDeep">#CC1F6E</Color>
+        <Color x:Key="NeonPurple">#B14AFF</Color>
+        <Color x:Key="VoidBlack">#04060E</Color>
+        <Color x:Key="DeepSpace">#0A1124</Color>
+        <Color x:Key="SteelBlue">#7AA0C8</Color>
 
-        <!-- === ダークテーマ色（デフォルト） === -->
-        <SolidColorBrush x:Key="AppBackgroundBrush" Color="#161618" />
-        <SolidColorBrush x:Key="SurfaceBrush" Color="#222224" />
-        <SolidColorBrush x:Key="GlassBrush" Color="#2A2A2E" />
-        <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#2A2A2C" />
-        <SolidColorBrush x:Key="AccentBrush" Color="#007AFF" />
-        <SolidColorBrush x:Key="AccentHoverBrush" Color="#0A84FF" />
-        <SolidColorBrush x:Key="TextPrimaryBrush" Color="#F5F5F7" />
-        <SolidColorBrush x:Key="TextSecondaryBrush" Color="#8E8E93" />
-        <SolidColorBrush x:Key="TextTertiaryBrush" Color="#636366" />
-        <SolidColorBrush x:Key="GreenBrush" Color="#30D158" />
-        <SolidColorBrush x:Key="RedBrush" Color="#FF453A" />
-        <SolidColorBrush x:Key="YellowBrush" Color="#FFD60A" />
-        <SolidColorBrush x:Key="BlueBrush" Color="#0A84FF" />
-        <SolidColorBrush x:Key="OrangeBrush" Color="#FF9F0A" />
+        <!-- === Avalonia FluentTheme アクセントカラー上書き (ピンク主体) ===
+             デフォルト Button (Classes="accent" 含む) と ToggleSwitch ON 色は
+             ここを引くので、ピンクに統一して読みづらい cyan ボタン問題を解消 -->
+        <Color x:Key="SystemAccentColor">#FF2D8A</Color>
+        <Color x:Key="SystemAccentColorDark1">#FF5BA5</Color>
+        <Color x:Key="SystemAccentColorDark2">#FF8BC0</Color>
+        <Color x:Key="SystemAccentColorDark3">#FFBDDB</Color>
+        <Color x:Key="SystemAccentColorLight1">#E81E7A</Color>
+        <Color x:Key="SystemAccentColorLight2">#C81866</Color>
+        <Color x:Key="SystemAccentColorLight3">#A81356</Color>
 
-        <!-- === 接続経路バッジ用ソフトカラー (背景・ボーダー tint) === -->
-        <!-- Tahoe / Apple のソフト tint パターン: メインカラーを 16-24% アルファで透過 -->
-        <SolidColorBrush x:Key="GreenBrushSoft" Color="#3030D158" />
-        <SolidColorBrush x:Key="GreenBrushBorder" Color="#6630D158" />
-        <SolidColorBrush x:Key="BlueBrushSoft" Color="#300A84FF" />
-        <SolidColorBrush x:Key="BlueBrushBorder" Color="#660A84FF" />
-        <SolidColorBrush x:Key="OrangeBrushSoft" Color="#30FF9F0A" />
-        <SolidColorBrush x:Key="OrangeBrushBorder" Color="#66FF9F0A" />
-        <SolidColorBrush x:Key="BorderBrush" Color="#38383A" />
-        <SolidColorBrush x:Key="SidebarBrush" Color="#1C1C1E" />
-        <SolidColorBrush x:Key="OverlayBrush" Color="#80000000" />
-        <SolidColorBrush x:Key="BadgeBrush" Color="#FF453A" />
-        <SolidColorBrush x:Key="PeerSelectedBrush" Color="#1A3A5C" />
-        <SolidColorBrush x:Key="OfflineBrush" Color="#FF453A" />
+        <!-- ============================================================
+             BACKGROUND & SURFACE — ROG はほぼ黒の宇宙
+             ============================================================ -->
+        <SolidColorBrush x:Key="AppBackgroundBrush" Color="#04060E" />
+        <SolidColorBrush x:Key="SurfaceBrush" Color="#0D1424" />
+        <SolidColorBrush x:Key="SurfaceVariantBrush" Color="#101A33" />
+        <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#1A2849" />
+        <SolidColorBrush x:Key="GlassBrush" Color="#CC0D1424" />
+        <SolidColorBrush x:Key="SidebarBrush" Color="#06091A" />
+        <SolidColorBrush x:Key="OverlayBrush" Color="#CC020410" />
 
-        <!-- Tahoe ダイアログ用ブラシ（AddMemberWindow, SelfUpdateWindow 等） -->
-        <SolidColorBrush x:Key="TahoeWindowBgBrush" Color="#161618" />
-        <SolidColorBrush x:Key="TahoeTextPrimaryBrush" Color="#F5F5F7" />
-        <SolidColorBrush x:Key="TahoeTextSecondaryBrush" Color="#8E8E93" />
-        <SolidColorBrush x:Key="TahoeTextTertiaryBrush" Color="#636366" />
+        <!-- ============================================================
+             ACCENT — ピンク主体グラデ (cyan は border/glow に降格)
+             理由: cyan→pink バランス型だと中央が紫味で文字読みづらかった
+             ROG らしい「赤ピンクが主役、cyan は冷たい光」のメリハリに変更
+             ============================================================ -->
+        <LinearGradientBrush x:Key="AccentBrush" StartPoint="0%,0%" EndPoint="100%,100%">
+            <GradientStop Color="#FF2D8A" Offset="0.0" />
+            <GradientStop Color="#E81E7A" Offset="0.5" />
+            <GradientStop Color="#C81866" Offset="1.0" />
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="AccentHoverBrush" StartPoint="0%,0%" EndPoint="100%,100%">
+            <GradientStop Color="#FF5BA5" Offset="0.0" />
+            <GradientStop Color="#FF2D8A" Offset="0.5" />
+            <GradientStop Color="#E81E7A" Offset="1.0" />
+        </LinearGradientBrush>
+        <!-- アクセント単色版 (グラデ使えない場面のフォールバック) -->
+        <SolidColorBrush x:Key="AccentSolidBrush" Color="#FF2D8A" />
+        <SolidColorBrush x:Key="AccentPinkBrush" Color="#FF2D8A" />
+        <SolidColorBrush x:Key="AccentCyanBrush" Color="#00F0FF" />
 
-        <!-- === 共通サイズ === -->
+        <!-- ============================================================
+             TEXT — Cyan-tinted で技術感
+             ============================================================ -->
+        <SolidColorBrush x:Key="TextPrimaryBrush" Color="#E8F8FF" />
+        <SolidColorBrush x:Key="TextSecondaryBrush" Color="#7AA0C8" />
+        <SolidColorBrush x:Key="TextTertiaryBrush" Color="#4A6485" />
+
+        <!-- ============================================================
+             STATUS COLORS — 全てネオン化
+             ============================================================ -->
+        <SolidColorBrush x:Key="GreenBrush" Color="#00FF9D" />  <!-- ネオングリーン -->
+        <SolidColorBrush x:Key="RedBrush" Color="#FF2D6A" />    <!-- ネオンレッド -->
+        <SolidColorBrush x:Key="YellowBrush" Color="#FFE600" /> <!-- ネオンイエロー -->
+        <SolidColorBrush x:Key="BlueBrush" Color="#00F0FF" />   <!-- ネオンシアン (P2P) -->
+        <SolidColorBrush x:Key="OrangeBrush" Color="#FF8800" /> <!-- ネオンオレンジ -->
+
+        <!-- ============================================================
+             ROUTE BADGE SOFT TINTS — グロー強めで存在感↑
+             ============================================================ -->
+        <SolidColorBrush x:Key="GreenBrushSoft" Color="#3500FF9D" />
+        <SolidColorBrush x:Key="GreenBrushBorder" Color="#AA00FF9D" />
+        <SolidColorBrush x:Key="BlueBrushSoft" Color="#3500F0FF" />
+        <SolidColorBrush x:Key="BlueBrushBorder" Color="#AA00F0FF" />
+        <SolidColorBrush x:Key="OrangeBrushSoft" Color="#35FF8800" />
+        <SolidColorBrush x:Key="OrangeBrushBorder" Color="#AAFF8800" />
+
+        <!-- ============================================================
+             BORDERS — Cyan tint で常時ほんのり光る
+             ============================================================ -->
+        <SolidColorBrush x:Key="BorderBrush" Color="#1F3A5A" />
+        <SolidColorBrush x:Key="BorderGlowBrush" Color="#5500F0FF" />
+        <SolidColorBrush x:Key="BadgeBrush" Color="#FF2D8A" />   <!-- 未読バッジはピンク -->
+        <SolidColorBrush x:Key="PeerSelectedBrush" Color="#2500F0FF" />
+        <SolidColorBrush x:Key="OfflineBrush" Color="#4A5B78" />
+
+        <!-- Tahoe ダイアログ用 (キー名互換) -->
+        <SolidColorBrush x:Key="TahoeWindowBgBrush" Color="#04060E" />
+        <SolidColorBrush x:Key="TahoeTextPrimaryBrush" Color="#E8F8FF" />
+        <SolidColorBrush x:Key="TahoeTextSecondaryBrush" Color="#7AA0C8" />
+        <SolidColorBrush x:Key="TahoeTextTertiaryBrush" Color="#4A6485" />
+
+        <!-- ============================================================
+             SIZES — ROG はやや角ばらせる (CornerRadius を引き締め)
+             ============================================================ -->
         <x:Double x:Key="SidebarWidth">220</x:Double>
         <x:Double x:Key="TitleBarHeight">36</x:Double>
-        <CornerRadius x:Key="SmallCornerRadius">4</CornerRadius>
-        <CornerRadius x:Key="MediumCornerRadius">8</CornerRadius>
-        <CornerRadius x:Key="LargeCornerRadius">16</CornerRadius>
-        <CornerRadius x:Key="BubbleCornerRadius">16</CornerRadius>
+        <CornerRadius x:Key="SmallCornerRadius">2</CornerRadius>
+        <CornerRadius x:Key="MediumCornerRadius">4</CornerRadius>
+        <CornerRadius x:Key="LargeCornerRadius">8</CornerRadius>
+        <CornerRadius x:Key="BubbleCornerRadius">10</CornerRadius>
         <Thickness x:Key="BubblePadding">12,8</Thickness>
     </Styles.Resources>
 
-    <!-- === Button スタイル === -->
+    <!--
+    ================================================================================
+    BUTTON STYLES
+    ================================================================================
+    -->
+
+    <!-- === Accent (ピンク主体 + cyan border + 白文字で確実視認性) ===
+         FluentTheme の Button.accent デフォルトが /template/ ContentPresenter 経由で
+         Background を上書きしてくるため、こちらも /template/ ContentPresenter で
+         打ち返して確実に AccentBrush を反映させる -->
     <Style Selector="Button.accent">
         <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
-        <Setter Property="Foreground" Value="White" />
+        <Setter Property="Foreground" Value="#FFFFFF" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="LetterSpacing" Value="0.5" />
         <Setter Property="CornerRadius" Value="{DynamicResource SmallCornerRadius}" />
-        <Setter Property="Padding" Value="12,6" />
+        <Setter Property="Padding" Value="16,7" />
         <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="BorderBrush" Value="#88FFFFFF" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Effect">
+            <DropShadowEffect Color="#FF2D8A" BlurRadius="14" Opacity="0.7" OffsetX="0" OffsetY="0" />
+        </Setter>
+    </Style>
+    <Style Selector="Button.accent /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="Foreground" Value="#FFFFFF" />
+        <Setter Property="BorderBrush" Value="#88FFFFFF" />
+        <Setter Property="BorderThickness" Value="1" />
     </Style>
     <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource AccentHoverBrush}" />
+        <Setter Property="Foreground" Value="#FFFFFF" />
+        <Setter Property="BorderBrush" Value="#00F0FF" />
+    </Style>
+    <Style Selector="Button.accent:pointerover">
+        <Setter Property="BorderBrush" Value="#00F0FF" />
+        <Setter Property="Effect">
+            <DropShadowEffect Color="#00F0FF" BlurRadius="22" Opacity="0.9" OffsetX="0" OffsetY="0" />
+        </Setter>
+    </Style>
+    <Style Selector="Button.accent:pressed /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AccentHoverBrush}" />
+        <Setter Property="Foreground" Value="#FFFFFF" />
     </Style>
 
+    <!-- === Icon (透過 + cyan grow on hover) === -->
     <Style Selector="Button.icon">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
@@ -77,56 +173,115 @@
         <Setter Property="MinWidth" Value="32" />
         <Setter Property="MinHeight" Value="32" />
         <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="CornerRadius" Value="2" />
+    </Style>
+    <Style Selector="Button.icon:pointerover">
+        <Setter Property="Foreground" Value="#00F0FF" />
+        <Setter Property="Effect">
+            <DropShadowEffect Color="#00F0FF" BlurRadius="10" Opacity="0.7" OffsetX="0" OffsetY="0" />
+        </Setter>
     </Style>
     <Style Selector="Button.icon:pointerover /template/ ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
+        <Setter Property="Background" Value="#2200F0FF" />
     </Style>
 
+    <!-- === Sidebar (左寄せ汎用) === -->
     <Style Selector="Button.sidebar">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />
         <Setter Property="HorizontalContentAlignment" Value="Left" />
-        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="Padding" Value="14,8" />
         <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="CornerRadius" Value="2" />
+    </Style>
+    <Style Selector="Button.sidebar:pointerover">
+        <Setter Property="Foreground" Value="#E8F8FF" />
     </Style>
     <Style Selector="Button.sidebar:pointerover /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
     </Style>
 
+    <!-- === Danger (ネオンレッド) === -->
     <Style Selector="Button.danger">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{DynamicResource RedBrush}" />
-        <Setter Property="Padding" Value="8,4" />
+        <Setter Property="Padding" Value="10,5" />
         <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="CornerRadius" Value="2" />
+        <Setter Property="BorderBrush" Value="#55FF2D6A" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="Button.danger:pointerover">
+        <Setter Property="Foreground" Value="#FFFFFF" />
+        <Setter Property="Effect">
+            <DropShadowEffect Color="#FF2D6A" BlurRadius="14" Opacity="0.85" OffsetX="0" OffsetY="0" />
+        </Setter>
+    </Style>
+    <Style Selector="Button.danger:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="#33FF2D6A" />
     </Style>
 
-    <!-- === TextBox スタイル === -->
+    <!--
+    ================================================================================
+    TEXTBOX STYLES
+    ================================================================================
+    -->
     <Style Selector="TextBox.search">
-        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="Background" Value="#08101F" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        <Setter Property="CaretBrush" Value="#00F0FF" />
+        <Setter Property="SelectionBrush" Value="#5500F0FF" />
         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="{DynamicResource SmallCornerRadius}" />
-        <Setter Property="Padding" Value="8,6" />
+        <Setter Property="Padding" Value="10,7" />
         <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,Segoe UI" />
+    </Style>
+    <Style Selector="TextBox.search:focus">
+        <Setter Property="BorderBrush" Value="#00F0FF" />
+        <Setter Property="Effect">
+            <DropShadowEffect Color="#00F0FF" BlurRadius="14" Opacity="0.55" OffsetX="0" OffsetY="0" />
+        </Setter>
     </Style>
 
-    <!-- === ListBox スタイル === -->
+    <!-- Avalonia FluentTheme の TextBox デフォルト枠をテーマと揃える (汎用) -->
+    <Style Selector="TextBox">
+        <Setter Property="CaretBrush" Value="#00F0FF" />
+        <Setter Property="SelectionBrush" Value="#5500F0FF" />
+    </Style>
+    <Style Selector="TextBox:focus-within /template/ Border#PART_BorderElement">
+        <Setter Property="BorderBrush" Value="#00F0FF" />
+    </Style>
+
+    <!--
+    ================================================================================
+    LISTBOX STYLES — Cyan left-bar on selected / hover
+    ================================================================================
+    -->
     <Style Selector="ListBox.peerList">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Padding" Value="0" />
     </Style>
     <Style Selector="ListBox.peerList ListBoxItem">
-        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="Padding" Value="14,10" />
         <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="BorderThickness" Value="3,0,0,0" />
+        <Setter Property="BorderBrush" Value="Transparent" />
     </Style>
     <Style Selector="ListBox.peerList ListBoxItem:selected /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource PeerSelectedBrush}" />
     </Style>
+    <Style Selector="ListBox.peerList ListBoxItem:selected">
+        <Setter Property="BorderBrush" Value="#00F0FF" />
+    </Style>
     <Style Selector="ListBox.peerList ListBoxItem:pointerover /template/ ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
+        <Setter Property="Background" Value="#18FF2D8A" />
+    </Style>
+    <Style Selector="ListBox.peerList ListBoxItem:pointerover">
+        <Setter Property="BorderBrush" Value="#88FF2D8A" />
     </Style>
 
     <Style Selector="ListBox.messageList">
@@ -147,22 +302,32 @@
         <Setter Property="Background" Value="Transparent" />
     </Style>
 
-    <!-- === ToggleSwitch スタイル === -->
+    <!--
+    ================================================================================
+    TOGGLESWITCH (ROG: ピンクON / 灰OFF)
+    ================================================================================
+    -->
     <Style Selector="ToggleSwitch">
         <Setter Property="OnContent" Value="" />
         <Setter Property="OffContent" Value="" />
     </Style>
 
-    <!-- === セクションヘッダー === -->
+    <!--
+    ================================================================================
+    SECTION HEADERS — 字間広めの uppercase 風 (ゲーミング感)
+    ================================================================================
+    -->
     <Style Selector="TextBlock.sectionHeader">
-        <Setter Property="FontSize" Value="13" />
-        <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="LetterSpacing" Value="2" />
+        <Setter Property="Foreground" Value="#00F0FF" />
         <Setter Property="Margin" Value="0,16,0,8" />
     </Style>
 
     <Style Selector="TextBlock.settingLabel">
         <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
@@ -173,25 +338,58 @@
         <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
 
-    <!-- === Tahoe ダイアログ用スタイル === -->
+    <!--
+    ================================================================================
+    TAHOE DIALOG STYLES (キー名互換維持、見た目は ROG)
+    ================================================================================
+    -->
     <Style Selector="Border.glass-inner">
         <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
-        <Setter Property="CornerRadius" Value="8" />
-        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderGlowBrush}" />
         <Setter Property="BorderThickness" Value="1" />
     </Style>
     <Style Selector="Button.tahoe-primary">
         <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
-        <Setter Property="Foreground" Value="White" />
-        <Setter Property="CornerRadius" Value="6" />
-        <Setter Property="Padding" Value="12,4" />
+        <Setter Property="Foreground" Value="#FFFFFF" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="LetterSpacing" Value="0.5" />
+        <Setter Property="CornerRadius" Value="2" />
+        <Setter Property="Padding" Value="14,5" />
         <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="BorderBrush" Value="#88FFFFFF" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Effect">
+            <DropShadowEffect Color="#FF2D8A" BlurRadius="12" Opacity="0.6" OffsetX="0" OffsetY="0" />
+        </Setter>
+    </Style>
+    <Style Selector="Button.tahoe-primary /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="Foreground" Value="#FFFFFF" />
+        <Setter Property="BorderBrush" Value="#88FFFFFF" />
+        <Setter Property="BorderThickness" Value="1" />
     </Style>
     <Style Selector="Button.tahoe-primary:pointerover /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource AccentHoverBrush}" />
+        <Setter Property="Foreground" Value="#FFFFFF" />
+        <Setter Property="BorderBrush" Value="#00F0FF" />
+    </Style>
+    <Style Selector="Button.tahoe-primary:pressed /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AccentHoverBrush}" />
+        <Setter Property="Foreground" Value="#FFFFFF" />
+    </Style>
+    <Style Selector="Button.tahoe-primary:pointerover">
+        <Setter Property="BorderBrush" Value="#00F0FF" />
+        <Setter Property="Effect">
+            <DropShadowEffect Color="#00F0FF" BlurRadius="20" Opacity="0.85" OffsetX="0" OffsetY="0" />
+        </Setter>
     </Style>
 
-    <!-- === 未読バッジ === -->
+    <!--
+    ================================================================================
+    UNREAD BADGE — ネオンピンクで目立つ
+    ================================================================================
+    -->
     <Style Selector="Border.badge">
         <Setter Property="Background" Value="{DynamicResource BadgeBrush}" />
         <Setter Property="CornerRadius" Value="10" />
@@ -200,55 +398,68 @@
         <Setter Property="Padding" Value="4,2" />
         <Setter Property="HorizontalAlignment" Value="Right" />
         <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Effect">
+            <DropShadowEffect Color="#FF2D8A" BlurRadius="10" Opacity="0.85" OffsetX="0" OffsetY="0" />
+        </Setter>
     </Style>
 
-    <!-- ====================================================================
-         接続経路バッジ (Route Badge) — メンバーリストで接続方式を可視化
-         Tahoe / Apple System Status pill 風: 薄い tint 背景 + 同色細枠 + 同色文字
-         クラス: route-badge + {lan|p2p|relay} の組み合わせ
-         ==================================================================== -->
+    <!--
+    ================================================================================
+    ROUTE BADGE — グロー強化版
+    ================================================================================
+    -->
     <Style Selector="Border.route-badge">
-        <Setter Property="CornerRadius" Value="9" />
-        <Setter Property="Padding" Value="7,1" />
+        <Setter Property="CornerRadius" Value="2" />
+        <Setter Property="Padding" Value="7,2" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="MinHeight" Value="18" />
-        <!-- 既定（接続経路未確定時）は透明にして実質非表示にする保険 -->
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderBrush" Value="Transparent" />
     </Style>
 
-    <!-- LAN 直接 (TCP) — 緑 -->
+    <!-- LAN (TCP 直結) — neon green -->
     <Style Selector="Border.route-badge.lan">
         <Setter Property="Background" Value="{DynamicResource GreenBrushSoft}" />
         <Setter Property="BorderBrush" Value="{DynamicResource GreenBrushBorder}" />
+        <Setter Property="Effect">
+            <DropShadowEffect Color="#00FF9D" BlurRadius="8" Opacity="0.6" OffsetX="0" OffsetY="0" />
+        </Setter>
     </Style>
     <Style Selector="Border.route-badge.lan TextBlock.route-badge-text">
         <Setter Property="Foreground" Value="{DynamicResource GreenBrush}" />
     </Style>
 
-    <!-- P2P (STUN ホールパンチ) — 青 -->
+    <!-- P2P (STUN ホールパンチ) — neon cyan -->
     <Style Selector="Border.route-badge.p2p">
         <Setter Property="Background" Value="{DynamicResource BlueBrushSoft}" />
         <Setter Property="BorderBrush" Value="{DynamicResource BlueBrushBorder}" />
+        <Setter Property="Effect">
+            <DropShadowEffect Color="#00F0FF" BlurRadius="8" Opacity="0.6" OffsetX="0" OffsetY="0" />
+        </Setter>
     </Style>
     <Style Selector="Border.route-badge.p2p TextBlock.route-badge-text">
         <Setter Property="Foreground" Value="{DynamicResource BlueBrush}" />
     </Style>
 
-    <!-- リレー (TURN/WebSocket) — オレンジ -->
+    <!-- Relay (Cloudflare Workers) — neon orange -->
     <Style Selector="Border.route-badge.relay">
         <Setter Property="Background" Value="{DynamicResource OrangeBrushSoft}" />
         <Setter Property="BorderBrush" Value="{DynamicResource OrangeBrushBorder}" />
+        <Setter Property="Effect">
+            <DropShadowEffect Color="#FF8800" BlurRadius="8" Opacity="0.6" OffsetX="0" OffsetY="0" />
+        </Setter>
     </Style>
     <Style Selector="Border.route-badge.relay TextBlock.route-badge-text">
         <Setter Property="Foreground" Value="{DynamicResource OrangeBrush}" />
     </Style>
 
-    <!-- バッジ内のテキスト共通スタイル -->
+    <!-- バッジ内のテキスト共通 — uppercase mono で技術感 -->
     <Style Selector="TextBlock.route-badge-text">
-        <Setter Property="FontSize" Value="10" />
-        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="FontSize" Value="9" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="LetterSpacing" Value="1.5" />
+        <Setter Property="FontFamily" Value="Cascadia Mono,Consolas,Segoe UI" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
     <Style Selector="TextBlock.route-badge-icon">
@@ -257,25 +468,38 @@
         <Setter Property="Margin" Value="0,0,3,0" />
     </Style>
 
-    <!-- ====================================================================
-         サイドバー下部メニューアイテム (v1.0.38 追加)
-         「➕ ペアリング先追加」「⚙ 設定」のような左寄せリスト風アイテム
-         ==================================================================== -->
+    <!--
+    ================================================================================
+    SIDEBAR MENU ITEM (v1.0.38: 「➕ ペアリング先追加」「⚙ 設定」)
+    ROG 風: 左から右へ流れるネオンピンクのアクセント
+    ================================================================================
+    -->
     <Style Selector="Button.sidebarMenuItem">
         <Setter Property="Background" Value="Transparent" />
-        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="BorderThickness" Value="3,0,0,0" />
+        <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />
         <Setter Property="HorizontalContentAlignment" Value="Left" />
-        <Setter Property="Padding" Value="14,8" />
+        <Setter Property="Padding" Value="14,10" />
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
-        <Setter Property="CornerRadius" Value="6" />
+        <Setter Property="CornerRadius" Value="0" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <!-- pointerover は Button.Foreground 経由 (TextElement.Foreground を /template/ で
+         触ると絵文字混じりテキストの再描画で hit-test ジッタ → 文字点滅するため) -->
+    <Style Selector="Button.sidebarMenuItem:pointerover">
+        <Setter Property="Foreground" Value="#FFFFFF" />
+        <Setter Property="BorderBrush" Value="#FF2D8A" />
     </Style>
     <Style Selector="Button.sidebarMenuItem:pointerover /template/ ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource SurfaceVariantBrush}" />
-        <Setter Property="TextElement.Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        <Setter Property="Background" Value="#22FF2D8A" />
     </Style>
     <Style Selector="Button.sidebarMenuItem:pressed /template/ ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="Background" Value="#3500F0FF" />
+    </Style>
+    <Style Selector="Button.sidebarMenuItem:pressed">
+        <Setter Property="BorderBrush" Value="#00F0FF" />
     </Style>
 
 </Styles>
