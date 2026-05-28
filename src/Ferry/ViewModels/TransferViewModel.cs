@@ -396,14 +396,24 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             // 送信側 VM item は独自インスタンス (TransferId=Empty) なので旧フォールバックを残す。
             var item = Transfers.FirstOrDefault(t => t.TransferId != Guid.Empty && t.TransferId == e.TransferId)
                        ?? Transfers.FirstOrDefault(t => t.Direction == e.Direction && t.State == TransferState.InProgress);
+            // Codex P2 (comment 3318684934) 指摘: e.State を保持する。
+            // TransferService は cancellation 経路 (approval timeout / disconnect / reject / pending expire)
+            // で State = Cancelled を、本物のエラー経路 (write fail / decode error 等) で State = Error を
+            // 設定済みのまま fire してくる。ここで一律 Error に書き換えると、Cancelled 表示が「失敗扱い」
+            // で UI 上ユーザーに混乱を与える (拒否したつもりが「エラー」と表示される等)。
+            // service 側の terminal state をそのまま尊重する。non-terminal (InProgress / Pending) で
+            // 来た場合のみ防御的に Error に昇格。
             if (item != null)
             {
-                item.State = TransferState.Error;
+                item.State = e.State;
                 item.ErrorMessage = e.ErrorMessage;
             }
             else
             {
-                e.State = TransferState.Error;
+                if (e.State == TransferState.InProgress || e.State == TransferState.Pending)
+                {
+                    e.State = TransferState.Error;
+                }
                 Transfers.Add(e);
             }
 
