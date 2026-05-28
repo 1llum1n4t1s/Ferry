@@ -1,6 +1,13 @@
 name: Build
 on:
   workflow_call:
+
+# rere レビュー #A2-009: workflow level の最小権限を明示。
+# reusable workflow は呼び出し元 (release.yml) の permissions を継承するが、
+# 明示しておくと repo の default token permissions が変わっても安全側を維持できる
+permissions:
+  contents: read
+
 jobs:
   build:
     strategy:

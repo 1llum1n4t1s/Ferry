@@ -6,6 +6,11 @@ on:
     - cron: '0 */6 * * *'
   workflow_dispatch: # 手動実行も可能
 
+# rere レビュー #A2-009: workflow level の最小権限を明示。
+# このジョブは Firebase REST へ curl するだけで repo contents への write 不要
+permissions:
+  contents: read
+
 jobs:
   cleanup:
     runs-on: ubuntu-latest

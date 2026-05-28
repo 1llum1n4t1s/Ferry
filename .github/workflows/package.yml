@@ -6,6 +6,11 @@ on:
         description: Ferry package version
         required: true
         type: string
+
+# rere レビュー #A2-009: workflow level の最小権限を明示
+permissions:
+  contents: read
+
 jobs:
   windows:
     name: Package Windows

@@ -5,6 +5,11 @@ on:
       version:
         required: true
         type: string
+
+# rere レビュー #A2-009: workflow level の最小権限を明示
+permissions:
+  contents: read
+
 jobs:
   velopack:
     strategy:
@@ -65,7 +70,9 @@ jobs:
           sed "s/FERRY_VERSION/${{ inputs.version }}/g" build/resources/app/App.plist > Info.plist
       - name: Install Velopack CLI
         # csproj の Velopack パッケージとバージョンを揃えて固定（サプライチェーン対策）
-        run: dotnet tool install --global vpk --version 0.0.1298
+        # rere レビュー #A2-008: 旧 0.0.1298 prerelease は Velopack runtime 1.0.1 と
+        # メジャーズレで互換性事故リスク。Velopack 公式は CLI と runtime のバージョン一致を要求
+        run: dotnet tool install --global vpk --version 1.0.1
       - name: Create Velopack package (Windows)
         if: startsWith(matrix.runtime, 'win-')
         run: vpk pack --packId Ferry --packVersion ${{ inputs.version }} --mainExe ${{ matrix.mainExe }} --packDir publish --outputDir artifacts --channel ${{ matrix.runtime }}

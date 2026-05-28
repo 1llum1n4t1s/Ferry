@@ -322,7 +322,18 @@ public sealed class UdpHolePunchTransport : ITransport
                         {
                             await _udp.SendAsync(info.Packet, info.Packet.Length, _remoteEp);
                         }
-                        catch { break; }
+                        catch (OperationCanceledException)
+                        {
+                            // 全体キャンセル → ループ全体を終了
+                            return;
+                        }
+                        catch
+                        {
+                            // rere レビュー #C1-001: 旧 `break` だと一時的な ENETUNREACH /
+                            // EHOSTUNREACH / ObjectDisposedException で再送タイマー全停止 →
+                            // _windowSem.WaitAsync が永久 hang。個別失敗は次のパケットへ continue する
+                            continue;
+                        }
                     }
                 }
             }
