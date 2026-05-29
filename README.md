@@ -2,6 +2,58 @@
 
 QR コードでペアリングし、TCP 直接接続 / UDP ホールパンチ / WebSocket リレーで PC 間のファイルを P2P 転送するデスクトップアプリケーション。
 
+## ダウンロード
+
+Cloudflare R2 (`https://ferry.nephilim.jp`) から配信。**Setup インストーラと AppImage は常に最新版** を指す固定 URL で、起動後は Velopack による自動更新が走るので、最初に 1 度落とせば以降は手動更新不要です。
+
+### Windows
+
+| アーキテクチャ | 形式 | ダウンロード |
+|---|---|---|
+| x64 (Intel/AMD) | インストーラ | <https://ferry.nephilim.jp/Ferry-win-x64-Setup.exe> |
+| x64 (Intel/AMD) | Portable zip | <https://ferry.nephilim.jp/Ferry-win-x64-Portable.zip> |
+| ARM64 (Surface Pro X 等) | インストーラ | <https://ferry.nephilim.jp/Ferry-win-arm64-Setup.exe> |
+| ARM64 | Portable zip | <https://ferry.nephilim.jp/Ferry-win-arm64-Portable.zip> |
+
+### macOS
+
+| アーキテクチャ | 形式 | ダウンロード |
+|---|---|---|
+| Apple Silicon (M1/M2/M3) | インストーラ pkg | <https://ferry.nephilim.jp/Ferry-osx-arm64-Setup.pkg> |
+
+### Linux
+
+| アーキテクチャ | 形式 | ダウンロード |
+|---|---|---|
+| x64 | AppImage | <https://ferry.nephilim.jp/Ferry-linux-x64.AppImage> |
+| ARM64 | AppImage | <https://ferry.nephilim.jp/Ferry-linux-arm64.AppImage> |
+| x64 (Debian/Ubuntu) | .deb | <https://ferry.nephilim.jp/ferry_1.0.38-1_amd64.deb> |
+| ARM64 (Debian/Ubuntu) | .deb | <https://ferry.nephilim.jp/ferry_1.0.38-1_arm64.deb> |
+| x86_64 (RHEL/Fedora) | .rpm | <https://ferry.nephilim.jp/ferry-1.0.38-1.x86_64.rpm> |
+| aarch64 (RHEL/Fedora) | .rpm | <https://ferry.nephilim.jp/ferry-1.0.38-1.aarch64.rpm> |
+
+> 💡 .deb / .rpm は **バージョン入りファイル名** で配信されます。最新バージョン番号は [`releases.linux-x64.json`](https://ferry.nephilim.jp/releases.linux-x64.json) などの manifest を参照してください。
+
+### Velopack 自動更新フィード
+
+| チャンネル | manifest URL |
+|---|---|
+| win-x64 | <https://ferry.nephilim.jp/releases.win-x64.json> |
+| win-arm64 | <https://ferry.nephilim.jp/releases.win-arm64.json> |
+| osx-arm64 | <https://ferry.nephilim.jp/releases.osx-arm64.json> |
+| linux-x64 | <https://ferry.nephilim.jp/releases.linux-x64.json> |
+| linux-arm64 | <https://ferry.nephilim.jp/releases.linux-arm64.json> |
+
+クライアントは起動時と 24 時間ごとに manifest を取得し、新バージョンを検出するとダイアログ通知 → ワンクリックで適用されます。
+
+## 使い方
+
+1. **2 台の PC でそれぞれ Ferry を起動** し、「ペアリング追加」を選択
+2. **手元のスマートフォン** で PC-A の QR をスキャン → Bridge ページ (`https://ferry.nephilim.jp/bridge/`) が開く
+3. Bridge ページ内のカメラで **PC-B の QR** をスキャン → 両 PC にペアリング完了通知
+4. 以降、ピア一覧から相手を選んでファイル / フォルダをドラッグ & ドロップで送信
+5. PC 再起動後も保存済みペア一覧から再接続できます
+
 ## 技術スタック
 
 | レイヤー | 技術 |
@@ -109,27 +161,34 @@ UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レ
 - **正常時**: 接続確立後に `sessions/`, `pairings/`, `signaling/` を即削除
 - **異常時**: GitHub Actions で毎時、`CreatedAt` が 1 時間超の古いデータを自動削除
 
-## ビルド
+## ビルド (開発者向け)
 
 ```bash
 # デバッグビルド
 dotnet build src/Ferry/Ferry.csproj
 
-# リリースビルド (Native AOT)
-dotnet publish src/Ferry/Ferry.csproj -c Release
+# リリースビルド (Native AOT、ランタイム指定必須)
+dotnet publish src/Ferry/Ferry.csproj -c Release -r win-x64
 
 # テスト
 dotnet test tests/Ferry.Tests/Ferry.Tests.csproj
+```
 
-# Bridge ページのデプロイ
-cd src/Ferry.Bridge && firebase deploy --only hosting
+リリースは `release/X.Y.Z` ブランチへの push で GitHub Actions が 5 ランタイム (win-x64 / win-arm64 / osx-arm64 / linux-x64 / linux-arm64) を Native AOT 発行 → Velopack パッケージ化 → Cloudflare R2 にアップロードします。`/vava` スキルが版数管理・ブランチ作成・古いブランチ掃除を一括実行します。
+
+Bridge ページの手動デプロイ (Service Account JSON 経由、`FirebaseExtended/action-hosting-deploy@v0` が CI 経路):
+
+```bash
+# Service Account を ADC として展開
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa.json
+cd src/Ferry.Bridge && firebase deploy --only hosting --project ferry-edf09
 ```
 
 ### 前提条件
 
 - .NET 10 SDK
 - クロスプラットフォーム: Windows 10/11 (x64 / arm64), macOS (arm64), Linux (x64 / arm64)
-- Firebase CLI（Bridge ページデプロイ時のみ）
+- Firebase CLI + Service Account JSON（Bridge ページを手動デプロイする場合のみ）
 - Cloudflare wrangler CLI（リレー Worker をデプロイ・更新する場合のみ）
 
 ## ライセンス
