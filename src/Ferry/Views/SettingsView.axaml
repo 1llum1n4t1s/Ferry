@@ -7,10 +7,12 @@
              x:Class="Ferry.Views.SettingsView"
              x:DataType="vm:SettingsViewModel">
 
-    <!-- Padding の bottom を 32 に増やして、最後の「アップデート確認」ボタンが
-         ウィンドウ最下部で見切れないよう余裕を持たせる -->
-    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,16,24,32">
-        <StackPanel Spacing="4" MaxWidth="500">
+    <!-- 余白は ScrollViewer の Padding ではなく内側 StackPanel の Margin で取る (Lhamiel 設定タブと同じパターン)。
+         Avalonia の ScrollViewer は Padding 下端をスクロール extent に含めないため、Padding 指定だと
+         最後の要素 (アップデート確認 / スキップ取消ボタン) がスクロールしきっても見切れる。
+         Margin にすると余白ごとスクロール可能になり、最下部まで確実に表示できる。 -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="4" MaxWidth="500" Margin="24,16,24,32">
 
             <!-- 一般 -->
             <TextBlock Classes="sectionHeader" Text="{DynamicResource Text.Settings.General}" />

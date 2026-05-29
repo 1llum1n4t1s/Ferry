@@ -64,7 +64,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     // === バージョン ===
 
-    /// <summary>バージョン表示テキスト (例: "Ferry v1.0.40")。</summary>
+    /// <summary>バージョン表示テキスト (例: "Ferry v1.0.41")。</summary>
     [ObservableProperty]
     public partial string VersionText { get; set; } = string.Empty;
 
