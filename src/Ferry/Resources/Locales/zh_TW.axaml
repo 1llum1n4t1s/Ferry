@@ -45,6 +45,8 @@
   <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">關閉按鈕將應用程式傳送至系統匣</x:String>
   <x:String x:Key="Text.Settings.Version" xml:space="preserve">版本</x:String>
   <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">檢查更新</x:String>
+  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">Skipping version {0}</x:String>
+  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">Undo</x:String>
   <x:String x:Key="Text.State.Pending" xml:space="preserve">等待中…</x:String>
   <x:String x:Key="Text.State.Sending" xml:space="preserve">傳送中</x:String>
   <x:String x:Key="Text.State.Receiving" xml:space="preserve">接收中</x:String>

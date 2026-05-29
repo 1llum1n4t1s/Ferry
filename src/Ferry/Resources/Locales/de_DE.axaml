@@ -45,6 +45,8 @@
   <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">Schließen-Taste sendet in den Systemtray</x:String>
   <x:String x:Key="Text.Settings.Version" xml:space="preserve">Version</x:String>
   <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">Nach Updates suchen</x:String>
+  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">Skipping version {0}</x:String>
+  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">Undo</x:String>
   <x:String x:Key="Text.State.Pending" xml:space="preserve">Wartend…</x:String>
   <x:String x:Key="Text.State.Sending" xml:space="preserve">Senden</x:String>
   <x:String x:Key="Text.State.Receiving" xml:space="preserve">Empfangen</x:String>

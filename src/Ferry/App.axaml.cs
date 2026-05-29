@@ -336,6 +336,49 @@ public partial class App : Application
     private static int _isCheckingUpdate;
 
     /// <summary>
+    /// 更新チェックが進行中かどうかを ViewModel / 他ロジックから観測するための public 読み取りプロパティ。
+    /// 値は <see cref="_isCheckingUpdate"/> をロックフリーで読む（実行中: true / 未実行: false）。
+    /// Lhamiel と同じ設計: SettingsViewModel が UpdateCheckStateChanged の購読直後に
+    /// この値で初期同期するため、起動時自動チェック中に Settings 画面を開いてもボタンが正しく
+    /// 無効化される。
+    /// </summary>
+    public static bool IsUpdateCheckInProgress =>
+        System.Threading.Interlocked.CompareExchange(ref _isCheckingUpdate, 0, 0) == 1;
+
+    /// <summary>更新チェックの進行状態が変化したときに発火するイベント (true=開始 / false=終了)。</summary>
+    /// <remarks>
+    /// 起動時自動チェック / 24h 周期チェック / 手動チェック (設定画面のアップデート確認ボタン) の
+    /// すべての経路から発火する。SettingsViewModel がこれを購読して IsCheckingUpdate を駆動し、
+    /// ボタンの IsEnabled を制御する (並走実行抑止と視覚的フィードバック)。
+    /// ハンドラはバックグラウンドスレッドから呼ばれる可能性があるため、UI 更新は購読側で
+    /// Dispatcher.UIThread に marshal すること。
+    /// </remarks>
+    public static event Action<bool>? UpdateCheckStateChanged;
+
+    /// <summary>更新チェック開始の試行。0→1 への遷移に成功した場合のみ true を返し、イベントを発火する。</summary>
+    private static bool TryBeginUpdateCheck()
+    {
+        if (System.Threading.Interlocked.CompareExchange(ref _isCheckingUpdate, 1, 0) != 0)
+            return false;
+        RaiseUpdateCheckStateChanged(true);
+        return true;
+    }
+
+    /// <summary>更新チェック終了。1→0 への遷移に成功した場合のみイベントを発火する (多重呼出に対して冪等)。</summary>
+    private static void EndUpdateCheck()
+    {
+        if (System.Threading.Interlocked.CompareExchange(ref _isCheckingUpdate, 0, 1) == 1)
+            RaiseUpdateCheckStateChanged(false);
+    }
+
+    /// <summary>イベント発火時のハンドラ例外を握りつぶしてフラグ管理を巻き戻さないためのラッパー。</summary>
+    private static void RaiseUpdateCheckStateChanged(bool inProgress)
+    {
+        try { UpdateCheckStateChanged?.Invoke(inProgress); }
+        catch (Exception ex) { Util.Logger.LogException("UpdateCheckStateChanged ハンドラで例外", ex); }
+    }
+
+    /// <summary>
     /// VelopackUpdateDialog.Avalonia ライブラリに更新チェックとダイアログ表示を委譲する。
     /// 自動チェック時はサイレント、手動チェック時は結果ダイアログを表示する。
     /// </summary>
@@ -345,8 +388,9 @@ public partial class App : Application
     /// </param>
     public void Check4Update(bool manually = false)
     {
-        // 先勝ち: 既に更新チェック中なら何もしない
-        if (System.Threading.Interlocked.CompareExchange(ref _isCheckingUpdate, 1, 0) != 0)
+        // 先勝ち: 既に更新チェック中なら何もしない (UI ボタンは UpdateCheckStateChanged 経由で
+        // IsEnabled=false に落ちているので、ここに到達しても操作不可状態と整合する)
+        if (!TryBeginUpdateCheck())
             return;
 
         Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
@@ -397,7 +441,7 @@ public partial class App : Application
             }
             finally
             {
-                System.Threading.Interlocked.Exchange(ref _isCheckingUpdate, 0);
+                EndUpdateCheck();
             }
         });
     }

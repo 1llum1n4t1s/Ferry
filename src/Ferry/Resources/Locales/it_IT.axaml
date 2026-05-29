@@ -53,6 +53,8 @@
   <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">Il pulsante di chiusura riduce nell'area di notifica</x:String>
   <x:String x:Key="Text.Settings.Version" xml:space="preserve">Versione</x:String>
   <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">Controlla aggiornamenti</x:String>
+  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">Skipping version {0}</x:String>
+  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">Undo</x:String>
 
   <!-- Transfer States -->
   <x:String x:Key="Text.State.Pending" xml:space="preserve">In attesa...</x:String>

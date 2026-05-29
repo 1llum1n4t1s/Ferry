@@ -53,6 +53,8 @@
   <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">மூடு பொத்தான் கணினி ட்ரேக்கு அனுப்பும்</x:String>
   <x:String x:Key="Text.Settings.Version" xml:space="preserve">பதிப்பு</x:String>
   <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">புதுப்பிப்புகளைச் சரிபார்</x:String>
+  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">Skipping version {0}</x:String>
+  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">Undo</x:String>
 
   <!-- Transfer States -->
   <x:String x:Key="Text.State.Pending" xml:space="preserve">காத்திருக்கிறது...</x:String>

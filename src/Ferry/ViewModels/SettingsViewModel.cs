@@ -10,10 +10,11 @@ namespace Ferry.ViewModels;
 /// 設定パネルの ViewModel。
 /// PC 名、テーマ、言語、保存先、スタートアップ、最小化起動、トレイ格納の設定を管理する。
 /// </summary>
-public sealed partial class SettingsViewModel : ViewModelBase
+public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
 {
     private readonly ISettingsService _settingsService;
     private bool _isLoading;
+    private bool _disposed;
 
     [ObservableProperty]
     public partial string DisplayName { get; set; } = Environment.MachineName;
@@ -64,15 +65,42 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     // === バージョン ===
 
-    /// <summary>バージョン表示テキスト (例: "Ferry v1.0.38")。</summary>
+    /// <summary>バージョン表示テキスト (例: "Ferry v1.0.39")。</summary>
     [ObservableProperty]
     public partial string VersionText { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 更新チェックが進行中か。Lhamiel と同じ設計で
+    /// <see cref="App.UpdateCheckStateChanged"/> イベントから駆動され、UI 側は
+    /// <c>IsEnabled="{Binding !IsCheckingUpdate}"</c> でボタンを無効化する (並走実行抑止 + 視覚 FB)。
+    /// </summary>
+    [ObservableProperty]
+    public partial bool IsCheckingUpdate { get; set; }
+
+    /// <summary>「このバージョンを無視」が設定されているタグ (例: "1.0.40")。空文字なら未設定。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasIgnoredUpdateTag), nameof(IgnoredUpdateTagDisplay))]
+    public partial string IgnoredUpdateTag { get; set; } = string.Empty;
+
+    /// <summary>スキップ中バージョンが存在するか (UI の IsVisible バインド用)。</summary>
+    public bool HasIgnoredUpdateTag => !string.IsNullOrEmpty(IgnoredUpdateTag);
+
+    /// <summary>「バージョン X.Y.Z をスキップ中」表示テキスト。ロケール対応。</summary>
+    public string IgnoredUpdateTagDisplay =>
+        HasIgnoredUpdateTag
+            ? App.Text("Settings.Version.SkippedVersion", IgnoredUpdateTag)
+            : string.Empty;
 
     public SettingsViewModel(ISettingsService settingsService)
     {
         _settingsService = settingsService;
         LoadFromSettings();
         LoadVersionInfo();
+
+        // Lhamiel パターン: App 側の更新チェック状態に追従。購読直後に現状で初期同期する
+        // (Settings 画面を開いた瞬間に起動時自動チェックが走っていてもボタンが正しく無効化される)。
+        App.UpdateCheckStateChanged += OnAppUpdateCheckStateChanged;
+        IsCheckingUpdate = App.IsUpdateCheckInProgress;
     }
 
     /// <summary>デザイナー用。</summary>
@@ -103,6 +131,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
             EnableNotificationSound = s.EnableNotificationSound;
             AutoAcceptFileTransfer = s.AutoAcceptFileTransfer;
             AutoStartWithWindows = s.AutoStartWithWindows;
+            IgnoredUpdateTag = s.IgnoreUpdateTag ?? string.Empty;
         }
         finally
         {
@@ -199,6 +228,45 @@ public sealed partial class SettingsViewModel : ViewModelBase
         // N-9: Reflection (`AssemblyInformationalVersion`) を Native AOT 安全な static 定数に置換
         // v1.0.38: バージョン文字列を「Ferry v1.0.38」形式に整形 (Lhamiel と同等)
         VersionText = $"Ferry v{AppVersion.Value}";
+    }
+
+    /// <summary>
+    /// <see cref="App.UpdateCheckStateChanged"/> 遷移を UI スレッドに marshal して
+    /// <see cref="IsCheckingUpdate"/> を更新する。バックグラウンドスレッドから呼ばれうるため
+    /// Dispatcher.UIThread.Post で必ず UI スレッドへ送る (Lhamiel と同じパターン)。
+    /// </summary>
+    private void OnAppUpdateCheckStateChanged(bool inProgress)
+    {
+        Avalonia.Threading.Dispatcher.UIThread.Post(() => IsCheckingUpdate = inProgress);
+    }
+
+    /// <summary>
+    /// 「このバージョンを無視」で保存された <see cref="AppSettings.IgnoreUpdateTag"/> を取り消すコマンド。
+    /// バージョンセクションの「取り消し」ボタンから呼ばれる、誤クリックの復旧導線。
+    /// 取り消し後は次回の自動 / 手動チェックでそのバージョンも通知対象に戻る。
+    /// </summary>
+    [RelayCommand]
+    private async Task ClearIgnoredUpdateTagAsync()
+    {
+        if (string.IsNullOrEmpty(IgnoredUpdateTag)) return;
+        try
+        {
+            _settingsService.Settings.IgnoreUpdateTag = string.Empty;
+            await _settingsService.SaveAsync();
+            IgnoredUpdateTag = string.Empty;
+            Util.Logger.Log("IgnoreUpdateTag をユーザー操作によりクリアしました", Util.LogLevel.Warning);
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.LogException("IgnoreUpdateTag のクリアに失敗", ex);
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        App.UpdateCheckStateChanged -= OnAppUpdateCheckStateChanged;
     }
 
     partial void OnSelectedThemeIndexChanged(int value)
