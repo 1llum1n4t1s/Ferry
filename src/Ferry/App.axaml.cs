@@ -175,6 +175,20 @@ public partial class App : Application
             _mainWindow.SetSettingsService(settingsService);
             desktop.MainWindow = _mainWindow;
 
+            // VM / Service ライフサイクル一括管理: App が生成した IDisposable をアプリ終了時に依存順で破棄する。
+            // desktop.Exit はトレイ「終了」(Shutdown) と最終ウィンドウ close (OnLastWindowClose) の双方で発火する。
+            // 破棄順は 利用側 → 提供側: MainWindowViewModel (子 VM = service イベント購読 / presence 監視 /
+            // QR Bitmap / SemaphoreSlim / CTS) → TransferService (connectionService イベント購読) →
+            // ConnectionService (listener / transport / signaling)。
+            // 注: ConnectionViewModel.Dispose の presence 削除は fire-and-forget のため終了時は best-effort
+            // (サーバー側で LastSeen が 60 秒老化 → offline 判定)。
+            desktop.Exit += (_, _) =>
+            {
+                DisposeQuietly(mainVm, nameof(MainWindowViewModel));
+                DisposeQuietly(transferService, nameof(TransferService));
+                DisposeQuietly(connectionService, nameof(ConnectionService));
+            };
+
             // トレイアイコン設定（MinimizeToTray 有効時にウィンドウ復帰用）
             var trayIcon = new TrayIcon
             {
@@ -266,12 +280,18 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// <summary>
     /// メインウィンドウを取得する（IClassicDesktopStyleApplicationLifetime 経由）。
     /// M-8: 3 箇所のフル修飾キャストパターンを集約。SingleViewLifetime 等の変更にも一元対応可能。
     /// </summary>
     public static Window? GetMainWindow() =>
         (Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
+
+    /// <summary>アプリ終了時の一括破棄ヘルパー。1 つの破棄が例外を投げても残りの破棄を継続できるよう隔離する。</summary>
+    private static void DisposeQuietly(IDisposable disposable, string name)
+    {
+        try { disposable.Dispose(); }
+        catch (Exception ex) { Util.Logger.LogException($"{name} の Dispose で例外", ex); }
+    }
 
     /// <summary>
     /// システムのカルチャからデフォルトロケールを検出する。
@@ -343,7 +363,7 @@ public partial class App : Application
     /// 無効化される。
     /// </summary>
     public static bool IsUpdateCheckInProgress =>
-        System.Threading.Interlocked.CompareExchange(ref _isCheckingUpdate, 0, 0) == 1;
+        System.Threading.Volatile.Read(ref _isCheckingUpdate) == 1;
 
     /// <summary>更新チェックの進行状態が変化したときに発火するイベント (true=開始 / false=終了)。</summary>
     /// <remarks>

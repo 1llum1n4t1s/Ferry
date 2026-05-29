@@ -10,11 +10,10 @@ namespace Ferry.ViewModels;
 /// 設定パネルの ViewModel。
 /// PC 名、テーマ、言語、保存先、スタートアップ、最小化起動、トレイ格納の設定を管理する。
 /// </summary>
-public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
+public sealed partial class SettingsViewModel : ViewModelBase
 {
     private readonly ISettingsService _settingsService;
     private bool _isLoading;
-    private bool _disposed;
 
     [ObservableProperty]
     public partial string DisplayName { get; set; } = Environment.MachineName;
@@ -65,7 +64,7 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
 
     // === バージョン ===
 
-    /// <summary>バージョン表示テキスト (例: "Ferry v1.0.39")。</summary>
+    /// <summary>バージョン表示テキスト (例: "Ferry v1.0.40")。</summary>
     [ObservableProperty]
     public partial string VersionText { get; set; } = string.Empty;
 
@@ -97,8 +96,11 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         LoadFromSettings();
         LoadVersionInfo();
 
-        // Lhamiel パターン: App 側の更新チェック状態に追従。購読直後に現状で初期同期する
+        // App 側の更新チェック状態に追従。購読直後に現状で初期同期する
         // (Settings 画面を開いた瞬間に起動時自動チェックが走っていてもボタンが正しく無効化される)。
+        // 本 VM は起動時に 1 度だけ生成されプロセス終了まで生きる単一インスタンス
+        // (App.OnFrameworkInitializationCompleted で生成 → MainWindowViewModel.Settings が保持) なので、
+        // static イベントへの購読はプロセス寿命と一致する。明示解除 (Dispose) は不要。
         App.UpdateCheckStateChanged += OnAppUpdateCheckStateChanged;
         IsCheckingUpdate = App.IsUpdateCheckInProgress;
     }
@@ -260,13 +262,6 @@ public sealed partial class SettingsViewModel : ViewModelBase, IDisposable
         {
             Util.Logger.LogException("IgnoreUpdateTag のクリアに失敗", ex);
         }
-    }
-
-    public void Dispose()
-    {
-        if (_disposed) return;
-        _disposed = true;
-        App.UpdateCheckStateChanged -= OnAppUpdateCheckStateChanged;
     }
 
     partial void OnSelectedThemeIndexChanged(int value)

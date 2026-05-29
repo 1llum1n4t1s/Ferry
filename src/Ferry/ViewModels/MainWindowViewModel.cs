@@ -1,3 +1,4 @@
+using System;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -7,7 +8,7 @@ namespace Ferry.ViewModels;
 /// メインウィンドウの ViewModel。
 /// 2カラムレイアウト（サイドバー + 転送/設定）を管理する。
 /// </summary>
-public sealed partial class MainWindowViewModel : ViewModelBase
+public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
 {
     public ConnectionViewModel Connection { get; }
     public TransferViewModel Transfer { get; }
@@ -41,5 +42,24 @@ public sealed partial class MainWindowViewModel : ViewModelBase
     private void ToggleSettings()
     {
         IsSettingsMode = !IsSettingsMode;
+    }
+
+    private bool _disposed;
+
+    /// <summary>
+    /// アプリ終了時に子 ViewModel の IDisposable をまとめて破棄する
+    /// (App.OnFrameworkInitializationCompleted の desktop.Exit から呼ばれる)。
+    /// 子の Dispose は再入安全ではない (ConnectionViewModel が SemaphoreSlim / CTS を破棄する) ため
+    /// _disposed で多重実行を防ぎ、片方の例外がもう片方の破棄を止めないよう個別に try で隔離する。
+    /// Settings は破棄すべきリソースを持たないシングルトンなので対象外。
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        try { Transfer?.Dispose(); }
+        catch (Exception ex) { Ferry.Util.Logger.LogException("TransferViewModel.Dispose で例外", ex); }
+        try { Connection?.Dispose(); }
+        catch (Exception ex) { Ferry.Util.Logger.LogException("ConnectionViewModel.Dispose で例外", ex); }
     }
 }
