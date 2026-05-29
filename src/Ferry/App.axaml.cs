@@ -370,10 +370,13 @@ public partial class App : Application
                     accent = b;
                 }
 
+                // VelopackUpdateDialog.Avalonia 1.0.4 の UpdateDialogOptions は Strings 差し替えのみ
+                // 公開しており、Icons プロパティは未提供 (内蔵ベクタアイコンが固定)。
+                // 旧 UpdateDialogIcons は撤去済み。将来ライブラリ側で IUpdateDialogIcons が公開され
+                // 次第、Ferry 専用アイコンセットを Models 以下に追加して Icons = ... で接続する。
                 var options = new VelopackUpdateDialog.UpdateDialogOptions
                 {
                     Strings = Models.UpdateDialogStrings.Instance,
-                    Icons = Models.UpdateDialogIcons.Instance,
                     AccentBrush = accent,
                     IgnoredTagName = string.IsNullOrEmpty(settings?.IgnoreUpdateTag) ? null : settings!.IgnoreUpdateTag,
                     SuppressUpToDateOnAutoCheck = true,
