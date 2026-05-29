@@ -1,4 +1,4 @@
-# .NETを使用してPNGファイルからICOファイルを生成するスクリプト
+﻿# .NETを使用してPNGファイルからICOファイルを生成するスクリプト
 Add-Type -AssemblyName System.Drawing
 
 $sizes = @(16, 24, 32, 48, 256)
