@@ -340,6 +340,27 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
+    /// true の間は SelectedPeer=null でも着信監視を止めない。
+    /// 「設定」「ペアリング先追加」タブへ切り替えるとき、宛先リストの選択ハイライトは外しつつ
+    /// 直前ピアの着信監視を維持し、タブ表示中も相手からのファイル転送を受けられるようにする。
+    /// </summary>
+    private bool _keepListeningOnDeselect;
+
+    /// <summary>
+    /// タブ切替用の選択解除。宛先リストのハイライトは外すが、直前ピアの着信監視は維持する。
+    /// （設定 / ペアリング先追加タブへ切り替える際に MainWindowViewModel から呼ぶ。
+    ///  単純に SelectedPeer=null すると着信監視が止まり、タブ表示中に相手が転送を
+    ///  開始できなくなる回帰を避けるため。）
+    /// </summary>
+    public void DeselectKeepingListener()
+    {
+        if (SelectedPeer == null) return;
+        _keepListeningOnDeselect = true;
+        try { SelectedPeer = null; }
+        finally { _keepListeningOnDeselect = false; }
+    }
+
+    /// <summary>
     /// ピア選択時は宛先を記憶し、着信接続監視を開始する。
     /// 相手側がファイルを送ろうとした時に自動的に Answer を返せるようにする。
     /// </summary>
@@ -359,8 +380,10 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             _connectionService.StartListeningForConnection(newValue.PeerId);
             Util.Logger.Log($"ピア選択・着信監視開始: {newValue.DisplayName} ({newValue.PeerId})");
         }
-        else
+        else if (!_keepListeningOnDeselect)
         {
+            // 通常の選択解除（ピア削除など）。タブ切替による一時解除のときは
+            // _keepListeningOnDeselect=true なので止めず、直前ピアの着信監視を維持する。
             _connectionService.StopListeningForConnection();
         }
     }

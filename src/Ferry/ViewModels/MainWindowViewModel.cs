@@ -72,7 +72,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         if (value && Connection is not null)
         {
-            Connection.SelectedPeer = null;
+            // 宛先リストの選択は外すが、直前ピアの着信監視は維持する
+            // （設定タブ表示中も相手からの転送を受けられるようにする）
+            Connection.DeselectKeepingListener();
             IsAddPeerMode = false;
         }
     }
@@ -84,7 +86,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         if (value && Connection is not null)
         {
-            Connection.SelectedPeer = null;
+            // 宛先リストの選択は外すが、直前ピアの着信監視は維持する
+            // （ペアリング追加タブ表示中も相手からの転送を受けられるようにする）
+            Connection.DeselectKeepingListener();
             IsSettingsMode = false;
         }
     }
