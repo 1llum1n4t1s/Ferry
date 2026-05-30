@@ -26,6 +26,12 @@ public partial class MainWindow : Window
     /// <summary>左ペイン（サイドバー）の列定義。GridSplitter ドラッグ幅の保存/復元に使う。</summary>
     private ColumnDefinition? _sidebarColumn;
 
+    // サイドバー幅復元時のクランプ範囲（AXAML の Border MinWidth / GridSplitter Width と一致させる）
+    private const double DefaultSidebarWidth = 220;
+    private const double MinSidebarWidth = 180;
+    private const double MinMainPaneWidth = 300;
+    private const double SplitterWidth = 4;
+
     /// <summary>ウィンドウ位置保存のデバウンスタイマー（500ms）。</summary>
     private System.Threading.Timer? _savePositionDebounceTimer;
 
@@ -231,9 +237,17 @@ public partial class MainWindow : Window
         if (s.IsWindowMaximized)
             WindowState = WindowState.Maximized;
 
-        // サイドバー幅を復元（未保存/不正値時は AXAML 既定の 220 にフォールバック）
-        if (_sidebarColumn != null && s.SidebarWidth is > 0)
-            _sidebarColumn.Width = new GridLength(s.SidebarWidth.Value, GridUnitType.Pixel);
+        // サイドバー幅を復元。広い画面で保存された値や手編集 settings.json で右ペインが
+        // 潰れないよう、左ペイン最小幅と右ペイン最小幅の範囲にクランプしてから適用する。
+        // 未保存時は AXAML 既定の 220 にフォールバック。
+        if (_sidebarColumn != null)
+        {
+            var availableWidth = Bounds.Width > 0 ? Bounds.Width : Width;
+            var maxSidebarWidth = Math.Max(MinSidebarWidth, availableWidth - SplitterWidth - MinMainPaneWidth);
+            var restoredWidth = s.SidebarWidth ?? DefaultSidebarWidth;
+            _sidebarColumn.Width = new GridLength(
+                Math.Clamp(restoredWidth, MinSidebarWidth, maxSidebarWidth), GridUnitType.Pixel);
+        }
     }
 
     /// <summary>スプリッターのドラッグ完了時にサイドバー幅を保存する（デバウンス経由）。</summary>

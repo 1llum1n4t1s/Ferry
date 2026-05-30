@@ -209,8 +209,13 @@ public partial class App : Application
             else
             {
                 // ピア未登録時はペアリング追加タブを自動表示（旧 AddMemberWindow ダイアログから移行）。
+                // Loaded はトレイの隠/表示による再アタッチで複数回発火しうるため、初回のみ実行する
+                // （多重発火すると StartSessionCommand が重複実行されてしまう）。
+                var autoPairingStarted = false;
                 _mainWindow.Loaded += (_, _) =>
                 {
+                    if (autoPairingStarted) return;
+                    autoPairingStarted = true;
                     try
                     {
                         connectionVm.StartSessionCommand.Execute(null);
