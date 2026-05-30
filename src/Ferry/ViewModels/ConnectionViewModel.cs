@@ -177,6 +177,12 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             SelectedPeer = null;
             await _connectionService.DisconnectAsync();
         }
+        else if (_connectionService.CurrentListeningPeerId == peerId)
+        {
+            // タブ切替 (DeselectKeepingListener) で SelectedPeer 外のピアを着信監視中に、
+            // そのピアが削除されたケース。削除済みピアの offer を受け続けないよう監視を停止する。
+            _connectionService.StopListeningForConnection();
+        }
 
         // ペアが全て削除されたら QR コードを再表示
         if (PairedPeers.Count == 0)
@@ -532,9 +538,14 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                 return true;
             });
 
-            // 新規ピアのみ永続化 (既存ピアを上書きして PairedAt / LastTransferAt を潰さない)
+            // 新規ピア成立時のみ: pairing watch を止めて永続化する。
+            // 既知ピアの再検知 (stale な pairings/ エントリ由来) では watch を止めず、
+            // 新規デバイスとのペアリングを引き続き検知できるようにする。
             if (isNewPeer)
-                await _peerRegistry.AddOrUpdatePeerAsync(peer);
+            {
+                _connectionService.StopPairingWatch();
+                await _peerRegistry.AddOrUpdatePeerAsync(peer); // 既存ピアを上書きして PairedAt / LastTransferAt を潰さない
+            }
         }
         catch (Exception ex)
         {
