@@ -78,24 +78,28 @@ public sealed partial class PairedPeer : ObservableObject
     [JsonIgnore]
     public bool IsRelayRoute => Route == ConnectionRoute.Relay;
 
-    /// <summary>バッジに表示するアイコン文字（短縮、Material Symbol 風）。</summary>
+    /// <summary>接続経路がまだ確定していない（状態取得前）か。バッジの「状態取得中」dimmed 表示用。</summary>
+    [JsonIgnore]
+    public bool IsRouteUnknown => Route == ConnectionRoute.Unknown;
+
+    /// <summary>バッジに表示するアイコン文字（短縮、Material Symbol 風）。Unknown は「状態取得中」を表す砂時計。</summary>
     [JsonIgnore]
     public string RouteBadgeIcon => Route switch
     {
         ConnectionRoute.Direct => "⚡",       // ⚡ 高速ボルト = LAN 直接
         ConnectionRoute.StunAssisted => "✧", // ✧ スター = NAT 越え P2P
         ConnectionRoute.Relay => "↻",        // ↻ リトライ風矢印 = リレー経由
-        _ => string.Empty,
+        _ => "⏳",                            // ⏳ 砂時計 = 経路未確定（状態取得中）
     };
 
-    /// <summary>バッジに表示する短いラベル（全大文字、タイポグラフィー狙い）。</summary>
+    /// <summary>バッジに表示する短いラベル（経路は全大文字、未確定時は「状態取得中」）。</summary>
     [JsonIgnore]
     public string RouteBadgeLabel => Route switch
     {
         ConnectionRoute.Direct => "LAN",
         ConnectionRoute.StunAssisted => "P2P",
         ConnectionRoute.Relay => "RELAY",
-        _ => string.Empty,
+        _ => "状態取得中",
     };
 
     /// <summary>ツールチップ用の詳細説明。</summary>
@@ -105,7 +109,7 @@ public sealed partial class PairedPeer : ObservableObject
         ConnectionRoute.Direct => "LAN 直接接続（TCP）— 最速・最高帯域",
         ConnectionRoute.StunAssisted => "P2P 直接接続（UDP ホールパンチ + STUN）— インターネット越え",
         ConnectionRoute.Relay => "サーバー経由リレー（TURN/WebSocket）— ファイアウォール越え",
-        _ => string.Empty,
+        _ => "接続経路を確認中…",
     };
 
     partial void OnRouteChanged(ConnectionRoute value)
@@ -115,6 +119,7 @@ public sealed partial class PairedPeer : ObservableObject
         OnPropertyChanged(nameof(IsLanRoute));
         OnPropertyChanged(nameof(IsP2pRoute));
         OnPropertyChanged(nameof(IsRelayRoute));
+        OnPropertyChanged(nameof(IsRouteUnknown));
         OnPropertyChanged(nameof(RouteBadgeIcon));
         OnPropertyChanged(nameof(RouteBadgeLabel));
         OnPropertyChanged(nameof(RouteBadgeTooltip));

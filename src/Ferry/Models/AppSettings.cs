@@ -94,4 +94,7 @@ public sealed class AppSettings
 
     /// <summary>ウィンドウが最大化されているか。</summary>
     public bool IsWindowMaximized { get; set; } = false;
+
+    /// <summary>サイドバー（左ペイン）の幅 px。左右スプリッターのドラッグ位置を永続化する。未設定時は既定 220。</summary>
+    public double? SidebarWidth { get; set; }
 }

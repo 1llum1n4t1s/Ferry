@@ -454,6 +454,15 @@
         <Setter Property="Foreground" Value="{DynamicResource OrangeBrush}" />
     </Style>
 
+    <!-- 状態取得中 (Route 未確定) — muted gray。経路色が付くまでの空欄回避用 -->
+    <Style Selector="Border.route-badge.pending">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    </Style>
+    <Style Selector="Border.route-badge.pending TextBlock.route-badge-text">
+        <Setter Property="Foreground" Value="{DynamicResource TextTertiaryBrush}" />
+    </Style>
+
     <!-- バッジ内のテキスト共通 — uppercase mono で技術感 -->
     <Style Selector="TextBlock.route-badge-text">
         <Setter Property="FontSize" Value="9" />
@@ -500,6 +509,15 @@
     </Style>
     <Style Selector="Button.sidebarMenuItem:pressed">
         <Setter Property="BorderBrush" Value="#00F0FF" />
+    </Style>
+    <!-- 選択中（設定タブ ON）— ピアリスト選択と同じシアン左アクセント + ハイライト背景。
+         宛先リストと設定を同一タブグループに見せるための active 表示 -->
+    <Style Selector="Button.sidebarMenuItem.selected">
+        <Setter Property="BorderBrush" Value="#00F0FF" />
+        <Setter Property="Foreground" Value="#FFFFFF" />
+    </Style>
+    <Style Selector="Button.sidebarMenuItem.selected /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource PeerSelectedBrush}" />
     </Style>
 
 </Styles>

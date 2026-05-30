@@ -23,6 +23,9 @@ public partial class MainWindow : Window
     private Border? _dropOverlay;
     private ISettingsService? _settingsService;
 
+    /// <summary>左ペイン（サイドバー）の列定義。GridSplitter ドラッグ幅の保存/復元に使う。</summary>
+    private ColumnDefinition? _sidebarColumn;
+
     /// <summary>ウィンドウ位置保存のデバウンスタイマー（500ms）。</summary>
     private System.Threading.Timer? _savePositionDebounceTimer;
 
@@ -36,7 +39,6 @@ public partial class MainWindow : Window
     // イベント重複登録防止用: 前回購読した ViewModel の参照を保持
     private ConnectionViewModel? _subscribedConnectionVm;
     private MainWindowViewModel? _subscribedMainVm;
-    private CommunityToolkit.Mvvm.Input.IAsyncRelayCommand? _subscribedAddNewPeerCommand;
 
     public MainWindow()
     {
@@ -45,6 +47,13 @@ public partial class MainWindow : Window
         PositionChanged += OnPositionOrSizeChanged;
 
         _dropOverlay = this.FindControl<Border>("DropOverlay");
+
+        // 左右スプリッターのドラッグ完了時にサイドバー幅を保存（ウィンドウ位置保存のデバウンスに相乗り）
+        var mainGrid = this.FindControl<Grid>("MainContentGrid");
+        if (mainGrid != null && mainGrid.ColumnDefinitions.Count > 0)
+            _sidebarColumn = mainGrid.ColumnDefinitions[0];
+        if (this.FindControl<GridSplitter>("PaneSplitter") is { } paneSplitter)
+            paneSplitter.DragCompleted += OnSplitterDragCompleted;
 
         // ドラッグ＆ドロップ
         AddHandler(DragDrop.DragEnterEvent, OnDragEnter, RoutingStrategies.Bubble, handledEventsToo: true);
@@ -103,11 +112,6 @@ public partial class MainWindow : Window
         {
             _subscribedMainVm.PropertyChanged -= OnMainVmPropertyChangedForEmptyView;
         }
-        if (_subscribedAddNewPeerCommand != null)
-        {
-            _subscribedAddNewPeerCommand.PropertyChanged -= OnAddNewPeerCommandPropertyChanged;
-            _subscribedAddNewPeerCommand = null;
-        }
 
         // SelectedPeer 変更 → ピア名更新
         if (ConnectionVm != null)
@@ -116,12 +120,6 @@ public partial class MainWindow : Window
             // N-5: ペアリングリンクのクリップボードコピーは View 責務
             ConnectionVm.CopyPairingCodeRequested += OnCopyPairingCodeRequested;
             _subscribedConnectionVm = ConnectionVm;
-
-            // AddNewPeerCommand 完了後に AddMemberWindow を表示。
-            // 匿名ラムダだと購読解除できず DataContext 切替で重複→旧 VM 参照リークするため、
-            // 名前付きメソッドにして購読/解除を _subscribedAddNewPeerCommand で対称に管理する
-            ConnectionVm.AddNewPeerCommand.PropertyChanged += OnAddNewPeerCommandPropertyChanged;
-            _subscribedAddNewPeerCommand = ConnectionVm.AddNewPeerCommand;
         }
 
         // IsSettingsMode 変更時の空ビュー更新（名前付きメソッドで一度だけ登録）
@@ -132,39 +130,16 @@ public partial class MainWindow : Window
         UpdateEmptyViewVisibility();
     }
 
-    /// <summary>
-    /// AddNewPeerCommand の IsRunning が true→false に遷移したタイミングで AddMemberWindow を表示する。
-    /// async void だが try-catch でアプリ強制終了を防ぐ。
-    /// </summary>
-    private async void OnAddNewPeerCommandPropertyChanged(object? sender, PropertyChangedEventArgs pe)
-    {
-        try
-        {
-            if (pe.PropertyName != "IsRunning") return;
-            var vm = ConnectionVm;
-            if (vm == null || vm.AddNewPeerCommand.IsRunning) return;
-
-            await Dispatcher.UIThread.InvokeAsync(async () =>
-            {
-                var dialog = new AddMemberWindow { DataContext = vm };
-                await dialog.ShowDialog(this);
-            });
-        }
-        catch (Exception ex)
-        {
-            Ferry.Util.Logger.Log($"AddMemberWindow 表示に失敗: {ex.Message}", Ferry.Util.LogLevel.Error);
-        }
-    }
-
     private void OnConnectionVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(ConnectionViewModel.SelectedPeer))
         {
             var peer = ConnectionVm?.SelectedPeer;
-            if (peer != null)
+            if (peer != null && _mainVm != null)
             {
-                // 設定モードを解除
-                if (_mainVm != null) _mainVm.IsSettingsMode = false;
+                // 宛先を選んだら設定タブ・ペアリング追加タブを解除（同一タブグループの排他選択）
+                _mainVm.IsSettingsMode = false;
+                _mainVm.IsAddPeerMode = false;
             }
             UpdateEmptyViewVisibility();
         }
@@ -175,18 +150,18 @@ public partial class MainWindow : Window
         var emptyView = this.FindControl<Border>("EmptyView");
         if (emptyView != null && _mainVm != null)
         {
-            emptyView.IsVisible = !_mainVm.IsSettingsMode && ConnectionVm?.SelectedPeer == null;
+            emptyView.IsVisible = !_mainVm.IsSettingsMode && !_mainVm.IsAddPeerMode
+                                  && ConnectionVm?.SelectedPeer == null;
         }
     }
 
-    /// <summary>IsSettingsMode 変更時に空ビューの表示を更新する（重複登録防止のため名前付きメソッド化）。</summary>
+    /// <summary>設定 / ペアリング追加タブ切替時に空ビューの表示を更新する（重複登録防止のため名前付きメソッド化）。</summary>
     private void OnMainVmPropertyChangedForEmptyView(object? sender, PropertyChangedEventArgs pe)
     {
-        if (pe.PropertyName == nameof(MainWindowViewModel.IsSettingsMode))
+        if (pe.PropertyName == nameof(MainWindowViewModel.IsSettingsMode)
+            || pe.PropertyName == nameof(MainWindowViewModel.IsAddPeerMode))
         {
-            var emptyView = this.FindControl<Border>("EmptyView");
-            if (emptyView != null && _mainVm != null)
-                emptyView.IsVisible = !_mainVm.IsSettingsMode && ConnectionVm?.SelectedPeer == null;
+            UpdateEmptyViewVisibility();
         }
     }
 
@@ -255,7 +230,15 @@ public partial class MainWindow : Window
 
         if (s.IsWindowMaximized)
             WindowState = WindowState.Maximized;
+
+        // サイドバー幅を復元（未保存/不正値時は AXAML 既定の 220 にフォールバック）
+        if (_sidebarColumn != null && s.SidebarWidth is > 0)
+            _sidebarColumn.Width = new GridLength(s.SidebarWidth.Value, GridUnitType.Pixel);
     }
+
+    /// <summary>スプリッターのドラッグ完了時にサイドバー幅を保存する（デバウンス経由）。</summary>
+    private void OnSplitterDragCompleted(object? sender, Avalonia.Input.VectorEventArgs e)
+        => DebounceSaveWindowPosition();
 
     private void SaveWindowPosition()
     {
@@ -273,6 +256,10 @@ public partial class MainWindow : Window
             s.WindowX = Position.X;
             s.WindowY = Position.Y;
         }
+
+        // サイドバー幅はウィンドウ最大化/通常に関わらず固定 px なので常に保存する
+        if (_sidebarColumn != null && _sidebarColumn.Width.IsAbsolute && _sidebarColumn.Width.Value > 0)
+            s.SidebarWidth = _sidebarColumn.Width.Value;
 
         _ = _settingsService.SaveAsync();
     }

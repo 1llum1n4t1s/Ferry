@@ -50,8 +50,15 @@
             <!-- Row 0: タイトルバー（透明） -->
             <Border Grid.Row="0" Background="Transparent" IsHitTestVisible="False" />
 
-            <!-- Row 1: メインコンテンツ 2カラム (v1.0.38: GridSplitter でドラッグ可) -->
-            <Grid Grid.Row="1" ColumnDefinitions="220,Auto,*">
+            <!-- Row 1: メインコンテンツ 2カラム (v1.0.38: GridSplitter でドラッグ可)。
+                 SidebarColumn の幅はドラッグ後に settings.json へ永続化する -->
+            <Grid Grid.Row="1" x:Name="MainContentGrid">
+                <Grid.ColumnDefinitions>
+                    <!-- 左ペイン（サイドバー）。幅は code-behind が ColumnDefinitions[0] 経由で保存/復元 -->
+                    <ColumnDefinition Width="220" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
 
                 <!-- Col 0: サイドバー (ROG NEON: cyan 枠 + ほんのり glow) -->
                 <Border Grid.Column="0" Background="{DynamicResource SidebarBrush}"
@@ -93,25 +100,25 @@
 
                                         <!-- ピア名 + 接続経路バッジ (Tahoe ピル型) -->
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
-                                            <!-- 1 段目: 名前 + 経路バッジを横並び -->
-                                            <Grid ColumnDefinitions="*,Auto">
-                                                <TextBlock Grid.Column="0"
-                                                           Text="{Binding DisplayName}"
-                                                           FontSize="14" FontWeight="Medium"
-                                                           Foreground="{DynamicResource TextPrimaryBrush}"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           VerticalAlignment="Center" />
+                                            <!-- 1 段目: 名前 -->
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       FontSize="14" FontWeight="Medium"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center" />
 
-                                                <!-- 接続経路バッジ: Route が確定したときだけ表示
-                                                     Classes.lan/p2p/relay の bool バインドで色を切替 -->
-                                                <Border Grid.Column="1"
-                                                        Classes="route-badge"
+                                            <!-- 2 段目: 接続経路バッジ + 接続状態テキスト (バッジの右側)。
+                                                 バッジは常時表示し、Route 未確定時は pending クラスで
+                                                 「状態取得中」を dimmed 表示する（空欄を避ける）。
+                                                 Classes.lan/p2p/relay/pending の bool バインドで色を切替 -->
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <Border Classes="route-badge"
                                                         Classes.lan="{Binding IsLanRoute}"
                                                         Classes.p2p="{Binding IsP2pRoute}"
                                                         Classes.relay="{Binding IsRelayRoute}"
-                                                        IsVisible="{Binding IsConnected}"
+                                                        Classes.pending="{Binding IsRouteUnknown}"
                                                         ToolTip.Tip="{Binding RouteBadgeTooltip}"
-                                                        Margin="6,0,0,0">
+                                                        VerticalAlignment="Center">
                                                     <StackPanel Orientation="Horizontal">
                                                         <TextBlock Classes="route-badge-icon route-badge-text"
                                                                    Text="{Binding RouteBadgeIcon}" />
@@ -119,14 +126,15 @@
                                                                    Text="{Binding RouteBadgeLabel}" />
                                                     </StackPanel>
                                                 </Border>
-                                            </Grid>
 
-                                            <!-- 2 段目: 接続状態テキスト (未接続時のヒント等) -->
-                                            <TextBlock Text="{Binding ConnectionStatusText}"
-                                                       FontSize="11"
-                                                       Foreground="{DynamicResource TextTertiaryBrush}"
-                                                       MaxLines="1" TextTrimming="CharacterEllipsis"
-                                                       IsVisible="{Binding ConnectionStatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                                <!-- 接続状態テキスト (未接続時のヒント等) — バッジの右に並べる -->
+                                                <TextBlock Text="{Binding ConnectionStatusText}"
+                                                           FontSize="11"
+                                                           Foreground="{DynamicResource TextTertiaryBrush}"
+                                                           VerticalAlignment="Center"
+                                                           MaxLines="1" TextTrimming="CharacterEllipsis"
+                                                           IsVisible="{Binding ConnectionStatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                            </StackPanel>
                                         </StackPanel>
 
                                         <!-- 3 点リーダー → サブメニュー（削除など）。
@@ -160,7 +168,8 @@
                                 BorderThickness="0,1,0,0" Padding="0,4">
                             <StackPanel Orientation="Vertical" Spacing="2">
                                 <Button Classes="sidebarMenuItem"
-                                        Command="{Binding Connection.AddNewPeerCommand}">
+                                        Classes.selected="{Binding IsAddPeerMode}"
+                                        Command="{Binding ShowAddPeerCommand}">
                                     <StackPanel Orientation="Horizontal" Spacing="10">
                                         <TextBlock Text="➕" FontSize="14" VerticalAlignment="Center" />
                                         <TextBlock Text="{DynamicResource Text.Sidebar.AddPeer}"
@@ -168,6 +177,7 @@
                                     </StackPanel>
                                 </Button>
                                 <Button Classes="sidebarMenuItem"
+                                        Classes.selected="{Binding IsSettingsMode}"
                                         Command="{Binding ToggleSettingsCommand}">
                                     <StackPanel Orientation="Horizontal" Spacing="10">
                                         <TextBlock Text="⚙" FontSize="14" VerticalAlignment="Center" />
@@ -182,6 +192,7 @@
 
                 <!-- v1.0.38: 左右ペイン仕切り (ROG NEON: 中央にシアンライン) -->
                 <GridSplitter Grid.Column="1"
+                              x:Name="PaneSplitter"
                               Width="4"
                               Background="#5500F0FF"
                               ResizeBehavior="PreviousAndNext"
@@ -206,6 +217,9 @@
                                 <Binding Path="((vm:MainWindowViewModel)DataContext).IsSettingsMode"
                                          RelativeSource="{RelativeSource AncestorType=Window}"
                                          Converter="{x:Static BoolConverters.Not}" />
+                                <Binding Path="((vm:MainWindowViewModel)DataContext).IsAddPeerMode"
+                                         RelativeSource="{RelativeSource AncestorType=Window}"
+                                         Converter="{x:Static BoolConverters.Not}" />
                                 <Binding Path="((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer"
                                          RelativeSource="{RelativeSource AncestorType=Window}"
                                          Converter="{x:Static ObjectConverters.IsNotNull}" />
@@ -217,6 +231,11 @@
                     <v:SettingsView DataContext="{Binding Settings}"
                                     IsVisible="{Binding ((vm:MainWindowViewModel)DataContext).IsSettingsMode,
                                                         RelativeSource={RelativeSource AncestorType=Window}}" />
+
+                    <!-- ペアリング先追加ビュー（右ペイン内タブ。旧 AddMemberWindow を統合） -->
+                    <v:AddMemberView DataContext="{Binding Connection}"
+                                     IsVisible="{Binding ((vm:MainWindowViewModel)DataContext).IsAddPeerMode,
+                                                         RelativeSource={RelativeSource AncestorType=Window}}" />
 
                     <!-- 空ビュー（ピア未選択時） -->
                     <Border IsVisible="False" x:Name="EmptyView">

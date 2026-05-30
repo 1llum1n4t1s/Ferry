@@ -81,7 +81,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     public partial bool IsLinkCopied { get; set; }
 
-    /// <summary>「相手のペアリングコードを貼り付け」入力欄のテキスト (AddMemberWindow)。
+    /// <summary>「相手のペアリングコードを貼り付け」入力欄のテキスト (AddMemberView)。
     /// v1.0.38: PairFromUrlText から rename。コードは 32 文字 hex (sessionId)。</summary>
     [ObservableProperty]
     public partial string PairFromCodeText { get; set; } = string.Empty;
@@ -482,17 +482,22 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     {
         try
         {
-            // ペアリング情報を永続化
-            await _peerRegistry.AddOrUpdatePeerAsync(peer);
-
-            // UI スレッドで ObservableCollection・ObservableProperty を更新
-            await Dispatcher.UIThread.InvokeAsync(() =>
+            // UI スレッドで判定・更新する (PairedPeers / ObservableProperty は UI スレッド専用)。
+            // 既知ピアの再検知は新規ペアリングではないので UI を切り替えない:
+            // pairings/{pairingId} は即削除されず最大 1 時間 Firebase に残るため、
+            // 「ペアリング先追加」で StartWatchingPairing を始めた直後に、過去に成立済みの
+            // 自分宛ペアリングを拾って PairingCompleted が再発火する。これを通すと既存ピアが
+            // SelectedPeer に再選択され、ペアリング追加画面がすぐ閉じて宛先画面へ戻ってしまう。
+            var isNewPeer = await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (PairedPeers.All(p => p.PeerId != peer.PeerId))
+                if (PairedPeers.Any(p => p.PeerId == peer.PeerId))
                 {
-                    peer.WentOnline += OnPeerWentOnline;
-                    PairedPeers.Add(peer);
+                    Util.Logger.Log($"既知ピアのペアリング再検知を無視: {peer.DisplayName} ({peer.PeerId})");
+                    return false;
                 }
+
+                peer.WentOnline += OnPeerWentOnline;
+                PairedPeers.Add(peer);
                 UpdateHasPairedPeers();
 
                 // QR コード表示をクリアし、宛先選択モードへ
@@ -501,7 +506,12 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                 PairingUrl = string.Empty;
                 IsLinkCopied = false;
                 SelectedPeer = peer;
+                return true;
             });
+
+            // 新規ピアのみ永続化 (既存ピアを上書きして PairedAt / LastTransferAt を潰さない)
+            if (isNewPeer)
+                await _peerRegistry.AddOrUpdatePeerAsync(peer);
         }
         catch (Exception ex)
         {
