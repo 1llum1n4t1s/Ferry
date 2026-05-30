@@ -201,26 +201,29 @@ public partial class App : Application
             TrayIcon.SetIcons(this, [trayIcon]);
 
             // 起動時：ペアリング済みピアがあれば最初のピアを宛先として選択
-            // ピアがいなければ AddMemberWindow ダイアログを自動表示
+            // ピアがいなければペアリング追加タブ（右ペイン）を自動アクティブにし QR を表示
             if (connectionVm.PairedPeers.Count > 0)
             {
                 connectionVm.SelectedPeer = connectionVm.PairedPeers[0];
             }
             else
             {
-                // ピア未登録時はメンバー追加ダイアログを自動表示。
-                // async void の未捕捉例外はアプリ即落ちさせるので try-catch で握り潰してログに出す。
-                _mainWindow.Loaded += async (_, _) =>
+                // ピア未登録時はペアリング追加タブを自動表示（旧 AddMemberWindow ダイアログから移行）。
+                // Loaded はトレイの隠/表示による再アタッチで複数回発火しうるため、初回のみ実行する
+                // （多重発火すると StartSessionCommand が重複実行されてしまう）。
+                var autoPairingStarted = false;
+                _mainWindow.Loaded += (_, _) =>
                 {
+                    if (autoPairingStarted) return;
+                    autoPairingStarted = true;
                     try
                     {
                         connectionVm.StartSessionCommand.Execute(null);
-                        var dialog = new AddMemberWindow { DataContext = connectionVm };
-                        await dialog.ShowDialog(_mainWindow);
+                        mainVm.IsAddPeerMode = true;
                     }
                     catch (Exception ex)
                     {
-                        Util.Logger.Log($"起動時メンバー追加ダイアログ表示失敗: {ex.Message}", Util.LogLevel.Error);
+                        Util.Logger.Log($"起動時ペアリング追加タブ表示失敗: {ex.Message}", Util.LogLevel.Error);
                     }
                 };
             }

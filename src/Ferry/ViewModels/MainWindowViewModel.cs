@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -17,6 +18,10 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     /// <summary>設定画面を表示中かどうか（⚙ トグル）。</summary>
     [ObservableProperty]
     public partial bool IsSettingsMode { get; set; }
+
+    /// <summary>ペアリング先追加画面（右ペイン内タブ）を表示中かどうか。</summary>
+    [ObservableProperty]
+    public partial bool IsAddPeerMode { get; set; }
 
     public MainWindowViewModel(
         ConnectionViewModel connection,
@@ -42,6 +47,50 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     private void ToggleSettings()
     {
         IsSettingsMode = !IsSettingsMode;
+    }
+
+    /// <summary>
+    /// ペアリング先追加タブ（右ペイン）を表示する。
+    /// タブを即アクティブにしてから QR ペアリングセッションを生成する
+    /// （生成完了を待たず切替えてレスポンスを良くする）。
+    /// </summary>
+    [RelayCommand]
+    private async Task ShowAddPeerAsync()
+    {
+        IsAddPeerMode = true;
+        if (Connection is not null)
+            await Connection.AddNewPeerCommand.ExecuteAsync(null);
+    }
+
+    /// <summary>
+    /// 設定タブへ切り替えたら宛先選択とペアリング追加タブを解除する。
+    /// 「宛先」「設定」「ペアリング追加」は同一タブグループの排他選択で、設定を選ぶと
+    /// 宛先リストの選択ハイライトが外れる。逆方向（宛先選択 → 設定解除）は MainWindow
+    /// コードビハインドの OnConnectionVmPropertyChanged が担う。
+    /// </summary>
+    partial void OnIsSettingsModeChanged(bool value)
+    {
+        if (value && Connection is not null)
+        {
+            // 宛先リストの選択は外すが、直前ピアの着信監視は維持する
+            // （設定タブ表示中も相手からの転送を受けられるようにする）
+            Connection.DeselectKeepingListener();
+            IsAddPeerMode = false;
+        }
+    }
+
+    /// <summary>
+    /// ペアリング追加タブへ切り替えたら宛先選択と設定タブを解除する（タブグループの排他選択）。
+    /// </summary>
+    partial void OnIsAddPeerModeChanged(bool value)
+    {
+        if (value && Connection is not null)
+        {
+            // 宛先リストの選択は外すが、直前ピアの着信監視は維持する
+            // （ペアリング追加タブ表示中も相手からの転送を受けられるようにする）
+            Connection.DeselectKeepingListener();
+            IsSettingsMode = false;
+        }
     }
 
     private bool _disposed;

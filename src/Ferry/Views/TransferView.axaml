@@ -14,32 +14,30 @@
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
                 Padding="16,12">
             <Grid ColumnDefinitions="*,Auto">
-                <StackPanel VerticalAlignment="Center" Spacing="4">
-                    <TextBlock Text="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.DisplayName,
-                                              RelativeSource={RelativeSource AncestorType=Window}}"
+                <!-- ピア名 + 経路バッジ。SelectedPeer を中間 DataContext に置き子は直接参照する。
+                     SelectedPeer=null 時は DataContext が null になるだけでバインディング警告を出さない
+                     (タブ切替で SelectedPeer が頻繁に null になるため null 安全にする) -->
+                <StackPanel VerticalAlignment="Center" Spacing="4"
+                            x:DataType="m:PairedPeer"
+                            DataContext="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer,
+                                                  RelativeSource={RelativeSource AncestorType=Window}}">
+                    <TextBlock Text="{Binding DisplayName}"
                                FontSize="16" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextPrimaryBrush}" />
                     <!-- v1.0.38: 経路バッジを右ペイン (ピア名直下) に移動。
                          未接続時は IsConnected=false で非表示 -->
                     <Border Classes="route-badge"
-                            Classes.lan="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.IsLanRoute,
-                                                  RelativeSource={RelativeSource AncestorType=Window}}"
-                            Classes.p2p="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.IsP2pRoute,
-                                                  RelativeSource={RelativeSource AncestorType=Window}}"
-                            Classes.relay="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.IsRelayRoute,
-                                                    RelativeSource={RelativeSource AncestorType=Window}}"
-                            IsVisible="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.IsConnected,
-                                                RelativeSource={RelativeSource AncestorType=Window}}"
-                            ToolTip.Tip="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.RouteBadgeTooltip,
-                                                  RelativeSource={RelativeSource AncestorType=Window}}"
+                            Classes.lan="{Binding IsLanRoute}"
+                            Classes.p2p="{Binding IsP2pRoute}"
+                            Classes.relay="{Binding IsRelayRoute}"
+                            IsVisible="{Binding IsConnected}"
+                            ToolTip.Tip="{Binding RouteBadgeTooltip}"
                             HorizontalAlignment="Left">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Classes="route-badge-icon route-badge-text"
-                                       Text="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.RouteBadgeIcon,
-                                                      RelativeSource={RelativeSource AncestorType=Window}}" />
+                                       Text="{Binding RouteBadgeIcon}" />
                             <TextBlock Classes="route-badge-text"
-                                       Text="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer.RouteBadgeLabel,
-                                                      RelativeSource={RelativeSource AncestorType=Window}}" />
+                                       Text="{Binding RouteBadgeLabel}" />
                         </StackPanel>
                     </Border>
                 </StackPanel>

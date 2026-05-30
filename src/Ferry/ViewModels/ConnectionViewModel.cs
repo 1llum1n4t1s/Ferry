@@ -81,7 +81,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     public partial bool IsLinkCopied { get; set; }
 
-    /// <summary>「相手のペアリングコードを貼り付け」入力欄のテキスト (AddMemberWindow)。
+    /// <summary>「相手のペアリングコードを貼り付け」入力欄のテキスト (AddMemberView)。
     /// v1.0.38: PairFromUrlText から rename。コードは 32 文字 hex (sessionId)。</summary>
     [ObservableProperty]
     public partial string PairFromCodeText { get; set; } = string.Empty;
@@ -176,6 +176,12 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         {
             SelectedPeer = null;
             await _connectionService.DisconnectAsync();
+        }
+        else if (_connectionService.CurrentListeningPeerId == peerId)
+        {
+            // タブ切替 (DeselectKeepingListener) で SelectedPeer 外のピアを着信監視中に、
+            // そのピアが削除されたケース。削除済みピアの offer を受け続けないよう監視を停止する。
+            _connectionService.StopListeningForConnection();
         }
 
         // ペアが全て削除されたら QR コードを再表示
@@ -340,6 +346,27 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
+    /// true の間は SelectedPeer=null でも着信監視を止めない。
+    /// 「設定」「ペアリング先追加」タブへ切り替えるとき、宛先リストの選択ハイライトは外しつつ
+    /// 直前ピアの着信監視を維持し、タブ表示中も相手からのファイル転送を受けられるようにする。
+    /// </summary>
+    private bool _keepListeningOnDeselect;
+
+    /// <summary>
+    /// タブ切替用の選択解除。宛先リストのハイライトは外すが、直前ピアの着信監視は維持する。
+    /// （設定 / ペアリング先追加タブへ切り替える際に MainWindowViewModel から呼ぶ。
+    ///  単純に SelectedPeer=null すると着信監視が止まり、タブ表示中に相手が転送を
+    ///  開始できなくなる回帰を避けるため。）
+    /// </summary>
+    public void DeselectKeepingListener()
+    {
+        if (SelectedPeer == null) return;
+        _keepListeningOnDeselect = true;
+        try { SelectedPeer = null; }
+        finally { _keepListeningOnDeselect = false; }
+    }
+
+    /// <summary>
     /// ピア選択時は宛先を記憶し、着信接続監視を開始する。
     /// 相手側がファイルを送ろうとした時に自動的に Answer を返せるようにする。
     /// </summary>
@@ -359,8 +386,10 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             _connectionService.StartListeningForConnection(newValue.PeerId);
             Util.Logger.Log($"ピア選択・着信監視開始: {newValue.DisplayName} ({newValue.PeerId})");
         }
-        else
+        else if (!_keepListeningOnDeselect)
         {
+            // 通常の選択解除（ピア削除など）。タブ切替による一時解除のときは
+            // _keepListeningOnDeselect=true なので止めず、直前ピアの着信監視を維持する。
             _connectionService.StopListeningForConnection();
         }
     }
@@ -482,17 +511,22 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     {
         try
         {
-            // ペアリング情報を永続化
-            await _peerRegistry.AddOrUpdatePeerAsync(peer);
-
-            // UI スレッドで ObservableCollection・ObservableProperty を更新
-            await Dispatcher.UIThread.InvokeAsync(() =>
+            // UI スレッドで判定・更新する (PairedPeers / ObservableProperty は UI スレッド専用)。
+            // 既知ピアの再検知は新規ペアリングではないので UI を切り替えない:
+            // pairings/{pairingId} は即削除されず最大 1 時間 Firebase に残るため、
+            // 「ペアリング先追加」で StartWatchingPairing を始めた直後に、過去に成立済みの
+            // 自分宛ペアリングを拾って PairingCompleted が再発火する。これを通すと既存ピアが
+            // SelectedPeer に再選択され、ペアリング追加画面がすぐ閉じて宛先画面へ戻ってしまう。
+            var isNewPeer = await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (PairedPeers.All(p => p.PeerId != peer.PeerId))
+                if (PairedPeers.Any(p => p.PeerId == peer.PeerId))
                 {
-                    peer.WentOnline += OnPeerWentOnline;
-                    PairedPeers.Add(peer);
+                    Util.Logger.Log($"既知ピアのペアリング再検知を無視: {peer.DisplayName} ({peer.PeerId})");
+                    return false;
                 }
+
+                peer.WentOnline += OnPeerWentOnline;
+                PairedPeers.Add(peer);
                 UpdateHasPairedPeers();
 
                 // QR コード表示をクリアし、宛先選択モードへ
@@ -501,7 +535,17 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                 PairingUrl = string.Empty;
                 IsLinkCopied = false;
                 SelectedPeer = peer;
+                return true;
             });
+
+            // 新規ピア成立時のみ: pairing watch を止めて永続化する。
+            // 既知ピアの再検知 (stale な pairings/ エントリ由来) では watch を止めず、
+            // 新規デバイスとのペアリングを引き続き検知できるようにする。
+            if (isNewPeer)
+            {
+                _connectionService.StopPairingWatch();
+                await _peerRegistry.AddOrUpdatePeerAsync(peer); // 既存ピアを上書きして PairedAt / LastTransferAt を潰さない
+            }
         }
         catch (Exception ex)
         {

@@ -1,34 +1,28 @@
-<Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="using:Ferry.ViewModels"
-        x:Class="Ferry.Views.AddMemberWindow"
-        x:DataType="vm:ConnectionViewModel"
-        Title="{DynamicResource Text.Tab.AddMember}"
-        Width="380"
-        Height="640"
-        WindowStartupLocation="CenterOwner"
-        CanResize="False"
-        Background="{StaticResource TahoeWindowBgBrush}"
-        ExtendClientAreaToDecorationsHint="True"
-        ExtendClientAreaTitleBarHeightHint="36">
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Ferry.ViewModels"
+             x:Class="Ferry.Views.AddMemberView"
+             x:DataType="vm:ConnectionViewModel">
 
-    <Grid RowDefinitions="36,*">
-        <Border Grid.Row="0" Background="Transparent" IsHitTestVisible="False" />
-
-        <StackPanel Grid.Row="1" Spacing="16" Margin="24,0,24,24"
-                    HorizontalAlignment="Center" VerticalAlignment="Center">
+    <!-- 旧 AddMemberWindow を右ペイン内タブとして埋め込んだビュー。
+         ウィンドウ枠を排し、縦に長い内容は ScrollViewer で見切れを防ぐ。 -->
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="16" Margin="24"
+                    MaxWidth="340"
+                    HorizontalAlignment="Center">
             <!-- タイトル -->
             <TextBlock Text="{DynamicResource Text.Tab.AddMember}"
                        FontSize="18" FontWeight="SemiBold"
                        HorizontalAlignment="Center"
-                       Foreground="{StaticResource TahoeTextPrimaryBrush}" />
+                       Foreground="{DynamicResource TahoeTextPrimaryBrush}" />
 
             <!-- ステータステキスト -->
             <TextBlock Text="{Binding StatusText}"
                        FontSize="13"
                        HorizontalAlignment="Center"
                        TextWrapping="Wrap"
-                       Foreground="{StaticResource TahoeTextSecondaryBrush}"
+                       Foreground="{DynamicResource TahoeTextSecondaryBrush}"
                        IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
             <!-- QR コード表示 -->
@@ -46,7 +40,7 @@
                         IsVisible="{Binding PairingCode, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                 <TextBlock Text="{DynamicResource Text.Connection.PairingCode}"
                            FontSize="11"
-                           Foreground="{StaticResource TahoeTextTertiaryBrush}"
+                           Foreground="{DynamicResource TahoeTextTertiaryBrush}"
                            HorizontalAlignment="Center" />
                 <Border Classes="glass-inner" Padding="8,6">
                     <Grid ColumnDefinitions="*,Auto">
@@ -55,7 +49,7 @@
                                    FontSize="11"
                                    FontFamily="Consolas, 'Courier New', monospace"
                                    TextTrimming="CharacterEllipsis"
-                                   Foreground="{StaticResource TahoeTextPrimaryBrush}"
+                                   Foreground="{DynamicResource TahoeTextPrimaryBrush}"
                                    VerticalAlignment="Center" />
                         <Button Grid.Column="1"
                                 Classes="tahoe-primary"
@@ -75,25 +69,28 @@
                 </Border>
             </StackPanel>
 
-            <!-- 区切り線 -->
+            <!-- 区切り線。コピー欄 (PairingCode 依存) と表示条件を揃え、
+                 セッション準備前に「貼り付けだけ」が出る非対称を防ぐ -->
             <Border Height="1"
-                    Background="{StaticResource TahoeTextTertiaryBrush}"
+                    Background="{DynamicResource TahoeTextTertiaryBrush}"
                     Opacity="0.3"
-                    Margin="0,4,0,4" />
+                    Margin="0,4,0,4"
+                    IsVisible="{Binding PairingCode, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-            <!-- v1.0.38: 相手のペアリングコードを貼り付け (URL ではなく 32 文字 hex) -->
-            <StackPanel Spacing="6">
+            <!-- v1.0.38: 相手のペアリングコードを貼り付け (URL ではなく 32 文字 hex)。
+                 コピー欄と同じ PairingCode 依存にし、自分のコードがある時だけ一緒に出す -->
+            <StackPanel Spacing="6"
+                        IsVisible="{Binding PairingCode, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                 <TextBlock Text="{DynamicResource Text.Connection.PairFromCode.Header}"
                            FontSize="11"
-                           Foreground="{StaticResource TahoeTextTertiaryBrush}"
+                           Foreground="{DynamicResource TahoeTextTertiaryBrush}"
                            HorizontalAlignment="Center" />
                 <TextBlock Text="{DynamicResource Text.Connection.PairFromCode.Hint}"
                            FontSize="10"
                            TextWrapping="Wrap"
                            HorizontalAlignment="Center"
-                           Foreground="{StaticResource TahoeTextTertiaryBrush}" />
-                <TextBox x:Name="PairFromCodeInput"
-                         FontSize="11"
+                           Foreground="{DynamicResource TahoeTextTertiaryBrush}" />
+                <TextBox FontSize="11"
                          FontFamily="Consolas, 'Courier New', monospace"
                          PlaceholderText="{DynamicResource Text.Connection.PairFromCode.Placeholder}"
                          Text="{Binding PairFromCodeText, Mode=TwoWay}" />
@@ -113,5 +110,5 @@
                 </Button>
             </StackPanel>
         </StackPanel>
-    </Grid>
-</Window>
+    </ScrollViewer>
+</UserControl>

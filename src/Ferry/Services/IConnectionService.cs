@@ -70,6 +70,12 @@ public interface IConnectionService
     /// </summary>
     Task CancelPairingAsync(CancellationToken ct = default);
 
+    /// <summary>
+    /// pairing watch を停止する。新規ペアリング成立確定時に呼ぶ。
+    /// stale/既知ピアの再検知では呼ばず watcher を生かしたままにする。
+    /// </summary>
+    void StopPairingWatch() { }
+
     // === 着信接続監視 ===
 
     /// <summary>
@@ -82,6 +88,9 @@ public interface IConnectionService
     /// 着信接続監視を停止する。
     /// </summary>
     void StopListeningForConnection();
+
+    /// <summary>現在着信監視中のピア ID（未監視なら null）。</summary>
+    string? CurrentListeningPeerId => null;
 
     // === オンデマンド接続（送信側が呼ぶ） ===
 

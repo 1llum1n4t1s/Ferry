@@ -51,6 +51,18 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// </summary>
     private string? _currentListeningPeerId;
 
+    /// <summary>現在着信監視中のピア ID（未監視なら null）。タブ切替で SelectedPeer 外の
+    /// ピアを監視中に、そのピアが削除された場合の監視停止判定に VM が使う。</summary>
+    public string? CurrentListeningPeerId => _currentListeningPeerId;
+
+    /// <summary>
+    /// この pairing watch セッションで既に処理した pairingId。
+    /// Firebase 購読時に既存子 (stale な pairings/ エントリ) が replay されても、
+    /// 同じ pairing を二重に PairingCompleted へ流さないための重複排除。
+    /// StartPairingSessionAsync 開始時にクリアする。
+    /// </summary>
+    private readonly System.Collections.Generic.HashSet<string> _seenPairingIds = new();
+
     /// <summary>WebSocket リレーサーバーの URL。null の場合はリレーなし（TCP 直接のみ）。</summary>
     public string? RelayUrl { get; set; }
 
@@ -78,6 +90,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     {
         _signaling?.Dispose();
         _signaling = new FirebaseSignaling(_databaseUrl);
+        _seenPairingIds.Clear();
 
         var sessionId = await _signaling.RegisterSessionAsync(_deviceId, _displayName, ct);
 
@@ -194,12 +207,13 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             var sig = _signaling;
             if (sig == null) return;
 
+            // 同一 pairing の重複検知（購読時の既存子 replay 含む）はスキップ。
+            // watch はここでは止めない。stale な pairings/ エントリ (過去に成立済みで Firebase に
+            // 1 時間残るもの) を拾っても watcher を生かしておき、新規デバイスとのペアリングを
+            // 検知し続けられるようにする。成立確定 (新規ピア) 時に VM が StopPairingWatch を呼ぶ。
+            if (!_seenPairingIds.Add(info.PairingId)) return;
+
             Util.Logger.Log($"ペアリング検知: peer={info.PeerDisplayName}");
-
-            sig.PairingDetected -= OnPairingDetected;
-            sig.StopWatching();
-
-            SetState(PeerState.WaitingForMatch);
 
             var peer = new PairedPeer
             {
@@ -217,6 +231,18 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         {
             Util.Logger.Log($"ペアリング検知処理エラー: {ex.Message}", Util.LogLevel.Warning);
         }
+    }
+
+    /// <summary>
+    /// pairing watch を停止する。新規ペアリング成立確定時に VM (OnPairingCompleted) が呼ぶ。
+    /// stale/既知ピアの再検知では呼ばず、watcher を生かしたままにする。
+    /// </summary>
+    public void StopPairingWatch()
+    {
+        var sig = _signaling;
+        if (sig == null) return;
+        sig.PairingDetected -= OnPairingDetected;
+        sig.StopWatching();
     }
 
     // === 着信接続監視 ===
