@@ -10,7 +10,7 @@
     <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
 
     <Product>Ferry</Product>
-    <Version>1.0.43</Version>
+    <Version>1.0.44</Version>
     <Description>P2P File Transfer Application</Description>
   </PropertyGroup>
 
@@ -47,7 +47,7 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <!-- Komorebi と同じローカライズ＆アイコン注入パターンで自動更新ダイアログを提供する。
          自前の SelfUpdateWindow/VM/Model は撤去し、このライブラリの UpdateDialogWindow に統一 -->
-    <PackageReference Include="VelopackUpdateDialog.Avalonia" Version="1.0.4" />
+    <PackageReference Include="VelopackUpdateDialog.Avalonia" Version="1.0.5" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
     <PackageReference Include="FirebaseDatabase.net" Version="5.0.0" />
     <PackageReference Include="SuperLightLogger" Version="1.0.7" />
