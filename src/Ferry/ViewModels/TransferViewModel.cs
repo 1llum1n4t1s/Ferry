@@ -163,9 +163,14 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         VisibleTransfers.Remove(item);
     }
 
-    /// <summary>TransferId からアイテムを引く。</summary>
+    /// <summary>TransferId からアイテムを引く。同じ TransferId の行が複数あれば「非 terminal 行」を優先する。
+    /// 接続断 → 自動 retry のシナリオで、受信側にも前 attempt の Cancelled / Error 行が履歴として残ったまま
+    /// 新 attempt の FileMeta が来ると同 TransferId の行が並ぶ。素朴な FirstOrDefault は古い terminal 行を
+    /// 返してしまい、新 attempt の進捗が古い行を更新する/新行に反映されない不整合になる。
+    /// 非 terminal 行を優先することで進行中行が確実に拾われ、履歴側の terminal 行はそのまま残る（履歴粒度は維持）。</summary>
     private TransferItem? FindTransfer(Guid transferId) =>
-        Transfers.FirstOrDefault(t => t.TransferId == transferId);
+        Transfers.FirstOrDefault(t => t.TransferId == transferId && !t.IsTerminal)
+        ?? Transfers.FirstOrDefault(t => t.TransferId == transferId);
 
     private void RecomputeIsTransferring() =>
         IsTransferring = Transfers.Any(t => t.State == TransferState.InProgress);
@@ -513,8 +518,10 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     {
         var item = FindTransfer(transferId);
         if (item is null || !item.CanPause) return;
-        _transferService.PauseSendTransfer(transferId.ToString());
-        item.State = TransferState.Paused; // 体感ラグを消すため即時反映（service の進捗イベントでも来る）
+        // service が受理した（_activeTransfers に転送が乗っている）場合のみ UI を Paused に。
+        // 接続待ち / retry backoff 中はサービスに transfer が無く no-op が返るので UI 偽 Paused 表示を避ける。
+        if (_transferService.PauseSendTransfer(transferId.ToString()))
+            item.State = TransferState.Paused; // 受理時のみ即時反映（service の進捗イベントでも来る）
     }
 
     /// <summary>一時停止中の送信を再開する。</summary>

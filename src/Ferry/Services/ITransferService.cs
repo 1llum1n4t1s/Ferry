@@ -78,9 +78,13 @@ public interface ITransferService : IDisposable
 
     /// <summary>
     /// 送信中の転送を一時停止する。チャンク送信ループを停止させ、接続は維持する。
+    /// 接続待ち / リトライ backoff 中など service 側に active transfer がまだ無い場合は受理されず false を返す。
+    /// VM 側は受理時のみ UI 行を Paused に遷移させる（旧実装は service の no-op に気付かず、
+    /// 接続待ち中に pause しても UI だけ Paused 表示で送信は続行という不整合があった）。
     /// </summary>
     /// <param name="transferId">一時停止する送信転送の ID。</param>
-    void PauseSendTransfer(string transferId);
+    /// <returns>service 側で実際に pause が記録されたら true、受理できなかったら false。</returns>
+    bool PauseSendTransfer(string transferId);
 
     /// <summary>
     /// 一時停止中の送信転送を再開する。

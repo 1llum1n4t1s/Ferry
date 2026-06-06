@@ -120,12 +120,14 @@ public sealed class TransferService : ITransferService, IDisposable
     {
         Util.Logger.Log($"接続切断検知: 受信中 {_receiveStates.Count} 件 + 承認待ち(受) {_pendingApprovals.Count} 件 + 承認待ち(送) {_pendingSendApprovals.Count} 件 + 送信中 {_activeTransfers.Count} 件を cleanup", Util.LogLevel.Warning);
 
-        // v1.0.47: 一時停止中の送信は SendChunksAsync の pause ループ内で _pausedSends クリア or ct cancel
-        // を待っているため、ここで両方を弾いておかないと「接続切れたのに paused のまま永遠に止まる」状態になる。
-        // _pausedSends 全クリア + 全 _sendCts.Cancel() で SendChunksAsync を抜けさせ、SendFileAsync の
-        // catch 経路で OperationCanceled / IOException として State=Cancelled/Error 反映 + UI 通知が走る。
+        // v1.0.47: 「一時停止中だった」送信だけを抜けさせる（CTS Cancel）。それ以外の進行中送信は
+        // SendChunksAsync の _connectionService.SendAsync(...) が転送断で IOException を投げ、
+        // SendItemAsync の transient catch（MaxSendAttempts までリトライ）に乗るのが望ましい。
+        // ここで全 _sendCts を一括 Cancel すると OperationCanceled になり、リトライ機構を素通りして
+        // 即 Cancelled で履歴が終わってしまう（接続断 = 即諦め）ので、対象を paused に限定する。
+        var pausedTids = _pausedSends.Keys.ToArray();
         _pausedSends.Clear();
-        foreach (var tid in _sendCts.Keys.ToArray())
+        foreach (var tid in pausedTids)
         {
             if (_sendCts.TryGetValue(tid, out var cts))
             {
@@ -1252,13 +1254,15 @@ public sealed class TransferService : ITransferService, IDisposable
         }
     }
 
-    /// <summary>送信中の転送を一時停止する。SendChunksAsync が次のチャンク境界で待機に入る。</summary>
-    public void PauseSendTransfer(string transferId)
+    /// <summary>送信中の転送を一時停止する。SendChunksAsync が次のチャンク境界で待機に入る。
+    /// 接続待ち / retry backoff など _activeTransfers にまだ載っていない場合は受理せず false を返す。</summary>
+    public bool PauseSendTransfer(string transferId)
     {
-        if (!Guid.TryParse(transferId, out var tid)) return;
-        if (!_activeTransfers.TryGetValue(tid, out var item) || item.State != TransferState.InProgress) return;
+        if (!Guid.TryParse(transferId, out var tid)) return false;
+        if (!_activeTransfers.TryGetValue(tid, out var item) || item.State != TransferState.InProgress) return false;
         _pausedSends[tid] = 0;
         Util.Logger.Log($"送信一時停止: {item.FileName}");
+        return true;
     }
 
     /// <summary>一時停止中の送信転送を再開する。</summary>
