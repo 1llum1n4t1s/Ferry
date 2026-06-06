@@ -14,7 +14,7 @@
         <Border Grid.Row="0" Background="{DynamicResource SurfaceVariantBrush}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
                 Padding="16,12">
-            <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+            <Grid ColumnDefinitions="*,Auto,Auto">
                 <!-- ピア名 + 経路バッジ。SelectedPeer を中間 DataContext に置き子は直接参照する。 -->
                 <StackPanel VerticalAlignment="Center" Spacing="4"
                             x:DataType="m:PairedPeer"
@@ -38,20 +38,14 @@
                         </StackPanel>
                     </Border>
                 </StackPanel>
-                <!-- 受信フォルダを開く（保存先を OS のファイラで開く。常時表示） -->
+                <!-- 履歴クリア（選択中ピアの完了/失敗/キャンセル分のみ）。受信フォルダを開くボタンは保存先バー（MainWindow 上部）の📂に集約済み。 -->
                 <Button Grid.Column="1" Classes="icon"
-                        Content="📂" FontSize="15"
-                        VerticalAlignment="Center" Margin="0,0,8,0"
-                        ToolTip.Tip="{DynamicResource Text.SaveBar.Open}"
-                        Click="OnOpenSaveDirClick" />
-                <!-- 履歴クリア（選択中ピアの完了/失敗/キャンセル分のみ） -->
-                <Button Grid.Column="2" Classes="icon"
                         Content="🗑" FontSize="15"
                         VerticalAlignment="Center" Margin="0,0,8,0"
                         ToolTip.Tip="{DynamicResource Text.Transfer.ClearHistory}"
                         IsVisible="{Binding HasTransfers}"
                         Command="{Binding ClearHistoryCommand}" />
-                <Button Grid.Column="3" Classes="accent"
+                <Button Grid.Column="2" Classes="accent"
                         Content="{DynamicResource Text.Transfer.SendFile}"
                         Command="{Binding BrowseAndSendFilesCommand}" />
             </Grid>

@@ -180,7 +180,7 @@ UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レ
 - **ファイルパスのマーキー**: `Controls/MarqueeTextBlock`（`Decorator` 派生・テンプレート非依存・子 TextBlock をコード保持・`DispatcherTimer` で `TranslateTransform.X` を更新）。収まる時は静止、はみ出す時のみ左へ流す。`TransferView` の Row2 パス表示を差し替え
 - **転送レート(bps)**: `TransferViewModel` の 1 秒 `DispatcherTimer`（`OnRateTimerTick`）が `VisibleTransfers` の InProgress 項目について差分から bps を算出し `TransferItem.RateText` を更新（停止/完了/一時停止でクリア）。整形は `Util.Formatting.FormatBitrate`（1000 区切り）。サンプル保持は素フィールド `LastSampledBytes`/`LastSampleTick`
 - **送受信日時**: `TransferItem.CreatedAt`（生成時 `DateTime.Now`）+ `CreatedAtText`（`yyyy-MM-dd HH:mm:ss`）を全履歴行（ファイル名行の右）に常時表示。重複回避のため `DisplayInfo` の完了時刻連結は撤去
-- **受信フォルダを開くボタン**: `TransferView` ヘッダの送信ボタン左に 📂 を追加。OS ファイラ起動は `Util.ShellHelper.OpenFolder`（MainWindow の保存先📂と共用）。保存先は `TopLevel.GetTopLevel(this).DataContext as MainWindowViewModel` の `Settings.SaveDirectory` から取得
+- **受信フォルダを開くボタン**: 保存先バー（`MainWindow` 上部）の 📂 に一本化。OS ファイラ起動は `Util.ShellHelper.OpenFolder`、保存先は `MainWindow.axaml.cs` の `OnOpenSaveDirClick`（`_settingsService.Settings.SaveDirectory` 優先）から取得。`TransferView` ヘッダにも一時的に 📂 を置いていたが「開くボタンが 3 つある」状態を避けるため撤去し保存先バーのみに集約
 - **Bridge の URL 貼り付けペアリング撤去**: `src/Ferry.Bridge/`（index.html + bridge.js）からモード B（URL ペースト）を削除。このページはカメラ付き端末（スマホ）でしか到達しないため。モード選択はカメラ 1 枚のみ（自動カメラ起動はしない方針は維持）
 
 ### プレゼンス監視（オンライン検出）
