@@ -158,10 +158,15 @@ public sealed class TransferService : ITransferService, IDisposable
             }
         }
 
-        // CodeRabbit 指摘: 送信側承認待ち TCS も解放。
-        // FileMeta 送信後 → 受信側からの FileApprove 待ちで切断したケース、TCS を false で完了させて
-        // WaitForApprovalAsync を抜けさせる。WaitForApprovalAsync の wait 完了分岐 (approved=false)
-        // で State=Cancelled / TransferError 発火が自動的に走る (v12 で実装済み経路)
+        // 送信側承認待ち TCS も解放。FileMeta 送信後 → 受信側からの FileApprove 待ちで切断したケース。
+        // v1.0.47 修正 (P2-H): 旧実装の TrySetResult(false) は WaitForApprovalAsync で「拒否扱い」になり、
+        // SendFileAsync が OperationCanceledException を投げて VM の no-retry catch に落ちていた。
+        // 承認待ち中の接続断は transient なので、専用例外 ConnectionLostDuringTransferException
+        // (IOException 派生 / 非 OperationCanceledException) を TrySetException で投げる。これにより:
+        //   1. WaitForApprovalAsync の OperationCanceledException catch を素通り
+        //   2. SendFileAsync の catch (Exception) で throw されて
+        //   3. VM SendItemAsync の catch (Exception) when (attempt < MaxSendAttempts) の transient 経路に乗り
+        //      MaxSendAttempts まで自動リトライが走る（接続復帰後の再送信に対応）
         foreach (var tid in _pendingSendApprovals.Keys.ToArray())
         {
             if (_pendingSendApprovals.TryRemove(tid, out var tcs))
@@ -171,7 +176,7 @@ public sealed class TransferService : ITransferService, IDisposable
                 {
                     sendItem.ErrorMessage = "接続が切断されました";
                 }
-                tcs.TrySetResult(false);
+                tcs.TrySetException(new ConnectionLostDuringTransferException("接続が切断されました（承認待ち中）"));
             }
         }
     }
