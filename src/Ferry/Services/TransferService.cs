@@ -118,7 +118,20 @@ public sealed class TransferService : ITransferService, IDisposable
     /// </summary>
     private void OnConnectionLost(object? sender, EventArgs e)
     {
-        Util.Logger.Log($"接続切断検知: 受信中 {_receiveStates.Count} 件 + 承認待ち(受) {_pendingApprovals.Count} 件 + 承認待ち(送) {_pendingSendApprovals.Count} 件を cleanup", Util.LogLevel.Warning);
+        Util.Logger.Log($"接続切断検知: 受信中 {_receiveStates.Count} 件 + 承認待ち(受) {_pendingApprovals.Count} 件 + 承認待ち(送) {_pendingSendApprovals.Count} 件 + 送信中 {_activeTransfers.Count} 件を cleanup", Util.LogLevel.Warning);
+
+        // v1.0.47: 一時停止中の送信は SendChunksAsync の pause ループ内で _pausedSends クリア or ct cancel
+        // を待っているため、ここで両方を弾いておかないと「接続切れたのに paused のまま永遠に止まる」状態になる。
+        // _pausedSends 全クリア + 全 _sendCts.Cancel() で SendChunksAsync を抜けさせ、SendFileAsync の
+        // catch 経路で OperationCanceled / IOException として State=Cancelled/Error 反映 + UI 通知が走る。
+        _pausedSends.Clear();
+        foreach (var tid in _sendCts.Keys.ToArray())
+        {
+            if (_sendCts.TryGetValue(tid, out var cts))
+            {
+                try { cts.Cancel(); } catch { /* ignore */ }
+            }
+        }
 
         // 受信中の部分ファイルを削除
         foreach (var tid in _receiveStates.Keys.ToArray())

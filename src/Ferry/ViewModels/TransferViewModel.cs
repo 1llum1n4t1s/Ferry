@@ -323,7 +323,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                         item.State = TransferState.InProgress;
                     }
 
-                    await EnsureConnectedAsync(peer);
+                    await EnsureConnectedAsync(peer, cts.Token);
                     // UI 行と同じ TransferId を渡し、進捗・キャンセル・一時停止を対応付ける
                     await _transferService.SendFileAsync(absolutePath, relativePath, item.TransferId, cts.Token);
 
@@ -379,8 +379,8 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     /// <summary>指定ピアへ接続済みであることを保証する。別ピアに接続中なら切り替える。確立できなければ例外。
     /// 複数ピア + 複数ファイル + UI 選択切り替えが混ざっても、各 item が「自分の宛先」に必ず行くようにする。
     /// 旧実装は <c>State==Connected</c> なら相手ピアを確認せず素通りし、selection 切替で別ピア B 宛に
-    /// item A が送られる事故があった。</summary>
-    private async Task EnsureConnectedAsync(PairedPeer peer)
+    /// item A が送られる事故があった。ct は CancelTransfer 経由で渡され、接続待ち中もキャンセルで抜けられる。</summary>
+    private async Task EnsureConnectedAsync(PairedPeer peer, CancellationToken ct)
     {
         // 既に「対象ピアそのものに」接続済みなら何もしない
         if (_connectionService.State == PeerState.Connected
@@ -392,7 +392,8 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             _connectionViewModel.SelectedPeer = peer;
 
         Util.Logger.Log($"未接続/別ピア接続中のためオンデマンド接続を開始… 宛先={peer.DisplayName}");
-        await _connectionViewModel.ConnectToSelectedPeerAsync();
+        // CT を渡して接続待ち中の CancelTransfer に応答できるようにする（offline / NAT 越えで張り付くケースを救う）
+        await _connectionViewModel.ConnectToSelectedPeerAsync(ct);
         Util.Logger.Log($"オンデマンド接続完了: State={_connectionService.State}");
 
         if (_connectionService.State != PeerState.Connected

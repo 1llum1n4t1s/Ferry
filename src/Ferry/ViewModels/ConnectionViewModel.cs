@@ -324,6 +324,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                 var presenceData = await sig.GetPresenceAsync(peer.PeerId);
                 var isOnline = presenceData != null && (now - presenceData.LastSeen) < OfflineThresholdMs;
 
+                var nameChanged = false;
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     // v1.0.47 修正: PresencePollLoop は帯域節約のため LastSeen のみ取得していて
@@ -332,7 +333,10 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                     if (presenceData != null
                         && !string.IsNullOrEmpty(presenceData.DisplayName)
                         && peer.DisplayName != presenceData.DisplayName)
+                    {
                         peer.DisplayName = presenceData.DisplayName;
+                        nameChanged = true;
+                    }
 
                     // IsOnline edge トリガーで Probe 走る (false → true の場合) ので、
                     // 既に true の場合は明示的に Probe 呼び出し
@@ -359,6 +363,11 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                         peer.Route = ConnectionRoute.Unknown;
                     }
                 });
+
+                // 表示名が変わったら peers.json へ永続化する（再起動後もスタールしないように）。
+                // UI スレッド外の await は OK（PeerRegistryService 内で SaveAsync が走る）。
+                if (nameChanged)
+                    await _peerRegistry.AddOrUpdatePeerAsync(peer);
             }
             catch (Exception ex)
             {
@@ -421,8 +430,10 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
 
     /// <summary>
     /// 選択されたピアにオンデマンド接続する（ファイル転送開始時に呼ばれる）。
+    /// v1.0.47: ct を渡せるようにして、転送キャンセルで「接続待ち」状態にも割り込めるようにする
+    /// （旧実装は CT 無しで、相手 offline / NAT 越え試行中の長い待ちをユーザーが中断できなかった）。
     /// </summary>
-    public async Task ConnectToSelectedPeerAsync()
+    public async Task ConnectToSelectedPeerAsync(CancellationToken ct = default)
     {
         var peer = SelectedPeer;
         if (peer == null)
@@ -443,7 +454,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
 
         try
         {
-            await _connectionService.ConnectToPeerAsync(peer.PeerId);
+            await _connectionService.ConnectToPeerAsync(peer.PeerId, ct);
         }
         catch (Exception ex)
         {
@@ -832,13 +843,16 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         try
         {
             var route = await _connectionService.ProbeRouteAsync(peer.PeerId);
-            // v1.0.47: probe が Unknown を返しても、既に有効な経路バッジを持つピアは据え置く。
-            // 転送中は probe がメイン接続と競合してタイムアウト→Unknown を返しやすく、これを無条件で
-            // 書き戻すとバッジが「状態取得中」へ退行して固着する。offline 時の Unknown 化は
-            // RefreshPeersAsync / PresencePollLoop の !isOnline 分岐が担うので、probe 側で潰さない。
+            // v1.0.47 修正版: probe Unknown の保護対象を「いま実際に接続中のピア」だけに絞る。
+            // 転送中のメイン接続と probe が競合して Unknown を返すケースを守る必要があるが、それ以外で
+            // probe が Unknown を返したのは経路が本当に取れていない状態（LAN 切替・相手 NIC ダウン等）
+            // なので、stale な LAN/P2P/relay バッジを残すと誤誘導になる。online edge / 手動 refresh 由来の
+            // 通常 probe では Unknown を素直に書き戻す。offline 化は !isOnline 分岐で別途処理される。
             Dispatcher.UIThread.Post(() =>
             {
-                if (route != ConnectionRoute.Unknown || peer.Route == ConnectionRoute.Unknown)
+                var isLiveConnectedPeer = _connectionService.State is PeerState.Connected or PeerState.Connecting
+                                          && _connectionService.ConnectedPeer?.SessionId == peer.PeerId;
+                if (route != ConnectionRoute.Unknown || !isLiveConnectedPeer)
                     peer.Route = route;
             });
             Util.Logger.Log($"経路 Probe 完了: peer={peer.PeerId}, route={route}");
