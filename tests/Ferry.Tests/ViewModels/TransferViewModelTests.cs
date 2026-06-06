@@ -45,6 +45,9 @@ public class TransferViewModelTests : IDisposable
         if (withSelectedPeer)
         {
             _connectionViewModel.SelectedPeer = new PairedPeer { PeerId = "test-peer", DisplayName = "TestPeer" };
+            // v1.0.47: EnsureConnectedAsync が ConnectedPeer.SessionId == peer.PeerId を要求するため、
+            // 接続済みシナリオでは ConnectedPeer も同じ SessionId を返すよう mock を整える。
+            _connectionService.ConnectedPeer.Returns(new PeerInfo { SessionId = "test-peer", DisplayName = "TestPeer", State = PeerState.Connected });
         }
         // v1.0.38: TransferViewModel が ISettingsService に依存するようになった (AutoAccept チェック用)
         return new TransferViewModel(_connectionService, _transferService, _connectionViewModel, _settingsService);

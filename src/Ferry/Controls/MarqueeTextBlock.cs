@@ -133,7 +133,13 @@ public class MarqueeTextBlock : Decorator
 
     private void OnTick(object? sender, EventArgs e)
     {
-        if (_distance <= 0) return;
+        // Speed <= 0 を与えられた場合、移動量が 0 か負になり _offset が _distance に到達できず
+        // タイマーが回り続ける（または逆走する）ので、無効値ならタイマーを止める。
+        if (_distance <= 0 || Speed <= 0)
+        {
+            StopTimer();
+            return;
+        }
 
         if (_pauseLeft > 0)
         {

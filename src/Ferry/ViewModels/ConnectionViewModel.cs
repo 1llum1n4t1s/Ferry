@@ -326,6 +326,14 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
 
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
+                    // v1.0.47 修正: PresencePollLoop は帯域節約のため LastSeen のみ取得していて
+                    // 表示名同期をこの RefreshPeersAsync（手動更新 / 前面復帰）に委譲している。
+                    // ここで反映しないと相手が改名しても古い名前が残り続ける。
+                    if (presenceData != null
+                        && !string.IsNullOrEmpty(presenceData.DisplayName)
+                        && peer.DisplayName != presenceData.DisplayName)
+                        peer.DisplayName = presenceData.DisplayName;
+
                     // IsOnline edge トリガーで Probe 走る (false → true の場合) ので、
                     // 既に true の場合は明示的に Probe 呼び出し
                     var wasOnline = peer.IsOnline;

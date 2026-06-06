@@ -261,7 +261,16 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         RecomputeIsTransferring();
 
         foreach (var item in items)
+        {
+            // 自分の番が来る前にユーザーがキャンセル / 削除した行はスキップする。
+            // SendItemAsync 開始前は _sendCtsByItem に CTS が無く、service にも _activeTransfers が無いため、
+            // CancelTransfer は単に State を Cancelled に書き換えるだけ。ここで尊重しないと
+            // キャンセル済み行も律儀に送ってしまう。
+            if (item.State is TransferState.Cancelled or TransferState.Error
+                || FindTransfer(item.TransferId) is null)
+                continue;
             await SendItemAsync(item, peer);
+        }
     }
 
     /// <summary>
@@ -367,17 +376,27 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         }
     }
 
-    /// <summary>未接続なら選択中ピアへオンデマンド接続する。確立できなければ例外。</summary>
+    /// <summary>指定ピアへ接続済みであることを保証する。別ピアに接続中なら切り替える。確立できなければ例外。
+    /// 複数ピア + 複数ファイル + UI 選択切り替えが混ざっても、各 item が「自分の宛先」に必ず行くようにする。
+    /// 旧実装は <c>State==Connected</c> なら相手ピアを確認せず素通りし、selection 切替で別ピア B 宛に
+    /// item A が送られる事故があった。</summary>
     private async Task EnsureConnectedAsync(PairedPeer peer)
     {
-        if (_connectionService.State == PeerState.Connected)
+        // 既に「対象ピアそのものに」接続済みなら何もしない
+        if (_connectionService.State == PeerState.Connected
+            && _connectionService.ConnectedPeer?.SessionId == peer.PeerId)
             return;
 
-        Util.Logger.Log("未接続のためオンデマンド接続を開始…");
+        // 別ピアに接続中なら宛先を peer に切り替えてから接続を張り直す
+        if (_connectionViewModel.SelectedPeer?.PeerId != peer.PeerId)
+            _connectionViewModel.SelectedPeer = peer;
+
+        Util.Logger.Log($"未接続/別ピア接続中のためオンデマンド接続を開始… 宛先={peer.DisplayName}");
         await _connectionViewModel.ConnectToSelectedPeerAsync();
         Util.Logger.Log($"オンデマンド接続完了: State={_connectionService.State}");
 
-        if (_connectionService.State != PeerState.Connected)
+        if (_connectionService.State != PeerState.Connected
+            || _connectionService.ConnectedPeer?.SessionId != peer.PeerId)
             throw new InvalidOperationException(App.Text("Transfer.ConnectFailed"));
     }
 
@@ -511,12 +530,25 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private void CancelTransfer(Guid transferId)
     {
+        // service 側を先に呼ぶ：VM の CTS を先に Cancel すると、SendFileAsync が
+        // OperationCanceled で _activeTransfers から item を抜けたあとに CancelTransfer が走り、
+        // service が「送信中」と認識できず SendRejectFireAndForget を投げ損ねる競合が起きる。
+        // 先に service 側で Cancelled 遷移 + FileReject 送信させ、その後 VM 側ループを止める。
+        _transferService.CancelTransfer(transferId.ToString());
+
         // VM 側 CTS（接続待ち・リトライ待機を含む）を中断
         if (_sendCtsByItem.TryGetValue(transferId, out var cts))
             cts.Cancel();
 
-        // service 側（送信ループ停止 + 受信側の部分ファイル掃除 + 相手通知）
-        _transferService.CancelTransfer(transferId.ToString());
+        // まだ SendItemAsync が始まっていない Pending 行（複数選択時の後続）は、
+        // service にも _sendCtsByItem にもエントリが無いため、ここで明示的に Cancelled へ遷移させる。
+        // これがないと SendFilesAsync の foreach がそのまま送ってしまう（後続の skip ガードとセットで効く）。
+        var queued = FindTransfer(transferId);
+        if (queued != null && queued.State == TransferState.Pending)
+        {
+            queued.State = TransferState.Cancelled;
+            queued.ErrorMessage = App.Text("State.Cancelled");
+        }
 
         // 承認待ち受信のキャンセルは UI リストからも外す
         var pending = PendingApprovals.FirstOrDefault(t => t.TransferId == transferId);
@@ -679,7 +711,9 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         Dispatcher.UIThread.Post(() =>
         {
             var (peerId, peerName) = ResolveReceivePeer();
-            e.PeerId = peerId;
+            // PeerId は service 側 HandleFileMeta が FileMeta 到着時点で確定させているのでそれを優先し、
+            // 空のときだけ VM 側の推測で補完する（宛先別履歴のピア混入防止）。PeerName は表示名解決を持つ VM 側で常に設定。
+            if (string.IsNullOrEmpty(e.PeerId)) e.PeerId = peerId;
             e.PeerName = peerName;
 
             if (_settingsService.Settings.AutoAcceptFileTransfer)

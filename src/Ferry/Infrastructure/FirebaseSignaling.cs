@@ -582,16 +582,18 @@ public sealed class FirebaseSignaling : IDisposable
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         // ETag をレスポンスヘッダに乗せてもらうための Firebase REST 拡張ヘッダ。
         req.Headers.TryAddWithoutValidation("X-Firebase-ETag", "true");
-        if (_presenceCache.TryGetValue(deviceId, out var cached) && !string.IsNullOrEmpty(cached.ETag))
+        // 直前のキャッシュ値を 1 度だけ読んで以後 304 ブランチでも使い回す（辞書アクセスを減らす）。
+        var cacheHit = _presenceCache.TryGetValue(deviceId, out var cached);
+        if (cacheHit && !string.IsNullOrEmpty(cached.ETag))
             req.Headers.TryAddWithoutValidation("If-None-Match", cached.ETag);
 
         try
         {
             using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseContentRead, ct);
 
-            // 304: 値は前回から不変 → キャッシュ済み LastSeen を返す（本文転送ゼロ）。
+            // 304: 値は前回から不変 → 既に読んだ cached.LastSeen をそのまま返す（本文転送ゼロ・辞書再検索なし）。
             if (resp.StatusCode == HttpStatusCode.NotModified)
-                return _presenceCache.TryGetValue(deviceId, out var c) ? c.LastSeen : null;
+                return cacheHit ? cached.LastSeen : null;
 
             if (!resp.IsSuccessStatusCode)
                 return null;
@@ -644,6 +646,7 @@ public sealed class FirebaseSignaling : IDisposable
     public void Dispose()
     {
         StopWatching();
+        _presenceCache.Clear(); // presence ETag キャッシュを解放（セッションを跨いで古い peerId を残さない）
         _client.Dispose();
     }
 

@@ -102,6 +102,9 @@ public sealed class TransferService : ITransferService, IDisposable
                 cts.Dispose();
             }
         }
+
+        // 一時停止フラグも掃除（CTS Cancel でループは抜けるが、辞書エントリを残さない）
+        _pausedSends.Clear();
     }
 
     /// <summary>
@@ -738,6 +741,11 @@ public sealed class TransferService : ITransferService, IDisposable
                 Direction = TransferDirection.Receive,
                 State = TransferState.WaitingApproval,
                 Sha256Hash = meta.Sha256,
+                // 接続元ピアを FileMeta 到着時点で確定させる（VM 側 ResolveReceivePeer の後付け推測より
+                // 権威ある値。宛先別履歴が誤ピアに混入しないようにする。VM はこれが空のときだけ補完する）。
+                PeerId = _connectionService.ConnectedPeer?.SessionId
+                         ?? _connectionService.CurrentListeningPeerId
+                         ?? string.Empty,
             },
         };
 
