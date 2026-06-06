@@ -126,6 +126,28 @@ public static class FileChunker
     }
 
     /// <summary>
+    /// フロー制御 ACK メッセージを生成する [種別 1byte] [TransferId 16byte] [receivedChunkCount 4byte]。v1.0.46 追加。
+    /// 受信側が一定チャンクごとに「書き込み済みチャンク数」を送信側へ返し、送信側のウィンドウ制御に使う。
+    /// </summary>
+    public static byte[] CreateFlowAckMessage(Guid transferId, int receivedChunkCount)
+    {
+        var message = new byte[TransferProtocol.FlowAckSize];
+        message[0] = TransferProtocol.FileFlowAck;
+        transferId.TryWriteBytes(message.AsSpan(1, 16));
+        BinaryPrimitives.WriteInt32BigEndian(message.AsSpan(17, 4), receivedChunkCount);
+        return message;
+    }
+
+    /// <summary>FlowAck メッセージから TransferId と受信済みチャンク数を抽出する。</summary>
+    public static (Guid TransferId, int ReceivedChunkCount)? ParseFlowAck(ReadOnlySpan<byte> message)
+    {
+        if (message.Length < TransferProtocol.FlowAckSize) return null;
+        var transferId = new Guid(message.Slice(1, 16));
+        var count = BinaryPrimitives.ReadInt32BigEndian(message.Slice(17, 4));
+        return (transferId, count);
+    }
+
+    /// <summary>
     /// Ping メッセージを生成する。
     /// </summary>
     public static byte[] CreatePingMessage() => [TransferProtocol.Ping];

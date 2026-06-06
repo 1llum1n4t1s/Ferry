@@ -27,6 +27,10 @@ public sealed class TransferService : ITransferService, IDisposable
     /// このタイムアウトを超えたら送信を Cancelled に遷移させる (永久停止を防ぐ)。</summary>
     private const int SendApprovalTimeoutSeconds = 60;
 
+    /// <summary>v1.0.46: フロー制御で受信側 FlowAck を待つ間、進捗が一切進まない状態の最大許容ミリ秒。
+    /// これを超えたら受信側停止/切断とみなして送信を打ち切る (永久待機を防ぐ)。</summary>
+    private const int FlowAckStallTimeoutMs = 60_000;
+
     private readonly IConnectionService _connectionService;
     private readonly ISettingsService _settingsService;
 
@@ -385,6 +389,10 @@ public sealed class TransferService : ITransferService, IDisposable
                 HandleFileApprove(data);
                 break;
 
+            case TransferProtocol.FileFlowAck:
+                HandleFileFlowAck(data);
+                break;
+
             case TransferProtocol.Ping:
                 HandlePing();
                 break;
@@ -432,6 +440,9 @@ public sealed class TransferService : ITransferService, IDisposable
             ? FileChunker.ReadChunks(filePath)
             : FileChunker.ReadChunksWithHash(filePath, hashSink);
 
+        // v1.0.46: フロー制御カウンタを初期化（レジューム時に前回値が残らないように）
+        Volatile.Write(ref item.FlowAckedChunks, 0);
+
         foreach (var (index, chunkData) in chunkSource)
         {
             ct.ThrowIfCancellationRequested();
@@ -439,6 +450,20 @@ public sealed class TransferService : ITransferService, IDisposable
             // レジューム: 開始チャンクまでスキップ
             if (index < startChunk)
                 continue;
+
+            // v1.0.46: リレー経路のバックプレッシャー。受信側が書き込み済みのチャンク (FlowAck) から
+            // FlowControlWindowChunks を超えて先行しないよう待機する。リレー (WebSocket) は ClientWebSocket.SendAsync が
+            // ローカル送信バッファ受理で即返り end-to-end の流量制御が効かないため、これが無いと送信側が受信ドレイン
+            // 速度を超えて Cloudflare 中継バッファへ流し込み、~55秒で接続が切断される。TCP/UDP 経路では各 transport の
+            // 自然なバックプレッシャー (WriteAsync の await / UDP 内部ウィンドウ) が先に効くためこの待機はほぼ発生しない。
+            var flowWaitStart = Environment.TickCount64;
+            while (index - Volatile.Read(ref item.FlowAckedChunks) >= TransferProtocol.FlowControlWindowChunks)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (Environment.TickCount64 - flowWaitStart > FlowAckStallTimeoutMs)
+                    throw new TimeoutException("受信側からの進捗確認が途絶えました（フロー制御タイムアウト）");
+                await Task.Delay(10, ct);
+            }
 
             // P-1: チャンクメッセージ用バッファを ArrayPool から借用し、
             // FileChunker.WriteChunkMessage で直接書き込んだ後 Memory として渡す。
@@ -496,6 +521,23 @@ public sealed class TransferService : ITransferService, IDisposable
             try { await _connectionService.SendAsync(rejectMessage); }
             catch (Exception ex) { Util.Logger.Log($"FileReject 送信エラー: {ex.Message}", Util.LogLevel.Warning); }
         });
+    }
+
+    /// <summary>
+    /// v1.0.46: 受信側 → 送信側のフロー制御 ACK (FileFlowAck) を送る。受信スレッドから fire-and-forget で
+    /// 呼ばれるため、例外は内部で握り潰してタスクが faulted にならないようにする (UnobservedTaskException 防止)。
+    /// </summary>
+    private async Task SendFlowAckAsync(Guid transferId, int receivedChunkCount)
+    {
+        try
+        {
+            var msg = FileChunker.CreateFlowAckMessage(transferId, receivedChunkCount);
+            await _connectionService.SendAsync(msg);
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"FlowAck 送信失敗（無視）: {ex.Message}", Util.LogLevel.Debug);
+        }
     }
 
     private void HandleFileMeta(byte[] data)
@@ -691,6 +733,14 @@ public sealed class TransferService : ITransferService, IDisposable
                 state.ReceivedChunkSet[chunkIndex] = true;
                 state.ReceivedChunks++;
                 state.WrittenBytes += chunkLength;
+
+                // v1.0.46: 一定チャンクごとに送信側へ「書き込み済みチャンク数」を FlowAck で返す。
+                // 送信側はこれを credit にウィンドウ制御し、リレー中継バッファの溢れ (~55秒切断) を防ぐ。
+                // 末尾の端数チャンク (TotalChunks が間隔の倍数でない場合) でも確実に最終 ACK が届くよう、
+                // 全チャンク書き込み完了時にも送る (送信側ウィンドウ待機の取りこぼし防止の安全網)。
+                if (state.ReceivedChunks % TransferProtocol.FlowAckIntervalChunks == 0
+                    || state.ReceivedChunks == state.TotalChunks)
+                    _ = SendFlowAckAsync(transferId, state.ReceivedChunks);
             }
 
             state.Item.TransferredBytes = state.WrittenBytes;
@@ -910,6 +960,23 @@ public sealed class TransferService : ITransferService, IDisposable
         Util.Logger.Log($"FileApprove 受信: transferId={transferId}");
         if (_pendingSendApprovals.TryRemove(transferId.Value, out var tcs))
             tcs.TrySetResult(true);
+    }
+
+    /// <summary>
+    /// v1.0.46: 受信側から届いたフロー制御 ACK (FileFlowAck) を処理する。送信側で呼ばれる。
+    /// 受信側が書き込み済みのチャンク数を反映し、SendChunksAsync のウィンドウ待機を進める。
+    /// 順不同 ACK の巻き戻しを防ぐため単調増加のみ採用する。
+    /// </summary>
+    private void HandleFileFlowAck(byte[] data)
+    {
+        var parsed = FileChunker.ParseFlowAck(data);
+        if (parsed == null) return;
+        var (transferId, ackedChunks) = parsed.Value;
+        if (_activeTransfers.TryGetValue(transferId, out var item))
+        {
+            if (ackedChunks > Volatile.Read(ref item.FlowAckedChunks))
+                Volatile.Write(ref item.FlowAckedChunks, ackedChunks);
+        }
     }
 
     private void HandlePing()

@@ -27,7 +27,7 @@
         <ExperimentalAcrylicBorder IsHitTestVisible="False">
             <ExperimentalAcrylicBorder.Material>
                 <ExperimentalAcrylicMaterial BackgroundSource="Digger"
-                                             TintColor="#04060E"
+                                             TintColor="{DynamicResource AcrylicTintColor}"
                                              TintOpacity="0.92"
                                              MaterialOpacity="0.75" />
             </ExperimentalAcrylicBorder.Material>

@@ -131,12 +131,15 @@ TCP / WebSocket 上の長さプレフィクス付きバイナリプロトコル�
 | FileReject | 0x04 | 拒否通知 (`[0x04][TransferId 16byte][reason UTF-8]`) — v12 で TransferId プレフィクス追加 |
 | **FileHash** | **0x05** | SHA-256 ハッシュ後送り (送信側が全 chunk 送信後に送付、P-3 で導入) |
 | **FileApprove** | **0x06** | 受信承認通知 (受信側が承認時に送信、送信側はこれを待ってチャンク送信開始、v1 で導入) |
+| **FileFlowAck** | **0x07** | フロー制御 ACK (`[0x07][TransferId 16byte][receivedChunkCount 4byte]`)。受信側が `FlowAckIntervalChunks`(64=4MB) ごと + 完了時に書き込み済みチャンク数を返す。送信側は `FlowControlWindowChunks`(512=32MB) を超えて先行しないよう待機 (v1.0.46 で導入、後述「リレー経路のフロー制御」) |
 | Ping / Pong | 0x10 / 0x11 | キープアライブ |
 | ResumeRequest / ResumeResponse | 0x20 / 0x21 | レジューム関連 (現状応答は false 固定) |
 
 受信側（`TransferService.HandleFileChunk`）は **TransferId で受信状態を引き、`chunkIndex × ChunkSize` のオフセットへ `Seek` して書き込む**ため、UDP の順不同到着でも正しく再構成できる。受信完了は全 chunkIndex 受信（ビットマップ `ReceivedChunkSet`）で判定し、最後に SHA-256 でファイル整合性を検証する。受信ファイル名・相対パスはパストラバーサル防止のため保存先ディレクトリ配下に収まることを検証する。
 
 UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レイヤー（選択的 ACK・フラグメンテーション 1187 bytes・スライディングウィンドウ 128）を提供する。順序保証はトランスポート層ではなく上記の chunkIndex ベース書き込みで担保している。
+
+**リレー経路のフロー制御 (v1.0.46 追加)**: WebSocket リレー (`ClientWebSocket.SendAsync`) はローカル送信バッファ受理で即返るため、TCP/UDP のような end-to-end バックプレッシャーが効かない。これが無いと送信側が受信側のドレイン速度（多くは受信側のダウンロード帯域）を超えてチャンクを流し込み、Cloudflare 中継バッファが膨張して **転送開始 ~55秒で接続が close handshake 無しに切断**される（大容量ファイルのみ再現。小さいファイルは溢れる前に完了）。対策として `FileFlowAck (0x07)` によるアプリ層スライディングウィンドウを導入: 受信側が `HandleFileChunk` で `FlowAckIntervalChunks`(64) ごと + 完了時に書き込み済みチャンク数を返し、送信側 `SendChunksAsync` は `index - FlowAckedChunks >= FlowControlWindowChunks`(512=32MB) の間 `Task.Delay(10)` で待機（`FlowAckStallTimeoutMs`=60s で打ち切り）。これで中継バッファを ~32MB に抑え、転送は受信側帯域で律速されつつ完走する。TCP/UDP 経路では各 transport の自然なバックプレッシャーが先に効くため待機はほぼ発生しない。FlowAck は累積カウントなので 1 個欠落しても次の ACK で回復する。
 
 > **レジュームは「先頭から再送」方式**（`ResumeTransferAsync`、`startChunk=0`）。受信側は承認時にファイルを再作成するため、部分再送ではなく全チャンクを送り直す。
 >

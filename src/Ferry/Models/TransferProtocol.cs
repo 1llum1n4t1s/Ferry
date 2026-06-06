@@ -30,6 +30,14 @@ public static class TransferProtocol
     /// AutoAcceptFileTransfer=true の場合、受信側は FileMeta 受信直後に自動で送信する。</summary>
     public const byte FileApprove = 0x06;
 
+    /// <summary>受信側 → 送信側のフロー制御 ACK [TransferId (16byte)] [receivedChunkCount (4byte, BigEndian)]。
+    /// v1.0.46 で追加。リレー経路 (WebSocket) には TCP のような end-to-end バックプレッシャーが無く、
+    /// 送信側が受信側のドレイン速度を超えてチャンクを流し込むと Cloudflare 中継バッファが膨張して
+    /// 接続が切断される (大容量ファイルが転送開始 ~55秒で死ぬ現象)。受信側が一定チャンクごとに
+    /// 書き込み済みチャンク数をこの ACK で返し、送信側は <see cref="FlowControlWindowChunks"/> を超えて
+    /// 先行しないよう待機することで中継バッファを一定量に抑える。</summary>
+    public const byte FileFlowAck = 0x07;
+
     /// <summary>キープアライブ送信。</summary>
     public const byte Ping = 0x10;
 
@@ -54,4 +62,16 @@ public static class TransferProtocol
     /// <summary>送信バッファ閾値 (256KB)。これを超えたら送信を一時停止する。
     /// ChunkSize 4 倍化に合わせて閾値も 4 倍に拡大。</summary>
     public const int BufferedAmountThreshold = 262_144;
+
+    /// <summary>FlowAck メッセージ長 = 種別(1) + TransferId(16) + receivedChunkCount(4)。</summary>
+    public const int FlowAckSize = 1 + 16 + 4;
+
+    /// <summary>フロー制御ウィンドウ (チャンク数)。送信側は受信側が書き込み済みのチャンクから
+    /// 最大この数だけ先行できる。512 chunks × 64KB = 32MB。Cloudflare DO の中継バッファが
+    /// 溢れる GB 級より十分小さく、かつ往復遅延でスループットが落ちない程度に確保する。</summary>
+    public const int FlowControlWindowChunks = 512;
+
+    /// <summary>受信側が FlowAck を送る間隔 (チャンク数)。64 chunks = 4MB ごと。
+    /// ウィンドウ (512) の 1/8 刻みで送ることで送信側のウィンドウ待機を滑らかに解消する。</summary>
+    public const int FlowAckIntervalChunks = 64;
 }

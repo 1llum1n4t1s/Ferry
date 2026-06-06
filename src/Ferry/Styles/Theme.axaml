@@ -11,111 +11,147 @@
     -->
 
     <Styles.Resources>
-        <!-- ============================================================
-             RAW NEON PALETTE (この 5 色を組み合わせて全体を構成)
-             ============================================================ -->
-        <Color x:Key="NeonCyan">#00F0FF</Color>
-        <Color x:Key="NeonCyanDeep">#0099CC</Color>
-        <Color x:Key="NeonPink">#FF2D8A</Color>
-        <Color x:Key="NeonPinkDeep">#CC1F6E</Color>
-        <Color x:Key="NeonPurple">#B14AFF</Color>
-        <Color x:Key="VoidBlack">#04060E</Color>
-        <Color x:Key="DeepSpace">#0A1124</Color>
-        <Color x:Key="SteelBlue">#7AA0C8</Color>
+        <ResourceDictionary>
+            <!-- ============================================================
+                 THEME-VARIANT DICTIONARIES — テーマ依存 (背景 / サーフェス /
+                 テキスト / ボーダー) は Light / Dark で切り替える。
+                 DynamicResource で参照したものが ActualThemeVariant に応じて解決される。
+                 ============================================================ -->
+            <ResourceDictionary.ThemeDictionaries>
 
-        <!-- === Avalonia FluentTheme アクセントカラー上書き (ピンク主体) ===
-             デフォルト Button (Classes="accent" 含む) と ToggleSwitch ON 色は
-             ここを引くので、ピンクに統一して読みづらい cyan ボタン問題を解消 -->
-        <Color x:Key="SystemAccentColor">#FF2D8A</Color>
-        <Color x:Key="SystemAccentColorDark1">#FF5BA5</Color>
-        <Color x:Key="SystemAccentColorDark2">#FF8BC0</Color>
-        <Color x:Key="SystemAccentColorDark3">#FFBDDB</Color>
-        <Color x:Key="SystemAccentColorLight1">#E81E7A</Color>
-        <Color x:Key="SystemAccentColorLight2">#C81866</Color>
-        <Color x:Key="SystemAccentColorLight3">#A81356</Color>
+                <!-- ===== DARK — ROG ネオン (暗黒宇宙テーマ。既存色を踏襲) ===== -->
+                <ResourceDictionary x:Key="Dark">
+                    <!-- BACKGROUND & SURFACE — ROG はほぼ黒の宇宙 -->
+                    <SolidColorBrush x:Key="AppBackgroundBrush" Color="#04060E" />
+                    <SolidColorBrush x:Key="SurfaceBrush" Color="#0D1424" />
+                    <SolidColorBrush x:Key="SurfaceVariantBrush" Color="#101A33" />
+                    <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#1A2849" />
+                    <SolidColorBrush x:Key="GlassBrush" Color="#CC0D1424" />
+                    <SolidColorBrush x:Key="SidebarBrush" Color="#06091A" />
+                    <SolidColorBrush x:Key="OverlayBrush" Color="#CC020410" />
+                    <SolidColorBrush x:Key="InputBackgroundBrush" Color="#08101F" />
+                    <!-- ウィンドウ全体のアクリル背景ティント (MainWindow.axaml が参照) -->
+                    <Color x:Key="AcrylicTintColor">#04060E</Color>
+                    <!-- TEXT — Cyan-tinted で技術感 -->
+                    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#E8F8FF" />
+                    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#7AA0C8" />
+                    <SolidColorBrush x:Key="TextTertiaryBrush" Color="#4A6485" />
+                    <SolidColorBrush x:Key="SectionHeaderBrush" Color="#00F0FF" />
+                    <!-- BORDERS / SELECTION -->
+                    <SolidColorBrush x:Key="BorderBrush" Color="#1F3A5A" />
+                    <SolidColorBrush x:Key="PeerSelectedBrush" Color="#2500F0FF" />
+                    <SolidColorBrush x:Key="OfflineBrush" Color="#4A5B78" />
+                    <!-- Tahoe ダイアログ用 (キー名互換) -->
+                    <SolidColorBrush x:Key="TahoeWindowBgBrush" Color="#04060E" />
+                    <SolidColorBrush x:Key="TahoeTextPrimaryBrush" Color="#E8F8FF" />
+                    <SolidColorBrush x:Key="TahoeTextSecondaryBrush" Color="#7AA0C8" />
+                    <SolidColorBrush x:Key="TahoeTextTertiaryBrush" Color="#4A6485" />
+                </ResourceDictionary>
 
-        <!-- ============================================================
-             BACKGROUND & SURFACE — ROG はほぼ黒の宇宙
-             ============================================================ -->
-        <SolidColorBrush x:Key="AppBackgroundBrush" Color="#04060E" />
-        <SolidColorBrush x:Key="SurfaceBrush" Color="#0D1424" />
-        <SolidColorBrush x:Key="SurfaceVariantBrush" Color="#101A33" />
-        <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#1A2849" />
-        <SolidColorBrush x:Key="GlassBrush" Color="#CC0D1424" />
-        <SolidColorBrush x:Key="SidebarBrush" Color="#06091A" />
-        <SolidColorBrush x:Key="OverlayBrush" Color="#CC020410" />
+                <!-- ===== LIGHT — ROG ネオン Light (明るい背景 + 暗いテキスト) =====
+                     背景/サーフェスは白〜淡青、テキストは濃紺。
+                     アクセント (ピンク/シアン) は共通リソース側で彩度高く維持。 -->
+                <ResourceDictionary x:Key="Light">
+                    <!-- BACKGROUND & SURFACE -->
+                    <SolidColorBrush x:Key="AppBackgroundBrush" Color="#F4F6FB" />
+                    <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="SurfaceVariantBrush" Color="#EEF1F8" />
+                    <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#E2E8F4" />
+                    <SolidColorBrush x:Key="GlassBrush" Color="#E6FFFFFF" />
+                    <SolidColorBrush x:Key="SidebarBrush" Color="#E9EDF6" />
+                    <SolidColorBrush x:Key="OverlayBrush" Color="#55000814" />
+                    <SolidColorBrush x:Key="InputBackgroundBrush" Color="#FFFFFF" />
+                    <!-- ウィンドウ全体のアクリル背景ティント (MainWindow.axaml が参照) -->
+                    <Color x:Key="AcrylicTintColor">#EEF2F9</Color>
+                    <!-- TEXT -->
+                    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#0A1424" />
+                    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#566B88" />
+                    <SolidColorBrush x:Key="TextTertiaryBrush" Color="#8A9AB4" />
+                    <SolidColorBrush x:Key="SectionHeaderBrush" Color="#C81866" />
+                    <!-- BORDERS / SELECTION -->
+                    <SolidColorBrush x:Key="BorderBrush" Color="#C8D2E2" />
+                    <SolidColorBrush x:Key="PeerSelectedBrush" Color="#2200B8D4" />
+                    <SolidColorBrush x:Key="OfflineBrush" Color="#94A2B8" />
+                    <!-- Tahoe ダイアログ用 (キー名互換) -->
+                    <SolidColorBrush x:Key="TahoeWindowBgBrush" Color="#F4F6FB" />
+                    <SolidColorBrush x:Key="TahoeTextPrimaryBrush" Color="#0A1424" />
+                    <SolidColorBrush x:Key="TahoeTextSecondaryBrush" Color="#566B88" />
+                    <SolidColorBrush x:Key="TahoeTextTertiaryBrush" Color="#8A9AB4" />
+                </ResourceDictionary>
 
-        <!-- ============================================================
-             ACCENT — ピンク主体グラデ (cyan は border/glow に降格)
-             理由: cyan→pink バランス型だと中央が紫味で文字読みづらかった
-             ROG らしい「赤ピンクが主役、cyan は冷たい光」のメリハリに変更
-             ============================================================ -->
-        <LinearGradientBrush x:Key="AccentBrush" StartPoint="0%,0%" EndPoint="100%,100%">
-            <GradientStop Color="#FF2D8A" Offset="0.0" />
-            <GradientStop Color="#E81E7A" Offset="0.5" />
-            <GradientStop Color="#C81866" Offset="1.0" />
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="AccentHoverBrush" StartPoint="0%,0%" EndPoint="100%,100%">
-            <GradientStop Color="#FF5BA5" Offset="0.0" />
-            <GradientStop Color="#FF2D8A" Offset="0.5" />
-            <GradientStop Color="#E81E7A" Offset="1.0" />
-        </LinearGradientBrush>
-        <!-- アクセント単色版 (グラデ使えない場面のフォールバック) -->
-        <SolidColorBrush x:Key="AccentSolidBrush" Color="#FF2D8A" />
-        <SolidColorBrush x:Key="AccentPinkBrush" Color="#FF2D8A" />
-        <SolidColorBrush x:Key="AccentCyanBrush" Color="#00F0FF" />
+            </ResourceDictionary.ThemeDictionaries>
 
-        <!-- ============================================================
-             TEXT — Cyan-tinted で技術感
-             ============================================================ -->
-        <SolidColorBrush x:Key="TextPrimaryBrush" Color="#E8F8FF" />
-        <SolidColorBrush x:Key="TextSecondaryBrush" Color="#7AA0C8" />
-        <SolidColorBrush x:Key="TextTertiaryBrush" Color="#4A6485" />
+            <!-- ============================================================
+                 THEME-INDEPENDENT — ネオンアクセント / ステータス / サイズは
+                 彩度が高く Light/Dark 双方で視認できるため共通化する。
+                 ============================================================ -->
+            <!-- RAW NEON PALETTE (この 5 色を組み合わせて全体を構成) -->
+            <Color x:Key="NeonCyan">#00F0FF</Color>
+            <Color x:Key="NeonCyanDeep">#0099CC</Color>
+            <Color x:Key="NeonPink">#FF2D8A</Color>
+            <Color x:Key="NeonPinkDeep">#CC1F6E</Color>
+            <Color x:Key="NeonPurple">#B14AFF</Color>
+            <Color x:Key="VoidBlack">#04060E</Color>
+            <Color x:Key="DeepSpace">#0A1124</Color>
+            <Color x:Key="SteelBlue">#7AA0C8</Color>
 
-        <!-- ============================================================
-             STATUS COLORS — 全てネオン化
-             ============================================================ -->
-        <SolidColorBrush x:Key="GreenBrush" Color="#00FF9D" />  <!-- ネオングリーン -->
-        <SolidColorBrush x:Key="RedBrush" Color="#FF2D6A" />    <!-- ネオンレッド -->
-        <SolidColorBrush x:Key="YellowBrush" Color="#FFE600" /> <!-- ネオンイエロー -->
-        <SolidColorBrush x:Key="BlueBrush" Color="#00F0FF" />   <!-- ネオンシアン (P2P) -->
-        <SolidColorBrush x:Key="OrangeBrush" Color="#FF8800" /> <!-- ネオンオレンジ -->
+            <!-- === Avalonia FluentTheme アクセントカラー上書き (ピンク主体) ===
+                 デフォルト Button (Classes="accent" 含む) と ToggleSwitch ON 色は
+                 ここを引くので、ピンクに統一して読みづらい cyan ボタン問題を解消 -->
+            <Color x:Key="SystemAccentColor">#FF2D8A</Color>
+            <Color x:Key="SystemAccentColorDark1">#FF5BA5</Color>
+            <Color x:Key="SystemAccentColorDark2">#FF8BC0</Color>
+            <Color x:Key="SystemAccentColorDark3">#FFBDDB</Color>
+            <Color x:Key="SystemAccentColorLight1">#E81E7A</Color>
+            <Color x:Key="SystemAccentColorLight2">#C81866</Color>
+            <Color x:Key="SystemAccentColorLight3">#A81356</Color>
 
-        <!-- ============================================================
-             ROUTE BADGE SOFT TINTS — グロー強めで存在感↑
-             ============================================================ -->
-        <SolidColorBrush x:Key="GreenBrushSoft" Color="#3500FF9D" />
-        <SolidColorBrush x:Key="GreenBrushBorder" Color="#AA00FF9D" />
-        <SolidColorBrush x:Key="BlueBrushSoft" Color="#3500F0FF" />
-        <SolidColorBrush x:Key="BlueBrushBorder" Color="#AA00F0FF" />
-        <SolidColorBrush x:Key="OrangeBrushSoft" Color="#35FF8800" />
-        <SolidColorBrush x:Key="OrangeBrushBorder" Color="#AAFF8800" />
+            <!-- === ACCENT — ピンク主体グラデ (cyan は border/glow に降格) ===
+                 理由: cyan→pink バランス型だと中央が紫味で文字読みづらかった
+                 ROG らしい「赤ピンクが主役、cyan は冷たい光」のメリハリに変更 -->
+            <LinearGradientBrush x:Key="AccentBrush" StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Color="#FF2D8A" Offset="0.0" />
+                <GradientStop Color="#E81E7A" Offset="0.5" />
+                <GradientStop Color="#C81866" Offset="1.0" />
+            </LinearGradientBrush>
+            <LinearGradientBrush x:Key="AccentHoverBrush" StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Color="#FF5BA5" Offset="0.0" />
+                <GradientStop Color="#FF2D8A" Offset="0.5" />
+                <GradientStop Color="#E81E7A" Offset="1.0" />
+            </LinearGradientBrush>
+            <!-- アクセント単色版 (グラデ使えない場面のフォールバック) -->
+            <SolidColorBrush x:Key="AccentSolidBrush" Color="#FF2D8A" />
+            <SolidColorBrush x:Key="AccentPinkBrush" Color="#FF2D8A" />
+            <SolidColorBrush x:Key="AccentCyanBrush" Color="#00F0FF" />
 
-        <!-- ============================================================
-             BORDERS — Cyan tint で常時ほんのり光る
-             ============================================================ -->
-        <SolidColorBrush x:Key="BorderBrush" Color="#1F3A5A" />
-        <SolidColorBrush x:Key="BorderGlowBrush" Color="#5500F0FF" />
-        <SolidColorBrush x:Key="BadgeBrush" Color="#FF2D8A" />   <!-- 未読バッジはピンク -->
-        <SolidColorBrush x:Key="PeerSelectedBrush" Color="#2500F0FF" />
-        <SolidColorBrush x:Key="OfflineBrush" Color="#4A5B78" />
+            <!-- === STATUS COLORS — 全てネオン化 === -->
+            <SolidColorBrush x:Key="GreenBrush" Color="#00FF9D" />  <!-- ネオングリーン -->
+            <SolidColorBrush x:Key="RedBrush" Color="#FF2D6A" />    <!-- ネオンレッド -->
+            <SolidColorBrush x:Key="YellowBrush" Color="#FFE600" /> <!-- ネオンイエロー -->
+            <SolidColorBrush x:Key="BlueBrush" Color="#00F0FF" />   <!-- ネオンシアン (P2P) -->
+            <SolidColorBrush x:Key="OrangeBrush" Color="#FF8800" /> <!-- ネオンオレンジ -->
 
-        <!-- Tahoe ダイアログ用 (キー名互換) -->
-        <SolidColorBrush x:Key="TahoeWindowBgBrush" Color="#04060E" />
-        <SolidColorBrush x:Key="TahoeTextPrimaryBrush" Color="#E8F8FF" />
-        <SolidColorBrush x:Key="TahoeTextSecondaryBrush" Color="#7AA0C8" />
-        <SolidColorBrush x:Key="TahoeTextTertiaryBrush" Color="#4A6485" />
+            <!-- === ROUTE BADGE SOFT TINTS — グロー強めで存在感↑ === -->
+            <SolidColorBrush x:Key="GreenBrushSoft" Color="#3500FF9D" />
+            <SolidColorBrush x:Key="GreenBrushBorder" Color="#AA00FF9D" />
+            <SolidColorBrush x:Key="BlueBrushSoft" Color="#3500F0FF" />
+            <SolidColorBrush x:Key="BlueBrushBorder" Color="#AA00F0FF" />
+            <SolidColorBrush x:Key="OrangeBrushSoft" Color="#35FF8800" />
+            <SolidColorBrush x:Key="OrangeBrushBorder" Color="#AAFF8800" />
 
-        <!-- ============================================================
-             SIZES — ROG はやや角ばらせる (CornerRadius を引き締め)
-             ============================================================ -->
-        <x:Double x:Key="SidebarWidth">220</x:Double>
-        <x:Double x:Key="TitleBarHeight">36</x:Double>
-        <CornerRadius x:Key="SmallCornerRadius">2</CornerRadius>
-        <CornerRadius x:Key="MediumCornerRadius">4</CornerRadius>
-        <CornerRadius x:Key="LargeCornerRadius">8</CornerRadius>
-        <CornerRadius x:Key="BubbleCornerRadius">10</CornerRadius>
-        <Thickness x:Key="BubblePadding">12,8</Thickness>
+            <!-- === BORDERS (glow) / BADGE === -->
+            <SolidColorBrush x:Key="BorderGlowBrush" Color="#5500F0FF" />
+            <SolidColorBrush x:Key="BadgeBrush" Color="#FF2D8A" />   <!-- 未読バッジはピンク -->
+
+            <!-- === SIZES — ROG はやや角ばらせる (CornerRadius を引き締め) === -->
+            <x:Double x:Key="SidebarWidth">220</x:Double>
+            <x:Double x:Key="TitleBarHeight">36</x:Double>
+            <CornerRadius x:Key="SmallCornerRadius">2</CornerRadius>
+            <CornerRadius x:Key="MediumCornerRadius">4</CornerRadius>
+            <CornerRadius x:Key="LargeCornerRadius">8</CornerRadius>
+            <CornerRadius x:Key="BubbleCornerRadius">10</CornerRadius>
+            <Thickness x:Key="BubblePadding">12,8</Thickness>
+        </ResourceDictionary>
     </Styles.Resources>
 
     <!--
@@ -196,7 +232,7 @@
         <Setter Property="CornerRadius" Value="2" />
     </Style>
     <Style Selector="Button.sidebar:pointerover">
-        <Setter Property="Foreground" Value="#E8F8FF" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
     </Style>
     <Style Selector="Button.sidebar:pointerover /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
@@ -228,7 +264,7 @@
     ================================================================================
     -->
     <Style Selector="TextBox.search">
-        <Setter Property="Background" Value="#08101F" />
+        <Setter Property="Background" Value="{DynamicResource InputBackgroundBrush}" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="CaretBrush" Value="#00F0FF" />
         <Setter Property="SelectionBrush" Value="#5500F0FF" />
@@ -321,7 +357,7 @@
         <Setter Property="FontSize" Value="11" />
         <Setter Property="FontWeight" Value="Bold" />
         <Setter Property="LetterSpacing" Value="2" />
-        <Setter Property="Foreground" Value="#00F0FF" />
+        <Setter Property="Foreground" Value="{DynamicResource SectionHeaderBrush}" />
         <Setter Property="Margin" Value="0,16,0,8" />
     </Style>
 
@@ -498,7 +534,7 @@
     <!-- pointerover は Button.Foreground 経由 (TextElement.Foreground を /template/ で
          触ると絵文字混じりテキストの再描画で hit-test ジッタ → 文字点滅するため) -->
     <Style Selector="Button.sidebarMenuItem:pointerover">
-        <Setter Property="Foreground" Value="#FFFFFF" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="BorderBrush" Value="#FF2D8A" />
     </Style>
     <Style Selector="Button.sidebarMenuItem:pointerover /template/ ContentPresenter">
@@ -514,7 +550,7 @@
          宛先リストと設定を同一タブグループに見せるための active 表示 -->
     <Style Selector="Button.sidebarMenuItem.selected">
         <Setter Property="BorderBrush" Value="#00F0FF" />
-        <Setter Property="Foreground" Value="#FFFFFF" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
     </Style>
     <Style Selector="Button.sidebarMenuItem.selected /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource PeerSelectedBrush}" />

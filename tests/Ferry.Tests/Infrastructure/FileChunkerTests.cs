@@ -202,6 +202,40 @@ public class FileChunkerTests : IDisposable
         Assert.Null(FileChunker.ParseApprove(new byte[] { 0x06, 0x01, 0x02 }));
     }
 
+    // ==================== CreateFlowAckMessage / ParseFlowAck (v1.0.46 フロー制御) ====================
+
+    [Fact]
+    public void CreateFlowAckMessage_先頭バイトがFileFlowAckでTransferIdと件数が復元できること()
+    {
+        var transferId = Guid.NewGuid();
+        var msg = FileChunker.CreateFlowAckMessage(transferId, 12345);
+        Assert.Equal(TransferProtocol.FileFlowAck, msg[0]);
+        Assert.Equal(TransferProtocol.FlowAckSize, msg.Length);
+        var parsed = FileChunker.ParseFlowAck(msg);
+        Assert.NotNull(parsed);
+        Assert.Equal(transferId, parsed.Value.TransferId);
+        Assert.Equal(12345, parsed.Value.ReceivedChunkCount);
+    }
+
+    [Fact]
+    public void CreateFlowAckMessage_件数ゼロや大きい値でも往復すること()
+    {
+        var transferId = Guid.NewGuid();
+        foreach (var count in new[] { 0, 1, 126716, int.MaxValue })
+        {
+            var parsed = FileChunker.ParseFlowAck(FileChunker.CreateFlowAckMessage(transferId, count));
+            Assert.NotNull(parsed);
+            Assert.Equal(count, parsed.Value.ReceivedChunkCount);
+        }
+    }
+
+    [Fact]
+    public void ParseFlowAck_短すぎるメッセージはnullを返すこと()
+    {
+        Assert.Null(FileChunker.ParseFlowAck(new byte[] { TransferProtocol.FileFlowAck }));
+        Assert.Null(FileChunker.ParseFlowAck(new byte[] { TransferProtocol.FileFlowAck, 0x01, 0x02 }));
+    }
+
     [Fact]
     public void ParseReject_短すぎるメッセージはnullを返すこと()
     {
