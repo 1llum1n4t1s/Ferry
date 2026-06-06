@@ -45,6 +45,16 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     private CancellationTokenSource? _listeningCts;
 
     /// <summary>
+    /// オンデマンド接続 (ConnectToPeerAsync) の所有 CTS と直列化ゲート。
+    /// 再送等で接続フローが多重起動すると、同一 pairId に offer 側フロー (answer ポーラー →
+    /// STUN → endpoint 待ち → リレー offer 接続) が並走し、二重 answer 受信 → 二重リレー接続 →
+    /// 409 / _transport 上書き Dispose で接続が崩壊する。所有 CTS で in-flight (孤児ポーラー含む) を
+    /// 中断し、SemaphoreSlim で本体を直列化して、同時に 1 本だけ走るようにする。
+    /// </summary>
+    private CancellationTokenSource? _connectCts;
+    private readonly SemaphoreSlim _connectGate = new(1, 1);
+
+    /// <summary>
     /// v1.0.38 review fix: 現在 StartListeningForConnection で監視中のピア ID。
     /// ProbeRouteAsync 終了時にこの値を使って着信監視を再開する。
     /// ConnectedPeer?.SessionId は接続成立後にしか入らないため復元用には使えない。
@@ -507,14 +517,22 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     public async Task ConnectToPeerAsync(string peerId, CancellationToken ct = default)
     {
-        Util.Logger.Log($"オンデマンド接続開始: peer={peerId}, deviceId={_deviceId}");
-        SetState(PeerState.Connecting);
-
-        // 着信監視を一時停止（自分の Offer を自分で拾わないように）
-        StopListeningForConnection();
-
+        // 進行中の接続 (孤児ポーラー含む) を先に中断してから直列化ゲートを取る。
+        // 順序を逆 (Gate→Cancel) にすると、自然完了しない孤児ポーラーを抱えたまま待ち、自己デッドロックする。
+        _connectCts?.Cancel();
+        await _connectGate.WaitAsync(ct);
         try
         {
+            _connectCts?.Dispose();
+            _connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var linked = _connectCts.Token;
+
+            Util.Logger.Log($"オンデマンド接続開始: peer={peerId}, deviceId={_deviceId}");
+            SetState(PeerState.Connecting);
+
+            // 着信監視を一時停止（自分の Offer を自分で拾わないように）
+            StopListeningForConnection();
+
             _signaling?.Dispose();
             _signaling = new FirebaseSignaling(_databaseUrl);
 
@@ -527,7 +545,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             Util.Logger.Log($"pairId 生成: {pairId}");
 
             // 古いシグナリングデータを削除
-            await _signaling.CleanupSignalingDataAsync(pairId, ct);
+            await _signaling.CleanupSignalingDataAsync(pairId, linked);
 
             // ① TCP リスナー起動 → offer 送信（STUN なし）
             StatusMessageChanged?.Invoke(this, "Status.Phase.TcpPreparing");
@@ -544,13 +562,13 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             };
             var offerJson = SerializeConnectionInfo(offerInfo);
             Util.Logger.Log($"接続情報送信: ips=[{string.Join(", ", localIps.Select(Util.Logger.MaskIp))}], port={port}");
-            await _signaling.SendSdpOfferAsync(pairId, offerJson, ct);
+            await _signaling.SendSdpOfferAsync(pairId, offerJson, linked);
 
             // ② TCP accept + Answer ポーリングを同時待機
             StatusMessageChanged?.Invoke(this, "Status.Phase.TcpConnecting");
             //    Answer が TCP 結果を通知してくるので、固定タイムアウト不要
-            var tcpAcceptTask = tcpTransport.AcceptAsync(ct);
-            var answerTask = _signaling.WaitForSdpAsync(pairId, "answer", ct: ct);
+            var tcpAcceptTask = tcpTransport.AcceptAsync(linked);
+            var answerTask = _signaling.WaitForSdpAsync(pairId, "answer", ct: linked);
 
             // どちらか先に完了した方で判断
             var completedTask = await Task.WhenAny(tcpAcceptTask, answerTask);
@@ -583,6 +601,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 }
 
                 tcpTransport.Dispose(); // TCP は不要
+                // WhenAny 敗者の AcceptAsync を観測する。Dispose→listener.Stop() で走行中の
+                // AcceptTcpClientAsync が SocketError.Interrupted の SocketException を投げるが、
+                // ct 自体は未キャンセル (OperationCanceledException ではない) ため未観測のまま
+                // finalizer で UnobservedTaskException 化する。ProbeRouteAsync と同様に握りつぶす。
+                _ = ObserveTaskAsync(tcpAcceptTask);
 
                 if (answerJson != null)
                 {
@@ -591,7 +614,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
                     // ③ STUN + UDP ホールパンチを試行
                     var udpTransport = new UdpHolePunchTransport();
-                    var stunResult = await udpTransport.GetExternalEndpointAsync(ct: ct);
+                    var stunResult = await udpTransport.GetExternalEndpointAsync(ct: linked);
 
                     if (stunResult != null)
                     {
@@ -607,10 +630,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                             RelayUrl = RelayUrl,
                             From = _deviceId,  // v1.0.38 review fix v2
                         };
-                        await _signaling.SendSdpOfferAsync(pairId, SerializeConnectionInfo(updatedOffer), ct);
+                        await _signaling.SendSdpOfferAsync(pairId, SerializeConnectionInfo(updatedOffer), linked);
 
                         StatusMessageChanged?.Invoke(this, "Status.Phase.UdpHolePunch");
-                        connected = await TryUdpHolePunchOfferAsync(udpTransport, pairId, ct);
+                        connected = await TryUdpHolePunchOfferAsync(udpTransport, pairId, linked);
                     }
                     else
                     {
@@ -622,7 +645,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     if (!connected)
                     {
                         StatusMessageChanged?.Invoke(this, "Status.Phase.Relay");
-                        var relayConnected = await TryRelayConnectAsync(pairId, "offer", ct);
+                        var relayConnected = await TryRelayConnectAsync(pairId, "offer", linked);
                         if (!relayConnected)
                             throw new InvalidOperationException("全ての接続方法が失敗しました");
                     }
@@ -638,11 +661,22 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             SetState(PeerState.Connected);
             Util.Logger.Log($"オンデマンド接続完了！ 経路: {_transport?.Route}");
         }
+        catch (OperationCanceledException)
+        {
+            // 新しい接続要求 (または DisconnectAsync) に追い越されてキャンセルされた正常系。
+            // State は追い越した側のフローが設定するため、ここでは Error にしない。
+            Util.Logger.Log("接続試行がキャンセルされました（新しい接続要求に置換）");
+            throw;
+        }
         catch (Exception ex)
         {
             Util.Logger.Log($"接続エラー: {ex.Message}", Util.LogLevel.Error);
             SetState(PeerState.Error);
             throw;
+        }
+        finally
+        {
+            _connectGate.Release();
         }
     }
 
@@ -854,6 +888,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     public async Task DisconnectAsync(CancellationToken ct = default)
     {
         Util.Logger.Log("切断処理開始");
+        // in-flight のオンデマンド接続 (孤児ポーラー含む) を中断する。Gate は await しない
+        // (Disconnect→Connect の順で呼ばれる経路で自己デッドロックを避けるため、Cancel のみ)。
+        _connectCts?.Cancel();
         StopListeningForConnection();
         DetachTransportEvents();
         _transport?.Close();
@@ -1142,6 +1179,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     public void Dispose()
     {
+        _connectCts?.Cancel();
+        _connectCts?.Dispose();
+        _connectGate.Dispose();
         StopListeningForConnection();
         _transport?.Dispose();
         _signaling?.Dispose();

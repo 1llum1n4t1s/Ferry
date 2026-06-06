@@ -86,6 +86,13 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            // トレイ常駐アプリ: ウィンドウの Close では終了せず、トレイ「終了」(desktop.Shutdown) と
+            // Velopack 再起動のみを終了経路にする。既定 OnLastWindowClose のままだと X ボタンで
+            // 最終ウィンドウが閉じる → desktop.Exit → ConnectionService.Dispose で転送中 transport が
+            // 切れてファイル転送が落ちる。X ボタンの挙動は MainWindow.OnClosing で MinimizeToTray に応じて
+            // 明示制御する (ON=トレイ格納で転送継続 / OFF=desktop.Shutdown で終了)。
+            desktop.ShutdownMode = Avalonia.Controls.ShutdownMode.OnExplicitShutdown;
+
             // Avalonia 12 から DataAnnotationsValidationPlugin がデフォルト除外されたため、
             // 旧 11.x で必要だった DisableAvaloniaDataAnnotationValidation() は不要になった。
 
@@ -411,6 +418,12 @@ public partial class App : Application
     /// </param>
     public void Check4Update(bool manually = false)
     {
+        // 自動チェックは転送中なら丸ごとスキップする。Velopack は更新ありで DownloadAndApply →
+        // アプリ再起動するため、転送中に走ると進行中のファイル転送を切断してしまう。
+        // 手動チェック (manually=true) はユーザー意図なので許可。フラグ操作前に判定してフリッカを避ける。
+        if (!manually && TransferService?.HasActiveTransfer == true)
+            return;
+
         // 先勝ち: 既に更新チェック中なら何もしない (UI ボタンは UpdateCheckStateChanged 経由で
         // IsEnabled=false に落ちているので、ここに到達しても操作不可状態と整合する)
         if (!TryBeginUpdateCheck())
@@ -426,7 +439,10 @@ public partial class App : Application
 
                 // ライブラリへ Ferry 流のローカライズ・アイコン・無視タグを注入する
                 var settings = _settingsService?.Settings;
-                var owner = GetMainWindow(); // M-8 統一
+                // owner が非表示 (トレイ最小化で Hide 済み / 未 Open) のまま渡すと
+                // "Cannot show window with non-visible owner" 例外になる。非表示なら null を渡す。
+                var ownerWin = GetMainWindow(); // M-8 統一
+                var owner = ownerWin?.IsVisible == true ? ownerWin : null;
 
                 // Avalonia 12 では Application.FindResource が直接公開されないため TryGetResource を使う
                 IBrush? accent = null;

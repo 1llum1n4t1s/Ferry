@@ -152,7 +152,9 @@ public sealed class FirebaseSignaling : IDisposable
     /// <returns>デコード済み SDP 文字列。</returns>
     public async Task<string> WaitForSdpAsync(string pairId, string watchField, long minCreatedAt = 0, CancellationToken ct = default)
     {
-        Util.Logger.Log($"SDP ポーリング開始 ({watchField}): pairId={pairId}, minCreatedAt={minCreatedAt}");
+        // 着信監視ループが約5秒毎に呼ぶため、INFO だとログの大半を埋める。Debug に落とす
+        // (Release は Info 以上なので抑制。監視開始自体は呼出元の「着信接続ポーリング開始」INFO で追える)。
+        Util.Logger.Log($"SDP ポーリング開始 ({watchField}): pairId={pairId}, minCreatedAt={minCreatedAt}", Util.LogLevel.Debug);
         var pollCount = 0;
         var lastErrorLog = 0; // エラーログ抑制用カウンタ
         var consecutiveErrors = 0; // rere #F-012: exponential backoff 用カウンタ

@@ -53,6 +53,10 @@ public sealed class TransferService : ITransferService, IDisposable
     public event EventHandler<TransferItem>? TransferError;
     public event EventHandler<TransferItem>? ApprovalRequested;
 
+    /// <summary>送信中・受信中・承認待ちのいずれかが進行中なら true（ConcurrentDictionary 参照のみ・ロック不要）。</summary>
+    public bool HasActiveTransfer =>
+        !_activeTransfers.IsEmpty || !_receiveStates.IsEmpty || !_pendingApprovals.IsEmpty || !_pendingSendApprovals.IsEmpty;
+
     public TransferService(IConnectionService connectionService, ISettingsService settingsService)
     {
         _connectionService = connectionService;

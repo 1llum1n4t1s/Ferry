@@ -74,9 +74,14 @@ export class RelayDO {
   }
 
   async fetch(req: Request): Promise<Response> {
-    // 既存 peer 数チェック (Ferry は 1 ペアにつき 2 peer まで)
-    const existing = this.state.getWebSockets();
-    if (existing.length >= 2) {
+    // 既存 peer 数チェック (Ferry は 1 ペアにつき 2 peer まで)。
+    // readyState で生存 (OPEN/CONNECTING) のみを数える。クライアントの再接続/張り直しで
+    // 古いソケットが CLOSING/CLOSED のまま getWebSockets に残っていると、生きた接続が 1 本でも
+    // length>=2 となり正当な再接続を 409 で誤って弾く (送信側ログの '409' 事象)。half-dead を除外する。
+    const live = this.state
+      .getWebSockets()
+      .filter((ws) => ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING);
+    if (live.length >= 2) {
       return new Response('Pair already full', { status: 409 });
     }
 

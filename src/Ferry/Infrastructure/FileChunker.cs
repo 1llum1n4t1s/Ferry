@@ -140,7 +140,9 @@ public static class FileChunker
     /// </summary>
     public static IEnumerable<(int Index, byte[] Data)> ReadChunks(string filePath)
     {
-        using var stream = File.OpenRead(filePath);
+        // FileShare.ReadWrite: 他プロセスが書込み中のファイル（自分の現行ログ等）も読み取って送信できるようにする。
+        // File.OpenRead (FileShare.Read) だと書込みハンドル保持中のファイルで IOException になる。
+        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         var buffer = new byte[TransferProtocol.ChunkSize];
         var index = 0;
         int bytesRead;
@@ -162,7 +164,9 @@ public static class FileChunker
     /// </summary>
     public static IEnumerable<(int Index, byte[] Data)> ReadChunksWithHash(string filePath, IncrementalHash hashSink)
     {
-        using var stream = File.OpenRead(filePath);
+        // FileShare.ReadWrite: 他プロセスが書込み中のファイル（自分の現行ログ等）も読み取って送信できるようにする。
+        // File.OpenRead (FileShare.Read) だと書込みハンドル保持中のファイルで IOException になる。
+        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         var buffer = new byte[TransferProtocol.ChunkSize];
         var index = 0;
         int bytesRead;
@@ -202,7 +206,9 @@ public static class FileChunker
     /// </summary>
     public static byte[] ComputeSha256(string filePath)
     {
-        using var stream = File.OpenRead(filePath);
+        // FileShare.ReadWrite: 他プロセスが書込み中のファイル（自分の現行ログ等）も読み取って送信できるようにする。
+        // File.OpenRead (FileShare.Read) だと書込みハンドル保持中のファイルで IOException になる。
+        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         return SHA256.HashData(stream);
     }
 

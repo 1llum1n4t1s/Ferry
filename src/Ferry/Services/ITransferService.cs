@@ -54,6 +54,12 @@ public interface ITransferService : IDisposable
     IReadOnlyList<TransferItem> GetResumableTransfers();
 
     /// <summary>
+    /// 送信中・受信中・承認待ちのいずれかの転送が進行中なら true。
+    /// アプリ終了/自動更新の再起動を転送中だけ抑止する判定に使う。
+    /// </summary>
+    bool HasActiveTransfer { get; }
+
+    /// <summary>
     /// 受信承認待ちの転送を承認する。
     /// </summary>
     void ApproveTransfer(string transferId);

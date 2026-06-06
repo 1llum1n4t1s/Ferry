@@ -188,11 +188,29 @@ public partial class MainWindow : Window
 
     private void OnClosing(object? sender, CancelEventArgs e)
     {
-        // 閉じる時はデバウンスせず即座に保存
-        _closed = true;
+        // ウィンドウ位置は閉/トレイ格納いずれでも即保存（デバウンス解除）
         _savePositionDebounceTimer?.Dispose();
         _savePositionDebounceTimer = null;
         SaveWindowPosition();
+
+        // ShutdownMode=OnExplicitShutdown 下では X ボタン Close でプロセスが終わらないため挙動を明示する。
+        // MinimizeToTray=true: 閉じる代わりにトレイ格納（Cancel して Hide）。進行中のファイル転送を生かす。
+        //   _closed は立てない（ウィンドウは生存。立てると以後の位置保存デバウンスが死ぬ）。
+        // MinimizeToTray=false: 明示シャットダウン（従来どおり終了）。
+        if (_mainVm?.Settings?.MinimizeToTray == true)
+        {
+            e.Cancel = true;
+            ShowInTaskbar = false;
+            Hide();
+            return;
+        }
+
+        // desktop.Shutdown() は各ウィンドウを Close → OnClosing を再入させ、Avalonia の
+        // Shutdown() は再入で例外を投げる。_closed で二重呼び出しを防ぐ。
+        if (_closed) return;
+        _closed = true;
+        if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+            desktop.Shutdown();
     }
 
     /// <summary>500ms デバウンスでウィンドウ位置を保存する。連続的な位置/サイズ変更時の IO 負荷を軽減。</summary>

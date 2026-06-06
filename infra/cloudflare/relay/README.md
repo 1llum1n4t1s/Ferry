@@ -15,7 +15,7 @@
 2. **wrangler CLI を入れる**
 
    ```powershell
-   npm install -g wrangler
+   pnpm add -g wrangler
    wrangler login
    # ブラウザで Cloudflare アカウントを選択して認可
    ```
@@ -24,7 +24,7 @@
 
    ```powershell
    cd infra/cloudflare/relay
-   npm install
+   pnpm install
    ```
 
 4. **pairId ハッシュ用 SALT を登録**
