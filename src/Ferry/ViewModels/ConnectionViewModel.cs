@@ -458,7 +458,12 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            Util.Logger.Log($"接続エラー ({peer.DisplayName}): {ex.Message}", Util.LogLevel.Warning);
+            // ユーザー操作によるキャンセル (CancelTransfer 経由の CT 発火) は Info に落とす。
+            // 接続待ち中のキャンセルは仕様通りの動作なので Warning にすると正常操作がエラーログ汚染になる。
+            if (ex is OperationCanceledException)
+                Util.Logger.Log($"接続キャンセル ({peer.DisplayName})");
+            else
+                Util.Logger.Log($"接続エラー ({peer.DisplayName}): {ex.Message}", Util.LogLevel.Warning);
             peer.ConnectionStatusText = string.Empty;
             ConnectionState = PeerState.Disconnected;
             // 接続失敗後に着信監視を再開
