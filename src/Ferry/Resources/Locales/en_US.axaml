@@ -139,6 +139,12 @@
   <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">(Downloads folder)</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">Auto Accept Files</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">Automatically accept incoming files</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">Upload Limit (KB/s)</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">Outbound bandwidth cap. 0 = unlimited</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Number of files sent simultaneously (1 = legacy serial)</x:String>
 
   <!-- Settings: Appearance (extended) -->
 
@@ -173,6 +179,6 @@ This cannot be undone.</x:String>
   <x:String x:Key="Text.Transfer.PeerMissing" xml:space="preserve">Destination peer not found</x:String>
   <x:String x:Key="Text.State.Paused" xml:space="preserve">Paused</x:String>
   <x:String x:Key="Text.SaveBar.Tooltip" xml:space="preserve">Where received files are saved</x:String>
-  <x:String x:Key="Text.SaveBar.Open" xml:space="preserve">Open folder</x:String>
+  <x:String x:Key="Text.SaveBar.Open" xml:space="preserve">Open Save Folder</x:String>
 
 </ResourceDictionary>

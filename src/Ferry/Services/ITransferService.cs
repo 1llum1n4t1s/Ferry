@@ -91,4 +91,10 @@ public interface ITransferService : IDisposable
     /// </summary>
     /// <param name="transferId">再開する送信転送の ID。</param>
     void ResumeSendTransfer(string transferId);
+
+    /// <summary>
+    /// AppSettings の UploadKBps / DownloadKBps を内部の TokenBucket に反映する。
+    /// 設定変更ハンドラから呼び、進行中の転送にも次回チャンクから即反映させる。
+    /// </summary>
+    void SyncRateLimits();
 }

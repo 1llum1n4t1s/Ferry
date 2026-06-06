@@ -62,6 +62,44 @@
                         </StackPanel>
                         <ToggleSwitch Grid.Column="1" IsChecked="{Binding AutoAcceptFileTransfer, Mode=TwoWay}" />
                     </Grid>
+
+                    <!-- アップロード帯域制限 (KB/s)。0 で無制限。 -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel>
+                            <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.UploadKBps}" />
+                            <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.UploadKBps.Desc}" />
+                        </StackPanel>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding UploadKBps, Mode=TwoWay}"
+                                       Minimum="0" Maximum="1048576" Increment="128"
+                                       FormatString="0"
+                                       MinWidth="140" />
+                    </Grid>
+
+                    <!-- ダウンロード帯域制限 (KB/s)。0 で無制限。 -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel>
+                            <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.DownloadKBps}" />
+                            <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.DownloadKBps.Desc}" />
+                        </StackPanel>
+                        <NumericUpDown Grid.Column="1"
+                                       Value="{Binding DownloadKBps, Mode=TwoWay}"
+                                       Minimum="0" Maximum="1048576" Increment="128"
+                                       FormatString="0"
+                                       MinWidth="140" />
+                    </Grid>
+
+                    <!-- 同時並列転送数。複数ファイル選択時の同時送信本数 (1〜8)。 -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel>
+                            <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.ParallelTransfer}" />
+                            <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.ParallelTransfer.Desc}" />
+                        </StackPanel>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding ParallelTransferOptions}"
+                                  SelectedItem="{Binding ParallelTransferCount, Mode=TwoWay}"
+                                  MinWidth="120" />
+                    </Grid>
                 </StackPanel>
             </Border>
 

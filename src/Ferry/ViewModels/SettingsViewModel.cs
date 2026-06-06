@@ -1,4 +1,5 @@
 using System;
+using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -13,13 +14,20 @@ namespace Ferry.ViewModels;
 public sealed partial class SettingsViewModel : ViewModelBase
 {
     private readonly ISettingsService _settingsService;
+    /// <summary>帯域制限の即時反映に使う。デザイナー用 ctor では null。</summary>
+    private readonly ITransferService? _transferService;
     private bool _isLoading;
 
     [ObservableProperty]
     public partial string DisplayName { get; set; } = Environment.MachineName;
 
-    /// <summary>テーマモード選択肢の表示名一覧（ロケール連動）。</summary>
-    public string[] ThemeOptions => [App.Text("Settings.Theme.System"), App.Text("Settings.Theme.Light"), App.Text("Settings.Theme.Dark")];
+    /// <summary>テーマモード選択肢の表示名一覧（ロケール連動）。
+    /// ObservableCollection で「同じインスタンスのまま要素だけ書き換える」運用にする。
+    /// 旧実装は computed property で毎回新 array を返し、OnPropertyChanged で ItemsSource インスタンスを
+    /// 入れ替えていたため、Avalonia ComboBox の挙動で SelectedIndex が一旦 -1 にリセットされて
+    /// 「言語を切り替えるとテーマ選択が外れる」症状が出ていた。インスタンスを維持したまま
+    /// インデクサ代入で文字列だけ Replace すると SelectedIndex が保持される。</summary>
+    public ObservableCollection<string> ThemeOptions { get; } = new();
 
     /// <summary>選択中のテーマインデックス（0=System, 1=Light, 2=Dark）。</summary>
     [ObservableProperty]
@@ -53,6 +61,21 @@ public sealed partial class SettingsViewModel : ViewModelBase
     /// <summary>ファイル受信を自動承認するか。</summary>
     [ObservableProperty]
     public partial bool AutoAcceptFileTransfer { get; set; } = true;
+
+    /// <summary>アップロード帯域制限 (KB/s)。0 で無制限。NumericUpDown.Value (decimal?) とバインド。</summary>
+    [ObservableProperty]
+    public partial decimal UploadKBps { get; set; }
+
+    /// <summary>ダウンロード帯域制限 (KB/s)。0 で無制限。NumericUpDown.Value (decimal?) とバインド。</summary>
+    [ObservableProperty]
+    public partial decimal DownloadKBps { get; set; }
+
+    /// <summary>同時並列転送数。ComboBox とバインド (1〜8)。</summary>
+    [ObservableProperty]
+    public partial int ParallelTransferCount { get; set; } = 1;
+
+    /// <summary>並列転送数 ComboBox の選択肢。</summary>
+    public int[] ParallelTransferOptions { get; } = [1, 2, 3, 4, 5, 6, 7, 8];
 
     // N-1: 旧 Theme / AccentColor / FontSize は SelectedThemeIndex (ThemeMode) と二重定義のため削除済み
 
@@ -90,9 +113,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
             ? App.Text("Settings.Version.SkippedVersion", IgnoredUpdateTag)
             : string.Empty;
 
-    public SettingsViewModel(ISettingsService settingsService)
+    public SettingsViewModel(ISettingsService settingsService, ITransferService? transferService = null)
     {
         _settingsService = settingsService;
+        _transferService = transferService;
+        RefreshThemeOptions();   // ThemeOptions 初期化 (LoadFromSettings の前に必要 — ComboBox の SelectedIndex を有効にするため)
         LoadFromSettings();
         LoadVersionInfo();
 
@@ -132,6 +157,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
             MinimizeToTray = s.MinimizeToTray;
             EnableNotificationSound = s.EnableNotificationSound;
             AutoAcceptFileTransfer = s.AutoAcceptFileTransfer;
+            UploadKBps = Math.Max(0, s.UploadKBps);
+            DownloadKBps = Math.Max(0, s.DownloadKBps);
+            ParallelTransferCount = s.ParallelTransferCount <= 0 ? 1 : Math.Clamp(s.ParallelTransferCount, 1, 8);
             AutoStartWithWindows = s.AutoStartWithWindows;
 
             // インストール済みバージョンが skip 対象に追い付いた/追い越したら、その skip 設定は陳腐化しているので
@@ -195,6 +223,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
         s.MinimizeToTray = MinimizeToTray;
         s.EnableNotificationSound = EnableNotificationSound;
         s.AutoAcceptFileTransfer = AutoAcceptFileTransfer;
+        s.UploadKBps = (int)Math.Max(0m, UploadKBps);
+        s.DownloadKBps = (int)Math.Max(0m, DownloadKBps);
+        s.ParallelTransferCount = Math.Clamp(ParallelTransferCount, 1, 8);
         s.AutoStartWithWindows = AutoStartWithWindows;
         await _settingsService.SaveAsync();
     }
@@ -239,6 +270,32 @@ public sealed partial class SettingsViewModel : ViewModelBase
     partial void OnSaveDirectoryChanged(string value) => SaveIfNotLoading();
     partial void OnEnableNotificationSoundChanged(bool value) => SaveIfNotLoading();
     partial void OnAutoAcceptFileTransferChanged(bool value) => SaveIfNotLoading();
+
+    partial void OnUploadKBpsChanged(decimal value)
+    {
+        if (_isLoading) return;
+        // VM の値を先に Settings へ反映してから SyncRateLimits を呼び、進行中の転送に即時反映する。
+        // SaveSettingsAsync 内でもう一度書き込まれるが冪等なので問題なし。
+        _settingsService.Settings.UploadKBps = (int)Math.Max(0m, value);
+        _transferService?.SyncRateLimits();
+        _ = SaveSettingsAsync();
+    }
+
+    partial void OnDownloadKBpsChanged(decimal value)
+    {
+        if (_isLoading) return;
+        _settingsService.Settings.DownloadKBps = (int)Math.Max(0m, value);
+        _transferService?.SyncRateLimits();
+        _ = SaveSettingsAsync();
+    }
+
+    partial void OnParallelTransferCountChanged(int value)
+    {
+        if (_isLoading) return;
+        // 設定変更は次回 SendFilesAsync から有効。進行中の SemaphoreSlim には作用しない。
+        _settingsService.Settings.ParallelTransferCount = Math.Clamp(value, 1, 8);
+        _ = SaveSettingsAsync();
+    }
     partial void OnAutoStartWithWindowsChanged(bool value)
     {
         if (!_isLoading)
@@ -252,9 +309,33 @@ public sealed partial class SettingsViewModel : ViewModelBase
     partial void OnSelectedLocaleChanged(string value)
     {
         App.SetLocale(value);
-        // テーマ選択肢のテキストを再描画
-        OnPropertyChanged(nameof(ThemeOptions));
+        // ThemeOptions の各要素を Replace (インスタンスは保持 → ComboBox.SelectedIndex はリセットされない)。
+        // 旧実装は OnPropertyChanged(nameof(ThemeOptions)) で ItemsSource インスタンス自体を入れ替えていたため、
+        // Avalonia の挙動で SelectedIndex が -1 にリセットされて「言語切替でテーマ選択が外れる」症状が出ていた。
+        RefreshThemeOptions();
         SaveIfNotLoading();
+    }
+
+    /// <summary>テーマ ComboBox の表示テキストを現在のロケールで更新する。
+    /// インデクサ代入で要素を Replace し、コレクションのインスタンスは維持する (SelectedIndex 保持)。</summary>
+    private void RefreshThemeOptions()
+    {
+        var labels = new[]
+        {
+            App.Text("Settings.Theme.System"),
+            App.Text("Settings.Theme.Light"),
+            App.Text("Settings.Theme.Dark"),
+        };
+
+        if (ThemeOptions.Count == 0)
+        {
+            foreach (var l in labels)
+                ThemeOptions.Add(l);
+            return;
+        }
+
+        for (var i = 0; i < labels.Length && i < ThemeOptions.Count; i++)
+            ThemeOptions[i] = labels[i];
     }
 
     private void LoadVersionInfo()

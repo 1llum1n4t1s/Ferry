@@ -27,5 +27,6 @@ public sealed class StubTransferService : ITransferService
     public void CancelTransfer(string transferId) { }
     public bool PauseSendTransfer(string transferId) => false;
     public void ResumeSendTransfer(string transferId) { }
+    public void SyncRateLimits() { }
     public void Dispose() { } // rere #C2-005: IDisposable 必須化
 }

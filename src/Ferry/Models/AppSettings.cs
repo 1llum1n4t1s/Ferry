@@ -64,6 +64,20 @@ public sealed class AppSettings
     /// 値は維持されるので、自動承認したい人は設定画面で明示的に ON できる。</summary>
     public bool AutoAcceptFileTransfer { get; set; } = false;
 
+    /// <summary>アップロード帯域制限 (KB/s)。0 で無制限。
+    /// 送信側 SendChunksAsync の各チャンク送信前に TokenBucket でレート整形する。</summary>
+    public int UploadKBps { get; set; } = 0;
+
+    /// <summary>ダウンロード帯域制限 (KB/s)。0 で無制限。
+    /// 受信側 HandleFileChunk でチャンク書き込み後にスリープしてレート整形する。
+    /// 受信ループが減速すると TCP/WebSocket のバックプレッシャーが上流へ伝わる。</summary>
+    public int DownloadKBps { get; set; } = 0;
+
+    /// <summary>同時並列転送数 (1〜8)。複数ファイル選択時の同時送信本数。
+    /// 1 は従来動作（直列）、N>1 で N 個まで同時に送信する。各 transport の SendAsync は
+    /// SemaphoreSlim でフレーム単位に直列化済みなので、メッセージ交錯は起こらない。</summary>
+    public int ParallelTransferCount { get; set; } = 1;
+
     // N-1: 旧 Theme / AccentColor / FontSize は ThemeMode と二重定義 + 未実装だったため削除済み
     // テーマは ThemeMode で一元管理する
 

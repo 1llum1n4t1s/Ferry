@@ -34,6 +34,16 @@ public sealed class TransferService : ITransferService, IDisposable
     private readonly IConnectionService _connectionService;
     private readonly ISettingsService _settingsService;
 
+    /// <summary>送信側のアップロード帯域制限。0 で無制限。Settings.UploadKBps に追従する。</summary>
+    private readonly Util.TokenBucket _uploadBucket = new();
+
+    /// <summary>受信側のダウンロード帯域制限。0 で無制限。Settings.DownloadKBps に追従する。</summary>
+    private readonly Util.TokenBucket _downloadBucket = new();
+
+    /// <summary>外部から帯域制限器にアクセスするためのプロパティ (テスト用、および設定変更ハンドラ用)。</summary>
+    public Util.TokenBucket UploadBucket => _uploadBucket;
+    public Util.TokenBucket DownloadBucket => _downloadBucket;
+
     /// <summary>送信中の転送アイテム（レジューム用に保持）。</summary>
     private readonly ConcurrentDictionary<Guid, TransferItem> _activeTransfers = new();
 
@@ -70,10 +80,24 @@ public sealed class TransferService : ITransferService, IDisposable
     public bool HasActiveTransfer =>
         !_activeTransfers.IsEmpty || !_receiveStates.IsEmpty || !_pendingApprovals.IsEmpty || !_pendingSendApprovals.IsEmpty;
 
+    /// <summary>
+    /// AppSettings の UploadKBps / DownloadKBps を _uploadBucket / _downloadBucket に反映する。
+    /// SettingsViewModel が帯域制限を変更した直後にこれを呼ぶことで、進行中の転送にも次回チャンクから即時反映される。
+    /// </summary>
+    public void SyncRateLimits()
+    {
+        var s = _settingsService.Settings;
+        _uploadBucket.SetRate(s.UploadKBps);
+        _downloadBucket.SetRate(s.DownloadKBps);
+    }
+
     public TransferService(IConnectionService connectionService, ISettingsService settingsService)
     {
         _connectionService = connectionService;
         _settingsService = settingsService;
+
+        // 帯域制限器に現在の設定値を反映 (起動時 + 以降は SettingsViewModel から SyncRateLimits 経由で更新)
+        SyncRateLimits();
 
         // 受信データハンドラを登録
         _connectionService.DataReceived += OnDataReceived;
@@ -554,6 +578,11 @@ public sealed class TransferService : ITransferService, IDisposable
                 await Task.Delay(10, ct);
             }
 
+            // アップロード帯域制限。0 (無制限) なら即 return。ペイロード本体のバイト数で計測する
+            // (ヘッダ分は無視しても大勢に影響なし)。複数並列転送時は TokenBucket 内部の SemaphoreSlim で
+            // トークン会計が直列化されるので、合算スループットが設定値を超えない。
+            await _uploadBucket.WaitAsync(chunkData.Length, ct);
+
             // P-1: チャンクメッセージ用バッファを ArrayPool から借用し、
             // FileChunker.WriteChunkMessage で直接書き込んだ後 Memory として渡す。
             // 1GB 転送 (16,384 チャンク) で約 1GB の Gen0 alloc を削減。
@@ -827,6 +856,11 @@ public sealed class TransferService : ITransferService, IDisposable
                 state.ReceivedChunkSet[chunkIndex] = true;
                 state.ReceivedChunks++;
                 state.WrittenBytes += chunkLength;
+
+                // ダウンロード帯域制限。重複でないチャンクだけカウントする。同期 Wait で受信ループを
+                // 直接減速させ、TCP/WebSocket のバックプレッシャーを上流 (送信側) へ伝える。
+                // 0 (無制限) なら即 return。
+                _downloadBucket.Wait(chunkLength);
 
                 // v1.0.46: 一定チャンクごとに送信側へ「書き込み済みチャンク数」を FlowAck で返す。
                 // 送信側はこれを credit にウィンドウ制御し、リレー中継バッファの溢れ (~55秒切断) を防ぐ。

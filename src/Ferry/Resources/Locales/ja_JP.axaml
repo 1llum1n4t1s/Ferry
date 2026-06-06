@@ -142,6 +142,12 @@
   <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">（ダウンロードフォルダ）</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">ファイル受信を自動承認</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">受信ファイルを自動的に承認する</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">アップロード帯域制限 (KB/s)</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">送信速度の上限。0 で無制限</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">ダウンロード帯域制限 (KB/s)</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">受信速度の上限。0 で無制限</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">同時並列転送数</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">複数ファイルを同時に送る本数 (1 で従来通り)</x:String>
 
   <!-- Settings: Appearance (extended) -->
 
@@ -176,6 +182,6 @@
   <x:String x:Key="Text.Transfer.PeerMissing" xml:space="preserve">宛先が見つかりません</x:String>
   <x:String x:Key="Text.State.Paused" xml:space="preserve">一時停止中</x:String>
   <x:String x:Key="Text.SaveBar.Tooltip" xml:space="preserve">受信ファイルの保存先</x:String>
-  <x:String x:Key="Text.SaveBar.Open" xml:space="preserve">フォルダを開く</x:String>
+  <x:String x:Key="Text.SaveBar.Open" xml:space="preserve">保存先を開く</x:String>
 
 </ResourceDictionary>

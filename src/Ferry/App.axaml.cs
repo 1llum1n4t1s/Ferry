@@ -159,7 +159,7 @@ public partial class App : Application
 
             var connectionVm = new ConnectionViewModel(connectionService, qrCodeService, settingsService, peerRegistry);
             var transferVm = new TransferViewModel(connectionService, transferService, connectionVm, settingsService);
-            var settingsVm = new SettingsViewModel(settingsService);
+            var settingsVm = new SettingsViewModel(settingsService, transferService);
 
             // N-6: SettingsViewModel から MVVM 違反を除去するため、テーマ切替 / 更新チェックは App 側で実行する
             settingsVm.ThemeChangeRequested += (_, themeIndex) =>

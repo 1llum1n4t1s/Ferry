@@ -156,21 +156,61 @@
 
     <!--
     ================================================================================
-    BUTTON STYLES
+    BUTTON STYLES — v1.0.48: ピンク主体に統一 + CornerRadius 6 で統一
     ================================================================================
+    全ボタン (class なしのデフォルト Button も含む) を AccentBrush (ピンク) + CornerRadius=6 に揃える。
+    icon / sidebar / sidebarMenuItem の「絵文字・メニュー用」用途は透過を維持しつつ角丸だけ 6 に。
+    danger は意味的区別 (赤=危険) を残すため、角丸 6 のみ揃えて色は維持する。
     -->
 
-    <!-- === Accent (ピンク主体 + cyan border + 白文字で確実視認性) ===
-         FluentTheme の Button.accent デフォルトが /template/ ContentPresenter 経由で
-         Background を上書きしてくるため、こちらも /template/ ContentPresenter で
-         打ち返して確実に AccentBrush を反映させる -->
+    <!-- === デフォルト Button (class 指定なし) — accent と同等のピンクスタイル ===
+         「変更」「キャンセル」「OK」のような汎用ボタンはこちらでピンクに統一される。
+         Avalonia FluentTheme の Button デフォルトの灰色を打ち消す。 -->
+    <Style Selector="Button">
+        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="Foreground" Value="#FFFFFF" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="CornerRadius" Value="6" />
+        <Setter Property="Padding" Value="14,6" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="BorderBrush" Value="#88FFFFFF" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Effect">
+            <DropShadowEffect Color="#FF2D8A" BlurRadius="12" Opacity="0.55" OffsetX="0" OffsetY="0" />
+        </Setter>
+    </Style>
+    <Style Selector="Button /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="Foreground" Value="#FFFFFF" />
+        <Setter Property="BorderBrush" Value="#88FFFFFF" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="6" />
+    </Style>
+    <Style Selector="Button:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AccentHoverBrush}" />
+        <Setter Property="Foreground" Value="#FFFFFF" />
+        <Setter Property="BorderBrush" Value="#FFFFFF" />
+    </Style>
+    <Style Selector="Button:pointerover">
+        <Setter Property="BorderBrush" Value="#FFFFFF" />
+        <Setter Property="Effect">
+            <DropShadowEffect Color="#FF2D8A" BlurRadius="20" Opacity="0.8" OffsetX="0" OffsetY="0" />
+        </Setter>
+    </Style>
+    <Style Selector="Button:pressed /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AccentHoverBrush}" />
+        <Setter Property="Foreground" Value="#FFFFFF" />
+    </Style>
+
+    <!-- === Accent (上記デフォルトと同等、後方互換のため明示的に保持) === -->
     <Style Selector="Button.accent">
         <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
         <Setter Property="Foreground" Value="#FFFFFF" />
         <Setter Property="FontWeight" Value="Bold" />
         <Setter Property="FontSize" Value="12" />
         <Setter Property="LetterSpacing" Value="0.5" />
-        <Setter Property="CornerRadius" Value="{DynamicResource SmallCornerRadius}" />
+        <Setter Property="CornerRadius" Value="6" />
         <Setter Property="Padding" Value="16,7" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="BorderBrush" Value="#88FFFFFF" />
@@ -184,16 +224,17 @@
         <Setter Property="Foreground" Value="#FFFFFF" />
         <Setter Property="BorderBrush" Value="#88FFFFFF" />
         <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="6" />
     </Style>
     <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource AccentHoverBrush}" />
         <Setter Property="Foreground" Value="#FFFFFF" />
-        <Setter Property="BorderBrush" Value="#00F0FF" />
+        <Setter Property="BorderBrush" Value="#FFFFFF" />
     </Style>
     <Style Selector="Button.accent:pointerover">
-        <Setter Property="BorderBrush" Value="#00F0FF" />
+        <Setter Property="BorderBrush" Value="#FFFFFF" />
         <Setter Property="Effect">
-            <DropShadowEffect Color="#00F0FF" BlurRadius="22" Opacity="0.9" OffsetX="0" OffsetY="0" />
+            <DropShadowEffect Color="#FF2D8A" BlurRadius="22" Opacity="0.9" OffsetX="0" OffsetY="0" />
         </Setter>
     </Style>
     <Style Selector="Button.accent:pressed /template/ ContentPresenter">
@@ -201,7 +242,8 @@
         <Setter Property="Foreground" Value="#FFFFFF" />
     </Style>
 
-    <!-- === Icon (透過 + cyan grow on hover) === -->
+    <!-- === Icon (絵文字ボタン用 - 小型、透過維持。CornerRadius のみ 6 に統一) ===
+         デフォルト Button のピンク背景・ボーダー・グローを明示的に打ち消し、絵文字が映える小型ボタンに戻す。 -->
     <Style Selector="Button.icon">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
@@ -209,19 +251,26 @@
         <Setter Property="MinWidth" Value="32" />
         <Setter Property="MinHeight" Value="32" />
         <Setter Property="Cursor" Value="Hand" />
-        <Setter Property="CornerRadius" Value="2" />
+        <Setter Property="CornerRadius" Value="6" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Effect" Value="{x:Null}" />
+    </Style>
+    <Style Selector="Button.icon /template/ ContentPresenter">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="6" />
     </Style>
     <Style Selector="Button.icon:pointerover">
-        <Setter Property="Foreground" Value="#00F0FF" />
+        <Setter Property="Foreground" Value="#FFFFFF" />
         <Setter Property="Effect">
-            <DropShadowEffect Color="#00F0FF" BlurRadius="10" Opacity="0.7" OffsetX="0" OffsetY="0" />
+            <DropShadowEffect Color="#FF2D8A" BlurRadius="14" Opacity="0.7" OffsetX="0" OffsetY="0" />
         </Setter>
     </Style>
     <Style Selector="Button.icon:pointerover /template/ ContentPresenter">
-        <Setter Property="Background" Value="#2200F0FF" />
+        <Setter Property="Background" Value="#33FF2D8A" />
     </Style>
 
-    <!-- === Sidebar (左寄せ汎用) === -->
+    <!-- === Sidebar (左寄せ汎用) — 透過維持、CornerRadius 6 統一 === -->
     <Style Selector="Button.sidebar">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
@@ -229,24 +278,38 @@
         <Setter Property="HorizontalContentAlignment" Value="Left" />
         <Setter Property="Padding" Value="14,8" />
         <Setter Property="Cursor" Value="Hand" />
-        <Setter Property="CornerRadius" Value="2" />
+        <Setter Property="CornerRadius" Value="6" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Effect" Value="{x:Null}" />
+    </Style>
+    <Style Selector="Button.sidebar /template/ ContentPresenter">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="6" />
     </Style>
     <Style Selector="Button.sidebar:pointerover">
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
     </Style>
     <Style Selector="Button.sidebar:pointerover /template/ ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}" />
+        <Setter Property="Background" Value="#22FF2D8A" />
     </Style>
 
-    <!-- === Danger (ネオンレッド) === -->
+    <!-- === Danger (ネオンレッド) — 意味的区別のため赤を維持、CornerRadius 6 統一 === -->
     <Style Selector="Button.danger">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{DynamicResource RedBrush}" />
         <Setter Property="Padding" Value="10,5" />
         <Setter Property="Cursor" Value="Hand" />
-        <Setter Property="CornerRadius" Value="2" />
+        <Setter Property="CornerRadius" Value="6" />
         <Setter Property="BorderBrush" Value="#55FF2D6A" />
         <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Effect" Value="{x:Null}" />
+    </Style>
+    <Style Selector="Button.danger /template/ ContentPresenter">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="#55FF2D6A" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="6" />
     </Style>
     <Style Selector="Button.danger:pointerover">
         <Setter Property="Foreground" Value="#FFFFFF" />
@@ -390,7 +453,7 @@
         <Setter Property="Foreground" Value="#FFFFFF" />
         <Setter Property="FontWeight" Value="Bold" />
         <Setter Property="LetterSpacing" Value="0.5" />
-        <Setter Property="CornerRadius" Value="2" />
+        <Setter Property="CornerRadius" Value="6" />
         <Setter Property="Padding" Value="14,5" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="BorderBrush" Value="#88FFFFFF" />
@@ -527,9 +590,15 @@
         <Setter Property="HorizontalContentAlignment" Value="Left" />
         <Setter Property="Padding" Value="14,10" />
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
-        <Setter Property="CornerRadius" Value="0" />
+        <Setter Property="CornerRadius" Value="6" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Effect" Value="{x:Null}" />
+    </Style>
+    <Style Selector="Button.sidebarMenuItem /template/ ContentPresenter">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="6" />
     </Style>
     <!-- pointerover は Button.Foreground 経由 (TextElement.Foreground を /template/ で
          触ると絵文字混じりテキストの再描画で hit-test ジッタ → 文字点滅するため) -->

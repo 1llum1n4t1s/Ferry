@@ -244,7 +244,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
 
         // v1.0.47: 先に全ファイル分のアイテムを生成して即 VisibleTransfers へ出す（5 選択なら 5 行が即時に並ぶ）。
         // 旧実装は foreach で await SendOneFileAsync していたため、1 件完了するまで次の行が出ず
-        // 「1 行ずつ遅れて増える」症状になっていた。転送自体は従来どおり 1 件ずつ直列に流す。
+        // 「1 行ずつ遅れて増える」症状になっていた。
         var items = new List<TransferItem>(entries.Count);
         foreach (var (absolutePath, relativePath) in entries)
         {
@@ -265,17 +265,35 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         }
         RecomputeIsTransferring();
 
-        foreach (var item in items)
+        // 同時並列転送数。1 で従来通り直列、N>1 で N 個まで同時送信。設定変更は次回 SendFilesAsync から有効。
+        // ConnectionService の SendAsync は各 transport (TCP/WebSocket/UDP) で SemaphoreSlim 排他されているため
+        // length-prefix フレームの交錯は起こらない。受信側は TransferId キーの ConcurrentDictionary で
+        // 複数受信を独立管理できる。await 継続は UI スレッドに戻るので ObservableCollection / RecomputeIsTransferring
+        // は UI スレッドでシリアル化される (Task.WhenAll 並列でもこの不変条件は維持される)。
+        var parallelism = Math.Clamp(_settingsService.Settings.ParallelTransferCount, 1, 8);
+        using var sem = new SemaphoreSlim(parallelism, parallelism);
+
+        var sendTasks = items.Select(async item =>
         {
-            // 自分の番が来る前にユーザーがキャンセル / 削除した行はスキップする。
-            // SendItemAsync 開始前は _sendCtsByItem に CTS が無く、service にも _activeTransfers が無いため、
-            // CancelTransfer は単に State を Cancelled に書き換えるだけ。ここで尊重しないと
-            // キャンセル済み行も律儀に送ってしまう。
-            if (item.State is TransferState.Cancelled or TransferState.Error
-                || FindTransfer(item.TransferId) is null)
-                continue;
-            await SendItemAsync(item, peer);
-        }
+            await sem.WaitAsync();
+            try
+            {
+                // 自分の番が来る前にユーザーがキャンセル / 削除した行はスキップする。
+                // SendItemAsync 開始前は _sendCtsByItem に CTS が無く、service にも _activeTransfers が無いため、
+                // CancelTransfer は単に State を Cancelled に書き換えるだけ。ここで尊重しないと
+                // キャンセル済み行も律儀に送ってしまう。
+                if (item.State is TransferState.Cancelled or TransferState.Error
+                    || FindTransfer(item.TransferId) is null)
+                    return;
+                await SendItemAsync(item, peer);
+            }
+            finally
+            {
+                sem.Release();
+            }
+        }).ToList();
+
+        await Task.WhenAll(sendTasks);
     }
 
     /// <summary>

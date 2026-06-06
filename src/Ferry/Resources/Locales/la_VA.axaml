@@ -137,5 +137,11 @@
   <!-- Settings: Auto Start -->
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Cum Windows incipe</x:String>
   <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">In registro Windows initii inscribe</x:String>
-
+  <!-- v1.0.48: 帯域制限と並列転送数（英語フォールバック） -->
+  <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">Upload Limit (KB/s)</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">Outbound bandwidth cap. 0 = unlimited</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Number of files sent simultaneously (1 = legacy serial)</x:String>
 </ResourceDictionary>

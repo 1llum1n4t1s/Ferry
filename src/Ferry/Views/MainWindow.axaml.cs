@@ -454,7 +454,8 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 保存先アドレスバーの「📂」ボタン → OS のファイルマネージャで保存先フォルダを開く。
+    /// 保存先アドレスバーの「保存先を開く」ボタン → OS のファイルマネージャで保存先フォルダを開く。
+    /// 「変更」ボタンは SettingsViewModel.BrowseSaveDirectoryCommand 経由で別ハンドラで処理する。
     /// </summary>
     private void OnOpenSaveDirClick(object? sender, RoutedEventArgs e)
     {
