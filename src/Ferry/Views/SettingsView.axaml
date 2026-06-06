@@ -52,19 +52,7 @@
             <TextBlock Classes="sectionHeader" Text="{DynamicResource Text.Settings.File}" />
             <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,4">
                 <StackPanel Spacing="12">
-                    <!-- 保存先ディレクトリ -->
-                    <StackPanel Spacing="4">
-                        <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.SaveDirectory}" />
-                        <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
-                            <TextBox Grid.Column="0" Text="{Binding SaveDirectory, Mode=TwoWay}"
-                                     Classes="search" IsReadOnly="True" />
-                            <Button Grid.Column="1" Content="{DynamicResource Text.Settings.SaveDirectory.Browse}"
-                                    Classes="accent" Margin="8,0,0,0"
-                                    Command="{Binding BrowseSaveDirectoryCommand}" />
-                        </Grid>
-                    </StackPanel>
-
-                    <!-- v1.0.38: ReceiveFileSavePath は SaveDirectory と重複していたため UI から撤去 -->
+                    <!-- v1.0.47: 受信ファイルの保存先はメイン画面上部のアドレスバーへ移設したため、ここからは撤去 -->
 
                     <!-- ファイル自動承認 -->
                     <Grid ColumnDefinitions="*,Auto">

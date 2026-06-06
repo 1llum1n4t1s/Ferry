@@ -45,6 +45,9 @@ public class TransferViewModelTests : IDisposable
         if (withSelectedPeer)
         {
             _connectionViewModel.SelectedPeer = new PairedPeer { PeerId = "test-peer", DisplayName = "TestPeer" };
+            // v1.0.47: EnsureConnectedAsync が ConnectedPeer.SessionId == peer.PeerId を要求するため、
+            // 接続済みシナリオでは ConnectedPeer も同じ SessionId を返すよう mock を整える。
+            _connectionService.ConnectedPeer.Returns(new PeerInfo { SessionId = "test-peer", DisplayName = "TestPeer", State = PeerState.Connected });
         }
         // v1.0.38: TransferViewModel が ISettingsService に依存するようになった (AutoAccept チェック用)
         return new TransferViewModel(_connectionService, _transferService, _connectionViewModel, _settingsService);
@@ -104,7 +107,7 @@ public class TransferViewModelTests : IDisposable
         await vm.SendFilesCommand.ExecuteAsync(new[] { filePath });
 
         Assert.Empty(vm.Transfers);
-        await _transferService.DidNotReceive().SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        await _transferService.DidNotReceive().SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -127,7 +130,7 @@ public class TransferViewModelTests : IDisposable
         await vm.SendFilesCommand.ExecuteAsync(new[] { @"C:\nonexistent\file.txt" });
 
         Assert.Empty(vm.Transfers);
-        await _transferService.DidNotReceive().SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        await _transferService.DidNotReceive().SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -153,7 +156,7 @@ public class TransferViewModelTests : IDisposable
     {
         _connectionService.State.Returns(PeerState.Connected);
         var filePath = CreateTempFile("error.txt");
-        _transferService.SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _transferService.SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new IOException("ディスクエラー"));
 
         using var vm = CreateViewModel(withSelectedPeer: true);
@@ -211,7 +214,7 @@ public class TransferViewModelTests : IDisposable
     {
         _connectionService.State.Returns(PeerState.Connected);
         var filePath = CreateTempFile();
-        _transferService.SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _transferService.SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new Exception("err"));
 
         using var vm = CreateViewModel(withSelectedPeer: true);
@@ -324,13 +327,17 @@ public class TransferViewModelTests : IDisposable
 
     // === ClearHistory ===
 
+    // v1.0.47: ClearHistory は宛先（選択中ピア）の終端アイテムのみ削除する。
+    // テストでは withSelectedPeer:true で "test-peer" を選び、各アイテムに同じ PeerId を付与して検証する。
+    private const string TestPeerId = "test-peer";
+
     [Fact]
     public void ClearHistory_InProgressのアイテムは残ること()
     {
-        using var vm = CreateViewModel();
-        var inProgress = new TransferItem { FileName = "sending.txt", State = TransferState.InProgress };
-        var completed = new TransferItem { FileName = "done.txt", State = TransferState.Completed };
-        var error = new TransferItem { FileName = "err.txt", State = TransferState.Error };
+        using var vm = CreateViewModel(withSelectedPeer: true);
+        var inProgress = new TransferItem { FileName = "sending.txt", State = TransferState.InProgress, PeerId = TestPeerId };
+        var completed = new TransferItem { FileName = "done.txt", State = TransferState.Completed, PeerId = TestPeerId };
+        var error = new TransferItem { FileName = "err.txt", State = TransferState.Error, PeerId = TestPeerId };
         vm.Transfers.Add(inProgress);
         vm.Transfers.Add(completed);
         vm.Transfers.Add(error);
@@ -345,9 +352,9 @@ public class TransferViewModelTests : IDisposable
     [Fact]
     public void ClearHistory_Pendingのアイテムも残ること()
     {
-        using var vm = CreateViewModel();
-        var pending = new TransferItem { FileName = "pending.txt", State = TransferState.Pending };
-        var completed = new TransferItem { FileName = "done.txt", State = TransferState.Completed };
+        using var vm = CreateViewModel(withSelectedPeer: true);
+        var pending = new TransferItem { FileName = "pending.txt", State = TransferState.Pending, PeerId = TestPeerId };
+        var completed = new TransferItem { FileName = "done.txt", State = TransferState.Completed, PeerId = TestPeerId };
         vm.Transfers.Add(pending);
         vm.Transfers.Add(completed);
 
@@ -360,11 +367,11 @@ public class TransferViewModelTests : IDisposable
     [Fact]
     public void ClearHistory_CompletedとErrorとCancelledとSuspendedが削除されること()
     {
-        using var vm = CreateViewModel();
-        vm.Transfers.Add(new TransferItem { FileName = "a.txt", State = TransferState.Completed });
-        vm.Transfers.Add(new TransferItem { FileName = "b.txt", State = TransferState.Error });
-        vm.Transfers.Add(new TransferItem { FileName = "c.txt", State = TransferState.Cancelled });
-        vm.Transfers.Add(new TransferItem { FileName = "d.txt", State = TransferState.Suspended });
+        using var vm = CreateViewModel(withSelectedPeer: true);
+        vm.Transfers.Add(new TransferItem { FileName = "a.txt", State = TransferState.Completed, PeerId = TestPeerId });
+        vm.Transfers.Add(new TransferItem { FileName = "b.txt", State = TransferState.Error, PeerId = TestPeerId });
+        vm.Transfers.Add(new TransferItem { FileName = "c.txt", State = TransferState.Cancelled, PeerId = TestPeerId });
+        vm.Transfers.Add(new TransferItem { FileName = "d.txt", State = TransferState.Suspended, PeerId = TestPeerId });
 
         vm.ClearHistoryCommand.Execute(null);
 
@@ -372,9 +379,22 @@ public class TransferViewModelTests : IDisposable
     }
 
     [Fact]
+    public void ClearHistory_別ピアのアイテムは残ること()
+    {
+        using var vm = CreateViewModel(withSelectedPeer: true);
+        vm.Transfers.Add(new TransferItem { FileName = "mine.txt", State = TransferState.Completed, PeerId = TestPeerId });
+        vm.Transfers.Add(new TransferItem { FileName = "other.txt", State = TransferState.Completed, PeerId = "other-peer" });
+
+        vm.ClearHistoryCommand.Execute(null);
+
+        Assert.Single(vm.Transfers);
+        Assert.Equal("other.txt", vm.Transfers[0].FileName);
+    }
+
+    [Fact]
     public void ClearHistory_空の場合は例外が発生しないこと()
     {
-        using var vm = CreateViewModel();
+        using var vm = CreateViewModel(withSelectedPeer: true);
         vm.ClearHistoryCommand.Execute(null);
 
         Assert.Empty(vm.Transfers);

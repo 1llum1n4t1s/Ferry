@@ -121,4 +121,20 @@
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">隨 Windows 啟動</x:String>
   <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">透過登錄檔註冊至 Windows 啟動項目</x:String>
 
+  <!-- v1.0.47: 行ごとの転送操作・受信保存先バー -->
+  <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">重新傳送</x:String>
+  <x:String x:Key="Text.Transfer.Pause" xml:space="preserve">暫停</x:String>
+  <x:String x:Key="Text.Transfer.Resume" xml:space="preserve">繼續</x:String>
+  <x:String x:Key="Text.Transfer.ResumeSuspended" xml:space="preserve">恢復</x:String>
+  <x:String x:Key="Text.Transfer.Cancel" xml:space="preserve">取消</x:String>
+  <x:String x:Key="Text.Transfer.Delete" xml:space="preserve">刪除</x:String>
+  <x:String x:Key="Text.Transfer.ClearHistory" xml:space="preserve">清除歷史</x:String>
+  <x:String x:Key="Text.Transfer.Retrying" xml:space="preserve">正在重試 ({0}/{1})…</x:String>
+  <x:String x:Key="Text.Transfer.ConnectFailed" xml:space="preserve">無法建立連線</x:String>
+  <x:String x:Key="Text.Transfer.SourceMissing" xml:space="preserve">找不到來源檔案</x:String>
+  <x:String x:Key="Text.Transfer.PeerMissing" xml:space="preserve">找不到目標裝置</x:String>
+  <x:String x:Key="Text.State.Paused" xml:space="preserve">已暫停</x:String>
+  <x:String x:Key="Text.SaveBar.Tooltip" xml:space="preserve">接收檔案的儲存位置</x:String>
+  <x:String x:Key="Text.SaveBar.Open" xml:space="preserve">開啟資料夾</x:String>
+
 </ResourceDictionary>

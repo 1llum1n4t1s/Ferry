@@ -167,57 +167,6 @@
         }
 
         /* ============================================================
-           URL ペースト経路
-           ============================================================ */
-        .paste-panel {
-            background: #16213e;
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 16px;
-            text-align: left;
-        }
-        .paste-label {
-            display: block;
-            color: #ccc;
-            font-size: 0.9rem;
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
-        .paste-hint {
-            color: #888;
-            font-size: 0.8rem;
-            margin-bottom: 12px;
-            line-height: 1.5;
-        }
-        .paste-input {
-            width: 100%;
-            background: #0a1729;
-            border: 1px solid #2d4870;
-            border-radius: 8px;
-            color: #e0e0e0;
-            font-family: monospace;
-            font-size: 0.85rem;
-            padding: 10px 12px;
-            outline: none;
-            transition: border-color 0.15s;
-            box-sizing: border-box;
-        }
-        .paste-input:focus {
-            border-color: #0078d4;
-        }
-        .paste-input::placeholder {
-            color: #555;
-        }
-        .paste-status {
-            margin-top: 8px;
-            font-size: 0.85rem;
-            color: #888;
-            min-height: 1.2em;
-        }
-        .paste-status.ok { color: #51cf66; }
-        .paste-status.err { color: #ff6b6b; }
-
-        /* ============================================================
            ボタン / エラー / 完了
            ============================================================ */
         .btn {
@@ -274,16 +223,6 @@
                         </div>
                     </div>
                 </button>
-                <button type="button" class="mode-card" id="modePasteBtn">
-                    <span class="mode-icon">📋</span>
-                    <div class="mode-text">
-                        <div class="mode-title">URL を貼り付けてペアリング</div>
-                        <div class="mode-desc">
-                            もう片方の PC に表示されているペアリングリンクを貼り付けます。<br>
-                            カメラ無しの PC ブラウザに最適です。
-                        </div>
-                    </div>
-                </button>
             </div>
         </div>
 
@@ -292,21 +231,6 @@
             <button type="button" class="back-link" id="backFromScan">← モード選択に戻る</button>
             <p class="scan-hint">ペアリング先の PC に表示されている QR コードにカメラを向けてください</p>
             <div id="qrReader"></div>
-        </div>
-
-        <!-- URL ペーストパネル (モード B 選択時のみ表示) -->
-        <div class="hidden" id="pastePanel">
-            <button type="button" class="back-link" id="backFromPaste">← モード選択に戻る</button>
-            <div class="paste-panel">
-                <label class="paste-label" for="pasteInput">📋 ペアリング先の URL を貼り付け</label>
-                <p class="paste-hint">
-                    両方の PC で QR 画面を開いた状態で、<br>
-                    もう片方の PC に表示されているペアリングリンクをここに貼り付けてください。
-                </p>
-                <input type="url" id="pasteInput" class="paste-input"
-                       placeholder="https://ferry-edf09.web.app/?sid=..." autocomplete="off" />
-                <p class="paste-status" id="pasteStatus"></p>
-            </div>
         </div>
 
         <!-- 進行状況パネル (初期表示 + ペアリング処理中) -->

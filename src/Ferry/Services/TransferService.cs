@@ -52,6 +52,15 @@ public sealed class TransferService : ITransferService, IDisposable
     /// チャンク送信を待機する。これで承認前の大量チャンク到着 → バッファ上限超過バグを解決する。</summary>
     private readonly ConcurrentDictionary<Guid, TaskCompletionSource<bool>> _pendingSendApprovals = new();
 
+    /// <summary>v1.0.47: 送信中転送のキャンセル用 CTS（TransferId → 呼び出し ct と連結した CTS）。
+    /// CancelTransfer（自側操作）/ HandleFileReject（相手側キャンセル通知）から Cancel して
+    /// SendChunksAsync の送信ループを即停止させる。SendFileAsync の finally で除去・Dispose する。</summary>
+    private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _sendCts = new();
+
+    /// <summary>v1.0.47: 一時停止中の送信 TransferId 集合（値は未使用、存在判定のみ）。
+    /// PauseSendTransfer で追加、ResumeSendTransfer で除去。SendChunksAsync のループがここを見て待機する。</summary>
+    private readonly ConcurrentDictionary<Guid, byte> _pausedSends = new();
+
     public event EventHandler<TransferItem>? ProgressChanged;
     public event EventHandler<TransferItem>? FileReceived;
     public event EventHandler<TransferItem>? TransferError;
@@ -83,6 +92,19 @@ public sealed class TransferService : ITransferService, IDisposable
     {
         _connectionService.DataReceived -= OnDataReceived;
         _connectionService.ConnectionLost -= OnConnectionLost;
+
+        // 進行中送信の CTS を後始末（終了時にループを抜けさせ、ハンドルを解放する）
+        foreach (var tid in _sendCts.Keys.ToArray())
+        {
+            if (_sendCts.TryRemove(tid, out var cts))
+            {
+                try { cts.Cancel(); } catch { /* ignore */ }
+                cts.Dispose();
+            }
+        }
+
+        // 一時停止フラグも掃除（CTS Cancel でループは抜けるが、辞書エントリを残さない）
+        _pausedSends.Clear();
     }
 
     /// <summary>
@@ -96,7 +118,22 @@ public sealed class TransferService : ITransferService, IDisposable
     /// </summary>
     private void OnConnectionLost(object? sender, EventArgs e)
     {
-        Util.Logger.Log($"接続切断検知: 受信中 {_receiveStates.Count} 件 + 承認待ち(受) {_pendingApprovals.Count} 件 + 承認待ち(送) {_pendingSendApprovals.Count} 件を cleanup", Util.LogLevel.Warning);
+        Util.Logger.Log($"接続切断検知: 受信中 {_receiveStates.Count} 件 + 承認待ち(受) {_pendingApprovals.Count} 件 + 承認待ち(送) {_pendingSendApprovals.Count} 件 + 送信中 {_activeTransfers.Count} 件を cleanup", Util.LogLevel.Warning);
+
+        // v1.0.47: 「一時停止中だった」送信だけを抜けさせる（CTS Cancel）。それ以外の進行中送信は
+        // SendChunksAsync の _connectionService.SendAsync(...) が転送断で IOException を投げ、
+        // SendItemAsync の transient catch（MaxSendAttempts までリトライ）に乗るのが望ましい。
+        // ここで全 _sendCts を一括 Cancel すると OperationCanceled になり、リトライ機構を素通りして
+        // 即 Cancelled で履歴が終わってしまう（接続断 = 即諦め）ので、対象を paused に限定する。
+        var pausedTids = _pausedSends.Keys.ToArray();
+        _pausedSends.Clear();
+        foreach (var tid in pausedTids)
+        {
+            if (_sendCts.TryGetValue(tid, out var cts))
+            {
+                try { cts.Cancel(); } catch { /* ignore */ }
+            }
+        }
 
         // 受信中の部分ファイルを削除
         foreach (var tid in _receiveStates.Keys.ToArray())
@@ -121,10 +158,15 @@ public sealed class TransferService : ITransferService, IDisposable
             }
         }
 
-        // CodeRabbit 指摘: 送信側承認待ち TCS も解放。
-        // FileMeta 送信後 → 受信側からの FileApprove 待ちで切断したケース、TCS を false で完了させて
-        // WaitForApprovalAsync を抜けさせる。WaitForApprovalAsync の wait 完了分岐 (approved=false)
-        // で State=Cancelled / TransferError 発火が自動的に走る (v12 で実装済み経路)
+        // 送信側承認待ち TCS も解放。FileMeta 送信後 → 受信側からの FileApprove 待ちで切断したケース。
+        // v1.0.47 修正 (P2-H): 旧実装の TrySetResult(false) は WaitForApprovalAsync で「拒否扱い」になり、
+        // SendFileAsync が OperationCanceledException を投げて VM の no-retry catch に落ちていた。
+        // 承認待ち中の接続断は transient なので、専用例外 ConnectionLostDuringTransferException
+        // (IOException 派生 / 非 OperationCanceledException) を TrySetException で投げる。これにより:
+        //   1. WaitForApprovalAsync の OperationCanceledException catch を素通り
+        //   2. SendFileAsync の catch (Exception) で throw されて
+        //   3. VM SendItemAsync の catch (Exception) when (attempt < MaxSendAttempts) の transient 経路に乗り
+        //      MaxSendAttempts まで自動リトライが走る（接続復帰後の再送信に対応）
         foreach (var tid in _pendingSendApprovals.Keys.ToArray())
         {
             if (_pendingSendApprovals.TryRemove(tid, out var tcs))
@@ -134,7 +176,7 @@ public sealed class TransferService : ITransferService, IDisposable
                 {
                     sendItem.ErrorMessage = "接続が切断されました";
                 }
-                tcs.TrySetResult(false);
+                tcs.TrySetException(new ConnectionLostDuringTransferException("接続が切断されました（承認待ち中）"));
             }
         }
     }
@@ -145,14 +187,20 @@ public sealed class TransferService : ITransferService, IDisposable
     /// <param name="filePath">送信するファイルの絶対パス。</param>
     /// <param name="relativePath">フォルダ送信時の相対パス（例: "フォルダ名/サブフォルダ/ファイル名"）。null で単独ファイル。</param>
     /// <param name="ct">キャンセルトークン。</param>
-    public async Task SendFileAsync(string filePath, string? relativePath = null, CancellationToken ct = default)
+    public async Task SendFileAsync(string filePath, string? relativePath = null, Guid? requestedTransferId = null, CancellationToken ct = default)
     {
         var fileInfo = new FileInfo(filePath);
         if (!fileInfo.Exists)
             throw new FileNotFoundException("送信ファイルが見つかりません", filePath);
 
         var totalChunks = FileChunker.CalculateTotalChunks(fileInfo.Length);
-        var transferId = Guid.NewGuid();
+        // v1.0.47: UI から TransferId を渡せるようにし、進捗・キャンセル・一時停止を UI 行と正確に対応付ける。
+        var transferId = requestedTransferId ?? Guid.NewGuid();
+
+        // v1.0.47: 呼び出し ct と連結したキャンセル用 CTS を登録。CancelTransfer / 相手側 reject で Cancel できる。
+        var sendCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _sendCts[transferId] = sendCts;
+        ct = sendCts.Token;
 
         // P-3: ハッシュは事前計算せず、SendChunksAsync 中に IncrementalHash で並行計算する。
         // FileMeta にはハッシュなしで送り、全 chunk 送信後に FileHash メッセージで送る
@@ -169,6 +217,7 @@ public sealed class TransferService : ITransferService, IDisposable
             State = TransferState.InProgress,
             Sha256Hash = string.Empty, // ハッシュは送信後確定
             SourceFilePath = filePath,
+            RelativePath = relativePath,
         };
         _activeTransfers[transferId] = item;
 
@@ -235,6 +284,9 @@ public sealed class TransferService : ITransferService, IDisposable
         {
             _pendingSendApprovals.TryRemove(transferId, out _);
             _activeTransfers.TryRemove(transferId, out _);
+            _pausedSends.TryRemove(transferId, out _);
+            if (_sendCts.TryRemove(transferId, out var cts))
+                cts.Dispose();
         }
     }
 
@@ -443,6 +495,11 @@ public sealed class TransferService : ITransferService, IDisposable
         // v1.0.46: フロー制御カウンタを初期化（レジューム時に前回値が残らないように）
         Volatile.Write(ref item.FlowAckedChunks, 0);
 
+        // v1.0.47: フロー制御 window が「実際に発火したか」を後からログで判別するための一度きりフラグ。
+        // 発火＝受信ドレインに律速されて送信が頭打ちになった証拠。発火しないまま完走した場合は
+        // (a) ファイルが窓(32MB)未満で構造的に未行使 (b) 受信が十分速い、のどちらか。
+        var flowControlEngagedLogged = false;
+
         foreach (var (index, chunkData) in chunkSource)
         {
             ct.ThrowIfCancellationRequested();
@@ -451,12 +508,44 @@ public sealed class TransferService : ITransferService, IDisposable
             if (index < startChunk)
                 continue;
 
+            // v1.0.47: 一時停止中はここで待機する。接続は維持し、キャンセル（ct）されたら例外で抜ける。
+            if (_pausedSends.ContainsKey(transferId))
+            {
+                if (item.State != TransferState.Paused)
+                {
+                    item.State = TransferState.Paused;
+                    ProgressChanged?.Invoke(this, item);
+                }
+                while (_pausedSends.ContainsKey(transferId))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    await Task.Delay(100, ct);
+                }
+                // 再開：状態を戻し、フロー制御 stall タイマーが誤発火しないよう以降は通常進行
+                if (item.State == TransferState.Paused)
+                {
+                    item.State = TransferState.InProgress;
+                    ProgressChanged?.Invoke(this, item);
+                }
+            }
+
             // v1.0.46: リレー経路のバックプレッシャー。受信側が書き込み済みのチャンク (FlowAck) から
             // FlowControlWindowChunks を超えて先行しないよう待機する。リレー (WebSocket) は ClientWebSocket.SendAsync が
             // ローカル送信バッファ受理で即返り end-to-end の流量制御が効かないため、これが無いと送信側が受信ドレイン
             // 速度を超えて Cloudflare 中継バッファへ流し込み、~55秒で接続が切断される。TCP/UDP 経路では各 transport の
             // 自然なバックプレッシャー (WriteAsync の await / UDP 内部ウィンドウ) が先に効くためこの待機はほぼ発生しない。
             var flowWaitStart = Environment.TickCount64;
+            // v1.0.47: 発火を一度だけ Info ログに残す。これが出ていれば「送信が受信ドレインに律速された＝
+            // フロー制御が機能した＝Cloudflare 中継バッファは窓 (32MB) で頭打ち」と確定できる。
+            if (!flowControlEngagedLogged
+                && index - Volatile.Read(ref item.FlowAckedChunks) >= TransferProtocol.FlowControlWindowChunks)
+            {
+                flowControlEngagedLogged = true;
+                Util.Logger.Log(
+                    $"フロー制御 window 発火（受信ドレイン律速に移行）: transferId={transferId} index={index} " +
+                    $"acked={Volatile.Read(ref item.FlowAckedChunks)} window={TransferProtocol.FlowControlWindowChunks}",
+                    Util.LogLevel.Info);
+            }
             while (index - Volatile.Read(ref item.FlowAckedChunks) >= TransferProtocol.FlowControlWindowChunks)
             {
                 ct.ThrowIfCancellationRequested();
@@ -672,6 +761,11 @@ public sealed class TransferService : ITransferService, IDisposable
                 Direction = TransferDirection.Receive,
                 State = TransferState.WaitingApproval,
                 Sha256Hash = meta.Sha256,
+                // 接続元ピアを FileMeta 到着時点で確定させる（VM 側 ResolveReceivePeer の後付け推測より
+                // 権威ある値。宛先別履歴が誤ピアに混入しないようにする。VM はこれが空のときだけ補完する）。
+                PeerId = _connectionService.ConnectedPeer?.SessionId
+                         ?? _connectionService.CurrentListeningPeerId
+                         ?? string.Empty,
             },
         };
 
@@ -910,11 +1004,16 @@ public sealed class TransferService : ITransferService, IDisposable
             return;
         }
 
-        // 既に送信中だった場合のエラー通知 (後方互換、通常は到達しない)
+        // 送信中（承認済み・チャンク送信中）に相手が中断/キャンセルしてきたケース（v1.0.47）。
+        // 受信側 CancelTransfer が送ってくる。送信ループ（_sendCts）を止めて Cancelled 表示にする。
         if (_activeTransfers.TryGetValue(transferId, out var sendingItem))
         {
-            sendingItem.State = TransferState.Error;
-            sendingItem.ErrorMessage = $"相手が受信を拒否しました: {reason}";
+            Util.Logger.Log($"送信中に相手が中断/拒否: transferId={transferId}, 理由={reason}", Util.LogLevel.Warning);
+            sendingItem.State = TransferState.Cancelled;
+            sendingItem.ErrorMessage = $"相手が中断しました: {reason}";
+            _pausedSends.TryRemove(transferId, out _);
+            if (_sendCts.TryGetValue(transferId, out var sc))
+                sc.Cancel();
             TransferError?.Invoke(this, sendingItem);
             return;
         }
@@ -972,7 +1071,10 @@ public sealed class TransferService : ITransferService, IDisposable
         var parsed = FileChunker.ParseFlowAck(data);
         if (parsed == null) return;
         var (transferId, ackedChunks) = parsed.Value;
-        if (_activeTransfers.TryGetValue(transferId, out var item))
+        var found = _activeTransfers.TryGetValue(transferId, out var item);
+        // v1.0.47: ack 到達と item 解決を可視化（found=false が続くなら配線/transferId 不一致を疑う）
+        Util.Logger.Log($"FlowAck 受信: transferId={transferId} acked={ackedChunks} found={found}", Util.LogLevel.Debug);
+        if (found && item != null)
         {
             if (ackedChunks > Volatile.Read(ref item.FlowAckedChunks))
                 Volatile.Write(ref item.FlowAckedChunks, ackedChunks);
@@ -1105,42 +1207,75 @@ public sealed class TransferService : ITransferService, IDisposable
         SendRejectFireAndForget(tid, "受信側が拒否しました");
     }
 
-    /// <summary>進行中の転送をキャンセルする。</summary>
+    /// <summary>進行中の転送をキャンセルする。送受信どちら側からでも呼べ、相手にも FileReject で通知して
+    /// 両側を停止・後始末する（v1.0.47）。</summary>
     public void CancelTransfer(string transferId)
     {
         if (!Guid.TryParse(transferId, out var tid)) return;
+
+        // 受信中: 部分ファイルを削除し、送信側へ中断通知（送信側の _sendCts が cancel されて送信ループが止まる）
         if (_receiveStates.TryRemove(tid, out var receiveState))
         {
             Util.Logger.Log($"受信キャンセル: {receiveState.FileName}");
             receiveState.Item.State = TransferState.Cancelled;
             receiveState.Item.ErrorMessage = "キャンセルされました";
             CleanupReceiveState(receiveState);
+            SendRejectFireAndForget(tid, "受信側がキャンセルしました");
             TransferError?.Invoke(this, receiveState.Item);
             return;
         }
+
+        // 受信承認待ち: 送信側へ拒否通知して承認待ちを解除させる
         if (_pendingApprovals.TryRemove(tid, out var pendingState))
         {
             Util.Logger.Log($"承認待ちキャンセル: {pendingState.FileName}");
             pendingState.Item.State = TransferState.Cancelled;
             pendingState.Item.ErrorMessage = "キャンセルされました";
+            SendRejectFireAndForget(tid, "受信側がキャンセルしました");
             TransferError?.Invoke(this, pendingState.Item);
             return;
         }
-        if (_activeTransfers.TryRemove(tid, out var sendItem))
+
+        // 送信中: 送信ループを止め、承認待ち TCS を解放し、相手へ中断通知（受信側の部分ファイルを掃除させる）。
+        // _activeTransfers からの除去は SendFileAsync の finally に任せる（item / _sendCts を生かしたまま停止させる）。
+        if (_activeTransfers.TryGetValue(tid, out var sendItem))
         {
             Util.Logger.Log($"送信キャンセル: {sendItem.FileName}");
             sendItem.State = TransferState.Cancelled;
             sendItem.ErrorMessage = "キャンセルされました";
-            TransferError?.Invoke(this, sendItem);
+            _pausedSends.TryRemove(tid, out _);  // 一時停止中でも確実にループを抜けさせる
 
             // CodeRabbit 指摘: 送信側承認待ち TCS も解放しないと、FileMeta 送信後の承認待ち中に
-            // CancelTransfer されても 60 秒タイムアウトまで pending が残る。TrySetResult(false) で
-            // WaitForApprovalAsync を抜けさせる
+            // CancelTransfer されても 60 秒タイムアウトまで pending が残る。TrySetResult(false) で抜けさせる
             if (_pendingSendApprovals.TryRemove(tid, out var tcs))
-            {
                 tcs.TrySetResult(false);
-            }
+
+            // 送信ループ（SendChunksAsync）を停止。OperationCanceledException が SendFileAsync を抜けて
+            // VM 側で Cancelled 反映される（state は上で Cancelled 済みなので catch は Error に書き換えない）
+            if (_sendCts.TryGetValue(tid, out var cts))
+                cts.Cancel();
+
+            SendRejectFireAndForget(tid, "送信側がキャンセルしました");
         }
+    }
+
+    /// <summary>送信中の転送を一時停止する。SendChunksAsync が次のチャンク境界で待機に入る。
+    /// 接続待ち / retry backoff など _activeTransfers にまだ載っていない場合は受理せず false を返す。</summary>
+    public bool PauseSendTransfer(string transferId)
+    {
+        if (!Guid.TryParse(transferId, out var tid)) return false;
+        if (!_activeTransfers.TryGetValue(tid, out var item) || item.State != TransferState.InProgress) return false;
+        _pausedSends[tid] = 0;
+        Util.Logger.Log($"送信一時停止: {item.FileName}");
+        return true;
+    }
+
+    /// <summary>一時停止中の送信転送を再開する。</summary>
+    public void ResumeSendTransfer(string transferId)
+    {
+        if (!Guid.TryParse(transferId, out var tid)) return;
+        if (_pausedSends.TryRemove(tid, out _))
+            Util.Logger.Log($"送信再開: {transferId}");
     }
 
     // === ユーティリティ ===

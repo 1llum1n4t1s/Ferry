@@ -138,4 +138,20 @@
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Avvia con Windows</x:String>
   <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Registra nell'avvio automatico di Windows tramite il registro</x:String>
 
+  <!-- v1.0.47: 行ごとの転送操作・受信保存先バー -->
+  <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">Invia di nuovo</x:String>
+  <x:String x:Key="Text.Transfer.Pause" xml:space="preserve">Pausa</x:String>
+  <x:String x:Key="Text.Transfer.Resume" xml:space="preserve">Riprendi</x:String>
+  <x:String x:Key="Text.Transfer.ResumeSuspended" xml:space="preserve">Riprendi</x:String>
+  <x:String x:Key="Text.Transfer.Cancel" xml:space="preserve">Annulla</x:String>
+  <x:String x:Key="Text.Transfer.Delete" xml:space="preserve">Elimina</x:String>
+  <x:String x:Key="Text.Transfer.ClearHistory" xml:space="preserve">Cancella cronologia</x:String>
+  <x:String x:Key="Text.Transfer.Retrying" xml:space="preserve">Nuovo tentativo ({0}/{1})…</x:String>
+  <x:String x:Key="Text.Transfer.ConnectFailed" xml:space="preserve">Impossibile stabilire la connessione</x:String>
+  <x:String x:Key="Text.Transfer.SourceMissing" xml:space="preserve">File di origine non trovato</x:String>
+  <x:String x:Key="Text.Transfer.PeerMissing" xml:space="preserve">Destinatario non trovato</x:String>
+  <x:String x:Key="Text.State.Paused" xml:space="preserve">In pausa</x:String>
+  <x:String x:Key="Text.SaveBar.Tooltip" xml:space="preserve">Posizione di salvataggio dei file ricevuti</x:String>
+  <x:String x:Key="Text.SaveBar.Open" xml:space="preserve">Apri cartella</x:String>
+
 </ResourceDictionary>

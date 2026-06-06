@@ -1,8 +1,11 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
@@ -16,6 +19,8 @@ namespace Ferry.ViewModels;
 /// <summary>
 /// 転送パネルの ViewModel。
 /// ファイルのドラッグ＆ドロップ、転送リスト、進捗管理を提供する。
+/// v1.0.47: 履歴を宛先（PeerId）ごとに保持し、選択中ピアの分だけ VisibleTransfers に出す。
+/// 送信は UI 行と同じ TransferId を service に渡し、進捗・キャンセル・一時停止・再送を正確に対応付ける。
 /// </summary>
 public sealed partial class TransferViewModel : ViewModelBase, IDisposable
 {
@@ -24,13 +29,16 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     private readonly ConnectionViewModel _connectionViewModel;
     private readonly ISettingsService _settingsService;
 
+    /// <summary>送信失敗時の自動リトライ回数。</summary>
+    private const int MaxSendAttempts = 3;
+
     [ObservableProperty]
     public partial bool IsDragOver { get; set; }
 
     [ObservableProperty]
     public partial bool IsTransferring { get; set; }
 
-    /// <summary>転送アイテムの一覧があるか。</summary>
+    /// <summary>選択中ピアの転送アイテムがあるか（空状態表示の切替に使用）。</summary>
     [ObservableProperty]
     public partial bool HasTransfers { get; set; }
 
@@ -38,16 +46,24 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     public partial bool HasPendingApproval { get; set; }
 
-    // P-12: 進捗・エラーイベントごとに Transfers から InProgress アイテムを線形検索していた箇所を
-    // 直接参照に置換。1 GB 転送で 2048 回 × Transfers.Count の比較が O(1) になる。
-    // 単一同時転送前提（接続 1 対 1）なので "send 1 / receive 1" だけ覚える
-    private TransferItem? _currentSendItem;
-    private TransferItem? _currentReceiveItem;
+    /// <summary>現在 VisibleTransfers にフィルタしている宛先 PeerId。</summary>
+    private string _selectedPeerId = string.Empty;
+
+    /// <summary>進行中送信のキャンセル用 CTS（TransferId → CTS）。キャンセル/一時停止操作と再送ループが共有する。</summary>
+    private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _sendCtsByItem = new();
+
+    /// <summary>転送中行の毎秒レート(bps)表示を更新するタイマー（UI スレッド駆動）。</summary>
+    private readonly DispatcherTimer _rateTimer;
 
     /// <summary>
-    /// 転送アイテムの一覧。
+    /// 全宛先の転送アイテム（マスター）。宛先を切り替えても消えず保持される。
     /// </summary>
     public ObservableCollection<TransferItem> Transfers { get; } = [];
+
+    /// <summary>
+    /// 選択中ピアの転送アイテムだけを抽出したビュー。TransferView はこちらを表示する。
+    /// </summary>
+    public ObservableCollection<TransferItem> VisibleTransfers { get; } = [];
 
     /// <summary>
     /// 承認待ちの受信アイテム一覧（サイドバー下部パネルに表示）。
@@ -70,8 +86,108 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         _transferService.TransferError += OnTransferError;
         _transferService.ApprovalRequested += OnApprovalRequested;
 
-        Transfers.CollectionChanged += (_, _) => HasTransfers = Transfers.Count > 0;
+        // 宛先を切り替えたら表示履歴を入れ替える
+        _connectionViewModel.PropertyChanged += OnConnectionVmPropertyChanged;
+        _selectedPeerId = _connectionViewModel.SelectedPeer?.PeerId ?? string.Empty;
+
+        VisibleTransfers.CollectionChanged += (_, _) => HasTransfers = VisibleTransfers.Count > 0;
+
+        // 転送中の毎秒レート表示。DI 組み立ては UI スレッドなのでここで生成・開始してよい。
+        _rateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _rateTimer.Tick += OnRateTimerTick;
+        _rateTimer.Start();
     }
+
+    /// <summary>
+    /// 1 秒ごとに表示中の転送行のレート(bps)を更新する。InProgress 以外（完了/停止/一時停止）はクリアする。
+    /// </summary>
+    private void OnRateTimerTick(object? sender, EventArgs e)
+    {
+        var now = Environment.TickCount64;
+        foreach (var item in VisibleTransfers)
+        {
+            if (!item.IsInProgress || item.State == TransferState.Paused)
+            {
+                item.RateText = null;     // 完了/停止/一時停止はレート非表示
+                item.LastSampleTick = 0;  // 再開時は初回サンプル扱いに戻す
+                continue;
+            }
+
+            if (item.LastSampleTick != 0)
+            {
+                var dt = (now - item.LastSampleTick) / 1000.0;
+                var dBytes = item.TransferredBytes - item.LastSampledBytes;
+                if (dt > 0)
+                    item.RateText = Util.Formatting.FormatBitrate(dBytes * 8 / dt);
+            }
+            item.LastSampledBytes = item.TransferredBytes;
+            item.LastSampleTick = now;
+        }
+    }
+
+    // === 宛先別フィルタ ===
+
+    private void OnConnectionVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(ConnectionViewModel.SelectedPeer)) return;
+        _selectedPeerId = _connectionViewModel.SelectedPeer?.PeerId ?? string.Empty;
+        if (Dispatcher.UIThread.CheckAccess())
+            RebuildVisibleTransfers();
+        else
+            Dispatcher.UIThread.Post(RebuildVisibleTransfers);
+    }
+
+    private bool BelongsToSelectedPeer(TransferItem item) =>
+        !string.IsNullOrEmpty(_selectedPeerId) && item.PeerId == _selectedPeerId;
+
+    private void RebuildVisibleTransfers()
+    {
+        VisibleTransfers.Clear();
+        foreach (var t in Transfers.Where(BelongsToSelectedPeer))
+            VisibleTransfers.Add(t);
+        HasTransfers = VisibleTransfers.Count > 0;
+    }
+
+    /// <summary>マスターと、選択中なら表示ビューにアイテムを追加する。</summary>
+    private void AddTransfer(TransferItem item)
+    {
+        Transfers.Add(item);
+        if (BelongsToSelectedPeer(item))
+            VisibleTransfers.Add(item);
+    }
+
+    /// <summary>マスター・表示ビューからアイテムを除去する。</summary>
+    private void RemoveTransfer(TransferItem item)
+    {
+        Transfers.Remove(item);
+        VisibleTransfers.Remove(item);
+    }
+
+    /// <summary>TransferId からアイテムを引く。同じ TransferId の行が複数あれば「非 terminal 行」を優先する。
+    /// 接続断 → 自動 retry のシナリオで、受信側にも前 attempt の Cancelled / Error 行が履歴として残ったまま
+    /// 新 attempt の FileMeta が来ると同 TransferId の行が並ぶ。素朴な FirstOrDefault は古い terminal 行を
+    /// 返してしまい、新 attempt の進捗が古い行を更新する/新行に反映されない不整合になる。
+    /// 非 terminal 行を優先することで進行中行が確実に拾われ、履歴側の terminal 行はそのまま残る（履歴粒度は維持）。</summary>
+    private TransferItem? FindTransfer(Guid transferId) =>
+        Transfers.FirstOrDefault(t => t.TransferId == transferId && !t.IsTerminal)
+        ?? Transfers.FirstOrDefault(t => t.TransferId == transferId);
+
+    private void RecomputeIsTransferring() =>
+        IsTransferring = Transfers.Any(t => t.State == TransferState.InProgress);
+
+    /// <summary>受信時の宛先（接続中 or 着信監視中のピア）を解決する。</summary>
+    private (string PeerId, string PeerName) ResolveReceivePeer()
+    {
+        var peerId = _connectionService.ConnectedPeer?.SessionId
+                     ?? _connectionService.CurrentListeningPeerId
+                     ?? _connectionViewModel.SelectedPeer?.PeerId
+                     ?? string.Empty;
+        var peer = _connectionViewModel.PairedPeers.FirstOrDefault(p => p.PeerId == peerId);
+        var name = peer?.DisplayName ?? _connectionViewModel.SelectedPeer?.DisplayName ?? string.Empty;
+        return (peerId, name);
+    }
+
+    // === 送信 ===
 
     /// <summary>
     /// ファイル選択ダイアログを開き、選択されたファイルを送信する。
@@ -79,7 +195,6 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private async Task BrowseAndSendFilesAsync()
     {
-        // M-8: App.GetMainWindow ヘルパーで統一
         if (App.GetMainWindow() is not { } mainWindow)
             return;
 
@@ -109,17 +224,15 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private async Task SendFilesAsync(string[] filePaths)
     {
-        Util.Logger.Log($"SendFilesAsync 開始: {filePaths.Length} パス, SelectedPeer={_connectionViewModel.SelectedPeer?.DisplayName ?? "null"}, State={_connectionService.State}");
+        var peer = _connectionViewModel.SelectedPeer;
+        Util.Logger.Log($"SendFilesAsync 開始: {filePaths.Length} パス, SelectedPeer={peer?.DisplayName ?? "null"}, State={_connectionService.State}");
 
-        if (filePaths.Length == 0 || _connectionViewModel.SelectedPeer == null)
+        if (filePaths.Length == 0 || peer == null)
         {
-            Util.Logger.Log($"送信スキップ: filePaths={filePaths.Length}, peer={_connectionViewModel.SelectedPeer?.DisplayName ?? "null"}");
+            Util.Logger.Log($"送信スキップ: filePaths={filePaths.Length}, peer={peer?.DisplayName ?? "null"}");
             return;
         }
 
-        var peerName = _connectionViewModel.SelectedPeer.DisplayName;
-
-        // パスをファイルに展開（フォルダは再帰列挙、相対パス付き）
         var entries = ExpandPaths(filePaths);
         if (entries.Count == 0)
         {
@@ -129,88 +242,207 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
 
         Util.Logger.Log($"送信対象: {entries.Count} ファイル");
 
-        // 未接続ならオンデマンド接続
-        if (_connectionService.State != PeerState.Connected)
+        // v1.0.47: 先に全ファイル分のアイテムを生成して即 VisibleTransfers へ出す（5 選択なら 5 行が即時に並ぶ）。
+        // 旧実装は foreach で await SendOneFileAsync していたため、1 件完了するまで次の行が出ず
+        // 「1 行ずつ遅れて増える」症状になっていた。転送自体は従来どおり 1 件ずつ直列に流す。
+        var items = new List<TransferItem>(entries.Count);
+        foreach (var (absolutePath, relativePath) in entries)
         {
-            Util.Logger.Log("未接続のためオンデマンド接続を開始…");
-            try
+            var fi = new FileInfo(absolutePath);
+            var item = new TransferItem
             {
-                await _connectionViewModel.ConnectToSelectedPeerAsync();
-                Util.Logger.Log($"オンデマンド接続完了: State={_connectionService.State}");
-            }
-            catch (Exception ex)
+                FileName = relativePath ?? fi.Name,
+                FileSize = fi.Length,
+                Direction = TransferDirection.Send,
+                State = TransferState.Pending,
+                PeerName = peer.DisplayName,
+                PeerId = peer.PeerId,
+                SourceFilePath = absolutePath,
+                RelativePath = relativePath,
+            };
+            AddTransfer(item);
+            items.Add(item);
+        }
+        RecomputeIsTransferring();
+
+        foreach (var item in items)
+        {
+            // 自分の番が来る前にユーザーがキャンセル / 削除した行はスキップする。
+            // SendItemAsync 開始前は _sendCtsByItem に CTS が無く、service にも _activeTransfers が無いため、
+            // CancelTransfer は単に State を Cancelled に書き換えるだけ。ここで尊重しないと
+            // キャンセル済み行も律儀に送ってしまう。
+            if (item.State is TransferState.Cancelled or TransferState.Error
+                || FindTransfer(item.TransferId) is null)
+                continue;
+            await SendItemAsync(item, peer);
+        }
+    }
+
+    /// <summary>
+    /// 1 ファイルを送信する。接続確立 → 送信を行い、一過性エラーは <see cref="MaxSendAttempts"/> 回まで
+    /// 自動リトライして UI に「リトライ中」を表示する。再送（ResendAsync）からも呼ばれる。
+    /// </summary>
+    private async Task SendOneFileAsync(string absolutePath, string? relativePath, PairedPeer peer)
+    {
+        var fileInfo = new FileInfo(absolutePath);
+        var item = new TransferItem
+        {
+            FileName = relativePath ?? fileInfo.Name,
+            FileSize = fileInfo.Length,
+            Direction = TransferDirection.Send,
+            State = TransferState.Pending,
+            PeerName = peer.DisplayName,
+            PeerId = peer.PeerId,
+            SourceFilePath = absolutePath,
+            RelativePath = relativePath,
+        };
+        AddTransfer(item);
+        RecomputeIsTransferring();
+        await SendItemAsync(item, peer);
+    }
+
+    /// <summary>
+    /// 既に生成・AddTransfer 済みの送信アイテムを実際に転送する。接続確立 → 送信を行い、
+    /// 一過性エラーは <see cref="MaxSendAttempts"/> 回まで自動リトライして UI に「リトライ中」を表示する。
+    /// 複数選択時は呼び出し側が先に全アイテムを AddTransfer し、これを 1 件ずつ直列に呼ぶ。
+    /// </summary>
+    private async Task SendItemAsync(TransferItem item, PairedPeer peer)
+    {
+        var absolutePath = item.SourceFilePath!;
+        var relativePath = item.RelativePath;
+        var displayName = item.FileName;
+        item.State = TransferState.InProgress;
+        RecomputeIsTransferring();
+
+        var cts = new CancellationTokenSource();
+        _sendCtsByItem[item.TransferId] = cts;
+        try
+        {
+            for (var attempt = 1; ; attempt++)
             {
-                Util.Logger.Log($"転送前の接続に失敗: {ex.Message}", Util.LogLevel.Error);
-                return;
+                try
+                {
+                    if (attempt > 1)
+                    {
+                        item.Note = App.Text("Transfer.Retrying", attempt, MaxSendAttempts);
+                        item.State = TransferState.InProgress;
+                    }
+
+                    await EnsureConnectedAsync(peer, cts.Token);
+                    // UI 行と同じ TransferId を渡し、進捗・キャンセル・一時停止を対応付ける
+                    await _transferService.SendFileAsync(absolutePath, relativePath, item.TransferId, cts.Token);
+
+                    item.State = TransferState.Completed;
+                    item.TransferredBytes = item.FileSize;
+                    item.CompletedAt = DateTime.UtcNow;
+                    item.Note = null;
+                    break;
+                }
+                catch (OperationCanceledException ex)
+                {
+                    // ユーザーキャンセル / 承認拒否 / 承認タイムアウト → リトライしない
+                    Util.Logger.Log($"送信中断 ({displayName}): {ex.Message}", Util.LogLevel.Warning);
+                    if (item.State is TransferState.InProgress or TransferState.Pending or TransferState.Paused)
+                    {
+                        item.State = TransferState.Cancelled;
+                        item.ErrorMessage = ex.Message;
+                    }
+                    item.Note = null;
+                    break;
+                }
+                catch (Exception ex) when (attempt < MaxSendAttempts && !cts.IsCancellationRequested)
+                {
+                    // 一過性エラー（切断・送信失敗など）→ 少し待って自動リトライ
+                    Util.Logger.Log($"送信失敗 (試行 {attempt}/{MaxSendAttempts}) {displayName}: {ex.Message}", Util.LogLevel.Warning);
+                    item.Note = App.Text("Transfer.Retrying", attempt + 1, MaxSendAttempts);
+                    try { await Task.Delay(1000 * attempt, cts.Token); }
+                    catch (OperationCanceledException)
+                    {
+                        item.State = TransferState.Cancelled;
+                        item.Note = null;
+                        break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Util.Logger.Log($"ファイル送信エラー ({displayName}): {ex.Message}", Util.LogLevel.Error);
+                    item.State = TransferState.Error;
+                    item.ErrorMessage = ex.Message;
+                    item.Note = null;
+                    break;
+                }
             }
         }
-
-        if (_connectionService.State != PeerState.Connected)
+        finally
         {
-            Util.Logger.Log($"接続状態が Connected ではないため転送中止: State={_connectionService.State}", Util.LogLevel.Warning);
+            _sendCtsByItem.TryRemove(item.TransferId, out _);
+            cts.Dispose();
+            RecomputeIsTransferring();
+        }
+    }
+
+    /// <summary>指定ピアへ接続済みであることを保証する。別ピアに接続中なら切り替える。確立できなければ例外。
+    /// 複数ピア + 複数ファイル + UI 選択切り替えが混ざっても、各 item が「自分の宛先」に必ず行くようにする。
+    /// 旧実装は <c>State==Connected</c> なら相手ピアを確認せず素通りし、selection 切替で別ピア B 宛に
+    /// item A が送られる事故があった。ct は CancelTransfer 経由で渡され、接続待ち中もキャンセルで抜けられる。</summary>
+    private async Task EnsureConnectedAsync(PairedPeer peer, CancellationToken ct)
+    {
+        // 既に「対象ピアそのものに」接続済みなら何もしない
+        if (_connectionService.State == PeerState.Connected
+            && _connectionService.ConnectedPeer?.SessionId == peer.PeerId)
+            return;
+
+        // 別ピアに接続中なら宛先を peer に切り替えてから接続を張り直す
+        if (_connectionViewModel.SelectedPeer?.PeerId != peer.PeerId)
+            _connectionViewModel.SelectedPeer = peer;
+
+        Util.Logger.Log($"未接続/別ピア接続中のためオンデマンド接続を開始… 宛先={peer.DisplayName}");
+        // CT を渡して接続待ち中の CancelTransfer に応答できるようにする（offline / NAT 越えで張り付くケースを救う）
+        await _connectionViewModel.ConnectToSelectedPeerAsync(ct);
+        Util.Logger.Log($"オンデマンド接続完了: State={_connectionService.State}");
+
+        if (_connectionService.State != PeerState.Connected
+            || _connectionService.ConnectedPeer?.SessionId != peer.PeerId)
+            throw new InvalidOperationException(App.Text("Transfer.ConnectFailed"));
+    }
+
+    /// <summary>
+    /// 送信に失敗/キャンセルした履歴を、同じ宛先・同じファイルで送り直す。
+    /// </summary>
+    [RelayCommand]
+    private async Task ResendAsync(Guid transferId)
+    {
+        var item = FindTransfer(transferId);
+        if (item is null || !item.CanResend || string.IsNullOrEmpty(item.SourceFilePath))
+            return;
+
+        var sourcePath = item.SourceFilePath!;
+        if (!File.Exists(sourcePath))
+        {
+            item.State = TransferState.Error;
+            item.ErrorMessage = App.Text("Transfer.SourceMissing");
             return;
         }
 
-        foreach (var (absolutePath, relativePath) in entries)
+        var peer = _connectionViewModel.PairedPeers.FirstOrDefault(p => p.PeerId == item.PeerId);
+        if (peer == null)
         {
-            var fileInfo = new FileInfo(absolutePath);
-            var displayName = relativePath ?? fileInfo.Name;
-            var item = new TransferItem
-            {
-                FileName = displayName,
-                FileSize = fileInfo.Length,
-                Direction = TransferDirection.Send,
-                State = TransferState.InProgress,
-                PeerName = peerName,
-                // v1.0.38 review fix v11: UI 表示用フルパスを即セット。
-                // TransferService 側の item は別インスタンスなので、ここで明示的に渡さないと
-                // TransferView の DisplayFilePath バインディングが永久に空になる
-                SourceFilePath = absolutePath,
-            };
-            Transfers.Add(item);
-
-            IsTransferring = true;
-            try
-            {
-                await _transferService.SendFileAsync(absolutePath, relativePath);
-                item.State = TransferState.Completed;
-                item.TransferredBytes = item.FileSize;
-                item.CompletedAt = DateTime.UtcNow;
-            }
-            catch (OperationCanceledException ex)
-            {
-                // Codex P2 (comment 3318762005) 指摘: SendFileAsync は approval reject /
-                // approval timeout / 切断 (OnConnectionLost 経由) の cancellation 経路を
-                // OperationCanceledException で通知する。これらのケースでは事前に
-                // WaitForApprovalAsync が State=Cancelled + TransferError fire 済みで、
-                // OnTransferError 経路で VM item.State も既に Cancelled に遷移している
-                // (Direction+InProgress フォールバック照合が成功する race 順)。
-                // ここで一律 Error に書き戻すと、正常な拒否/タイムアウト/切断が UI 上
-                // 「失敗」と表示されてユーザーに混乱を与える。
-                // race insurance: OnTransferError 未到達なら自分で Cancelled に遷移
-                Util.Logger.Log($"ファイル送信キャンセル ({displayName}): {ex.Message}", Util.LogLevel.Warning);
-                if (item.State == TransferState.InProgress || item.State == TransferState.Pending)
-                {
-                    item.State = TransferState.Cancelled;
-                    item.ErrorMessage = ex.Message;
-                }
-                // else: 既に terminal state (Cancelled / Error / Completed) なら尊重
-            }
-            catch (Exception ex)
-            {
-                Util.Logger.Log($"ファイル送信エラー ({displayName}): {ex.Message}", Util.LogLevel.Error);
-                item.State = TransferState.Error;
-                item.ErrorMessage = ex.Message;
-            }
+            item.State = TransferState.Error;
+            item.ErrorMessage = App.Text("Transfer.PeerMissing");
+            return;
         }
 
-        IsTransferring = Transfers.Any(t => t.State == TransferState.InProgress);
+        // 別ピアを選択中なら元の宛先に切り替える（着信監視・表示も追従する）
+        if (_connectionViewModel.SelectedPeer?.PeerId != peer.PeerId)
+            _connectionViewModel.SelectedPeer = peer;
+
+        // 古い失敗行は消して、新しい送信行を作る
+        RemoveTransfer(item);
+        await SendOneFileAsync(sourcePath, item.RelativePath, peer);
     }
 
     /// <summary>
     /// ファイル/フォルダパスの配列を、(絶対パス, 相対パス) のリストに展開する。
-    /// フォルダの場合はフォルダ名をルートとした相対パスを生成する。
-    /// 単独ファイルの場合は relativePath = null。
     /// </summary>
     private static List<(string AbsolutePath, string? RelativePath)> ExpandPaths(string[] paths)
     {
@@ -228,9 +460,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 var rootName = dirInfo.Name;
                 foreach (var file in dirInfo.EnumerateFiles("*", SearchOption.AllDirectories))
                 {
-                    // "フォルダ名/サブ/ファイル.txt" の形式
                     var relative = Path.Combine(rootName, Path.GetRelativePath(path, file.FullName));
-                    // パス区切りを / に統一（クロスプラットフォーム）
                     relative = relative.Replace('\\', '/');
                     result.Add((file.FullName, relative));
                 }
@@ -240,17 +470,20 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         return result;
     }
 
+    // === レジューム（接続断による中断からの復旧）===
+
     /// <summary>
     /// 中断された転送を再開する。
     /// </summary>
     [RelayCommand]
     private async Task ResumeTransferAsync(Guid transferId)
     {
-        var item = Transfers.FirstOrDefault(t => t.TransferId == transferId && t.State == TransferState.Suspended);
-        if (item is null) return;
+        var item = FindTransfer(transferId);
+        if (item is null || item.State != TransferState.Suspended)
+            return;
 
         item.State = TransferState.InProgress;
-        IsTransferring = true;
+        RecomputeIsTransferring();
 
         try
         {
@@ -274,82 +507,129 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             item.ErrorMessage = ex.Message;
         }
 
-        IsTransferring = Transfers.Any(t => t.State == TransferState.InProgress);
+        RecomputeIsTransferring();
     }
 
-    /// <summary>
-    /// 転送履歴をクリアする。
-    /// </summary>
+    // === 一時停止 / 再開 / キャンセル / 削除 ===
+
+    /// <summary>送信を一時停止する。</summary>
+    [RelayCommand]
+    private void PauseTransfer(Guid transferId)
+    {
+        var item = FindTransfer(transferId);
+        if (item is null || !item.CanPause) return;
+        // service が受理した（_activeTransfers に転送が乗っている）場合のみ UI を Paused に。
+        // 接続待ち / retry backoff 中はサービスに transfer が無く no-op が返るので UI 偽 Paused 表示を避ける。
+        if (_transferService.PauseSendTransfer(transferId.ToString()))
+            item.State = TransferState.Paused; // 受理時のみ即時反映（service の進捗イベントでも来る）
+    }
+
+    /// <summary>一時停止中の送信を再開する。</summary>
+    [RelayCommand]
+    private void ResumeSend(Guid transferId)
+    {
+        var item = FindTransfer(transferId);
+        if (item is null || !item.CanResumeSend) return;
+        item.State = TransferState.InProgress;
+        _transferService.ResumeSendTransfer(transferId.ToString());
+    }
+
+    /// <summary>進行中の送信・受信をキャンセルする。相手にも通知して両側を停止する。</summary>
+    [RelayCommand]
+    private void CancelTransfer(Guid transferId)
+    {
+        // service 側を先に呼ぶ：VM の CTS を先に Cancel すると、SendFileAsync が
+        // OperationCanceled で _activeTransfers から item を抜けたあとに CancelTransfer が走り、
+        // service が「送信中」と認識できず SendRejectFireAndForget を投げ損ねる競合が起きる。
+        // 先に service 側で Cancelled 遷移 + FileReject 送信させ、その後 VM 側ループを止める。
+        _transferService.CancelTransfer(transferId.ToString());
+
+        // VM 側 CTS（接続待ち・リトライ待機を含む）を中断
+        if (_sendCtsByItem.TryGetValue(transferId, out var cts))
+            cts.Cancel();
+
+        // まだ SendItemAsync が始まっていない Pending 行（複数選択時の後続）は、
+        // service にも _sendCtsByItem にもエントリが無いため、ここで明示的に Cancelled へ遷移させる。
+        // これがないと SendFilesAsync の foreach がそのまま送ってしまう（後続の skip ガードとセットで効く）。
+        var queued = FindTransfer(transferId);
+        if (queued != null && queued.State == TransferState.Pending)
+        {
+            queued.State = TransferState.Cancelled;
+            queued.ErrorMessage = App.Text("State.Cancelled");
+        }
+
+        // 承認待ち受信のキャンセルは UI リストからも外す
+        var pending = PendingApprovals.FirstOrDefault(t => t.TransferId == transferId);
+        if (pending != null)
+        {
+            PendingApprovals.Remove(pending);
+            HasPendingApproval = PendingApprovals.Count > 0;
+            pending.State = TransferState.Cancelled;
+            if (FindTransfer(pending.TransferId) is null)
+                AddTransfer(pending);
+        }
+    }
+
+    /// <summary>終端状態のアイテムを履歴から削除する。</summary>
+    [RelayCommand]
+    private void DeleteTransfer(Guid transferId)
+    {
+        var item = FindTransfer(transferId);
+        if (item is null || !item.CanDelete) return;
+        RemoveTransfer(item);
+    }
+
+    /// <summary>選択中ピアの完了/失敗/キャンセル済み履歴をまとめて削除する。</summary>
     [RelayCommand]
     private void ClearHistory()
     {
-        // 完了・エラー・キャンセル済みのアイテムのみ削除
-        var completed = Transfers
-            .Where(t => t.State is TransferState.Completed or TransferState.Error or TransferState.Cancelled or TransferState.Suspended)
+        var toRemove = Transfers
+            .Where(t => BelongsToSelectedPeer(t) && t.CanDelete)
             .ToList();
 
-        foreach (var item in completed)
-        {
-            Transfers.Remove(item);
-        }
-
-
+        foreach (var item in toRemove)
+            RemoveTransfer(item);
     }
 
+    // === service イベント ===
+
     /// <summary>
-    /// 進捗更新イベント。バックグラウンドスレッドから呼ばれるため UI スレッドにディスパッチ。
-    /// 送信: Direction + InProgress で照合（TransferId はサービス内部で別に生成されるため）。
-    /// 受信: 一致するアイテムがなければ追加。
+    /// 進捗更新イベント。TransferId で照合し、転送済みバイト数と非終端状態を反映する。
     /// </summary>
     private void OnProgressChanged(object? sender, TransferItem e)
     {
         Dispatcher.UIThread.Post(() =>
         {
-            if (e.Direction == TransferDirection.Send)
+            var item = FindTransfer(e.TransferId);
+            if (item is null)
             {
-                // P-12: O(N) 線形検索を直接参照に置換
-                var item = _currentSendItem;
-                if (item is null || item.State != TransferState.InProgress)
+                if (e.Direction != TransferDirection.Receive)
+                    return; // 送信は VM 側で必ず先に行を作る
+
+                // 進捗が承認イベントより先に来た受信の保険
+                var (peerId, peerName) = ResolveReceivePeer();
+                item = new TransferItem
                 {
-                    // フォールバック（初期状態 or 完了後の遅延イベント）
-                    item = Transfers.FirstOrDefault(t =>
-                        t.Direction == TransferDirection.Send && t.State == TransferState.InProgress);
-                    _currentSendItem = item;
-                }
-                if (item != null)
-                {
-                    item.TransferredBytes = e.TransferredBytes;
-                }
+                    TransferId = e.TransferId,
+                    FileName = e.FileName,
+                    FileSize = e.FileSize,
+                    TotalChunks = e.TotalChunks,
+                    Direction = TransferDirection.Receive,
+                    State = TransferState.InProgress,
+                    PeerId = peerId,
+                    PeerName = peerName,
+                };
+                AddTransfer(item);
             }
-            else
-            {
-                // 受信中: 既存アイテムを探す、なければ追加
-                var item = _currentReceiveItem;
-                if (item is null || item.State != TransferState.InProgress)
-                {
-                    item = Transfers.FirstOrDefault(t =>
-                        t.Direction == TransferDirection.Receive && t.State == TransferState.InProgress);
-                }
-                if (item == null)
-                {
-                    var peerName = _connectionViewModel.SelectedPeer?.DisplayName ?? string.Empty;
-                    item = new TransferItem
-                    {
-                        TransferId = e.TransferId,
-                        FileName = e.FileName,
-                        FileSize = e.FileSize,
-                        TotalChunks = e.TotalChunks,
-                        Direction = TransferDirection.Receive,
-                        State = TransferState.InProgress,
-                        PeerName = peerName,
-                    };
-                    Transfers.Add(item);
-                    IsTransferring = true;
-                    // 通知はサイドバー下部パネルで表示
-                }
-                _currentReceiveItem = item;
-                item.TransferredBytes = e.TransferredBytes;
-            }
+
+            if (item.IsTerminal) return; // 終端状態の行は遅延進捗で巻き戻さない
+
+            item.TransferredBytes = e.TransferredBytes;
+            // service が通知する非終端状態（Pending/InProgress/Paused）を反映する
+            if (e.State is TransferState.Pending or TransferState.InProgress or TransferState.Paused)
+                item.State = e.State;
+
+            RecomputeIsTransferring();
         });
     }
 
@@ -360,33 +640,25 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     {
         Dispatcher.UIThread.Post(() =>
         {
-            // 進捗表示中の受信アイテムを探す
-            var item = Transfers.FirstOrDefault(t =>
-                t.TransferId == e.TransferId && t.Direction == TransferDirection.Receive);
-
-            if (item == null)
-            {
-                // 進捗表示なしで完了した場合（小さいファイル等）
-                item = Transfers.FirstOrDefault(t =>
-                    t.Direction == TransferDirection.Receive && t.State == TransferState.InProgress);
-            }
-
+            var item = FindTransfer(e.TransferId);
             if (item != null)
             {
                 item.State = TransferState.Completed;
                 item.TransferredBytes = e.FileSize;
                 item.FileName = e.FileName;
+                item.SavedFilePath = e.SavedFilePath;
                 item.CompletedAt = DateTime.UtcNow;
             }
             else
             {
-                // どこにも見つからない → 新規追加
+                var (peerId, peerName) = ResolveReceivePeer();
+                e.PeerId = peerId;
+                e.PeerName = peerName;
                 e.CompletedAt = DateTime.UtcNow;
-                e.PeerName = _connectionViewModel.SelectedPeer?.DisplayName ?? string.Empty;
-                Transfers.Add(e);
+                AddTransfer(e);
             }
 
-            IsTransferring = Transfers.Any(t => t.State == TransferState.InProgress);
+            RecomputeIsTransferring();
         });
     }
 
@@ -397,8 +669,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     {
         Dispatcher.UIThread.Post(() =>
         {
-            // v1.0.38 review fix v8: 受信側 pending approval のキャンセル通知 (送信側タイムアウト等) を反映。
-            // PendingApprovals に同じ TransferId のエントリがあれば消す (再承認しても無意味になるため)
+            // 承認待ち受信のキャンセル通知（送信側タイムアウト等）を反映
             var pending = PendingApprovals.FirstOrDefault(t => t.TransferId == e.TransferId);
             if (pending != null)
             {
@@ -408,57 +679,58 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 HasPendingApproval = PendingApprovals.Count > 0;
             }
 
-            // Codex P2 (comment 3318228874) 指摘: 受信中に切断が発生すると、TransferService 側で
-            // 既に state.Item.State = Cancelled をセットしてから TransferError を発火しているため、
-            // 旧来の `Direction + State==InProgress` 照合だと既存行を発見できず重複行が追加されていた。
-            // 受信側は service と VM が同一インスタンスを共有しているので TransferId で一意に同定できる。
-            // 送信側 VM item は独自インスタンス (TransferId=Empty) なので旧フォールバックを残す。
-            var item = Transfers.FirstOrDefault(t => t.TransferId != Guid.Empty && t.TransferId == e.TransferId)
-                       ?? Transfers.FirstOrDefault(t => t.Direction == e.Direction && t.State == TransferState.InProgress);
-            // Codex P2 (comment 3318684934) 指摘: e.State を保持する。
-            // TransferService は cancellation 経路 (approval timeout / disconnect / reject / pending expire)
-            // で State = Cancelled を、本物のエラー経路 (write fail / decode error 等) で State = Error を
-            // 設定済みのまま fire してくる。ここで一律 Error に書き換えると、Cancelled 表示が「失敗扱い」
-            // で UI 上ユーザーに混乱を与える (拒否したつもりが「エラー」と表示される等)。
-            // service 側の terminal state をそのまま尊重する。non-terminal (InProgress / Pending) で
-            // 来た場合のみ防御的に Error に昇格。
+            // 進行中送信は SendOneFileAsync のリトライループが状態を所有する。
+            // service の TransferError でここを終端状態に書き換えるとリトライと競合するのでスキップする。
+            if (_sendCtsByItem.ContainsKey(e.TransferId))
+                return;
+
+            var item = FindTransfer(e.TransferId);
             if (item != null)
             {
-                item.State = e.State;
+                // service 側の terminal state（Cancelled / Error）をそのまま尊重する。
+                // 非終端で来た場合のみ防御的に Error へ昇格。
+                item.State = e.State is TransferState.InProgress or TransferState.Pending
+                    ? TransferState.Error
+                    : e.State;
                 item.ErrorMessage = e.ErrorMessage;
+                item.Note = null;
             }
-            else
+            else if (pending == null && e.Direction == TransferDirection.Receive)
             {
-                if (e.State == TransferState.InProgress || e.State == TransferState.Pending)
-                {
+                // 進捗より先に来た受信エラーの保険（送信は VM 側に必ず行があるので追加しない）
+                if (e.State is TransferState.InProgress or TransferState.Pending)
                     e.State = TransferState.Error;
-                }
-                Transfers.Add(e);
+                var (peerId, peerName) = ResolveReceivePeer();
+                if (string.IsNullOrEmpty(e.PeerId)) e.PeerId = peerId;
+                if (string.IsNullOrEmpty(e.PeerName)) e.PeerName = peerName;
+                AddTransfer(e);
             }
 
-            IsTransferring = Transfers.Any(t => t.State == TransferState.InProgress);
+            RecomputeIsTransferring();
         });
     }
 
     /// <summary>
     /// ファイル受信承認要求イベント。承認待ちアイテムを UI に追加する。
-    /// AutoAcceptFileTransfer=true の場合は UI に出さず即承認する (送信側へ FileApprove を返す)。
+    /// AutoAcceptFileTransfer=true の場合は UI に出さず即承認する。
     /// </summary>
     private void OnApprovalRequested(object? sender, TransferItem e)
     {
         Dispatcher.UIThread.Post(() =>
         {
-            e.PeerName = _connectionViewModel.SelectedPeer?.DisplayName ?? string.Empty;
+            var (peerId, peerName) = ResolveReceivePeer();
+            // PeerId は service 側 HandleFileMeta が FileMeta 到着時点で確定させているのでそれを優先し、
+            // 空のときだけ VM 側の推測で補完する（宛先別履歴のピア混入防止）。PeerName は表示名解決を持つ VM 側で常に設定。
+            if (string.IsNullOrEmpty(e.PeerId)) e.PeerId = peerId;
+            e.PeerName = peerName;
 
-            // v1.0.38: AutoAccept なら UI に出さず即 ApproveTransfer
-            // (ApproveTransfer 内で TransferService.ApproveTransfer → FileApprove 送信 → 送信側がチャンク送信開始)
             if (_settingsService.Settings.AutoAcceptFileTransfer)
             {
                 Util.Logger.Log($"AutoAccept: 即承認: {e.FileName}");
-                Transfers.Add(e);
+                e.State = TransferState.InProgress;
+                AddTransfer(e);
                 _transferService.ApproveTransfer(e.TransferId.ToString());
-                IsTransferring = true;
-                _currentReceiveItem = e;
+                RecomputeIsTransferring();
                 return;
             }
 
@@ -480,9 +752,9 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         HasPendingApproval = PendingApprovals.Count > 0;
 
         item.State = TransferState.InProgress;
-        Transfers.Add(item);
+        AddTransfer(item);
         _transferService.ApproveTransfer(transferId.ToString());
-        IsTransferring = true;
+        RecomputeIsTransferring();
     }
 
     /// <summary>
@@ -500,14 +772,27 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         _transferService.RejectTransfer(transferId.ToString());
         item.State = TransferState.Cancelled;
         item.ErrorMessage = App.Text("Transfer.Rejected");
-        Transfers.Add(item);
+        AddTransfer(item);
     }
 
     public void Dispose()
     {
+        _rateTimer.Stop();
+        _rateTimer.Tick -= OnRateTimerTick;
+
         _transferService.ProgressChanged -= OnProgressChanged;
         _transferService.FileReceived -= OnFileReceived;
         _transferService.TransferError -= OnTransferError;
         _transferService.ApprovalRequested -= OnApprovalRequested;
+        _connectionViewModel.PropertyChanged -= OnConnectionVmPropertyChanged;
+
+        foreach (var tid in _sendCtsByItem.Keys.ToArray())
+        {
+            if (_sendCtsByItem.TryRemove(tid, out var cts))
+            {
+                try { cts.Cancel(); } catch { /* ignore */ }
+                cts.Dispose();
+            }
+        }
     }
 }

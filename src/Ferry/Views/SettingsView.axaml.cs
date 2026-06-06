@@ -1,8 +1,6 @@
-using System;
 using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Platform.Storage;
 using Ferry.ViewModels;
 
 namespace Ferry.Views;
@@ -15,8 +13,7 @@ public partial class SettingsView : UserControl
     // OnUnloaded で対称に解除するため、購読対象の参照とハンドラを保持する
     // v1.0.38: _browseReceivePathButton は ReceiveFileSavePath 削除に伴い撤去
     private ComboBox? _localeCombo;
-    private SettingsViewModel? _subscribedVm;
-    private EventHandler<SelectionChangedEventArgs>? _localeChanged;
+    private System.EventHandler<SelectionChangedEventArgs>? _localeChanged;
 
     public SettingsView()
     {
@@ -51,12 +48,8 @@ public partial class SettingsView : UserControl
 
         // N-1: FontSizeComboBox 関連は AccentColor / FontSize の死蔵プロパティ削除に伴い撤去済み
 
-        // BrowseSaveDirectory イベント購読
-        if (DataContext is SettingsViewModel svm)
-        {
-            svm.BrowseSaveDirectoryRequested += OnBrowseSaveDirectoryRequested;
-            _subscribedVm = svm;
-        }
+        // v1.0.47: 保存先選択ダイアログはメイン画面のアドレスバー側 (MainWindow) で処理するため、
+        // SettingsView からは購読を撤去した。
     }
 
     protected override void OnUnloaded(RoutedEventArgs e)
@@ -70,32 +63,7 @@ public partial class SettingsView : UserControl
             _localeCombo.SelectionChanged -= _localeChanged;
         }
         _localeChanged = null;
-
-        if (_subscribedVm != null)
-        {
-            _subscribedVm.BrowseSaveDirectoryRequested -= OnBrowseSaveDirectoryRequested;
-            _subscribedVm = null;
-        }
     }
 
-    private async void OnBrowseSaveDirectoryRequested(object? sender, EventArgs e)
-    {
-        var topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel == null || DataContext is not SettingsViewModel vm) return;
-
-        var dirs = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
-        {
-            AllowMultiple = false,
-            Title = App.Text("Settings.SaveDirectory"),
-        });
-
-        if (dirs.Count > 0)
-        {
-            var path = dirs[0].TryGetLocalPath();
-            if (path != null)
-                vm.SaveDirectory = path;
-        }
-    }
-
-    // v1.0.38: OnBrowseReceivePathClick は ReceiveFileSavePath 削除に伴い撤去
+    // v1.0.47: 保存先選択ハンドラ (OnBrowseSaveDirectoryRequested) はメイン画面アドレスバーへ移設したため撤去
 }

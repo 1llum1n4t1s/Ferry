@@ -67,8 +67,12 @@ public static class TransferProtocol
     public const int FlowAckSize = 1 + 16 + 4;
 
     /// <summary>フロー制御ウィンドウ (チャンク数)。送信側は受信側が書き込み済みのチャンクから
-    /// 最大この数だけ先行できる。512 chunks × 64KB = 32MB。Cloudflare DO の中継バッファが
-    /// 溢れる GB 級より十分小さく、かつ往復遅延でスループットが落ちない程度に確保する。</summary>
+    /// 最大この数だけ先行できる。512 chunks × 64KB = 32MB。
+    /// Cloudflare Durable Object は 1 インスタンス 128MB メモリ割当で、その送信 WebSocket は
+    /// backpressure 未実装 (workerd#988) のため受信側ドレイン未了分を DO メモリ内にキューする。
+    /// リレー DO に積まれる未ドレイン分 ≒ 送信先行 32MB + wire/受信 OS バッファ数MB ≈ 最悪 ~40MB で、
+    /// 128MB 上限に対し約 3〜4 倍マージン。これが v1.0.46 以前の「~55秒で DO がメモリ超過リセット → 切断」を解消した実証値。
+    /// 縮める (例 64=4MB) と高 RTT 経路で帯域遅延積を満たせずスループットが落ちるため非推奨。</summary>
     public const int FlowControlWindowChunks = 512;
 
     /// <summary>受信側が FlowAck を送る間隔 (チャンク数)。64 chunks = 4MB ごと。

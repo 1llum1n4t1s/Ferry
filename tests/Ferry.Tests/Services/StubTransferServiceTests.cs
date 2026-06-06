@@ -16,7 +16,7 @@ public sealed class StubTransferServiceTests
     public async Task SendFileAsync_例外を投げない()
     {
         var svc = new StubTransferService();
-        var ex = await Record.ExceptionAsync(() => svc.SendFileAsync("dummy.txt", null, TestContext.Current.CancellationToken));
+        var ex = await Record.ExceptionAsync(() => svc.SendFileAsync("dummy.txt", null, null, TestContext.Current.CancellationToken));
         Assert.Null(ex);
     }
 

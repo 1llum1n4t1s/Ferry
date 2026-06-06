@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using Avalonia;
@@ -7,6 +8,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Ferry.Infrastructure;
 using Ferry.Models;
@@ -45,6 +47,7 @@ public partial class MainWindow : Window
     // イベント重複登録防止用: 前回購読した ViewModel の参照を保持
     private ConnectionViewModel? _subscribedConnectionVm;
     private MainWindowViewModel? _subscribedMainVm;
+    private SettingsViewModel? _subscribedSettingsVm;
 
     public MainWindow()
     {
@@ -76,7 +79,12 @@ public partial class MainWindow : Window
                 ShowInTaskbar = false;
                 Hide();
             }
+            // ① ウィンドウが前面か（表示中かつ非最小化）に応じて presence ポーリングを開閉する
+            UpdatePresenceForeground();
         });
+
+        // ① トレイ格納(Hide)/復帰(Show) は IsVisible 変化として届くのでこちらも監視
+        this.GetObservable(IsVisibleProperty).Subscribe(_ => UpdatePresenceForeground());
 
         // 初期最小化起動
         Loaded += (_, _) =>
@@ -90,7 +98,20 @@ public partial class MainWindow : Window
                     Hide();
                 }
             }
+            UpdatePresenceForeground();
         };
+    }
+
+    /// <summary>
+    /// ① ウィンドウの可視状態に合わせて presence ポーリングの稼働を切り替える。
+    /// 画面に出ていて最小化されていないときだけポーリングを回し、トレイ格納/最小化中は止めて
+    /// Firebase ダウンロード帯域を節約する（Heartbeat は ConnectionViewModel 側で継続）。
+    /// DataContext 未設定（ConnectionVm == null）の早期発火は ?. で安全にスキップする。
+    /// </summary>
+    private void UpdatePresenceForeground()
+    {
+        var foreground = IsVisible && WindowState != WindowState.Minimized;
+        ConnectionVm?.SetPresencePollingActive(foreground);
     }
 
     protected override void OnDataContextChanged(EventArgs e)
@@ -118,6 +139,10 @@ public partial class MainWindow : Window
         {
             _subscribedMainVm.PropertyChanged -= OnMainVmPropertyChangedForEmptyView;
         }
+        if (_subscribedSettingsVm != null)
+        {
+            _subscribedSettingsVm.BrowseSaveDirectoryRequested -= OnBrowseSaveDirectoryRequested;
+        }
 
         // SelectedPeer 変更 → ピア名更新
         if (ConnectionVm != null)
@@ -126,11 +151,20 @@ public partial class MainWindow : Window
             // N-5: ペアリングリンクのクリップボードコピーは View 責務
             ConnectionVm.CopyPairingCodeRequested += OnCopyPairingCodeRequested;
             _subscribedConnectionVm = ConnectionVm;
+            // ① VM 確定時に現在の可視状態を同期（コンストラクタの早期発火で取りこぼした分を反映）
+            UpdatePresenceForeground();
         }
 
         // IsSettingsMode 変更時の空ビュー更新（名前付きメソッドで一度だけ登録）
         _mainVm.PropertyChanged += OnMainVmPropertyChangedForEmptyView;
         _subscribedMainVm = _mainVm;
+
+        // 保存先アドレスバーの「変更」ボタン → フォルダ選択ダイアログ（v1.0.47: 設定画面から移設したので View 側はここで処理）
+        if (_mainVm.Settings != null)
+        {
+            _mainVm.Settings.BrowseSaveDirectoryRequested += OnBrowseSaveDirectoryRequested;
+            _subscribedSettingsVm = _mainVm.Settings;
+        }
 
         // 空ビューの表示制御を更新
         UpdateEmptyViewVisibility();
@@ -391,6 +425,41 @@ public partial class MainWindow : Window
     private void OnDotMenuPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// 保存先アドレスバーの「変更」ボタン → フォルダ選択ダイアログ。
+    /// SettingsViewModel.BrowseSaveDirectoryRequested を受けて TopLevel 経由でピッカーを開く（MVVM 規約遵守）。
+    /// </summary>
+    private async void OnBrowseSaveDirectoryRequested(object? sender, EventArgs e)
+    {
+        try
+        {
+            var topLevel = TopLevel.GetTopLevel(this);
+            if (topLevel == null || _mainVm?.Settings is not { } svm) return;
+
+            var dirs = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+            {
+                AllowMultiple = false,
+                Title = App.Text("Settings.SaveDirectory"),
+            });
+
+            if (dirs.Count > 0 && dirs[0].TryGetLocalPath() is { } path)
+                svm.SaveDirectory = path;
+        }
+        catch (Exception ex)
+        {
+            Ferry.Util.Logger.Log($"保存先選択でエラー: {ex.Message}", Ferry.Util.LogLevel.Warning);
+        }
+    }
+
+    /// <summary>
+    /// 保存先アドレスバーの「📂」ボタン → OS のファイルマネージャで保存先フォルダを開く。
+    /// </summary>
+    private void OnOpenSaveDirClick(object? sender, RoutedEventArgs e)
+    {
+        var dir = _settingsService?.Settings.SaveDirectory ?? _mainVm?.Settings?.SaveDirectory;
+        Ferry.Util.ShellHelper.OpenFolder(dir);
     }
 
     /// <summary>

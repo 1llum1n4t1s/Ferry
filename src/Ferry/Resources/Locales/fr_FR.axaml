@@ -121,4 +121,20 @@
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Démarrer avec Windows</x:String>
   <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Inscrire dans le démarrage Windows via le registre</x:String>
 
+  <!-- v1.0.47: 行ごとの転送操作・受信保存先バー -->
+  <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">Renvoyer</x:String>
+  <x:String x:Key="Text.Transfer.Pause" xml:space="preserve">Pause</x:String>
+  <x:String x:Key="Text.Transfer.Resume" xml:space="preserve">Reprendre</x:String>
+  <x:String x:Key="Text.Transfer.ResumeSuspended" xml:space="preserve">Reprendre</x:String>
+  <x:String x:Key="Text.Transfer.Cancel" xml:space="preserve">Annuler</x:String>
+  <x:String x:Key="Text.Transfer.Delete" xml:space="preserve">Supprimer</x:String>
+  <x:String x:Key="Text.Transfer.ClearHistory" xml:space="preserve">Effacer l'historique</x:String>
+  <x:String x:Key="Text.Transfer.Retrying" xml:space="preserve">Nouvelle tentative ({0}/{1})…</x:String>
+  <x:String x:Key="Text.Transfer.ConnectFailed" xml:space="preserve">Impossible d'établir la connexion</x:String>
+  <x:String x:Key="Text.Transfer.SourceMissing" xml:space="preserve">Fichier source introuvable</x:String>
+  <x:String x:Key="Text.Transfer.PeerMissing" xml:space="preserve">Destinataire introuvable</x:String>
+  <x:String x:Key="Text.State.Paused" xml:space="preserve">En pause</x:String>
+  <x:String x:Key="Text.SaveBar.Tooltip" xml:space="preserve">Dossier d'enregistrement des fichiers reçus</x:String>
+  <x:String x:Key="Text.SaveBar.Open" xml:space="preserve">Ouvrir le dossier</x:String>
+
 </ResourceDictionary>

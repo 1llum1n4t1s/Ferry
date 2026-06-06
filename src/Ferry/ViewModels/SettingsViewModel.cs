@@ -133,12 +133,44 @@ public sealed partial class SettingsViewModel : ViewModelBase
             EnableNotificationSound = s.EnableNotificationSound;
             AutoAcceptFileTransfer = s.AutoAcceptFileTransfer;
             AutoStartWithWindows = s.AutoStartWithWindows;
-            IgnoredUpdateTag = s.IgnoreUpdateTag ?? string.Empty;
+
+            // インストール済みバージョンが skip 対象に追い付いた/追い越したら、その skip 設定は陳腐化しているので
+            // 自動でクリアする。古い PC で過去に「このバージョンをスキップ」した後に手動更新すると、既に通り過ぎた
+            // バージョン (例: v1.0.20) を「スキップ中」と表示し続けて混乱を招くため (UX 修正)。
+            var loadedTag = s.IgnoreUpdateTag ?? string.Empty;
+            if (!string.IsNullOrEmpty(loadedTag) && IsObsoleteIgnoreTag(loadedTag, AppVersion.Value))
+            {
+                Util.Logger.Log(
+                    $"陳腐化した IgnoreUpdateTag を自動クリア: skip={loadedTag} <= installed={AppVersion.Value}",
+                    Util.LogLevel.Info);
+                loadedTag = string.Empty;
+                s.IgnoreUpdateTag = string.Empty; // 共有 Settings を即クリア (更新チェック consumer も空を見る)
+                _ = SaveClearedTagAsync();        // ディスクへも永続化 (観測付き fire-and-forget)
+            }
+            IgnoredUpdateTag = loadedTag;
         }
         finally
         {
             _isLoading = false;
         }
+    }
+
+    /// <summary>
+    /// skip 対象タグが現在のインストール済みバージョン以下 (= 既に通過済み) で陳腐化しているか判定する。
+    /// パース不能なタグは陳腐化扱いにせず保持する (誤クリア防止)。先頭 'v' は許容する。
+    /// </summary>
+    public static bool IsObsoleteIgnoreTag(string ignoreTag, string currentVersion)
+    {
+        return System.Version.TryParse(ignoreTag.TrimStart('v', 'V'), out var ignored)
+            && System.Version.TryParse(currentVersion.TrimStart('v', 'V'), out var current)
+            && ignored <= current;
+    }
+
+    /// <summary>陳腐化 IgnoreUpdateTag の自動クリアをディスクへ永続化する (観測付き fire-and-forget)。</summary>
+    private async Task SaveClearedTagAsync()
+    {
+        try { await _settingsService.SaveAsync(); }
+        catch (Exception ex) { Util.Logger.LogException("IgnoreUpdateTag 自動クリアの永続化に失敗", ex); }
     }
 
     private static string ThemeIndexToMode(int index) => index switch

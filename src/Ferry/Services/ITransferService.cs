@@ -31,8 +31,9 @@ public interface ITransferService : IDisposable
     /// </summary>
     /// <param name="filePath">送信するファイルのパス。</param>
     /// <param name="relativePath">フォルダ送信時の相対パス（フォルダ名/サブフォルダ/ファイル名）。null で単独ファイル扱い。</param>
+    /// <param name="transferId">UI 側で生成済みの転送 ID。指定すると進捗・キャンセル・一時停止を UI 行と TransferId で正確に対応付けできる。null なら内部生成。</param>
     /// <param name="ct">キャンセルトークン。</param>
-    Task SendFileAsync(string filePath, string? relativePath = null, CancellationToken ct = default);
+    Task SendFileAsync(string filePath, string? relativePath = null, Guid? transferId = null, CancellationToken ct = default);
 
     /// <summary>
     /// 中断された転送を再開する。
@@ -70,8 +71,24 @@ public interface ITransferService : IDisposable
     void RejectTransfer(string transferId);
 
     /// <summary>
-    /// 進行中の転送をキャンセルする。
+    /// 進行中の転送をキャンセルする。送信・受信のどちら側からでも呼べ、相手にも通知して両側を停止する。
     /// </summary>
     /// <param name="transferId">キャンセルする転送の ID。</param>
     void CancelTransfer(string transferId);
+
+    /// <summary>
+    /// 送信中の転送を一時停止する。チャンク送信ループを停止させ、接続は維持する。
+    /// 接続待ち / リトライ backoff 中など service 側に active transfer がまだ無い場合は受理されず false を返す。
+    /// VM 側は受理時のみ UI 行を Paused に遷移させる（旧実装は service の no-op に気付かず、
+    /// 接続待ち中に pause しても UI だけ Paused 表示で送信は続行という不整合があった）。
+    /// </summary>
+    /// <param name="transferId">一時停止する送信転送の ID。</param>
+    /// <returns>service 側で実際に pause が記録されたら true、受理できなかったら false。</returns>
+    bool PauseSendTransfer(string transferId);
+
+    /// <summary>
+    /// 一時停止中の送信転送を再開する。
+    /// </summary>
+    /// <param name="transferId">再開する送信転送の ID。</param>
+    void ResumeSendTransfer(string transferId);
 }

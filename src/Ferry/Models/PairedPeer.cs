@@ -13,8 +13,18 @@ public sealed partial class PairedPeer : ObservableObject
     /// <summary>相手の一意識別子。</summary>
     public required string PeerId { get; init; }
 
-    /// <summary>表示名（デバイス名）。</summary>
-    public required string DisplayName { get; set; }
+    private string _displayName = string.Empty;
+
+    /// <summary>表示名（デバイス名）。相手の設定変更を presence 経由で受けて更新するため変更通知を出す。
+    /// これで左ペイン（ピアリスト）・右ペイン上の名前が代入時に即更新される。
+    /// [ObservableProperty](partial) ではなく明示バッキングフィールドにしているのは、
+    /// AOT の System.Text.Json ソースジェネレータ（PeerRegistryJsonContext）が確実にシリアライズ対象として
+    /// 扱える通常プロパティに保つため。peers.json には従来どおり永続化される。</summary>
+    public required string DisplayName
+    {
+        get => _displayName;
+        set => SetProperty(ref _displayName, value);
+    }
 
     /// <summary>ペアリング日時 (UTC)。</summary>
     public DateTime PairedAt { get; init; } = DateTime.UtcNow;

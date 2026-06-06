@@ -121,4 +121,20 @@
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Windows와 함께 시작</x:String>
   <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">레지스트리를 통해 Windows 시작 프로그램에 등록</x:String>
 
+  <!-- v1.0.47: 行ごとの転送操作・受信保存先バー -->
+  <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">다시 보내기</x:String>
+  <x:String x:Key="Text.Transfer.Pause" xml:space="preserve">일시정지</x:String>
+  <x:String x:Key="Text.Transfer.Resume" xml:space="preserve">재개</x:String>
+  <x:String x:Key="Text.Transfer.ResumeSuspended" xml:space="preserve">이어받기</x:String>
+  <x:String x:Key="Text.Transfer.Cancel" xml:space="preserve">취소</x:String>
+  <x:String x:Key="Text.Transfer.Delete" xml:space="preserve">삭제</x:String>
+  <x:String x:Key="Text.Transfer.ClearHistory" xml:space="preserve">기록 지우기</x:String>
+  <x:String x:Key="Text.Transfer.Retrying" xml:space="preserve">재시도 중 ({0}/{1})…</x:String>
+  <x:String x:Key="Text.Transfer.ConnectFailed" xml:space="preserve">연결할 수 없습니다</x:String>
+  <x:String x:Key="Text.Transfer.SourceMissing" xml:space="preserve">원본 파일을 찾을 수 없습니다</x:String>
+  <x:String x:Key="Text.Transfer.PeerMissing" xml:space="preserve">대상을 찾을 수 없습니다</x:String>
+  <x:String x:Key="Text.State.Paused" xml:space="preserve">일시정지됨</x:String>
+  <x:String x:Key="Text.SaveBar.Tooltip" xml:space="preserve">받은 파일 저장 위치</x:String>
+  <x:String x:Key="Text.SaveBar.Open" xml:space="preserve">폴더 열기</x:String>
+
 </ResourceDictionary>

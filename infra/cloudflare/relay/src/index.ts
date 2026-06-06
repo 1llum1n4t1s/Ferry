@@ -7,7 +7,10 @@
  * クライアント側プロトコル (src/Ferry/Infrastructure/WebSocketRelayTransport.cs と一致させること):
  *   1. wss://relay.ferry.nephilim.jp/ferry-relay?pairId=<id>&role=<offer|answer> へ接続
  *   2. リレーは 2 peer 揃ったら両方に "ready" テキストフレームを送る
- *   3. それ以降のバイナリフレームは無条件で相手側へパススルー (最大 1 MB / Workers 仕様)
+ *   3. それ以降のバイナリフレームは無条件で相手側へパススルー
+ *      (WebSocket メッセージ上限は 32 MiB / Workers 仕様。2025-10-31 に 1 MiB から引上げ。
+ *       Ferry の 64KB チャンクには十分余裕。受信側ドレイン未了分は DO メモリ 128MB 内にキューされ、
+ *       backpressure は実装されない workerd#988 → 送信側のアプリ層フロー制御 FileFlowAck で頭打ちにする)
  *   4. 片側が close したら相手側も 1001 で close
  *
  * pairId は Workers Secret `SALT` と連結して SHA-256 ハッシュ化してから DO ID に使う。
