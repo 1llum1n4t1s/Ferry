@@ -23,6 +23,11 @@ internal sealed class Program
     {
         VelopackApp.Build().Run();
 
+        // 多重起動防止（v1.0.47）: 既に起動済みなら既存ウィンドウを前面化させて、このプロセスは即終了する。
+        // Velopack の install/update フック (Run()) より後に判定し、更新処理自体は阻害しない。
+        if (!SingleInstanceGuard.TryAcquire())
+            return;
+
         try
         {
             Logger.Initialize(new LoggerConfig

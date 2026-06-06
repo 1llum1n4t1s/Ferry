@@ -31,8 +31,17 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     private FirebaseSignaling? _presenceSignaling;
     private CancellationTokenSource? _presenceCts;
     private const int HeartbeatIntervalMs = 30_000;  // 30秒ごとに heartbeat 送信
-    private const int PollIntervalMs = 10_000;       // 10秒ごとにピアの状態をポーリング
+    private const int PollIntervalMs = 30_000;       // ③ ピア状態のポーリング間隔（旧 10s → 30s。heartbeat 30s / 閾値 60s に対し十分）
+    private const int FullPollEveryNCycles = 4;      // ② 全ピア取得は 4 サイクル(=2分)に1回。選択中ピアは毎サイクル取得
+    private const int BackgroundRecheckMs = 5_000;   // ① 非前面時のフラグ再確認 tick（ネットワークアクセスなし）
     private const long OfflineThresholdMs = 60_000;  // 60秒更新なしでオフライン判定
+
+    /// <summary>① presence ポーリングの稼働フラグ。ウィンドウが前面（表示中かつ非最小化）のときだけ true。
+    /// バックグラウンド束縛のループ／UI スレッドの両方から触るので volatile。</summary>
+    private volatile bool _isForeground = true;
+
+    /// <summary>② 選択ピア優先ポーリングのサイクルカウンタ。FullPollEveryNCycles の剰余で全ピア取得回を決める。</summary>
+    private long _pollCycle;
 
     [ObservableProperty]
     public partial PeerState ConnectionState { get; set; } = PeerState.Disconnected;
@@ -321,7 +330,15 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                     // 既に true の場合は明示的に Probe 呼び出し
                     var wasOnline = peer.IsOnline;
                     peer.IsOnline = isOnline;
-                    if (isOnline && wasOnline)
+                    if (isOnline
+                        && _connectionService.State is PeerState.Connected or PeerState.Connecting
+                        && _connectionService.ConnectedPeer?.SessionId == peer.PeerId)
+                    {
+                        // v1.0.47: 転送中(=このピアに接続中)はライブ経路を即反映し probe しない。
+                        // probe はメイン接続と競合してタイムアウト→Unknown 退行しやすいため。
+                        peer.Route = _connectionService.Route;
+                    }
+                    else if (isOnline && wasOnline)
                     {
                         // edge ではないので手動で発火
                         _ = Task.Run(() => ProbePeerRouteAsync(peer));
@@ -607,57 +624,89 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
+    /// ① presence ポーリングの稼働状態を切り替える（View 側のウィンドウ可視性から呼ぶ）。
+    /// トレイ格納／最小化中はポーリングを止めて Firebase ダウンロード帯域を節約する
+    /// （Heartbeat 送信は <see cref="HeartbeatLoopAsync"/> 側で継続するので相手からは online のまま見える）。
+    /// 前面復帰時は <see cref="RefreshPeersAsync"/> で全ピアを即フル取得し、表示名同期と経路再判定も済ませる。
+    /// </summary>
+    public void SetPresencePollingActive(bool active)
+    {
+        if (_isForeground == active) return;
+        _isForeground = active;
+        if (active)
+            _ = RefreshPeersAsync(); // 前面復帰: 全ピアを即更新（DisplayName 同期込み）。ループは次 tick で通常 cadence に戻る
+    }
+
+    /// <summary>
     /// 定期的にペアリング済みピアの lastSeen をチェックし、IsOnline を更新する。
+    /// 帯域節約のため、① 非前面時は停止、② 選択中ピアは毎サイクル・他は数サイクルに1回、
+    /// ④⑤ 取得は LastSeen のみの ETag 条件付き GET（<see cref="FirebaseSignaling.GetPresenceLastSeenAsync"/>）。
     /// </summary>
     private async Task PresencePollLoopAsync(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var peers = PairedPeers.ToArray();
+            // ① 可視性ゲート: トレイ格納／最小化中はネットワークポーリングを止める。
+            //    （フラグ再確認用の軽い tick だけ回す。ネットワークアクセスは発生しない）
+            if (!_isForeground)
+            {
+                try { await Task.Delay(BackgroundRecheckMs, ct); }
+                catch (OperationCanceledException) { break; }
+                continue;
+            }
 
             // Dispose レース対策: ループ内でローカル束縛
             var sig = _presenceSignaling;
             if (sig is null) break;
 
-            // 全ピアのプレゼンスを並列取得（順次 → 並列で N 倍高速化）
-            var tasks = peers.Select(async peer =>
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            // ② 全ピア取得は FullPollEveryNCycles 回に1回だけ。それ以外のサイクルは選択中ピアのみ高速更新。
+            //    ピア未選択（一覧を眺めている状態）は一覧の online 表示を最新に保つため毎サイクル全ピア取得する。
+            //    いずれも前面時のみ（① のゲート通過済み）なので帯域影響は実使用中ウィンドウに限定される。
+            var isFullCycle = (_pollCycle % FullPollEveryNCycles) == 0;
+            _pollCycle++;
+            var selected = SelectedPeer;
+            var targets = (isFullCycle || selected is null)
+                ? PairedPeers.ToArray()
+                : new[] { selected };
+
+            if (targets.Length > 0)
             {
-                try
+                // 対象ピアの LastSeen を並列取得（順次 → 並列で N 倍高速化）
+                var tasks = targets.Select(async peer =>
                 {
-                    var presenceData = await sig.GetPresenceAsync(peer.PeerId, ct);
-                    var isOnline = presenceData != null && (now - presenceData.LastSeen) < OfflineThresholdMs;
-
-                    Dispatcher.UIThread.Post(() =>
+                    try
                     {
-                        if (peer.IsOnline != isOnline)
-                        {
-                            peer.IsOnline = isOnline;
-                            // v1.0.38 review fix v13: offline 遷移時に古い Route バッジを消す
-                            // (バッジ可視性は IsConnected = Route != Unknown で駆動されるため、
-                            // 古い LAN/P2P/relay バッジが offline 後も残り続けて誤誘導するのを防ぐ)
-                            if (!isOnline)
-                                peer.Route = ConnectionRoute.Unknown;
-                        }
+                        // ④⑤ DisplayName を載せない LastSeen 単独取得 + ETag 条件付き（未変更なら 304 で本文ゼロ）
+                        var lastSeen = await sig.GetPresenceLastSeenAsync(peer.PeerId, ct);
+                        var isOnline = lastSeen.HasValue && (now - lastSeen.Value) < OfflineThresholdMs;
 
-                        // 相手の表示名が変わっていたら同期
-                        if (presenceData != null &&
-                            !string.IsNullOrEmpty(presenceData.DisplayName) &&
-                            presenceData.DisplayName != peer.DisplayName)
+                        Dispatcher.UIThread.Post(() =>
                         {
-                            peer.DisplayName = presenceData.DisplayName;
-                            _ = _peerRegistry.AddOrUpdatePeerAsync(peer);
-                        }
-                    });
-                }
-                catch (OperationCanceledException) { /* キャンセルは WhenAll 後に判定 */ }
-                catch
-                {
-                    // 個別ピアのエラーは無視して次へ
-                }
-            });
+                            if (peer.IsOnline != isOnline)
+                            {
+                                // false → true で WentOnline が発火し経路 Probe が走る（OnPeerWentOnline）
+                                peer.IsOnline = isOnline;
+                                // v1.0.38 review fix v13: offline 遷移時に古い Route バッジを消す
+                                // (バッジ可視性は IsConnected = Route != Unknown で駆動されるため、
+                                // 古い LAN/P2P/relay バッジが offline 後も残り続けて誤誘導するのを防ぐ)
+                                if (!isOnline)
+                                    peer.Route = ConnectionRoute.Unknown;
+                            }
+                            // 表示名同期は本ループでは行わない（⑤）。RefreshPeersAsync（手動/前面復帰）に委譲。
+                        });
+                    }
+                    catch (OperationCanceledException) { /* キャンセルは WhenAll 後に判定 */ }
+                    catch
+                    {
+                        // 個別ピアのエラーは無視して次へ
+                    }
+                });
 
-            await Task.WhenAll(tasks);
+                await Task.WhenAll(tasks);
+            }
+
             if (ct.IsCancellationRequested) break;
 
             // ポーリング間隔（末尾に配置して初回は即座にチェック）
@@ -775,10 +824,15 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         try
         {
             var route = await _connectionService.ProbeRouteAsync(peer.PeerId);
-            // v1.0.38 review fix v10: Unknown 結果でも peer.Route を更新する。
-            // 旧実装は Unknown で early return → 古い LAN/P2P/relay バッジが残り続けて誤誘導していた。
-            // Unknown 自体が「経路を verify できなかった」という有用な情報なので、上書きが正解
-            Dispatcher.UIThread.Post(() => peer.Route = route);
+            // v1.0.47: probe が Unknown を返しても、既に有効な経路バッジを持つピアは据え置く。
+            // 転送中は probe がメイン接続と競合してタイムアウト→Unknown を返しやすく、これを無条件で
+            // 書き戻すとバッジが「状態取得中」へ退行して固着する。offline 時の Unknown 化は
+            // RefreshPeersAsync / PresencePollLoop の !isOnline 分岐が担うので、probe 側で潰さない。
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (route != ConnectionRoute.Unknown || peer.Route == ConnectionRoute.Unknown)
+                    peer.Route = route;
+            });
             Util.Logger.Log($"経路 Probe 完了: peer={peer.PeerId}, route={route}");
         }
         catch (Exception ex)

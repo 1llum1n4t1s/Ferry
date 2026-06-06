@@ -12,6 +12,14 @@ public sealed partial class TransferItem : ObservableObject
     /// <summary>転送セッションの一意識別子（レジューム時の照合に使用）。</summary>
     public Guid TransferId { get; set; } = Guid.NewGuid();
 
+    /// <summary>転送相手のピア ID（宛先ごとの履歴フィルタに使用）。
+    /// 送信時は宛先 PeerId、受信時は接続元 PeerId を設定する。</summary>
+    public string PeerId { get; set; } = string.Empty;
+
+    /// <summary>フォルダ送信時の相対パス（例: "フォルダ名/サブ/ファイル.txt"）。単独ファイルは null。
+    /// 再送時に元のフォルダ構造を保って送り直すために保持する。</summary>
+    public string? RelativePath { get; set; }
+
     /// <summary>ファイル名。</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DisplayInfo))]
@@ -38,6 +46,12 @@ public sealed partial class TransferItem : ObservableObject
     /// プロパティではなくフィールドにしているのは ref (Volatile.Read/Write) に渡すため。</summary>
     public int FlowAckedChunks;
 
+    /// <summary>レート計算用: 前回サンプル時の TransferredBytes。v1.0.47 で追加（UI バインド非対象の素フィールド）。</summary>
+    public long LastSampledBytes;
+
+    /// <summary>レート計算用: 前回サンプル時刻 (Environment.TickCount64)。0 は未サンプル。</summary>
+    public long LastSampleTick;
+
     /// <summary>チャンク総数。</summary>
     public int TotalChunks { get; set; }
 
@@ -45,6 +59,9 @@ public sealed partial class TransferItem : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DirectionSymbol))]
     [NotifyPropertyChangedFor(nameof(DisplayFilePath))]
+    [NotifyPropertyChangedFor(nameof(CanResend))]
+    [NotifyPropertyChangedFor(nameof(CanPause))]
+    [NotifyPropertyChangedFor(nameof(CanResumeSend))]
     public partial TransferDirection Direction { get; set; }
 
     /// <summary>転送状態。</summary>
@@ -54,11 +71,26 @@ public sealed partial class TransferItem : ObservableObject
     [NotifyPropertyChangedFor(nameof(IsInProgress))]
     [NotifyPropertyChangedFor(nameof(IsWaitingApproval))]
     [NotifyPropertyChangedFor(nameof(DisplayInfo))]
+    [NotifyPropertyChangedFor(nameof(CanResend))]
+    [NotifyPropertyChangedFor(nameof(CanCancel))]
+    [NotifyPropertyChangedFor(nameof(CanPause))]
+    [NotifyPropertyChangedFor(nameof(CanResumeSend))]
+    [NotifyPropertyChangedFor(nameof(CanResumeSuspended))]
+    [NotifyPropertyChangedFor(nameof(CanDelete))]
     public partial TransferState State { get; set; } = TransferState.Pending;
 
     /// <summary>エラーメッセージ（State が Error の場合）。</summary>
     [ObservableProperty]
     public partial string? ErrorMessage { get; set; }
+
+    /// <summary>進行中の補足メッセージ（リトライ中・再接続中などの一時表示）。空なら非表示。</summary>
+    [ObservableProperty]
+    public partial string? Note { get; set; }
+
+    /// <summary>転送中の毎秒レート表示テキスト（例「12.3 Mbps」）。v1.0.47 で追加。
+    /// TransferViewModel の 1 秒タイマーが InProgress 項目について更新し、停止/完了でクリアする。</summary>
+    [ObservableProperty]
+    public partial string? RateText { get; set; }
 
     /// <summary>転送相手のピア名（送信先 or 送信元の表示名）。</summary>
     [ObservableProperty]
@@ -69,6 +101,10 @@ public sealed partial class TransferItem : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CompletedAtText))]
     public partial DateTime? CompletedAt { get; set; }
+
+    /// <summary>転送開始（行生成）日時。履歴の「いつ送受信したか」を秒まで表示するため。
+    /// 生成後不変なので readonly。各 new TransferItem で自動的に現在時刻が入る。</summary>
+    public DateTime CreatedAt { get; } = DateTime.Now;
 
     /// <summary>SHA-256 ハッシュ値（転送完了後の検証用）。</summary>
     public string? Sha256Hash { get; set; }
@@ -106,6 +142,32 @@ public sealed partial class TransferItem : ObservableObject
     /// <summary>承認待ちかどうか。</summary>
     public bool IsWaitingApproval => State == TransferState.WaitingApproval;
 
+    /// <summary>終端状態（完了・エラー・キャンセル）か。</summary>
+    public bool IsTerminal => State is TransferState.Completed or TransferState.Error or TransferState.Cancelled;
+
+    /// <summary>再送可能か（送信が失敗/キャンセルで終わり、送信元ファイルパスが残っている）。</summary>
+    public bool CanResend =>
+        Direction == TransferDirection.Send
+        && State is TransferState.Error or TransferState.Cancelled
+        && !string.IsNullOrEmpty(SourceFilePath);
+
+    /// <summary>キャンセル可能か（送受信が進行中・承認待ち・一時停止のいずれか）。</summary>
+    public bool CanCancel =>
+        State is TransferState.InProgress or TransferState.Pending
+              or TransferState.WaitingApproval or TransferState.Paused;
+
+    /// <summary>一時停止可能か（送信中のみ）。</summary>
+    public bool CanPause => Direction == TransferDirection.Send && State == TransferState.InProgress;
+
+    /// <summary>一時停止からの再開が可能か（送信が一時停止中）。</summary>
+    public bool CanResumeSend => Direction == TransferDirection.Send && State == TransferState.Paused;
+
+    /// <summary>接続断による中断からのレジュームが可能か。</summary>
+    public bool CanResumeSuspended => State == TransferState.Suspended;
+
+    /// <summary>履歴から削除可能か（終端状態 or 中断）。進行中は削除させない。</summary>
+    public bool CanDelete => IsTerminal || State == TransferState.Suspended;
+
     /// <summary>方向アイコン。</summary>
     public string DirectionSymbol => Direction == TransferDirection.Send ? "↑" : "↓";
 
@@ -116,6 +178,7 @@ public sealed partial class TransferItem : ObservableObject
         TransferState.Error => "#FF453A",       // TahoeRed
         TransferState.InProgress => "#007AFF",  // TahoeAccent
         TransferState.WaitingApproval => "#FF9F0A", // TahoeOrange
+        TransferState.Paused => "#FF9F0A",      // TahoeOrange（停止中）
         _ => "#99EBEBF5",                       // TahoeTextSecondary
     };
 
@@ -129,13 +192,17 @@ public sealed partial class TransferItem : ObservableObject
         TransferState.Cancelled => App.Text("State.Cancelled"),
         TransferState.Suspended => App.Text("State.Suspended"),
         TransferState.WaitingApproval => App.Text("State.WaitingApproval"),
+        TransferState.Paused => App.Text("State.Paused"),
         _ => "",
     };
 
     /// <summary>完了日時の表示テキスト。</summary>
     public string CompletedAtText => CompletedAt?.ToLocalTime().ToString("yyyy/MM/dd HH:mm") ?? string.Empty;
 
-    /// <summary>詳細情報テキスト（サイズ＋進捗＋ピア名＋完了日時）。</summary>
+    /// <summary>履歴行に常時出す送受信日時テキスト（秒まで）。</summary>
+    public string CreatedAtText => CreatedAt.ToString("yyyy-MM-dd HH:mm:ss");
+
+    /// <summary>詳細情報テキスト（サイズ＋進捗＋ピア名）。送受信日時は CreatedAtText で別途常時表示する。</summary>
     public string DisplayInfo
     {
         get
@@ -148,8 +215,8 @@ public sealed partial class TransferItem : ObservableObject
             {
                 TransferState.InProgress => $"{Util.Formatting.FormatBytes(TransferredBytes)} / {sizeText}  ({Progress * 100:F0}%)",
                 TransferState.Completed => string.IsNullOrEmpty(peerPart)
-                    ? $"{sizeText}  {CompletedAtText}"
-                    : $"{sizeText}  {peerPart}  {CompletedAtText}",
+                    ? sizeText
+                    : $"{sizeText}  {peerPart}",
                 _ => string.IsNullOrEmpty(peerPart) ? sizeText : $"{sizeText}  {peerPart}",
             };
         }
@@ -190,4 +257,7 @@ public enum TransferState
 
     /// <summary>受信承認待ち。</summary>
     WaitingApproval,
+
+    /// <summary>一時停止中（送信をユーザー操作で停止、再開可能）。</summary>
+    Paused,
 }

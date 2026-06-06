@@ -208,7 +208,29 @@
                     <Border.Effect>
                         <DropShadowEffect Color="#FF2D8A" BlurRadius="20" Opacity="0.3" OffsetX="0" OffsetY="0" />
                     </Border.Effect>
-                <Panel>
+                <Grid RowDefinitions="Auto,*">
+                <!-- 受信ファイルの保存先アドレスバー (v1.0.47: 設定画面から常時表示のバーへ移設) -->
+                <Border Grid.Row="0" Background="{DynamicResource SurfaceVariantBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
+                        Padding="10,7">
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                        <TextBlock Grid.Column="0" Text="📁" FontSize="14"
+                                   VerticalAlignment="Center" Margin="0,0,8,0"
+                                   ToolTip.Tip="{DynamicResource Text.SaveBar.Tooltip}" />
+                        <TextBox Grid.Column="1" Classes="search" IsReadOnly="True"
+                                 VerticalAlignment="Center"
+                                 Text="{Binding Settings.SaveDirectory}"
+                                 ToolTip.Tip="{Binding Settings.SaveDirectory}" />
+                        <Button Grid.Column="2" Classes="icon" Content="📂" FontSize="14"
+                                Margin="6,0,0,0"
+                                ToolTip.Tip="{DynamicResource Text.SaveBar.Open}"
+                                Click="OnOpenSaveDirClick" />
+                        <Button Grid.Column="3" Margin="6,0,0,0"
+                                Content="{DynamicResource Text.Settings.SaveDirectory.Browse}"
+                                Command="{Binding Settings.BrowseSaveDirectoryCommand}" />
+                    </Grid>
+                </Border>
+                <Panel Grid.Row="1">
                     <!-- 転送ビュー -->
                     <v:TransferView x:Name="TransferViewControl"
                                     DataContext="{Binding Transfer}">
@@ -246,6 +268,7 @@
                                    VerticalAlignment="Center" />
                     </Border>
                 </Panel>
+                </Grid>
                 </Border>
             </Grid>
         </Grid>

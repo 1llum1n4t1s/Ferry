@@ -4,19 +4,18 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Ferry.ViewModels"
              xmlns:m="using:Ferry.Models"
+             xmlns:controls="using:Ferry.Controls"
              mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="500"
              x:Class="Ferry.Views.TransferView"
              x:DataType="vm:TransferViewModel">
 
     <Grid RowDefinitions="Auto,*,Auto">
-        <!-- ヘッダー: ピア名 + 経路バッジ + 送信ボタン -->
+        <!-- ヘッダー: ピア名 + 経路バッジ + クリア + 送信ボタン -->
         <Border Grid.Row="0" Background="{DynamicResource SurfaceVariantBrush}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
                 Padding="16,12">
-            <Grid ColumnDefinitions="*,Auto">
-                <!-- ピア名 + 経路バッジ。SelectedPeer を中間 DataContext に置き子は直接参照する。
-                     SelectedPeer=null 時は DataContext が null になるだけでバインディング警告を出さない
-                     (タブ切替で SelectedPeer が頻繁に null になるため null 安全にする) -->
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+                <!-- ピア名 + 経路バッジ。SelectedPeer を中間 DataContext に置き子は直接参照する。 -->
                 <StackPanel VerticalAlignment="Center" Spacing="4"
                             x:DataType="m:PairedPeer"
                             DataContext="{Binding ((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer,
@@ -24,8 +23,6 @@
                     <TextBlock Text="{Binding DisplayName}"
                                FontSize="16" FontWeight="SemiBold"
                                Foreground="{DynamicResource TextPrimaryBrush}" />
-                    <!-- v1.0.38: 経路バッジを右ペイン (ピア名直下) に移動。
-                         未接続時は IsConnected=false で非表示 -->
                     <Border Classes="route-badge"
                             Classes.lan="{Binding IsLanRoute}"
                             Classes.p2p="{Binding IsP2pRoute}"
@@ -41,17 +38,29 @@
                         </StackPanel>
                     </Border>
                 </StackPanel>
-                <Button Grid.Column="1" Classes="accent"
+                <!-- 受信フォルダを開く（保存先を OS のファイラで開く。常時表示） -->
+                <Button Grid.Column="1" Classes="icon"
+                        Content="📂" FontSize="15"
+                        VerticalAlignment="Center" Margin="0,0,8,0"
+                        ToolTip.Tip="{DynamicResource Text.SaveBar.Open}"
+                        Click="OnOpenSaveDirClick" />
+                <!-- 履歴クリア（選択中ピアの完了/失敗/キャンセル分のみ） -->
+                <Button Grid.Column="2" Classes="icon"
+                        Content="🗑" FontSize="15"
+                        VerticalAlignment="Center" Margin="0,0,8,0"
+                        ToolTip.Tip="{DynamicResource Text.Transfer.ClearHistory}"
+                        IsVisible="{Binding HasTransfers}"
+                        Command="{Binding ClearHistoryCommand}" />
+                <Button Grid.Column="3" Classes="accent"
                         Content="{DynamicResource Text.Transfer.SendFile}"
                         Command="{Binding BrowseAndSendFilesCommand}" />
             </Grid>
         </Border>
 
-        <!-- 転送リスト -->
+        <!-- 転送リスト（選択中ピア分のみ） -->
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
             <Panel>
-                <!-- 転送アイテムがある場合 -->
-                <ItemsControl ItemsSource="{Binding Transfers}"
+                <ItemsControl ItemsSource="{Binding VisibleTransfers}"
                               IsVisible="{Binding HasTransfers}"
                               Margin="8">
                     <ItemsControl.ItemTemplate>
@@ -64,12 +73,27 @@
                                                Text="📄" FontSize="24"
                                                VerticalAlignment="Center" Margin="0,0,12,0" />
 
-                                    <!-- ファイル名 + サイズ -->
-                                    <TextBlock Grid.Column="1" Grid.Row="0"
-                                               Text="{Binding FileName}"
-                                               FontSize="14" FontWeight="Medium"
-                                               Foreground="{DynamicResource TextPrimaryBrush}"
-                                               TextTrimming="CharacterEllipsis" />
+                                    <!-- 方向アイコン + ファイル名（左）/ 送受信日時（右） -->
+                                    <Grid Grid.Column="1" Grid.Row="0" ColumnDefinitions="*,Auto">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <TextBlock Text="{Binding DirectionSymbol}"
+                                                       FontSize="13"
+                                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                                       VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding FileName}"
+                                                       FontSize="14" FontWeight="Medium"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding CreatedAtText}"
+                                                   FontSize="11"
+                                                   Foreground="{DynamicResource TextTertiaryBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="8,0,0,0" />
+                                    </Grid>
+
+                                    <!-- サイズ・進捗・状態・補足(リトライ等) -->
                                     <StackPanel Grid.Column="1" Grid.Row="1"
                                                 Orientation="Horizontal" Spacing="8">
                                         <TextBlock Text="{Binding DisplayInfo}"
@@ -78,18 +102,27 @@
                                         <TextBlock Text="{Binding StateText}"
                                                    FontSize="12"
                                                    Foreground="{DynamicResource TextTertiaryBrush}" />
+                                        <TextBlock Text="{Binding Note}"
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource TahoeAccentBrush}"
+                                                   IsVisible="{Binding Note, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                        <!-- 転送中の毎秒レート(bps)。InProgress 時のみ非空。 -->
+                                        <TextBlock Text="{Binding RateText}"
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource TahoeAccentBrush}"
+                                                   IsVisible="{Binding RateText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                                     </StackPanel>
 
-                                    <!-- v1.0.38: ファイルのフルパス (送信なら元、受信なら保存先) -->
-                                    <TextBlock Grid.Column="1" Grid.Row="2"
+                                    <!-- ファイルのフルパス (送信なら元、受信なら保存先)。収まらない時は左へ流す。 -->
+                                    <controls:MarqueeTextBlock Grid.Column="1" Grid.Row="2"
                                                Text="{Binding DisplayFilePath}"
                                                FontSize="11"
+                                               Height="16"
                                                Foreground="{DynamicResource TextTertiaryBrush}"
-                                               TextTrimming="CharacterEllipsis"
                                                ToolTip.Tip="{Binding DisplayFilePath}"
                                                IsVisible="{Binding DisplayFilePath, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-                                    <!-- 進捗バー: 転送中のみ表示。Progress (0.0〜1.0) を 0〜100 にスケール -->
+                                    <!-- 進捗バー: 転送中のみ表示 -->
                                     <ProgressBar Grid.Column="1" Grid.Row="3"
                                                  Minimum="0" Maximum="1"
                                                  Value="{Binding Progress}"
@@ -100,11 +133,47 @@
                                                  Foreground="{DynamicResource TahoeAccentBrush}"
                                                  Background="{DynamicResource BorderBrush}" />
 
-                                    <!-- 方向アイコン -->
-                                    <TextBlock Grid.Column="2" Grid.RowSpan="4"
-                                               Text="{Binding DirectionSymbol}"
-                                               FontSize="16" VerticalAlignment="Center"
-                                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                                    <!-- 行ごとの操作ボタン -->
+                                    <StackPanel Grid.Column="2" Grid.RowSpan="4"
+                                                Orientation="Horizontal" Spacing="2"
+                                                VerticalAlignment="Center">
+                                        <Button Classes="icon" Content="⏸" FontSize="14"
+                                                ToolTip.Tip="{DynamicResource Text.Transfer.Pause}"
+                                                IsVisible="{Binding CanPause}"
+                                                Command="{Binding ((vm:TransferViewModel)DataContext).PauseTransferCommand,
+                                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding TransferId}" />
+                                        <Button Classes="icon" Content="▶" FontSize="14"
+                                                ToolTip.Tip="{DynamicResource Text.Transfer.Resume}"
+                                                IsVisible="{Binding CanResumeSend}"
+                                                Command="{Binding ((vm:TransferViewModel)DataContext).ResumeSendCommand,
+                                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding TransferId}" />
+                                        <Button Classes="icon" Content="▶" FontSize="14"
+                                                ToolTip.Tip="{DynamicResource Text.Transfer.ResumeSuspended}"
+                                                IsVisible="{Binding CanResumeSuspended}"
+                                                Command="{Binding ((vm:TransferViewModel)DataContext).ResumeTransferCommand,
+                                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding TransferId}" />
+                                        <Button Classes="icon" Content="🔄" FontSize="14"
+                                                ToolTip.Tip="{DynamicResource Text.Transfer.Resend}"
+                                                IsVisible="{Binding CanResend}"
+                                                Command="{Binding ((vm:TransferViewModel)DataContext).ResendCommand,
+                                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding TransferId}" />
+                                        <Button Classes="icon" Content="✕" FontSize="14"
+                                                ToolTip.Tip="{DynamicResource Text.Transfer.Cancel}"
+                                                IsVisible="{Binding CanCancel}"
+                                                Command="{Binding ((vm:TransferViewModel)DataContext).CancelTransferCommand,
+                                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding TransferId}" />
+                                        <Button Classes="icon" Content="🗑" FontSize="14"
+                                                ToolTip.Tip="{DynamicResource Text.Transfer.Delete}"
+                                                IsVisible="{Binding CanDelete}"
+                                                Command="{Binding ((vm:TransferViewModel)DataContext).DeleteTransferCommand,
+                                                                  RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding TransferId}" />
+                                    </StackPanel>
                                 </Grid>
                             </Border>
                         </DataTemplate>

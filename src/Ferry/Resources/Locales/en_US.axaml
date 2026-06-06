@@ -159,4 +159,20 @@
   <x:String x:Key="Text.Member.Delete.Confirm" xml:space="preserve">Remove "{0}" from your members?
 This cannot be undone.</x:String>
 
+  <!-- v1.0.47: 行ごとの転送操作・受信保存先バー -->
+  <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">Resend</x:String>
+  <x:String x:Key="Text.Transfer.Pause" xml:space="preserve">Pause</x:String>
+  <x:String x:Key="Text.Transfer.Resume" xml:space="preserve">Resume</x:String>
+  <x:String x:Key="Text.Transfer.ResumeSuspended" xml:space="preserve">Resume</x:String>
+  <x:String x:Key="Text.Transfer.Cancel" xml:space="preserve">Cancel</x:String>
+  <x:String x:Key="Text.Transfer.Delete" xml:space="preserve">Delete</x:String>
+  <x:String x:Key="Text.Transfer.ClearHistory" xml:space="preserve">Clear history</x:String>
+  <x:String x:Key="Text.Transfer.Retrying" xml:space="preserve">Retrying ({0}/{1})…</x:String>
+  <x:String x:Key="Text.Transfer.ConnectFailed" xml:space="preserve">Could not establish a connection</x:String>
+  <x:String x:Key="Text.Transfer.SourceMissing" xml:space="preserve">Source file not found</x:String>
+  <x:String x:Key="Text.Transfer.PeerMissing" xml:space="preserve">Destination peer not found</x:String>
+  <x:String x:Key="Text.State.Paused" xml:space="preserve">Paused</x:String>
+  <x:String x:Key="Text.SaveBar.Tooltip" xml:space="preserve">Where received files are saved</x:String>
+  <x:String x:Key="Text.SaveBar.Open" xml:space="preserve">Open folder</x:String>
+
 </ResourceDictionary>

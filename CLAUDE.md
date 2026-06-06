@@ -141,6 +141,10 @@ UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レ
 
 **リレー経路のフロー制御 (v1.0.46 追加)**: WebSocket リレー (`ClientWebSocket.SendAsync`) はローカル送信バッファ受理で即返るため、TCP/UDP のような end-to-end バックプレッシャーが効かない。これが無いと送信側が受信側のドレイン速度（多くは受信側のダウンロード帯域）を超えてチャンクを流し込み、Cloudflare 中継バッファが膨張して **転送開始 ~55秒で接続が close handshake 無しに切断**される（大容量ファイルのみ再現。小さいファイルは溢れる前に完了）。対策として `FileFlowAck (0x07)` によるアプリ層スライディングウィンドウを導入: 受信側が `HandleFileChunk` で `FlowAckIntervalChunks`(64) ごと + 完了時に書き込み済みチャンク数を返し、送信側 `SendChunksAsync` は `index - FlowAckedChunks >= FlowControlWindowChunks`(512=32MB) の間 `Task.Delay(10)` で待機（`FlowAckStallTimeoutMs`=60s で打ち切り）。これで中継バッファを ~32MB に抑え、転送は受信側帯域で律速されつつ完走する。TCP/UDP 経路では各 transport の自然なバックプレッシャーが先に効くため待機はほぼ発生しない。FlowAck は累積カウントなので 1 個欠落しても次の ACK で回復する。
 
+> **なぜ ~55秒切断が起きたか / なぜ 32MB が安全か**: Cloudflare Durable Object は 1 インスタンス 128MB メモリ割当で、その送信 WebSocket は backpressure 未実装 (workerd#988)。FlowAck が無いと受信側ドレイン未了分が DO メモリに線形に積まれ、128MB 超過で isolate がメモリ超過リセット → close handshake 無しに切断する (これが「~55秒」の正体)。FlowAck 導入後はリレー DO に積まれる未ドレイン分 ≒ 送信先行 32MB + wire/受信 OS バッファ数MB ≈ 最悪 ~40MB で、128MB に対し約 3〜4 倍マージン。よって窓 512 (=32MB) は縮める必要がない (縮めると高 RTT でスループット低下)。Cloudflare の WebSocket メッセージ上限は 2025-10-31 に 1 MiB → 32 MiB へ引上げ済みで 64KB チャンクには無関係。
+>
+> **フロー制御が実際に発火したかの確認 (v1.0.47 で診断ログ追加)**: `SendChunksAsync` の窓待機が初めて発火した時に Info ログ「フロー制御 window 発火（受信ドレイン律速に移行）」を 1 度だけ出す (`%LOCALAPPDATA%\Ferry\logs`)。**このログが出ていれば送信が受信ドレインに律速された＝中継バッファは 32MB で頭打ち**。出ないまま完走した場合は (a) ファイルが窓 (32MB) 未満で構造的に未行使 (b) 受信が十分速い、のどちらか。受信側で帯域を絞っても送信が減速しないように見える時は、まず ① 経路が Relay か (`接続完了！ 経路:` ログ) ② ファイルが 32MB 超か ③ 絞りが受信↔Cloudflare edge のソケット読み出しに実効しているか (Relay ではローカル帯域絞りは受信↔edge 間にしか効かず、送信→DO 流入は独立) を確認する。受信側を一時停止すると送信側が 512 chunk で確実に待機に入る。`HandleFileFlowAck` も Debug ログで ack 到達と item 解決 (`found`) を出す。
+
 > **レジュームは「先頭から再送」方式**（`ResumeTransferAsync`、`startChunk=0`）。受信側は承認時にファイルを再作成するため、部分再送ではなく全チャンクを送り直す。
 >
 > チャンクメッセージ形式は 2026-05 に `chunkIndex` 単独から `TransferId + chunkIndex` に変更済み。**旧形式とは非互換**（既存の配布クライアントは存在しないため移行問題なし）。形式を再度変える場合は送受信（`FileChunker.CreateChunkMessage` ↔ `HandleFileChunk`）と `FileChunkerTests` のオフセットを揃えること。
@@ -156,6 +160,29 @@ UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レ
 - 拒否理由は `item.ErrorMessage` に詰めてから TCS 解決して UI に伝える (v12)
 - `SendRejectFireAndForget(Guid, string)` ヘルパーで `TransferService` 内の FileReject 送信を統一 (v9)
 
+### 転送 UI / 操作と接続短縮 (v1.0.47)
+
+転送履歴の宛先別表示・送信操作（再送 / 一時停止 / キャンセル）・受信保存先の常時表示・多重起動防止を追加した。送信時は VM 側 item とサービス側 item が別インスタンスのため、`SendFileAsync(filePath, relativePath, transferId, ct)` に **TransferId を渡して両者を同一 ID で相関**させる（受信は VM とサービスが同一 TransferItem を共有）。
+
+- **宛先別履歴**: `TransferViewModel` は全件を `Transfers` に保持しつつ、選択中ピアに属する項目だけを `VisibleTransfers` に投影（`TransferItem.PeerId` で判定）。`ConnectionViewModel.SelectedPeer` 変更を購読して `RebuildVisibleTransfers`。`TransferView.axaml` の `ItemsControl` は `VisibleTransfers` を bind
+- **対称キャンセル** (`CancelTransfer`): 送受信どちらからでも `FileReject` で相手に通知し、送信側は自分の `_sendCts`（`ConcurrentDictionary<Guid, CancellationTokenSource>`）を cancel、受信側は `_receiveStates` を破棄。`HandleFileReject` の `_activeTransfers` 分岐も `_sendCts` cancel を行う
+- **一時停止 / 再開** (`PauseSendTransfer` / `ResumeSendTransfer`): 送信のみ対応。`_pausedSends`(`ConcurrentDictionary<Guid, byte>`) に TransferId を入れ、`SendChunksAsync` がチャンク送信ループ手前で `_pausedSends.ContainsKey` の間 `Task.Delay(100)` 待機。待機中は `TransferState.Paused`（色 `#FF9F0A`）を表示
+- **自動リトライ**: `SendOneFileAsync` が `MaxSendAttempts=3` でリトライ。2 回目以降は `TransferItem.Note` に「リトライ中…(n/3)」を表示（`OnTransferError` は `_sendCtsByItem` 管理中の送信項目をスキップしてリトライループに委ねる）。`OperationCanceledException` はリトライせず Cancelled 扱い
+- **保存先アドレスバー**: 受信保存先を設定画面から `MainWindow` 上部の常時表示バーへ移動（📁 アイコン + readonly TextBox + 📂 で OS のファイラ起動 + 変更ボタン）。`SettingsView` 側の保存先ブロックは撤去
+- **多重起動防止** (`SingleInstanceGuard`): 名前付き `Mutex`（`Ferry-SingleInstance-Mutex-v1`）で取得失敗時は `EventWaitHandle`（`Ferry-Activate-Event-v1`）で既存インスタンスを前面化させて即終了。`Program.cs` の `VelopackApp...Run()` 直後に `TryAcquire`、`App.axaml.cs` で `StartActivationListener`（Windows 専用、他 OS は no-op で起動継続）
+- **接続検出の短縮** (#5): `FirebaseSignaling.WaitForSdpAsync` の offer/answer ポーリング間隔を 1000ms → 400ms に短縮し、相手の送信開始から受信開始までの待ちを削減
+
+#### 追加修正 (v1.0.47 後半)
+
+- **複数ファイルを即時 N 行表示**: `SendFilesAsync` は **先に全ファイル分の `TransferItem` を生成・`AddTransfer`**（State=Pending で即 `VisibleTransfers` に並ぶ）してから、`SendItemAsync(item, peer)` を 1 件ずつ直列に送る。旧実装は `foreach await SendOneFileAsync` で 1 件完了まで次行が出ない症状だった。`SendOneFileAsync` は「item 生成 + AddTransfer + SendItemAsync」の薄いラッパ（ResendAsync 用）に分割
+- **相手表示名の伝播**: `PairedPeer.DisplayName` を明示バッキングフィールド + `SetProperty` に変更（plain プロパティのままなので AOT の `PeerRegistryJsonContext` シリアライズは維持）。`PresencePollLoop` の `peer.DisplayName =` 代入が変更通知を出し、**左ペイン（ピアリスト）も右ペインも更新**される。旧 plain auto-property は通知が無く左ペインが古い名前のままだった
+- **経路バッジ「状態取得中」固着の解消**: `ConnectionViewModel.ProbePeerRouteAsync` は **probe が `Unknown` を返しても既に有効な Route を持つピアは据え置く**（転送中の probe 競合タイムアウトで `Unknown` 退行しない）。`RefreshPeersAsync` は接続中ピア（`_connectionService.ConnectedPeer?.SessionId == peer.PeerId`）には probe せず `_connectionService.Route` を即反映。offline 時の `Unknown` 化は `!isOnline` 分岐が担当
+- **ファイルパスのマーキー**: `Controls/MarqueeTextBlock`（`Decorator` 派生・テンプレート非依存・子 TextBlock をコード保持・`DispatcherTimer` で `TranslateTransform.X` を更新）。収まる時は静止、はみ出す時のみ左へ流す。`TransferView` の Row2 パス表示を差し替え
+- **転送レート(bps)**: `TransferViewModel` の 1 秒 `DispatcherTimer`（`OnRateTimerTick`）が `VisibleTransfers` の InProgress 項目について差分から bps を算出し `TransferItem.RateText` を更新（停止/完了/一時停止でクリア）。整形は `Util.Formatting.FormatBitrate`（1000 区切り）。サンプル保持は素フィールド `LastSampledBytes`/`LastSampleTick`
+- **送受信日時**: `TransferItem.CreatedAt`（生成時 `DateTime.Now`）+ `CreatedAtText`（`yyyy-MM-dd HH:mm:ss`）を全履歴行（ファイル名行の右）に常時表示。重複回避のため `DisplayInfo` の完了時刻連結は撤去
+- **受信フォルダを開くボタン**: `TransferView` ヘッダの送信ボタン左に 📂 を追加。OS ファイラ起動は `Util.ShellHelper.OpenFolder`（MainWindow の保存先📂と共用）。保存先は `TopLevel.GetTopLevel(this).DataContext as MainWindowViewModel` の `Settings.SaveDirectory` から取得
+- **Bridge の URL 貼り付けペアリング撤去**: `src/Ferry.Bridge/`（index.html + bridge.js）からモード B（URL ペースト）を削除。このページはカメラ付き端末（スマホ）でしか到達しないため。モード選択はカメラ 1 枚のみ（自動カメラ起動はしない方針は維持）
+
 ### プレゼンス監視（オンライン検出）
 
 ConnectionViewModel が定期的に Firebase にハートビート送信・ピアの lastSeen をポーリング。
@@ -163,13 +190,22 @@ ConnectionViewModel が定期的に Firebase にハートビート送信・ピ�
 ```
 HeartbeatLoop (30秒):
   └ UpdatePresenceAsync(deviceId, displayName)
-  └ Firebase の `presence/{deviceId}` に { lastSeen, displayName } を書き込み
+  └ Firebase の `presence/{deviceId}` に { LastSeen, DisplayName } を書き込み（PUT＝アップロード、DL 枠は消費しない）
 
-PresencePollLoop (10秒):
-  └ GetPresenceAsync(peerId)
-  └ Firebase の `presence/{peerId}` から lastSeen を取得
-  └ now - lastSeen < 60秒 なら IsOnline = true
+PresencePollLoop (30秒):
+  └ ① 前面（表示中かつ非最小化）のときだけ実行。トレイ格納/最小化中は停止（Heartbeat は継続するので相手からは online のまま）
+  └ ② 取得対象: 選択中ピアは毎サイクル / 他ピアは FullPollEveryNCycles(4=2分) に1回 / ピア未選択時は一覧鮮度のため毎サイクル全ピア
+  └ ④⑤ GetPresenceLastSeenAsync(peerId): presence/{peerId}/LastSeen のみを ETag 条件付き GET（未変更なら 304 で本文ゼロ）
+  └ now - LastSeen < 60秒 なら IsOnline = true（false→true で WentOnline → 経路 Probe 発火）
 ```
+
+> **大規模常時オンライン時の Firebase ダウンロード帯域節約 (①②③④⑤)**: 旧実装は「全ペアを 10秒ごとにフル取得」で、常時オンライン台数 N×ピア数 P が ~400 リンクを超えると Spark 無料枠 (10GB/月 download) が枯れる試算だった。対策として上記 5 施策を実装:
+> - **① 可視性ゲート** (`MainWindow` → `ConnectionViewModel.SetPresencePollingActive`): トレイ常駐の大多数が寄与ゼロになる最大の削減。前面復帰時は `RefreshPeersAsync` で全ピア即フル取得（DisplayName 同期・経路再判定込み）。
+> - **② 選択ピア優先** + **③ 間隔 10s→30s** (`PollIntervalMs`): 1ウィンドウあたりのリクエスト数を削減。
+> - **④ ETag 条件付き GET** (`FirebaseSignaling.GetPresenceLastSeenAsync` + `_presenceCache`): `X-Firebase-ETag`/`If-None-Match` で未変更時は 304（本文ゼロ）。オフライン peer は LastSeen 不変なのでほぼ常時 304＝ほぼ無転送。
+> - **⑤ LastSeen のみ取得**: ポーリングでは `presence/{id}/LastSeen.json`（数値単独）のみ取り DisplayName を載せない。表示名同期は手動更新/前面復帰の `GetPresenceAsync`（フル取得）に委譲。
+>
+> これで足りない規模（数千台超）は presence を Cloudflare (Workers Paid + KV / Durable Object) へ逃がすのが次手。`design-proposals.md` 参照。
 
 ### テスト
 

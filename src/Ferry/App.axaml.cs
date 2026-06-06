@@ -207,6 +207,10 @@ public partial class App : Application
             trayIcon.Clicked += (_, _) => ShowMainWindow();
             TrayIcon.SetIcons(this, [trayIcon]);
 
+            // 多重起動防止: 2 つ目の起動が来たら（Windows）既存ウィンドウを前面化する
+            SingleInstanceGuard.StartActivationListener(
+                () => Avalonia.Threading.Dispatcher.UIThread.Post(ShowMainWindow));
+
             // 起動時：ペアリング済みピアがあれば最初のピアを宛先として選択
             // ピアがいなければペアリング追加タブ（右ペイン）を自動アクティブにし QR を表示
             if (connectionVm.PairedPeers.Count > 0)

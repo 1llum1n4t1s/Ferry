@@ -138,4 +138,20 @@
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Запускать вместе с Windows</x:String>
   <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Зарегистрировать в автозагрузке Windows через реестр</x:String>
 
+  <!-- v1.0.47: 行ごとの転送操作・受信保存先バー -->
+  <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">Отправить снова</x:String>
+  <x:String x:Key="Text.Transfer.Pause" xml:space="preserve">Пауза</x:String>
+  <x:String x:Key="Text.Transfer.Resume" xml:space="preserve">Продолжить</x:String>
+  <x:String x:Key="Text.Transfer.ResumeSuspended" xml:space="preserve">Возобновить</x:String>
+  <x:String x:Key="Text.Transfer.Cancel" xml:space="preserve">Отмена</x:String>
+  <x:String x:Key="Text.Transfer.Delete" xml:space="preserve">Удалить</x:String>
+  <x:String x:Key="Text.Transfer.ClearHistory" xml:space="preserve">Очистить историю</x:String>
+  <x:String x:Key="Text.Transfer.Retrying" xml:space="preserve">Повтор ({0}/{1})…</x:String>
+  <x:String x:Key="Text.Transfer.ConnectFailed" xml:space="preserve">Не удалось установить соединение</x:String>
+  <x:String x:Key="Text.Transfer.SourceMissing" xml:space="preserve">Исходный файл не найден</x:String>
+  <x:String x:Key="Text.Transfer.PeerMissing" xml:space="preserve">Получатель не найден</x:String>
+  <x:String x:Key="Text.State.Paused" xml:space="preserve">Приостановлено</x:String>
+  <x:String x:Key="Text.SaveBar.Tooltip" xml:space="preserve">Папка для сохранения полученных файлов</x:String>
+  <x:String x:Key="Text.SaveBar.Open" xml:space="preserve">Открыть папку</x:String>
+
 </ResourceDictionary>

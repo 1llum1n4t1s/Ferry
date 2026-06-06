@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Concurrent;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Reactive.Linq;
 using System.Text;
 using System.Threading;
@@ -25,14 +28,24 @@ namespace Ferry.Infrastructure;
 public sealed class FirebaseSignaling : IDisposable
 {
     private readonly FirebaseClient _client;
+    private readonly string _databaseUrl;
     private string _sessionId = string.Empty;
     private IDisposable? _pairingSubscription;
     /// <summary>ペアリング相手が見つかったときに発火するイベント。</summary>
     public event EventHandler<PairingInfo>? PairingDetected;
 
+    /// <summary>presence の LastSeen を ETag 条件付き GET で読むための共有 HttpClient。
+    /// HttpClient はインスタンスを使い回す（都度 new はソケット枯渇の原因）。</summary>
+    private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
+
+    /// <summary>peerId 単位の presence ETag と直近 LastSeen のキャッシュ。
+    /// 次回 GET で If-None-Match を付け、未変更なら 304（本文ゼロ）で返させて帯域を節約する。</summary>
+    private readonly ConcurrentDictionary<string, (string ETag, long LastSeen)> _presenceCache = new();
+
     public FirebaseSignaling(string databaseUrl)
     {
         _client = new FirebaseClient(databaseUrl);
+        _databaseUrl = databaseUrl.TrimEnd('/');
     }
 
     /// <summary>
@@ -155,6 +168,10 @@ public sealed class FirebaseSignaling : IDisposable
         // 着信監視ループが約5秒毎に呼ぶため、INFO だとログの大半を埋める。Debug に落とす
         // (Release は Info 以上なので抑制。監視開始自体は呼出元の「着信接続ポーリング開始」INFO で追える)。
         Util.Logger.Log($"SDP ポーリング開始 ({watchField}): pairId={pairId}, minCreatedAt={minCreatedAt}", Util.LogLevel.Debug);
+        // v1.0.47: offer/answer の検出遅延を縮めるためポーリング間隔を 1000ms → 400ms に短縮する。
+        // 送信開始から受信側が動き出すまでの「待ち」を体感で短くするのが目的（Firebase の read は極小サイズなので
+        // Spark 無料枠の帯域にもほぼ影響しない）。エラー時は下の exponential backoff 側で別途間引く。
+        const int PollDelayMs = 400;
         var pollCount = 0;
         var lastErrorLog = 0; // エラーログ抑制用カウンタ
         var consecutiveErrors = 0; // rere #F-012: exponential backoff 用カウンタ
@@ -188,7 +205,7 @@ public sealed class FirebaseSignaling : IDisposable
                         {
                             Util.Logger.Log($"SDP 待機中 ({watchField}): createdAt={createdAt?.ToString() ?? "null"}, 待機回数={pollCount}", Util.LogLevel.Debug);
                         }
-                        await Task.Delay(1000, ct);
+                        await Task.Delay(PollDelayMs, ct);
                         continue;
                     }
 
@@ -242,7 +259,7 @@ public sealed class FirebaseSignaling : IDisposable
 
             // 正常 path 完了 (受信成功 or 待機継続)
             consecutiveErrors = 0;
-            await Task.Delay(1000, ct);
+            await Task.Delay(PollDelayMs, ct);
         }
 
         throw new OperationCanceledException(ct);
@@ -542,6 +559,60 @@ public sealed class FirebaseSignaling : IDisposable
                 .Child("presence")
                 .Child(deviceId)
                 .OnceSingleAsync<PresenceData>();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 指定デバイスの presence/{id}/LastSeen のみを ETag 条件付き GET で取得する（オンライン判定専用）。
+    ///
+    /// 常時ポーリングの帯域節約のための軽量版:
+    ///  - ⑤ DisplayName を載せず LastSeen(数値) 単独を取るのでペイロードが最小。
+    ///  - ④ X-Firebase-ETag + If-None-Match で、前回から未変更なら 304 Not Modified（本文ゼロ）で返る。
+    ///    304 時はキャッシュ済み LastSeen をそのまま返す（オフライン peer や heartbeat 未更新時はほぼ 304 = ほぼ無転送）。
+    /// 表示名の同期はこの経路では行わず、<see cref="GetPresenceAsync"/>（手動更新/前面復帰時のフル取得）に委ねる。
+    /// </summary>
+    /// <returns>LastSeen(ms)。presence 未作成や取得失敗時は null。</returns>
+    public async Task<long?> GetPresenceLastSeenAsync(string deviceId, CancellationToken ct = default)
+    {
+        var url = $"{_databaseUrl}/presence/{Uri.EscapeDataString(deviceId)}/LastSeen.json";
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        // ETag をレスポンスヘッダに乗せてもらうための Firebase REST 拡張ヘッダ。
+        req.Headers.TryAddWithoutValidation("X-Firebase-ETag", "true");
+        if (_presenceCache.TryGetValue(deviceId, out var cached) && !string.IsNullOrEmpty(cached.ETag))
+            req.Headers.TryAddWithoutValidation("If-None-Match", cached.ETag);
+
+        try
+        {
+            using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseContentRead, ct);
+
+            // 304: 値は前回から不変 → キャッシュ済み LastSeen を返す（本文転送ゼロ）。
+            if (resp.StatusCode == HttpStatusCode.NotModified)
+                return _presenceCache.TryGetValue(deviceId, out var c) ? c.LastSeen : null;
+
+            if (!resp.IsSuccessStatusCode)
+                return null;
+
+            var etag = resp.Headers.ETag?.Tag;
+            var body = (await resp.Content.ReadAsStringAsync(ct)).Trim();
+
+            // presence ノード未作成（相手が一度も heartbeat していない）は body が "null"。
+            if (string.IsNullOrEmpty(body) || body == "null")
+                return null;
+
+            if (!long.TryParse(body, out var lastSeen))
+                return null;
+
+            if (!string.IsNullOrEmpty(etag))
+                _presenceCache[deviceId] = (etag, lastSeen);
+            return lastSeen;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch
         {
