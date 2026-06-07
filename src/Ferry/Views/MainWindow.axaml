@@ -208,8 +208,7 @@
                     <Border.Effect>
                         <DropShadowEffect Color="#FF2D8A" BlurRadius="20" Opacity="0.3" OffsetX="0" OffsetY="0" />
                     </Border.Effect>
-                <Grid RowDefinitions="*,Auto">
-                <Panel Grid.Row="0">
+                <Panel>
                     <!-- 転送ビュー -->
                     <v:TransferView x:Name="TransferViewControl"
                                     DataContext="{Binding Transfer}">
@@ -247,31 +246,6 @@
                                    VerticalAlignment="Center" />
                     </Border>
                 </Panel>
-                <!-- 受信ファイルの保存先アドレスバー (v1.0.48: 上部 → 右ペイン下部へ移設)。
-                     上線を引いて区切り、ユーザーが「相手から送られたファイルがどこに置かれるか」を
-                     画面下に常設表示する。BorderThickness を 0,1,0,0 にして上端の divider を引く。
-                     v1.0.48: 📂 アイコンボタンと「変更」ボタンが視覚的に重複していたため、
-                     ラベル付きテキストボタン 2 つに統一: 「保存先を開く」(OS ファイラ起動) と「変更」(フォルダピッカー)。 -->
-                <Border Grid.Row="1" Background="{DynamicResource SurfaceVariantBrush}"
-                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0"
-                        Padding="10,7">
-                    <Grid ColumnDefinitions="Auto,*,Auto,Auto">
-                        <TextBlock Grid.Column="0" Text="📁" FontSize="14"
-                                   VerticalAlignment="Center" Margin="0,0,8,0"
-                                   ToolTip.Tip="{DynamicResource Text.SaveBar.Tooltip}" />
-                        <TextBox Grid.Column="1" Classes="search" IsReadOnly="True"
-                                 VerticalAlignment="Center"
-                                 Text="{Binding Settings.SaveDirectory}"
-                                 ToolTip.Tip="{Binding Settings.SaveDirectory}" />
-                        <Button Grid.Column="2" Margin="6,0,0,0"
-                                Content="{DynamicResource Text.SaveBar.Open}"
-                                Click="OnOpenSaveDirClick" />
-                        <Button Grid.Column="3" Margin="6,0,0,0"
-                                Content="{DynamicResource Text.Settings.SaveDirectory.Browse}"
-                                Command="{Binding Settings.BrowseSaveDirectoryCommand}" />
-                    </Grid>
-                </Border>
-                </Grid>
                 </Border>
             </Grid>
         </Grid>

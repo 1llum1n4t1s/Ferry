@@ -29,12 +29,19 @@
             <TextBlock Classes="sectionHeader" Text="{DynamicResource Text.Settings.Appearance}" />
             <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,4">
                 <StackPanel Spacing="12">
-                    <!-- テーマ -->
+                    <!-- テーマ。各 ComboBoxItem.Content は DynamicResource で直接引くため、
+                         言語切替で MergedDictionaries 差し替えが起きても ItemsSource は触らず、
+                         SelectedIndex がリセットされない (旧 ItemsSource={Binding ThemeOptions} 方式は
+                         Replace でも Avalonia ComboBox 内部の SelectedItem 状態が外れていた)。 -->
                     <Grid ColumnDefinitions="*,Auto">
                         <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.Theme}" />
-                        <ComboBox Grid.Column="1" ItemsSource="{Binding ThemeOptions}"
+                        <ComboBox Grid.Column="1"
                                   SelectedIndex="{Binding SelectedThemeIndex, Mode=TwoWay}"
-                                  MinWidth="120" />
+                                  MinWidth="120">
+                            <ComboBoxItem Content="{DynamicResource Text.Settings.Theme.System}" />
+                            <ComboBoxItem Content="{DynamicResource Text.Settings.Theme.Light}" />
+                            <ComboBoxItem Content="{DynamicResource Text.Settings.Theme.Dark}" />
+                        </ComboBox>
                     </Grid>
 
                     <!-- 言語 -->
@@ -52,7 +59,20 @@
             <TextBlock Classes="sectionHeader" Text="{DynamicResource Text.Settings.File}" />
             <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,4">
                 <StackPanel Spacing="12">
-                    <!-- v1.0.47: 受信ファイルの保存先はメイン画面上部のアドレスバーへ移設したため、ここからは撤去 -->
+                    <!-- 受信ファイルの保存先 (ラベル + readonly TextBox + 「変更」ボタン)。
+                         「保存先を開く」アクションは転送タブのヘッダー（ファイル送信ボタンの隣）に集約済み。 -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.SaveDirectory}" />
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBox Grid.Column="0" Classes="search" IsReadOnly="True"
+                                     VerticalAlignment="Center"
+                                     Text="{Binding SaveDirectory}"
+                                     ToolTip.Tip="{Binding SaveDirectory}" />
+                            <Button Grid.Column="1" Margin="6,0,0,0"
+                                    Content="{DynamicResource Text.Settings.SaveDirectory.Browse}"
+                                    Command="{Binding BrowseSaveDirectoryCommand}" />
+                        </Grid>
+                    </StackPanel>
 
                     <!-- ファイル自動承認 -->
                     <Grid ColumnDefinitions="*,Auto">

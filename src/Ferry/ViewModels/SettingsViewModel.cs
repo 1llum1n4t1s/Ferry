@@ -21,13 +21,10 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial string DisplayName { get; set; } = Environment.MachineName;
 
-    /// <summary>テーマモード選択肢の表示名一覧（ロケール連動）。
-    /// ObservableCollection で「同じインスタンスのまま要素だけ書き換える」運用にする。
-    /// 旧実装は computed property で毎回新 array を返し、OnPropertyChanged で ItemsSource インスタンスを
-    /// 入れ替えていたため、Avalonia ComboBox の挙動で SelectedIndex が一旦 -1 にリセットされて
-    /// 「言語を切り替えるとテーマ選択が外れる」症状が出ていた。インスタンスを維持したまま
-    /// インデクサ代入で文字列だけ Replace すると SelectedIndex が保持される。</summary>
-    public ObservableCollection<string> ThemeOptions { get; } = new();
+    // テーマ選択肢の表示テキストは SettingsView.axaml の ComboBoxItem.Content が
+    // DynamicResource (Text.Settings.Theme.System/Light/Dark) で直接引く形に統一済み。
+    // 旧 ItemsSource={Binding ThemeOptions} 方式は、indexer Replace でも Avalonia ComboBox の
+    // SelectedItem 内部状態が外れて「言語切替でテーマ選択が外れる」症状が再発していたため撤去。
 
     /// <summary>選択中のテーマインデックス（0=System, 1=Light, 2=Dark）。</summary>
     [ObservableProperty]
@@ -117,7 +114,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
     {
         _settingsService = settingsService;
         _transferService = transferService;
-        RefreshThemeOptions();   // ThemeOptions 初期化 (LoadFromSettings の前に必要 — ComboBox の SelectedIndex を有効にするため)
         LoadFromSettings();
         LoadVersionInfo();
 
@@ -308,34 +304,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     partial void OnSelectedLocaleChanged(string value)
     {
+        // ロケール差し替えは MergedDictionaries.Remove → Add 方式 (App.SetLocale)。
+        // Theme ComboBox は ComboBoxItem.Content="{DynamicResource ...}" 直接参照で、
+        // ItemsSource を触らないので SelectedIndex は不変。VM 側で再評価は不要。
         App.SetLocale(value);
-        // ThemeOptions の各要素を Replace (インスタンスは保持 → ComboBox.SelectedIndex はリセットされない)。
-        // 旧実装は OnPropertyChanged(nameof(ThemeOptions)) で ItemsSource インスタンス自体を入れ替えていたため、
-        // Avalonia の挙動で SelectedIndex が -1 にリセットされて「言語切替でテーマ選択が外れる」症状が出ていた。
-        RefreshThemeOptions();
         SaveIfNotLoading();
-    }
-
-    /// <summary>テーマ ComboBox の表示テキストを現在のロケールで更新する。
-    /// インデクサ代入で要素を Replace し、コレクションのインスタンスは維持する (SelectedIndex 保持)。</summary>
-    private void RefreshThemeOptions()
-    {
-        var labels = new[]
-        {
-            App.Text("Settings.Theme.System"),
-            App.Text("Settings.Theme.Light"),
-            App.Text("Settings.Theme.Dark"),
-        };
-
-        if (ThemeOptions.Count == 0)
-        {
-            foreach (var l in labels)
-                ThemeOptions.Add(l);
-            return;
-        }
-
-        for (var i = 0; i < labels.Length && i < ThemeOptions.Count; i++)
-            ThemeOptions[i] = labels[i];
     }
 
     private void LoadVersionInfo()

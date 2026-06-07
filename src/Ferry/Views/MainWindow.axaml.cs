@@ -222,25 +222,18 @@ public partial class MainWindow : Window
 
     private void OnClosing(object? sender, CancelEventArgs e)
     {
-        // ウィンドウ位置は閉/トレイ格納いずれでも即保存（デバウンス解除）
+        // ウィンドウ位置は即保存（デバウンス解除）
         _savePositionDebounceTimer?.Dispose();
         _savePositionDebounceTimer = null;
         SaveWindowPosition();
 
-        // ShutdownMode=OnExplicitShutdown 下では X ボタン Close でプロセスが終わらないため挙動を明示する。
-        // MinimizeToTray=true: 閉じる代わりにトレイ格納（Cancel して Hide）。進行中のファイル転送を生かす。
-        //   _closed は立てない（ウィンドウは生存。立てると以後の位置保存デバウンスが死ぬ）。
-        // MinimizeToTray=false: 明示シャットダウン（従来どおり終了）。
-        if (_mainVm?.Settings?.MinimizeToTray == true)
-        {
-            e.Cancel = true;
-            ShowInTaskbar = false;
-            Hide();
-            return;
-        }
-
+        // X ボタン押下時は Windows 標準の感覚どおり常に終了させる。
+        // 「MinimizeToTray」設定は最小化ボタン押下時のトレイ格納のみに効かせる
+        // (WindowStateProperty observable 側で処理済み)。
+        // ShutdownMode=OnExplicitShutdown 下では X ボタン Close でプロセスが終わらないため、
+        // ここで明示的に desktop.Shutdown() を呼ぶ。
         // desktop.Shutdown() は各ウィンドウを Close → OnClosing を再入させ、Avalonia の
-        // Shutdown() は再入で例外を投げる。_closed で二重呼び出しを防ぐ。
+        // Shutdown() は再入で例外を投げるので _closed で二重呼び出しを防ぐ。
         if (_closed) return;
         _closed = true;
         if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
@@ -428,7 +421,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 保存先アドレスバーの「変更」ボタン → フォルダ選択ダイアログ。
+    /// 設定画面の「変更」ボタン → フォルダ選択ダイアログ。
     /// SettingsViewModel.BrowseSaveDirectoryRequested を受けて TopLevel 経由でピッカーを開く（MVVM 規約遵守）。
     /// </summary>
     private async void OnBrowseSaveDirectoryRequested(object? sender, EventArgs e)
@@ -451,16 +444,6 @@ public partial class MainWindow : Window
         {
             Ferry.Util.Logger.Log($"保存先選択でエラー: {ex.Message}", Ferry.Util.LogLevel.Warning);
         }
-    }
-
-    /// <summary>
-    /// 保存先アドレスバーの「保存先を開く」ボタン → OS のファイルマネージャで保存先フォルダを開く。
-    /// 「変更」ボタンは SettingsViewModel.BrowseSaveDirectoryCommand 経由で別ハンドラで処理する。
-    /// </summary>
-    private void OnOpenSaveDirClick(object? sender, RoutedEventArgs e)
-    {
-        var dir = _settingsService?.Settings.SaveDirectory ?? _mainVm?.Settings?.SaveDirectory;
-        Ferry.Util.ShellHelper.OpenFolder(dir);
     }
 
     /// <summary>
