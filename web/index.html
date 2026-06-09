@@ -1,437 +1,531 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ferry — QRでつなぐP2Pファイル転送 / P2P file transfer paired by QR</title>
-<meta name="description" content="Ferry は QR コードでペアリングし、PC 間でファイルを直接 P2P 転送する無料・オープンソースのデスクトップアプリ。Ferry is a free, open-source cross-platform desktop app for direct PC-to-PC file transfer, paired by QR code.">
-<meta name="author" content="1llum1n4t1s">
-<meta name="theme-color" content="#06151c">
-<link rel="canonical" href="https://ferry.nephilim.jp/">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ferry — QR ペアリングで PC 間 P2P ファイル転送 / QR-paired P2P file transfer for desktops</title>
+<meta name="description" content="Ferry（フェリー）はスマートフォンで QR を読ませて 2 台の PC を一瞬でペアリングし、TCP 直接接続・UDP ホールパンチ・WebSocket リレーの 3 段フォールバックでファイルを P2P 転送するクロスプラットフォーム転送ツール。Avalonia 12 + Native AOT (.NET 10)、ランタイム不要で Windows / macOS / Linux に対応。Ferry is a free, open-source cross-platform desktop app that pairs two PCs in a moment via QR code on your phone, then ferries files peer-to-peer with a three-tier fallback: TCP direct, UDP hole-punching, WebSocket relay." />
+<meta name="keywords" content="Ferry, フェリー, P2P, file transfer, QR code, NAT traversal, hole punching, WebSocket relay, Windows, macOS, Linux, free software, open source, download" />
+<meta name="author" content="1llum1n4t1s" />
+<meta name="robots" content="index, follow" />
+<meta name="theme-color" content="#04081c" />
+<link rel="canonical" href="https://ferry.nephilim.jp/" />
 
 <!-- Open Graph -->
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="Ferry">
-<meta property="og:title" content="Ferry — QRでつなぐP2Pファイル転送 / P2P file transfer paired by QR">
-<meta property="og:description" content="QR コードでペアリングし、PC 間でファイルを直接 P2P 転送する無料・オープンソースのデスクトップアプリ。Free, open-source, cross-platform desktop file transfer.">
-<meta property="og:url" content="https://ferry.nephilim.jp/">
-<meta property="og:locale" content="ja_JP">
-<meta property="og:locale:alternate" content="en_US">
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Ferry" />
+<meta property="og:title" content="Ferry — QR ペアリングで PC 間 P2P ファイル転送 / QR-paired P2P file transfer for desktops" />
+<meta property="og:description" content="スマホで QR を読ませて 2 台の PC を直結。TCP / UDP / WebSocket の 3 段フォールバックでファイルを P2P 転送。Pair two PCs with a phone scan; ferry files peer-to-peer over TCP, UDP hole-punch, or WebSocket relay." />
+<meta property="og:url" content="https://ferry.nephilim.jp/" />
+<meta property="og:locale" content="ja_JP" />
+<meta property="og:locale:alternate" content="en_US" />
 
-<!-- Twitter Card -->
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Ferry — QRでつなぐP2Pファイル転送 / P2P file transfer paired by QR">
-<meta name="twitter:description" content="QR コードでペアリングし、PC 間でファイルを直接 P2P 転送する無料・オープンソースのデスクトップアプリ。Free, open-source, cross-platform desktop file transfer.">
+<!-- Twitter -->
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content="Ferry — QR ペアリングで PC 間 P2P ファイル転送 / QR-paired P2P file transfer" />
+<meta name="twitter:description" content="スマホで QR を読ませて 2 台の PC を直結。TCP / UDP / WebSocket の 3 段フォールバックで P2P 転送。Phone-scan QR pairing, three-tier P2P fallback." />
 
-<!-- Inline SVG favicon: a stylized ferry/vessel arc crossing between two nodes -->
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%2334e3d4'/%3E%3Cstop offset='1' stop-color='%231aa3c4'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='15' fill='%2306151c'/%3E%3Cpath d='M12 40 Q32 14 52 40' fill='none' stroke='url(%23g)' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='12' cy='40' r='6' fill='%2334e3d4'/%3E%3Ccircle cx='52' cy='40' r='6' fill='%2334e3d4'/%3E%3Cpath d='M14 50 Q24 44 32 50 T50 50' fill='none' stroke='%231aa3c4' stroke-width='3' stroke-linecap='round' opacity='.7'/%3E%3C/svg%3E">
+<!-- Inline SVG favicon: marine cerulean ferry vessel between two nodes -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%235be3ff'/%3E%3Cstop offset='1' stop-color='%231a3a8a'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='6' fill='%2304081c'/%3E%3Ccircle cx='5' cy='22' r='2.4' fill='%235be3ff'/%3E%3Ccircle cx='27' cy='22' r='2.4' fill='%235be3ff'/%3E%3Cpath d='M5 22 Q16 4 27 22' fill='none' stroke='url(%23g)' stroke-width='2.2' stroke-linecap='round'/%3E%3Cpath d='M8 26 L24 26 L21 29 L11 29 Z' fill='url(%23g)'/%3E%3Cpath d='M16 8 L20 14 L12 14 Z' fill='%235be3ff' opacity='.9'/%3E%3C/svg%3E" />
 
-<!-- Google Fonts: distinctive display + friendly rounded Japanese -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Zen+Maru+Gothic:wght@400;500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;800&family=Syne:wght@500;600;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet" />
 
+<script>document.documentElement.classList.add('js');</script>
 <style>
+  /* ============================================================
+     Ferry — "Marine Cerulean Bridge"
+     Deep marine navy → midnight, bright aqua-cyan accents.
+     Motif: ferry vessel / node-edge graph / arched bridge.
+     ============================================================ */
+
   :root{
-    /* deep teal -> navy with bright aqua/cyan accents */
-    --abyss:#04111a;
-    --navy:#06151c;
-    --deep:#0a2330;
-    --teal:#0e3a4a;
-    --line:rgba(120,210,225,.14);
-    --line-strong:rgba(120,210,225,.28);
-    --aqua:#34e3d4;
-    --cyan:#1aa3c4;
-    --foam:#bff3ef;
-    --ink:#eaf8f7;
-    --mist:#9fc4cd;
-    --muted:#6f97a2;
-    --glow:0 0 40px rgba(52,227,212,.35);
+    --bg-0:#020514;       /* deepest abyss */
+    --bg-1:#04081c;       /* base */
+    --bg-2:#091233;       /* raised */
+    --bg-3:#0f1a4a;       /* panel */
+    --indigo:#1a3a8a;     /* deep marine */
+    --indigo-deep:#0d1f5c;
+    --cyan:#5be3ff;       /* aqua cyan accent */
+    --cyan-soft:#8df0ffcc;
+    --frost:#cfe9ff;      /* frosted text */
+    --ink:#f1f8ff;        /* primary text */
+    --muted:#8aa4d6;      /* secondary / EN line */
+    --muted-2:#5970a8;    /* faint */
+    --line:#243574;       /* hairline */
+    --line-bright:#5be3ff33;
+    --glass:#091234cc;
+    --shadow:0 30px 80px -30px #000a;
     --r:18px;
-    --display:"Bricolage Grotesque", "Zen Kaku Gothic New", sans-serif;
-    --jp:"Zen Maru Gothic", "Zen Kaku Gothic New", sans-serif;
-    --en:"Zen Kaku Gothic New", "Bricolage Grotesque", sans-serif;
+    --maxw:1180px;
+
+    --f-display:"Unbounded", "Zen Kaku Gothic New", system-ui, sans-serif;
+    --f-head:"Syne", "Zen Kaku Gothic New", system-ui, sans-serif;
+    --f-jp:"Zen Kaku Gothic New", "Syne", system-ui, sans-serif;
+    --f-body:"Syne", "Zen Kaku Gothic New", system-ui, sans-serif;
   }
 
-  *{box-sizing:border-box;margin:0;padding:0}
-  html{scroll-behavior:smooth}
+  *,*::before,*::after{ box-sizing:border-box; }
+
+  html{ scroll-behavior:smooth; -webkit-text-size-adjust:100%; }
 
   body{
-    font-family:var(--jp);
-    background:var(--navy);
+    margin:0;
+    background:var(--bg-1);
     color:var(--ink);
-    line-height:1.75;
-    -webkit-font-smoothing:antialiased;
+    font-family:var(--f-body);
+    line-height:1.6;
+    font-size:clamp(15px,1.05vw,17px);
     overflow-x:hidden;
-    position:relative;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
   }
 
-  /* Atmospheric backdrop: layered teal->navy gradients suggesting deep water + light from above */
-  body::before{
-    content:"";
-    position:fixed;
-    inset:0;
-    z-index:-2;
+  /* ---- Layered atmospheric background (fixed) ---- */
+  .bgwrap{ position:fixed; inset:0; z-index:-2; overflow:hidden; pointer-events:none; }
+  .bgwrap::before{
+    /* deep-sea gradient mesh */
+    content:""; position:absolute; inset:-20%;
     background:
-      radial-gradient(120% 80% at 50% -10%, rgba(52,227,212,.16), transparent 55%),
-      radial-gradient(90% 60% at 85% 8%, rgba(26,163,196,.18), transparent 60%),
-      radial-gradient(100% 90% at 12% 100%, rgba(14,58,74,.55), transparent 60%),
-      linear-gradient(180deg, var(--abyss) 0%, var(--navy) 28%, var(--deep) 100%);
+      radial-gradient(48% 40% at 18% 8%, #1a3a8a55 0%, transparent 60%),
+      radial-gradient(40% 38% at 88% 22%, #1e8fff33 0%, transparent 62%),
+      radial-gradient(60% 50% at 70% 100%, #0d1f5c66 0%, transparent 60%),
+      linear-gradient(160deg, var(--bg-0), var(--bg-1) 45%, #050a26 100%);
   }
-  /* subtle moving caustic shimmer */
-  body::after{
-    content:"";
-    position:fixed;
-    inset:-20%;
-    z-index:-1;
-    background:
-      repeating-linear-gradient(115deg, transparent 0 38px, rgba(120,210,225,.022) 38px 40px);
-    animation:drift 32s linear infinite;
-    pointer-events:none;
+  .bgwrap::after{
+    /* grain overlay */
+    content:""; position:absolute; inset:0; opacity:.05; mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
-  @keyframes drift{to{transform:translateX(-40px) translateY(-20px)}}
+  .tess{ position:absolute; inset:0; width:100%; height:100%; opacity:.45; }
+  .tess line, .tess circle, .tess path{ stroke:#2e4ba8; }
 
-  a{color:inherit;text-decoration:none}
-  :focus-visible{outline:2px solid var(--aqua);outline-offset:3px;border-radius:6px}
-
-  .wrap{width:min(1160px,92vw);margin:0 auto}
-  [lang="en"]{font-family:var(--en)}
-
-  /* ============ NAV ============ */
-  header.site{
-    position:sticky;top:0;z-index:50;
-    backdrop-filter:blur(14px);
-    -webkit-backdrop-filter:blur(14px);
-    background:linear-gradient(180deg, rgba(4,17,26,.85), rgba(4,17,26,.4));
-    border-bottom:1px solid var(--line);
-  }
-  .nav{display:flex;align-items:center;justify-content:space-between;padding:16px 0;gap:16px}
-  .brand{display:flex;align-items:center;gap:12px;font-family:var(--display);font-weight:800;font-size:1.35rem;letter-spacing:.5px}
-  .brand .mark{width:34px;height:34px;flex:none;filter:drop-shadow(var(--glow))}
-  .brand b{color:var(--ink)}
-  .brand .dot{color:var(--aqua)}
-  .nav-links{display:flex;gap:26px;align-items:center;font-size:.95rem;color:var(--mist)}
-  .nav-links a{position:relative;padding:4px 2px;transition:color .25s}
-  .nav-links a::after{content:"";position:absolute;left:0;bottom:-3px;height:2px;width:0;background:linear-gradient(90deg,var(--aqua),var(--cyan));transition:width .3s ease}
-  .nav-links a:hover{color:var(--foam)}
-  .nav-links a:hover::after{width:100%}
-  .nav-links .ghub{display:none}
-  @media(min-width:720px){.nav-links .ghub{display:inline-flex}}
-
-  .btn{
-    display:inline-flex;align-items:center;gap:10px;
-    font-family:var(--display);font-weight:700;font-size:1rem;
-    padding:13px 24px;border-radius:100px;
-    border:1px solid transparent;cursor:pointer;
-    transition:transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .3s, background .3s;
-    white-space:nowrap;
-  }
-  .btn svg{width:20px;height:20px;flex:none}
-  .btn-primary{
-    color:#04222a;
-    background:linear-gradient(135deg,var(--aqua),var(--cyan));
-    box-shadow:0 10px 30px rgba(26,163,196,.35), inset 0 1px 0 rgba(255,255,255,.4);
-  }
-  .btn-primary:hover{transform:translateY(-3px);box-shadow:0 16px 44px rgba(52,227,212,.5), inset 0 1px 0 rgba(255,255,255,.5)}
-  .btn-ghost{
-    color:var(--foam);
-    background:rgba(120,210,225,.06);
-    border-color:var(--line-strong);
-  }
-  .btn-ghost:hover{transform:translateY(-3px);background:rgba(120,210,225,.12);border-color:var(--aqua)}
-  .btn-sm{padding:9px 18px;font-size:.9rem}
-
-  /* ============ HERO ============ */
-  .hero{position:relative;padding:clamp(56px,9vw,118px) 0 clamp(40px,7vw,90px)}
-  .hero-grid{display:grid;gap:clamp(36px,5vw,64px);align-items:center}
-  @media(min-width:920px){.hero-grid{grid-template-columns:1.05fr .95fr}}
-
+  /* ---- Layout primitives ---- */
+  .wrap{ width:min(92%,var(--maxw)); margin-inline:auto; }
+  section{ position:relative; }
   .eyebrow{
-    display:inline-flex;align-items:center;gap:9px;
-    font-family:var(--en);font-size:.8rem;font-weight:500;letter-spacing:.22em;text-transform:uppercase;
-    color:var(--aqua);
-    padding:7px 15px;border:1px solid var(--line-strong);border-radius:100px;
-    background:rgba(52,227,212,.05);
-    margin-bottom:26px;
+    font-family:var(--f-head); font-weight:700; letter-spacing:.34em;
+    text-transform:uppercase; font-size:.7rem; color:var(--cyan);
+    display:inline-flex; align-items:center; gap:.7em;
   }
-  .eyebrow .pulse{width:8px;height:8px;border-radius:50%;background:var(--aqua);box-shadow:0 0 0 0 rgba(52,227,212,.7);animation:pulse 2.4s infinite}
-  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,227,212,.6)}70%{box-shadow:0 0 0 9px rgba(52,227,212,0)}100%{box-shadow:0 0 0 0 rgba(52,227,212,0)}}
+  .eyebrow::before{ content:""; width:26px; height:1px; background:linear-gradient(90deg,var(--cyan),transparent); }
+  .en{ color:var(--muted); font-family:var(--f-body); font-weight:500; }
+  .gradtext{
+    background:linear-gradient(110deg,var(--cyan) 0%, #b9d4ff 42%, var(--indigo) 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+
+  a{ color:inherit; }
+
+  /* ============================ HEADER ============================ */
+  header.nav{
+    position:sticky; top:0; z-index:50;
+    backdrop-filter:blur(14px) saturate(1.2);
+    background:linear-gradient(180deg, #04081cdd, #04081c55 70%, transparent);
+    border-bottom:1px solid #ffffff0d;
+  }
+  .nav-inner{ display:flex; align-items:center; justify-content:space-between; padding:.85rem 0; }
+  .brand{ display:flex; align-items:center; gap:.7rem; text-decoration:none; }
+  .brand .mark{ width:30px; height:30px; flex:none; filter:drop-shadow(0 0 10px #5be3ff66); }
+  .brand b{ font-family:var(--f-display); font-weight:800; font-size:1.18rem; letter-spacing:.02em; }
+  .brand span{ font-family:var(--f-jp); color:var(--muted); font-size:.78rem; margin-left:.1rem; }
+  .nav-links{ display:flex; align-items:center; gap:1.6rem; }
+  .nav-links a{
+    text-decoration:none; color:var(--frost); font-family:var(--f-head); font-weight:600;
+    font-size:.86rem; letter-spacing:.02em; opacity:.82; transition:opacity .2s, color .2s;
+  }
+  .nav-links a:hover{ opacity:1; color:var(--cyan); }
+  .nav-links .ghbtn{
+    border:1px solid var(--line); padding:.5rem .95rem; border-radius:10px;
+    display:inline-flex; align-items:center; gap:.5rem; opacity:1;
+    transition:border-color .2s, background .2s, transform .2s;
+  }
+  .nav-links .ghbtn:hover{ border-color:var(--cyan); background:#5be3ff12; transform:translateY(-1px); }
+  .nav-links svg{ width:16px; height:16px; }
+  @media(max-width:720px){ .nav-links .nav-anchor{ display:none; } }
+
+  /* ============================ HERO ============================ */
+  .hero{ padding:clamp(3rem,9vw,7rem) 0 clamp(3.5rem,7vw,6rem); }
+  .hero-grid{
+    display:grid; grid-template-columns:1.15fr .85fr; gap:clamp(2rem,5vw,4.5rem);
+    align-items:center;
+  }
+  @media(max-width:920px){ .hero-grid{ grid-template-columns:1fr; } }
+
+  .badge-row{ display:flex; flex-wrap:wrap; gap:.55rem; margin-bottom:1.6rem; }
+  .badge{
+    font-family:var(--f-head); font-weight:600; font-size:.72rem; letter-spacing:.04em;
+    padding:.4rem .7rem; border-radius:999px; border:1px solid var(--line);
+    background:#08113aaa; color:var(--frost); display:inline-flex; gap:.45rem; align-items:center;
+  }
+  .badge .dot{ width:6px; height:6px; border-radius:50%; background:var(--cyan); box-shadow:0 0 8px var(--cyan); }
 
   h1.title{
-    font-family:var(--display);
-    font-weight:800;
-    font-size:clamp(2.9rem,7.5vw,5.4rem);
-    line-height:.96;
-    letter-spacing:-.02em;
-    color:var(--ink);
-    margin-bottom:10px;
+    font-family:var(--f-display); font-weight:800;
+    font-size:clamp(3.1rem,9vw,6.2rem); line-height:.92; letter-spacing:-.01em;
+    margin:.2rem 0 .1rem;
   }
-  h1.title .ferry{
-    background:linear-gradient(120deg,var(--foam) 5%,var(--aqua) 45%,var(--cyan) 95%);
-    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
-    filter:drop-shadow(0 4px 30px rgba(52,227,212,.25));
+  .title-sub{
+    font-family:var(--f-jp); font-weight:500; color:var(--muted);
+    font-size:clamp(1rem,2.4vw,1.35rem); letter-spacing:.18em; margin:0 0 1.4rem;
   }
-  .tagline{font-family:var(--jp);font-weight:700;font-size:clamp(1.15rem,2.3vw,1.5rem);color:var(--ink);margin:18px 0 4px;max-width:30ch}
-  .tagline-en{font-family:var(--en);font-weight:400;font-size:clamp(.95rem,1.6vw,1.1rem);color:var(--mist);max-width:46ch;margin-bottom:30px}
+  .tagline{ font-family:var(--f-jp); font-weight:700; font-size:clamp(1.25rem,3.2vw,1.85rem); line-height:1.4; margin:0 0 .35rem; }
+  .tagline-en{ color:var(--muted); font-size:clamp(.95rem,2vw,1.1rem); font-weight:500; margin:0 0 2rem; max-width:46ch; }
 
-  .lede{color:var(--mist);font-size:1.02rem;max-width:42ch;margin-bottom:18px}
-  .lede-en{color:var(--muted);font-size:.92rem;max-width:48ch;margin-bottom:34px;font-family:var(--en)}
+  .cta-row{ display:flex; flex-wrap:wrap; gap:.9rem; align-items:center; }
+  .btn{
+    --bw:1px;
+    position:relative; isolation:isolate;
+    font-family:var(--f-head); font-weight:700; font-size:.95rem; letter-spacing:.01em;
+    text-decoration:none; cursor:pointer;
+    padding:.95rem 1.5rem; border-radius:13px;
+    display:inline-flex; align-items:center; gap:.7rem;
+    transition:transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s, border-color .22s, background .22s;
+  }
+  .btn svg{ width:19px; height:19px; }
+  .btn .sub{ font-weight:600; font-size:.74rem; opacity:.72; margin-left:.1rem; }
+  .btn-primary{
+    color:#04081c;
+    background:linear-gradient(120deg,var(--cyan), #8de3ff 55%, #b9d4ff);
+    box-shadow:0 14px 40px -12px #5be3ff88, inset 0 0 0 1px #ffffff55;
+  }
+  .btn-primary:hover{ transform:translateY(-3px); box-shadow:0 22px 55px -12px #5be3ffaa, inset 0 0 0 1px #fff; }
+  .btn-ghost{
+    color:var(--frost); border:1px solid var(--line);
+    background:#08113aaa;
+  }
+  .btn-ghost:hover{ transform:translateY(-3px); border-color:var(--cyan); background:#5be3ff14; box-shadow:0 16px 40px -18px #000; }
 
-  .cta-row{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
-  .cta-note{font-size:.82rem;color:var(--muted);font-family:var(--en)}
+  .hero-meta{ margin-top:1.6rem; display:flex; flex-wrap:wrap; gap:1.1rem 1.8rem; color:var(--muted); font-size:.84rem; }
+  .hero-meta b{ color:var(--frost); font-family:var(--f-head); }
+  .hero-meta .en{ display:block; font-size:.74rem; color:var(--muted-2); }
 
-  .trust-row{display:flex;flex-wrap:wrap;gap:10px 22px;margin-top:34px;font-size:.85rem;color:var(--mist)}
-  .trust-row span{display:inline-flex;align-items:center;gap:7px}
-  .trust-row svg{width:16px;height:16px;color:var(--aqua);flex:none}
+  /* ---- The signature: two-node ferry bridge ---- */
+  .ferry-stage{
+    position:relative; aspect-ratio:1/1; display:grid; place-items:center;
+    perspective:1100px;
+  }
+  .ferry-stage::before{
+    content:""; position:absolute; inset:8% 8% 6%;
+    background:radial-gradient(circle at 50% 55%, #5be3ff33, transparent 62%);
+    filter:blur(22px); z-index:0;
+  }
+  .ring{
+    position:absolute; border:1px solid var(--line); border-radius:50%;
+    inset:6%; opacity:.55;
+    animation:spin 60s linear infinite;
+  }
+  .ring.r2{ inset:16%; border-style:dashed; border-color:#5be3ff2e; animation-duration:42s; animation-direction:reverse; }
+  .ring.r3{ inset:-2%; border-color:#243574aa; animation-duration:90s; }
 
-  /* ============ SIGNATURE VISUAL: two devices, a vessel crossing between them ============ */
-  .stage{
-    position:relative;
-    aspect-ratio:1/1;
-    width:100%;
-    max-width:480px;
-    margin-inline:auto;
-    border-radius:28px;
+  /* SVG diagram: two PC nodes + QR + 3 fallback lines */
+  .ferry-svg{
+    position:relative; width:90%; aspect-ratio:1/1; z-index:2;
+    filter:drop-shadow(0 26px 40px #000a);
+  }
+  .ferry-svg .node{ fill:url(#nodegrad); stroke:var(--cyan); stroke-width:1.3; }
+  .ferry-svg .screen{ fill:#0a1340; stroke:#5be3ff66; stroke-width:.6; }
+  .ferry-svg .qr-block{ fill:var(--cyan); }
+  .ferry-svg .qr-frame{ fill:none; stroke:var(--frost); stroke-width:1; }
+  .ferry-svg .arrow{ fill:none; stroke:var(--cyan); stroke-width:1.4; stroke-linecap:round; }
+  .ferry-svg .line-tcp{ stroke:#5be3ff; stroke-width:2.2; fill:none; stroke-linecap:round;
+    stroke-dasharray:8 6; animation:dash 3s linear infinite; opacity:.9; }
+  .ferry-svg .line-udp{ stroke:#8aa4d6; stroke-width:1.6; fill:none; stroke-linecap:round;
+    stroke-dasharray:4 8; animation:dash 5s linear infinite reverse; opacity:.7; }
+  .ferry-svg .line-ws{ stroke:#3a4cff; stroke-width:1.4; fill:none; stroke-linecap:round;
+    stroke-dasharray:2 10; animation:dash 7s linear infinite; opacity:.6; }
+  .ferry-svg .pulse{ fill:var(--cyan); animation:pulseDot 2.4s ease-in-out infinite; }
+  .ferry-svg .label{ fill:var(--muted); font-family:var(--f-head); font-weight:600; font-size:5.5px; letter-spacing:.08em; text-transform:uppercase; }
+  .ferry-svg .label.tcp{ fill:var(--cyan); }
+  .ferry-svg .phone-body{ fill:url(#phonegrad); stroke:var(--cyan); stroke-width:.9; }
+  .ferry-svg .phone-screen{ fill:#06102e; }
+
+  @keyframes dash{ to{ stroke-dashoffset:-200; } }
+  @keyframes pulseDot{ 0%,100%{ opacity:.4; r:1.6; } 50%{ opacity:1; r:2.4; } }
+  @keyframes spin{ to{ transform:rotate(360deg) } }
+  @keyframes float{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-8px) } }
+
+  .ferry-svg{ animation:float 8s ease-in-out infinite; }
+
+  /* ============================ MARQUEE / FORMATS ============================ */
+  .formats{ border-block:1px solid #ffffff0d; padding:1.1rem 0; background:#04081c88; }
+  .formats-inner{ display:flex; align-items:center; gap:1.4rem; flex-wrap:wrap; justify-content:center; }
+  .formats .lbl{ font-family:var(--f-head); font-weight:600; letter-spacing:.16em; font-size:.7rem; color:var(--muted-2); text-transform:uppercase; }
+  .chip{
+    font-family:var(--f-display); font-weight:600; font-size:.9rem; letter-spacing:.03em;
+    color:var(--frost); padding:.3rem .8rem; border:1px solid var(--line); border-radius:8px;
+    background:linear-gradient(180deg,#0c1846,#091233);
+  }
+  .chip.live::after{ content:"●"; margin-left:.4rem; font-size:.6em; color:var(--cyan); }
+
+  /* ============================ SECTION HEAD ============================ */
+  .sec{ padding:clamp(3.4rem,8vw,6rem) 0; }
+  .sec-head{ max-width:62ch; margin-bottom:clamp(2rem,4vw,3rem); }
+  .sec-head h2{
+    font-family:var(--f-display); font-weight:800; letter-spacing:-.01em;
+    font-size:clamp(2rem,5vw,3.2rem); line-height:1.02; margin:.8rem 0 .5rem;
+  }
+  .sec-head .h2-en{ font-family:var(--f-head); color:var(--muted); font-size:clamp(1rem,2vw,1.25rem); font-weight:600; letter-spacing:.02em; }
+  .sec-head p{ color:var(--muted); margin:.9rem 0 0; }
+  .sec-head p .en{ display:block; margin-top:.2rem; font-size:.92em; }
+
+  /* ============================ FEATURES GRID ============================ */
+  .feat-grid{
+    display:grid; grid-template-columns:repeat(12,1fr); gap:1rem;
+  }
+  .card{
+    grid-column:span 4;
+    position:relative; overflow:hidden;
+    border:1px solid var(--line); border-radius:var(--r);
+    background:linear-gradient(180deg,#0c1538, #080b28);
+    padding:1.5rem 1.45rem 1.6rem;
+    transition:transform .3s cubic-bezier(.2,.8,.2,1), border-color .3s, box-shadow .3s, background .3s;
+  }
+  .card::before{ /* faceted corner cut */
+    content:""; position:absolute; top:-1px; right:-1px; width:54px; height:54px;
+    background:linear-gradient(135deg,#5be3ff22, transparent 70%);
+    clip-path:polygon(100% 0, 0 0, 100% 100%);
+    transition:background .3s;
+  }
+  .card::after{ /* hover sweep */
+    content:""; position:absolute; inset:0; opacity:0;
+    background:radial-gradient(120px 120px at var(--mx,80%) var(--my,0%), #5be3ff1f, transparent 70%);
+    transition:opacity .3s;
+  }
+  .card:hover{ transform:translateY(-6px); border-color:#5be3ff66; box-shadow:0 26px 50px -28px #000, 0 0 0 1px #5be3ff22; }
+  .card:hover::after{ opacity:1; }
+  .card:hover::before{ background:linear-gradient(135deg,#5be3ff55, transparent 70%); }
+  .card:hover .ic{ transform:rotate(-8deg) scale(1.06); }
+
+  .card.wide{ grid-column:span 6; }
+  .card.tall{ grid-column:span 4; }
+  @media(max-width:900px){ .card,.card.wide,.card.tall{ grid-column:span 6; } }
+  @media(max-width:600px){ .card,.card.wide,.card.tall{ grid-column:span 12; } }
+
+  .ic{
+    width:46px; height:46px; border-radius:12px; margin-bottom:1.05rem;
+    display:grid; place-items:center; flex:none;
+    background:linear-gradient(140deg,#13225e,#091233);
+    border:1px solid var(--line-bright);
+    transition:transform .3s;
+  }
+  .ic svg{ width:24px; height:24px; stroke:var(--cyan); fill:none; stroke-width:1.7; }
+  .card h3{ font-family:var(--f-head); font-weight:700; font-size:1.12rem; margin:0 0 .1rem; letter-spacing:.01em; }
+  .card .h3-en{ font-family:var(--f-head); font-weight:600; color:var(--cyan-soft); font-size:.78rem; letter-spacing:.06em; text-transform:uppercase; display:block; margin-bottom:.6rem; }
+  .card p{ margin:0; color:var(--frost); font-size:.92rem; }
+  .card p .en{ display:block; margin-top:.45rem; color:var(--muted); font-size:.85rem; }
+  .card .tags{ margin-top:.9rem; display:flex; flex-wrap:wrap; gap:.4rem; }
+  .card .tags span{ font-family:var(--f-head); font-size:.68rem; letter-spacing:.04em; padding:.18rem .5rem; border-radius:6px; background:#0e1846; border:1px solid var(--line); color:var(--muted); }
+
+  /* ============================ SPLIT: HOW ============================ */
+  .split{ display:grid; grid-template-columns:1fr 1fr; gap:clamp(1.4rem,3vw,2.4rem); align-items:stretch; }
+  @media(max-width:840px){ .split{ grid-template-columns:1fr; } }
+  .dropzone{
+    position:relative; border:1.5px dashed #5be3ff66; border-radius:var(--r);
+    background:linear-gradient(160deg,#0b1234, #091233); padding:2rem 1.6rem;
+    display:flex; flex-direction:column; gap:1rem; min-height:240px; justify-content:center;
+    overflow:hidden;
+  }
+  .dropzone::before{
+    content:""; position:absolute; inset:0; opacity:.5;
+    background:repeating-linear-gradient(45deg,#5be3ff08 0 12px, transparent 12px 24px);
+  }
+  .dz-row{ display:flex; align-items:center; gap:1rem; position:relative; }
+  .dz-ic{ width:54px; height:54px; flex:none; border-radius:12px; display:grid; place-items:center; background:#10185099; border:1px solid var(--line-bright); }
+  .dz-ic svg{ width:28px; height:28px; stroke:var(--cyan); fill:none; stroke-width:1.6; }
+  .dz-row b{ font-family:var(--f-head); font-weight:700; font-size:1.02rem; display:block; }
+  .dz-row .en{ font-size:.82rem; }
+  .dz-arrow{ text-align:center; color:var(--cyan); font-size:1.3rem; position:relative; animation:pulse 2.4s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{ opacity:.4 } 50%{ opacity:1 } }
+
+  .how-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:1rem; }
+  .how-list li{ display:flex; gap:1rem; align-items:flex-start; padding:1rem 1.1rem; border:1px solid var(--line); border-radius:14px; background:#080d2a88; transition:border-color .25s, transform .25s; }
+  .how-list li:hover{ border-color:#5be3ff55; transform:translateX(4px); }
+  .num{ font-family:var(--f-display); font-weight:800; font-size:1.1rem; color:var(--cyan); flex:none; width:1.8rem; }
+  .how-list b{ font-family:var(--f-head); font-weight:700; }
+  .how-list .en{ font-size:.82rem; }
+
+  /* ============================ SYSTEM REQUIREMENTS ============================ */
+  .req-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:1rem; }
+  @media(max-width:840px){ .req-grid{ grid-template-columns:repeat(2,1fr); } }
+  @media(max-width:460px){ .req-grid{ grid-template-columns:1fr; } }
+  .req{
+    border:1px solid var(--line); border-radius:var(--r); padding:1.3rem 1.25rem;
+    background:linear-gradient(180deg,#0c1538,#080b28); position:relative; overflow:hidden;
+    transition:border-color .25s, transform .25s;
+  }
+  .req:hover{ border-color:#5be3ff55; transform:translateY(-4px); }
+  .req .k{ font-family:var(--f-head); font-weight:600; letter-spacing:.12em; text-transform:uppercase; font-size:.68rem; color:var(--cyan); margin-bottom:.5rem; }
+  .req .v{ font-family:var(--f-display); font-weight:600; font-size:1.18rem; line-height:1.2; }
+  .req .v small{ font-family:var(--f-jp); font-weight:400; font-size:.8rem; color:var(--muted); display:block; margin-top:.35rem; letter-spacing:0; }
+
+  /* ============================ DOWNLOAD ============================ */
+  .download{ position:relative; }
+  .dl-panel{
+    position:relative; overflow:hidden;
+    border:1px solid #5be3ff33; border-radius:26px;
     background:
-      radial-gradient(80% 70% at 50% 30%, rgba(26,163,196,.16), transparent 70%),
-      linear-gradient(160deg, rgba(10,35,48,.9), rgba(6,21,28,.95));
-    border:1px solid var(--line);
-    box-shadow:0 30px 80px rgba(2,12,18,.6), inset 0 1px 0 rgba(120,210,225,.08);
-    overflow:hidden;
+      radial-gradient(60% 90% at 85% 0%, #1e3aa044, transparent 60%),
+      radial-gradient(50% 80% at 0% 100%, #5be3ff1a, transparent 60%),
+      linear-gradient(160deg,#0c1638, #080a26);
+    padding:clamp(2rem,5vw,3.4rem);
+    box-shadow:var(--shadow);
   }
-  /* waterline waves at the bottom of the stage */
-  .stage .water{position:absolute;left:0;right:0;bottom:0;height:38%;overflow:hidden;opacity:.55}
-  .stage .water svg{position:absolute;bottom:0;width:200%;height:100%}
-  .stage .water .w1{animation:wave 9s linear infinite}
-  .stage .water .w2{animation:wave 13s linear infinite reverse;opacity:.6}
-  @keyframes wave{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  .dl-panel::before{
+    content:""; position:absolute; right:-60px; top:-60px; width:260px; height:260px; opacity:.22;
+    background:conic-gradient(from 30deg,#5be3ff, transparent 40%, #1a3a8a 70%, transparent);
+    border-radius:50%;
+    animation:spin 38s linear infinite; pointer-events:none;
+  }
+  .dl-head{ display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:1rem; margin-bottom:1.8rem; position:relative; }
+  .dl-head h2{ font-family:var(--f-display); font-weight:800; font-size:clamp(1.9rem,4.5vw,2.8rem); margin:.4rem 0 0; }
+  .dl-head .h2-en{ color:var(--muted); font-family:var(--f-head); font-weight:600; }
+  .price-pill{ font-family:var(--f-head); font-weight:700; font-size:.8rem; letter-spacing:.05em; color:var(--cyan); border:1px solid var(--line-bright); background:#5be3ff12; padding:.5rem .9rem; border-radius:999px; }
 
-  .stage svg.diagram{position:absolute;inset:0;width:100%;height:100%}
+  /* 5 channels: 3 columns on wide, 2 on medium, 1 on narrow */
+  .dl-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; position:relative; }
+  @media(max-width:900px){ .dl-grid{ grid-template-columns:repeat(2,1fr); } }
+  @media(max-width:560px){ .dl-grid{ grid-template-columns:1fr; } }
+  .dl-card{
+    text-decoration:none; color:var(--ink);
+    border:1px solid var(--line); border-radius:18px;
+    background:linear-gradient(180deg,#0e1646, #091233);
+    padding:1.4rem 1.35rem 1.3rem; display:flex; align-items:center; gap:1rem;
+    transition:transform .26s cubic-bezier(.2,.8,.2,1), border-color .26s, box-shadow .26s, background .26s;
+    position:relative; overflow:hidden;
+  }
+  .dl-card::after{ content:""; position:absolute; inset:0; opacity:0; background:linear-gradient(120deg,#5be3ff18, transparent 60%); transition:opacity .26s; }
+  .dl-card:hover{ transform:translateY(-5px); border-color:var(--cyan); box-shadow:0 26px 55px -24px #000, 0 0 0 1px #5be3ff33; }
+  .dl-card:hover::after{ opacity:1; }
+  .dl-card:hover .dl-ic{ background:linear-gradient(140deg,#5be3ff,#1a3a8a); }
+  .dl-card:hover .dl-ic svg{ stroke:#04081c; }
+  .dl-ic{ width:50px; height:50px; flex:none; border-radius:13px; display:grid; place-items:center; background:linear-gradient(140deg,#13225e,#091233); border:1px solid var(--line-bright); transition:background .26s; }
+  .dl-ic svg{ width:26px; height:26px; stroke:var(--cyan); fill:none; stroke-width:1.6; transition:stroke .26s; }
+  .dl-card .arch{ font-family:var(--f-display); font-weight:600; font-size:1.05rem; line-height:1.1; }
+  .dl-card .os{ font-family:var(--f-head); color:var(--muted); font-size:.78rem; display:block; margin-top:.25rem; }
+  .dl-card .go{ margin-left:auto; color:var(--cyan); font-size:1.2rem; transition:transform .26s; flex:none; }
+  .dl-card:hover .go{ transform:translateX(5px); }
+  .dl-card[data-suggested]::before{
+    content:"おすすめ / Recommended"; position:absolute; top:.6rem; right:.7rem;
+    font-family:var(--f-head); font-weight:700; font-size:.58rem; letter-spacing:.05em;
+    color:#04081c; background:linear-gradient(120deg,var(--cyan),#b9d4ff); padding:.18rem .5rem; border-radius:6px;
+    opacity:0; transition:opacity .3s;
+  }
+  .dl-card[data-suggested].show-suggest::before{ opacity:1; }
 
-  .node-label{
-    position:absolute;font-family:var(--en);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--mist);
-    background:rgba(4,17,26,.7);padding:3px 9px;border-radius:8px;border:1px solid var(--line);
-  }
-  .node-label.a{left:8%;top:30%}
-  .node-label.b{right:8%;top:30%}
-  .qr-chip{
-    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-    width:64px;height:64px;border-radius:14px;
-    background:linear-gradient(135deg,var(--aqua),var(--cyan));
-    padding:9px;box-shadow:var(--glow);
-  }
-  .qr-chip svg{width:100%;height:100%;display:block}
+  .dl-note{ margin-top:1.5rem; display:flex; flex-wrap:wrap; gap:.7rem 1.6rem; color:var(--muted); font-size:.82rem; position:relative; }
+  .dl-note span{ display:inline-flex; align-items:center; gap:.5rem; }
+  .dl-note svg{ width:15px; height:15px; stroke:var(--cyan); fill:none; stroke-width:1.7; }
+  .dl-note .en{ color:var(--muted-2); }
 
-  /* ============ SECTION SCAFFOLD ============ */
-  section{padding:clamp(60px,9vw,110px) 0;position:relative}
-  .sec-head{max-width:60ch;margin-bottom:clamp(38px,5vw,60px)}
-  .kicker{font-family:var(--en);font-size:.78rem;font-weight:600;letter-spacing:.24em;text-transform:uppercase;color:var(--cyan);margin-bottom:14px;display:flex;align-items:center;gap:12px}
-  .kicker::before{content:"";width:34px;height:2px;background:linear-gradient(90deg,var(--aqua),transparent)}
-  h2{font-family:var(--display);font-weight:800;font-size:clamp(1.9rem,4vw,3rem);line-height:1.05;letter-spacing:-.015em;color:var(--ink);margin-bottom:8px}
-  h2 .en{display:block;font-family:var(--en);font-weight:400;font-size:clamp(.95rem,1.5vw,1.15rem);color:var(--mist);letter-spacing:0;margin-top:8px}
-  .sec-lede{color:var(--mist);font-size:1.05rem;margin-top:18px;max-width:54ch}
-  .sec-lede .en{display:block;color:var(--muted);font-size:.92rem;font-family:var(--en);margin-top:6px}
+  /* ============================ TRUST STRIP ============================ */
+  .trust{ display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; margin-top:1.2rem; }
+  @media(max-width:760px){ .trust{ grid-template-columns:1fr; } }
+  .trust div{ border:1px solid var(--line); border-radius:14px; padding:1.1rem 1.2rem; background:#080d2a88; }
+  .trust b{ font-family:var(--f-head); font-weight:700; color:var(--cyan); display:block; margin-bottom:.25rem; font-size:.92rem; }
+  .trust p{ margin:0; color:var(--muted); font-size:.82rem; }
+  .trust p .en{ display:block; color:var(--muted-2); margin-top:.2rem; }
 
-  /* divider line motif */
-  .rule{height:1px;background:linear-gradient(90deg,transparent,var(--line-strong),transparent)}
-
-  /* ============ HOW IT WORKS ============ */
-  .steps{display:grid;gap:22px;counter-reset:step}
-  @media(min-width:760px){.steps{grid-template-columns:repeat(3,1fr)}}
-  .step{
-    position:relative;
-    padding:30px 26px;
-    border-radius:var(--r);
-    background:linear-gradient(165deg, rgba(14,58,74,.4), rgba(6,21,28,.65));
-    border:1px solid var(--line);
-    counter-increment:step;
-    transition:transform .35s cubic-bezier(.2,.8,.2,1), border-color .35s, box-shadow .35s;
-    overflow:hidden;
+  /* ============================ FOOTER ============================ */
+  footer{
+    border-top:1px solid #ffffff0d; margin-top:clamp(3rem,6vw,5rem);
+    background:linear-gradient(180deg, transparent, #04081c);
+    padding:clamp(2.6rem,5vw,4rem) 0 2.5rem;
   }
-  .step::before{
-    content:"0"counter(step);
-    font-family:var(--display);font-weight:800;font-size:3.4rem;line-height:1;
-    color:transparent;-webkit-text-stroke:1.5px rgba(120,210,225,.22);
-    position:absolute;right:18px;top:10px;
-  }
-  .step:hover{transform:translateY(-6px);border-color:var(--line-strong);box-shadow:0 22px 50px rgba(2,12,18,.5)}
-  .step .ico{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;background:rgba(52,227,212,.1);border:1px solid var(--line-strong);margin-bottom:20px}
-  .step .ico svg{width:24px;height:24px;color:var(--aqua)}
-  .step h3{font-family:var(--display);font-weight:700;font-size:1.2rem;color:var(--foam);margin-bottom:8px}
-  .step p{font-size:.95rem;color:var(--mist)}
-  .step p .en{display:block;font-family:var(--en);font-size:.85rem;color:var(--muted);margin-top:6px}
-
-  /* connection ladder (3-tier fallback) */
-  .ladder{margin-top:clamp(40px,6vw,64px);display:grid;gap:16px}
-  .tier{
-    display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:18px;
-    padding:20px 22px;border-radius:var(--r);
-    background:linear-gradient(100deg, rgba(10,35,48,.55), rgba(6,21,28,.4));
-    border:1px solid var(--line);
-    transition:border-color .3s, transform .3s, background .3s;
-  }
-  .tier:hover{border-color:var(--line-strong);transform:translateX(6px)}
-  .tier .rank{font-family:var(--display);font-weight:800;font-size:1.1rem;width:40px;height:40px;border-radius:50%;display:grid;place-items:center;flex:none;color:var(--navy)}
-  .tier.t1 .rank{background:linear-gradient(135deg,#46e9a3,#1fbf8a)}
-  .tier.t2 .rank{background:linear-gradient(135deg,#ffd56b,#f0a93a);color:#3a2a00}
-  .tier.t3 .rank{background:linear-gradient(135deg,#7fb4ff,#4f86e0)}
-  .tier .meta h4{font-family:var(--display);font-weight:700;font-size:1.05rem;color:var(--ink);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-  .tier .meta .en{display:block;font-family:var(--en);font-size:.84rem;color:var(--muted);margin-top:4px}
-  .tier .meta p{font-size:.9rem;color:var(--mist);margin-top:6px}
-  .pill{font-family:var(--en);font-size:.68rem;font-weight:600;letter-spacing:.06em;padding:3px 10px;border-radius:100px;border:1px solid var(--line-strong);color:var(--mist);text-transform:uppercase;white-space:nowrap}
-  .tier .arrow{color:var(--muted)}
-  .tier .arrow svg{width:22px;height:22px}
-  @media(max-width:560px){
-    .tier{grid-template-columns:auto 1fr;gap:14px}
-    .tier .arrow{display:none}
-  }
-
-  /* ============ FEATURE GRID ============ */
-  .features{display:grid;gap:20px}
-  @media(min-width:640px){.features{grid-template-columns:repeat(2,1fr)}}
-  @media(min-width:980px){.features{grid-template-columns:repeat(3,1fr)}}
-  .feat{
-    position:relative;
-    padding:28px 26px;border-radius:var(--r);
-    background:linear-gradient(165deg, rgba(14,58,74,.32), rgba(6,21,28,.55));
-    border:1px solid var(--line);
-    transition:transform .35s cubic-bezier(.2,.8,.2,1), border-color .35s, box-shadow .35s;
-    overflow:hidden;
-  }
-  .feat::after{
-    content:"";position:absolute;inset:0;border-radius:var(--r);padding:1px;
-    background:linear-gradient(135deg,rgba(52,227,212,.5),transparent 40%);
-    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
-    -webkit-mask-composite:xor;mask-composite:exclude;
-    opacity:0;transition:opacity .35s;pointer-events:none;
-  }
-  .feat:hover{transform:translateY(-6px);box-shadow:0 24px 54px rgba(2,12,18,.5)}
-  .feat:hover::after{opacity:1}
-  .feat .ico{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:rgba(52,227,212,.1);margin-bottom:18px;transition:transform .35s, background .35s}
-  .feat:hover .ico{transform:rotate(-8deg) scale(1.08);background:rgba(52,227,212,.18)}
-  .feat .ico svg{width:23px;height:23px;color:var(--aqua)}
-  .feat h3{font-family:var(--display);font-weight:700;font-size:1.12rem;color:var(--foam);margin-bottom:6px}
-  .feat h3 .en{display:block;font-family:var(--en);font-weight:400;font-size:.8rem;color:var(--muted);letter-spacing:.04em;margin-top:3px}
-  .feat p{font-size:.92rem;color:var(--mist)}
-  .feat p .en{display:block;font-family:var(--en);font-size:.82rem;color:var(--muted);margin-top:6px}
-
-  /* ============ PLATFORM AVAILABILITY ============ */
-  .platforms{
-    border-radius:24px;padding:clamp(34px,5vw,56px);
-    background:
-      radial-gradient(70% 120% at 100% 0%, rgba(26,163,196,.14), transparent 60%),
-      linear-gradient(160deg, rgba(10,35,48,.7), rgba(6,21,28,.85));
-    border:1px solid var(--line);
-    text-align:center;
-  }
-  .soon-badge{
-    display:inline-flex;align-items:center;gap:9px;
-    font-family:var(--en);font-size:.78rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;
-    color:var(--navy);background:linear-gradient(135deg,var(--aqua),var(--cyan));
-    padding:7px 16px;border-radius:100px;margin-bottom:22px;
-    box-shadow:0 8px 24px rgba(52,227,212,.3);
-  }
-  .plat-grid{display:grid;gap:16px;margin-top:34px}
-  @media(min-width:560px){.plat-grid{grid-template-columns:repeat(3,1fr)}}
-  .plat{
-    padding:26px 18px;border-radius:var(--r);
-    background:rgba(120,210,225,.04);
-    border:1px dashed var(--line-strong);
-    transition:transform .3s, background .3s, border-color .3s;
-  }
-  .plat:hover{transform:translateY(-4px);background:rgba(120,210,225,.08);border-color:var(--aqua)}
-  .plat .pico{width:40px;height:40px;margin:0 auto 14px;color:var(--foam)}
-  .plat .pico svg{width:100%;height:100%}
-  .plat h4{font-family:var(--display);font-weight:700;font-size:1.05rem;color:var(--ink);margin-bottom:10px}
-  .plat .archs{display:flex;flex-wrap:wrap;gap:7px;justify-content:center}
-  .arch{font-family:var(--en);font-size:.72rem;font-weight:600;letter-spacing:.04em;padding:4px 11px;border-radius:100px;background:rgba(52,227,212,.08);border:1px solid var(--line-strong);color:var(--mist)}
-  .plat-foot{margin-top:30px;font-size:.9rem;color:var(--mist)}
-  .plat-foot .en{display:block;font-family:var(--en);font-size:.82rem;color:var(--muted);margin-top:5px}
-
-  /* ============ FOOTER ============ */
-  footer{padding:clamp(56px,8vw,90px) 0 50px;border-top:1px solid var(--line);margin-top:30px;background:linear-gradient(180deg,transparent,rgba(2,12,18,.6))}
-  .foot-grid{display:grid;gap:34px;align-items:start}
-  @media(min-width:760px){.foot-grid{grid-template-columns:1.4fr 1fr}}
-  .foot-brand{display:flex;align-items:center;gap:12px;font-family:var(--display);font-weight:800;font-size:1.3rem;margin-bottom:16px}
-  .foot-brand .mark{width:30px;height:30px}
-  .foot-brand .dot{color:var(--aqua)}
-  .foot-desc{color:var(--mist);font-size:.95rem;max-width:44ch}
-  .foot-desc .en{display:block;color:var(--muted);font-size:.85rem;font-family:var(--en);margin-top:6px}
+  .foot-grid{ display:grid; grid-template-columns:1.4fr 1fr 1fr; gap:2rem; }
+  @media(max-width:760px){ .foot-grid{ grid-template-columns:1fr; gap:1.6rem; } }
+  .foot-brand .brand{ margin-bottom:.9rem; }
+  .foot-brand p{ color:var(--muted); font-size:.86rem; max-width:38ch; margin:.4rem 0; }
+  .foot-brand p .en{ display:block; color:var(--muted-2); margin-top:.25rem; }
+  .foot-col h4{ font-family:var(--f-head); font-weight:700; letter-spacing:.1em; text-transform:uppercase; font-size:.74rem; color:var(--frost); margin:0 0 .9rem; }
+  .foot-col a, .foot-col span{ display:block; color:var(--muted); text-decoration:none; font-size:.86rem; margin-bottom:.55rem; transition:color .2s; }
+  .foot-col a:hover{ color:var(--cyan); }
   .legit{
-    margin-top:20px;padding:16px 18px;border-radius:14px;
-    background:rgba(52,227,212,.05);border:1px solid var(--line);
-    font-size:.85rem;color:var(--mist);display:flex;gap:12px;align-items:flex-start;max-width:52ch;
+    margin-top:2rem; padding-top:1.5rem; border-top:1px solid #ffffff0d;
+    display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:1rem;
+    color:var(--muted-2); font-size:.78rem;
   }
-  .legit svg{width:20px;height:20px;color:var(--aqua);flex:none;margin-top:2px}
-  .legit .en{display:block;font-family:var(--en);font-size:.78rem;color:var(--muted);margin-top:5px}
-  .foot-cols{display:grid;grid-template-columns:1fr 1fr;gap:24px}
-  .foot-col h5{font-family:var(--en);font-size:.74rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--cyan);margin-bottom:14px}
-  .foot-col ul{list-style:none;display:grid;gap:11px}
-  .foot-col a{color:var(--mist);font-size:.92rem;transition:color .25s, padding-left .25s;display:inline-flex;align-items:center;gap:8px}
-  .foot-col a:hover{color:var(--foam);padding-left:4px}
-  .foot-col a svg{width:15px;height:15px;opacity:.7}
-  .foot-bottom{margin-top:46px;padding-top:24px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:14px;justify-content:space-between;align-items:center;color:var(--muted);font-size:.82rem}
-  .foot-bottom .en{font-family:var(--en)}
-  .tech-tag{font-family:var(--en);font-size:.74rem;color:var(--mist);display:inline-flex;align-items:center;gap:7px}
-  .tech-tag b{color:var(--aqua);font-weight:600}
-
-  /* ============ SCROLL REVEAL (progressive enhancement) ============ */
-  /* Hidden state applies ONLY when JS is active (html.js, set by the script below).
-     With JS disabled, .js is never added, so every .reveal stays fully visible. */
-  .js .reveal{opacity:0;transform:translateY(26px)}
-  .js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s cubic-bezier(.2,.8,.2,1)}
-  /* staggered hero load (CSS only) */
-  .hero .anim{opacity:0;animation:rise .9s cubic-bezier(.2,.8,.2,1) forwards}
-  .hero .a1{animation-delay:.05s}
-  .hero .a2{animation-delay:.16s}
-  .hero .a3{animation-delay:.27s}
-  .hero .a4{animation-delay:.38s}
-  .hero .a5{animation-delay:.49s}
-  .hero .a6{animation-delay:.6s}
-  .hero .stage{opacity:0;animation:rise 1.1s cubic-bezier(.2,.8,.2,1) .35s forwards}
-  @keyframes rise{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
-
-  /* moving packet along the connection arc */
-  .packet{animation:travel 3.6s ease-in-out infinite}
-  @keyframes travel{
-    0%{offset-distance:0%}
-    45%{offset-distance:100%}
-    50%{offset-distance:100%}
-    95%{offset-distance:0%}
-    100%{offset-distance:0%}
+  .legit .badge-safe{
+    display:inline-flex; align-items:center; gap:.5rem; color:var(--cyan);
+    border:1px solid var(--line-bright); background:#5be3ff10; padding:.4rem .8rem; border-radius:999px;
+    font-family:var(--f-head); font-weight:600; letter-spacing:.02em;
   }
-  .arc-dash{stroke-dasharray:6 9;animation:flow 1.4s linear infinite}
-  @keyframes flow{to{stroke-dashoffset:-30}}
+  .legit .badge-safe svg{ width:15px; height:15px; stroke:var(--cyan); fill:none; stroke-width:1.8; }
+  .legit p{ margin:0; max-width:60ch; }
+  .legit p .en{ display:block; margin-top:.2rem; }
+
+  /* ============================ REVEAL TRANSITION ============================ */
+  .js .reveal{
+    opacity:0; transform:translateY(26px);
+    transition:
+      opacity .8s cubic-bezier(.2,.85,.25,1),
+      transform .8s cubic-bezier(.2,.85,.25,1);
+    transition-delay:var(--d,0ms);
+  }
+  .js .is-in .reveal{
+    opacity:1; transform:none;
+  }
+
+  :focus-visible{ outline:2px solid var(--cyan); outline-offset:3px; border-radius:6px; }
 
   @media (prefers-reduced-motion: reduce){
-    *,*::before,*::after{animation-duration:.001s!important;animation-iteration-count:1!important;transition-duration:.001s!important}
-    .reveal{opacity:1!important;transform:none!important}
-    .hero .anim,.hero .stage{opacity:1!important;animation:none!important}
-    body::after{display:none}
+    *,*::before,*::after{ animation:none !important; transition:none !important; scroll-behavior:auto !important; }
+    .reveal{ opacity:1 !important; transform:none !important; }
   }
 </style>
 </head>
+
 <body>
+<div class="bgwrap" aria-hidden="true">
+  <svg class="tess" preserveAspectRatio="xMidYMid slice" viewBox="0 0 1200 800" fill="none" stroke-width="1">
+    <g opacity="0.6">
+      <!-- node-and-edge graph backdrop: connectivity motif -->
+      <circle cx="160" cy="180" r="4" stroke-opacity="0.3"/>
+      <circle cx="420" cy="100" r="4" stroke-opacity="0.3"/>
+      <circle cx="720" cy="200" r="4" stroke-opacity="0.3"/>
+      <circle cx="1020" cy="120" r="4" stroke-opacity="0.3"/>
+      <circle cx="280" cy="540" r="4" stroke-opacity="0.3"/>
+      <circle cx="640" cy="620" r="4" stroke-opacity="0.3"/>
+      <circle cx="980" cy="540" r="4" stroke-opacity="0.3"/>
+      <path d="M160 180 Q290 100 420 100" stroke-opacity="0.18"/>
+      <path d="M420 100 Q570 130 720 200" stroke-opacity="0.18"/>
+      <path d="M720 200 Q870 130 1020 120" stroke-opacity="0.18"/>
+      <path d="M280 540 Q460 580 640 620" stroke-opacity="0.18"/>
+      <path d="M640 620 Q810 580 980 540" stroke-opacity="0.18"/>
+      <line x1="160" y1="180" x2="280" y2="540" stroke-opacity="0.12"/>
+      <line x1="420" y1="100" x2="640" y2="620" stroke-opacity="0.1"/>
+      <line x1="720" y1="200" x2="980" y2="540" stroke-opacity="0.12"/>
+      <line x1="1020" y1="120" x2="980" y2="540" stroke-opacity="0.1"/>
+      <line x1="0" y1="380" x2="1200" y2="320" stroke-opacity="0.08"/>
+    </g>
+  </svg>
+</div>
 
 <!-- ===================== HEADER ===================== -->
-<header class="site">
-  <div class="wrap nav">
-    <a class="brand" href="#top" aria-label="Ferry — ホームへ">
-      <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
-        <defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#34e3d4"/><stop offset="1" stop-color="#1aa3c4"/></linearGradient></defs>
-        <path d="M12 40 Q32 14 52 40" fill="none" stroke="url(#bm)" stroke-width="4" stroke-linecap="round"/>
-        <circle cx="12" cy="40" r="6" fill="#34e3d4"/><circle cx="52" cy="40" r="6" fill="#34e3d4"/>
-        <path d="M14 50 Q24 44 32 50 T50 50" fill="none" stroke="#1aa3c4" stroke-width="3" stroke-linecap="round" opacity=".7"/>
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top" aria-label="Ferry home">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+        <defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#5be3ff"/><stop offset="1" stop-color="#1a3a8a"/>
+        </linearGradient></defs>
+        <!-- Two-node bridge + ferry hull mark -->
+        <circle cx="5" cy="22" r="2.4" fill="#5be3ff"/>
+        <circle cx="27" cy="22" r="2.4" fill="#5be3ff"/>
+        <path d="M5 22 Q16 4 27 22" fill="none" stroke="url(#bm)" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M8 26 L24 26 L21 29 L11 29 Z" fill="url(#bm)"/>
+        <path d="M16 8 L20 14 L12 14 Z" fill="#5be3ff" opacity="0.9"/>
       </svg>
-      <span><b>Ferry</b><span class="dot">.</span></span>
+      <span><b>Ferry</b><span lang="ja">フェリー</span></span>
     </a>
-    <nav class="nav-links" aria-label="ページ内ナビゲーション">
-      <a href="#how">仕組み <span lang="en" style="opacity:.6">/ How</span></a>
-      <a href="#features">特長 <span lang="en" style="opacity:.6">/ Features</span></a>
-      <a href="#download">入手 <span lang="en" style="opacity:.6">/ Get</span></a>
-      <a class="btn btn-ghost btn-sm ghub" href="https://github.com/1llum1n4t1s/Ferry" target="_blank" rel="noopener noreferrer">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 .9 2.6.6 3.3.4.1-.7.4-1.2.7-1.5-2.5-.3-5.2-1.3-5.2-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 5 18.3 5.3 18.3 5.3c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.2 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
-        GitHub
+    <nav class="nav-links" aria-label="Primary">
+      <a class="nav-anchor" href="#features">機能</a>
+      <a class="nav-anchor" href="#requirements">動作環境</a>
+      <a class="nav-anchor" href="#download">ダウンロード</a>
+      <a class="ghbtn" href="https://github.com/1llum1n4t1s/Ferry" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.37.5 0 5.78 0 12.29c0 5.21 3.44 9.63 8.2 11.19.6.11.82-.25.82-.56 0-.28-.01-1.02-.02-2-3.34.71-4.04-1.58-4.04-1.58-.55-1.37-1.34-1.73-1.34-1.73-1.09-.73.08-.72.08-.72 1.2.08 1.84 1.21 1.84 1.21 1.07 1.8 2.81 1.28 3.5.98.11-.76.42-1.28.76-1.58-2.67-.3-5.47-1.31-5.47-5.83 0-1.29.47-2.34 1.24-3.17-.13-.3-.54-1.52.11-3.18 0 0 1.01-.32 3.3 1.21a11.6 11.6 0 0 1 6 0c2.28-1.53 3.29-1.21 3.29-1.21.65 1.66.24 2.88.12 3.18.77.83 1.23 1.88 1.23 3.17 0 4.53-2.8 5.53-5.48 5.82.43.37.81 1.1.81 2.22 0 1.6-.01 2.9-.01 3.29 0 .31.21.69.83.57C20.57 21.91 24 17.5 24 12.29 24 5.78 18.63.5 12 .5Z"/></svg>
+        <span lang="en">GitHub</span>
       </a>
     </nav>
   </div>
@@ -440,288 +534,376 @@
 <main id="top">
 
   <!-- ===================== HERO ===================== -->
-  <section class="hero">
+  <section class="hero" aria-labelledby="hero-title">
     <div class="wrap hero-grid">
       <div class="hero-copy">
-        <span class="eyebrow anim a1"><span class="pulse"></span><span lang="en">Free &amp; Open Source</span> · 無料・オープンソース</span>
-        <h1 class="title anim a2"><span class="ferry">Ferry</span></h1>
-        <p class="tagline anim a3">QRでつなぐ、PC間ダイレクトファイル転送。</p>
-        <p class="tagline-en anim a3" lang="en">Direct PC-to-PC file transfer, paired by a QR code.</p>
-        <p class="lede anim a4">スマホで QR を読むだけで 2 台の PC をペアリング。あとはファイルが、雲を経由せず端末から端末へ、まっすぐ渡っていきます。</p>
-        <p class="lede-en anim a4" lang="en">Scan a QR with your phone to pair two PCs — then files travel straight from device to device, not through the cloud.</p>
-        <div class="cta-row anim a5">
-          <a class="btn btn-primary" href="https://github.com/1llum1n4t1s/Ferry" target="_blank" rel="noopener noreferrer">
-            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 .9 2.6.6 3.3.4.1-.7.4-1.2.7-1.5-2.5-.3-5.2-1.3-5.2-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 5 18.3 5.3 18.3 5.3c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.2 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
-            GitHubで見る <span lang="en" style="opacity:.7;font-weight:400">/ View on GitHub</span>
+        <div class="badge-row reveal" style="--d:60ms">
+          <span class="badge"><span class="dot"></span>無料・オープンソース <span class="en" lang="en">Free &amp; Open Source</span></span>
+          <span class="badge">Windows · macOS · Linux</span>
+          <span class="badge">Native AOT · .NET 10</span>
+        </div>
+
+        <h1 class="title reveal" id="hero-title" style="--d:120ms"><span class="gradtext">Ferry</span></h1>
+        <p class="title-sub reveal" lang="ja" style="--d:180ms">フェリー</p>
+
+        <p class="tagline reveal" lang="ja" style="--d:240ms">スマホで橋渡し、PC 間を P2P 直結。</p>
+        <p class="tagline-en reveal" lang="en" style="--d:300ms">Scan a QR with your phone to pair two PCs in a moment, then ferry files peer-to-peer over TCP direct, UDP hole-punching, or a WebSocket relay.</p>
+
+        <div class="cta-row reveal" style="--d:360ms">
+          <a class="btn btn-primary" id="primary-dl" href="https://ferry.nephilim.jp/Ferry-win-x64-Setup.exe" download>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+            <span>ダウンロード <span class="sub" lang="en" id="primary-dl-sub">Windows x64</span></span>
           </a>
-          <a class="btn btn-ghost" href="#how">仕組みを見る <span lang="en" style="opacity:.7;font-weight:400">/ How it works</span></a>
+          <a class="btn btn-ghost" href="https://github.com/1llum1n4t1s/Ferry" target="_blank" rel="noopener noreferrer">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.37.5 0 5.78 0 12.29c0 5.21 3.44 9.63 8.2 11.19.6.11.82-.25.82-.56 0-.28-.01-1.02-.02-2-3.34.71-4.04-1.58-4.04-1.58-.55-1.37-1.34-1.73-1.34-1.73-1.09-.73.08-.72.08-.72 1.2.08 1.84 1.21 1.84 1.21 1.07 1.8 2.81 1.28 3.5.98.11-.76.42-1.28.76-1.58-2.67-.3-5.47-1.31-5.47-5.83 0-1.29.47-2.34 1.24-3.17-.13-.3-.54-1.52.11-3.18 0 0 1.01-.32 3.3 1.21a11.6 11.6 0 0 1 6 0c2.28-1.53 3.29-1.21 3.29-1.21.65 1.66.24 2.88.12 3.18.77.83 1.23 1.88 1.23 3.17 0 4.53-2.8 5.53-5.48 5.82.43.37.81 1.1.81 2.22 0 1.6-.01 2.9-.01 3.29 0 .31.21.69.83.57C20.57 21.91 24 17.5 24 12.29 24 5.78 18.63.5 12 .5Z"/></svg>
+            <span>ソースコード <span class="sub" lang="en">View on GitHub</span></span>
+          </a>
         </div>
-        <p class="cta-note anim a5" lang="en" style="margin-top:14px">No account. No cloud storage. The files never leave your two devices on a direct link.</p>
-        <div class="trust-row anim a6">
-          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 6v6c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6l-8-4z"/><path d="m9 12 2 2 4-4"/></svg>SHA-256で整合性検証 <span lang="en" style="color:var(--muted)">/ Verified</span></span>
-          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>P2P直接転送 <span lang="en" style="color:var(--muted)">/ Peer-to-peer</span></span>
-          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 20h8M12 18v2"/></svg>クロスプラットフォーム <span lang="en" style="color:var(--muted)">/ Cross-platform</span></span>
+
+        <div class="hero-meta reveal" style="--d:440ms">
+          <div><b>ランタイム不要</b><span class="en" lang="en">No runtime needed</span></div>
+          <div><b>5 OS / アーキ対応</b><span class="en" lang="en">5 OS / arch builds</span></div>
+          <div><b>3 段フォールバック</b><span class="en" lang="en">Three-tier fallback</span></div>
+          <div><b>サーバー登録なし</b><span class="en" lang="en">No account, no signup</span></div>
         </div>
       </div>
 
-      <!-- Signature visual: two device shores + a ferrying packet crossing the water -->
-      <div class="hero-visual">
-        <figure class="stage" role="img" aria-label="2台のPCがQRコードでペアリングされ、データが端末間を直接行き来する図。Diagram: two PCs paired by a QR code, with data ferrying directly between them.">
-          <svg class="diagram" viewBox="0 0 480 480" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-            <defs>
-              <linearGradient id="arc" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#34e3d4"/><stop offset="1" stop-color="#1aa3c4"/></linearGradient>
-              <radialGradient id="nodeg" cx="50%" cy="40%" r="60%"><stop offset="0" stop-color="#0e3a4a"/><stop offset="1" stop-color="#06151c"/></radialGradient>
-              <filter id="soft"><feGaussianBlur stdDeviation="3"/></filter>
-            </defs>
+      <!-- Signature: two-node ferry bridge with QR phone -->
+      <div class="ferry-stage reveal" style="--d:280ms" aria-hidden="true">
+        <div class="ring r3"></div>
+        <div class="ring"></div>
+        <div class="ring r2"></div>
 
-            <!-- the crossing arc (the "ferry route") -->
-            <path id="route" d="M96 220 Q240 86 384 220" fill="none" stroke="url(#arc)" stroke-width="2.5" opacity=".55"/>
-            <path d="M96 220 Q240 86 384 220" fill="none" stroke="url(#arc)" stroke-width="2.5" class="arc-dash" opacity=".9"/>
+        <svg class="ferry-svg" viewBox="0 0 200 200">
+          <defs>
+            <linearGradient id="nodegrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#0f1a4a"/>
+              <stop offset="1" stop-color="#091233"/>
+            </linearGradient>
+            <linearGradient id="phonegrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#13225e"/>
+              <stop offset="1" stop-color="#0a1340"/>
+            </linearGradient>
+          </defs>
 
-            <!-- left device (PC-A) -->
-            <g transform="translate(96 220)">
-              <circle r="46" fill="url(#nodeg)" stroke="#34e3d4" stroke-width="1.5"/>
-              <rect x="-22" y="-16" width="44" height="30" rx="3" fill="none" stroke="#bff3ef" stroke-width="2"/>
-              <path d="M-12 20h24M0 14v6" stroke="#bff3ef" stroke-width="2" stroke-linecap="round"/>
+          <!-- Left PC node -->
+          <g transform="translate(15,90)">
+            <rect class="node" x="0" y="0" width="42" height="30" rx="3"/>
+            <rect class="screen" x="3" y="3" width="36" height="22" rx="1.5"/>
+            <rect x="16" y="30" width="10" height="3" fill="#1a3a8a"/>
+            <rect x="10" y="33" width="22" height="2" rx="1" fill="#1a3a8a"/>
+            <!-- screen icon: arrow up (sending) -->
+            <path class="arrow" d="M21 18 L21 8 M16 13 L21 8 L26 13"/>
+            <text class="label" x="21" y="46" text-anchor="middle">PC A</text>
+          </g>
+
+          <!-- Right PC node -->
+          <g transform="translate(143,90)">
+            <rect class="node" x="0" y="0" width="42" height="30" rx="3"/>
+            <rect class="screen" x="3" y="3" width="36" height="22" rx="1.5"/>
+            <rect x="16" y="30" width="10" height="3" fill="#1a3a8a"/>
+            <rect x="10" y="33" width="22" height="2" rx="1" fill="#1a3a8a"/>
+            <!-- screen icon: arrow down (receiving) -->
+            <path class="arrow" d="M21 8 L21 18 M16 13 L21 18 L26 13"/>
+            <text class="label" x="21" y="46" text-anchor="middle">PC B</text>
+          </g>
+
+          <!-- 3-tier fallback lines arching over -->
+          <path class="line-tcp" d="M40 95 Q100 22 160 95"/>
+          <path class="line-udp" d="M42 100 Q100 40 158 100"/>
+          <path class="line-ws"  d="M44 105 Q100 58 156 105"/>
+
+          <!-- Tier labels along the arches -->
+          <text class="label tcp" x="100" y="36" text-anchor="middle">TCP DIRECT</text>
+          <text class="label" x="100" y="54" text-anchor="middle">UDP HOLE-PUNCH</text>
+          <text class="label" x="100" y="70" text-anchor="middle">WS RELAY</text>
+
+          <!-- Pulse dots traveling along the TCP arch endpoints -->
+          <circle class="pulse" cx="40" cy="95" r="2"/>
+          <circle class="pulse" cx="160" cy="95" r="2" style="animation-delay:1.2s"/>
+
+          <!-- Phone with QR in the middle bottom -->
+          <g transform="translate(82,138)">
+            <rect class="phone-body" x="0" y="0" width="36" height="56" rx="6"/>
+            <rect class="phone-screen" x="3" y="6" width="30" height="44" rx="2"/>
+            <!-- QR squares (3 corner finders + scatter) -->
+            <g transform="translate(7,10)">
+              <!-- top-left finder -->
+              <rect class="qr-block" x="0" y="0" width="6" height="6"/>
+              <rect class="qr-frame" x="1" y="1" width="4" height="4"/>
+              <!-- top-right finder -->
+              <rect class="qr-block" x="16" y="0" width="6" height="6"/>
+              <rect class="qr-frame" x="17" y="1" width="4" height="4"/>
+              <!-- bottom-left finder -->
+              <rect class="qr-block" x="0" y="16" width="6" height="6"/>
+              <rect class="qr-frame" x="1" y="17" width="4" height="4"/>
+              <!-- scatter modules -->
+              <rect class="qr-block" x="8" y="0" width="2" height="2"/>
+              <rect class="qr-block" x="12" y="2" width="2" height="2"/>
+              <rect class="qr-block" x="8" y="8" width="2" height="2"/>
+              <rect class="qr-block" x="12" y="8" width="2" height="2"/>
+              <rect class="qr-block" x="0" y="10" width="2" height="2"/>
+              <rect class="qr-block" x="4" y="10" width="2" height="2"/>
+              <rect class="qr-block" x="16" y="12" width="2" height="2"/>
+              <rect class="qr-block" x="20" y="10" width="2" height="2"/>
+              <rect class="qr-block" x="10" y="14" width="2" height="2"/>
+              <rect class="qr-block" x="14" y="16" width="2" height="2"/>
+              <rect class="qr-block" x="18" y="18" width="2" height="2"/>
+              <rect class="qr-block" x="10" y="20" width="2" height="2"/>
+              <rect class="qr-block" x="14" y="20" width="2" height="2"/>
             </g>
-            <!-- right device (PC-B) -->
-            <g transform="translate(384 220)">
-              <circle r="46" fill="url(#nodeg)" stroke="#34e3d4" stroke-width="1.5"/>
-              <rect x="-22" y="-16" width="44" height="30" rx="3" fill="none" stroke="#bff3ef" stroke-width="2"/>
-              <path d="M-12 20h24M0 14v6" stroke="#bff3ef" stroke-width="2" stroke-linecap="round"/>
-            </g>
+            <!-- Home button hint -->
+            <circle cx="18" cy="53" r="1.2" fill="#5be3ff66"/>
+          </g>
 
-            <!-- traveling packet (ferries across the arc) -->
-            <g class="packet" style="offset-path:path('M96 220 Q240 86 384 220');offset-rotate:0deg">
-              <rect x="-9" y="-9" width="18" height="18" rx="4" fill="#34e3d4" filter="url(#soft)" opacity=".7"/>
-              <rect x="-7" y="-7" width="14" height="14" rx="3" fill="#bff3ef"/>
-            </g>
-
-            <!-- waterline -->
-            <g opacity=".5">
-              <path d="M0 300 Q60 288 120 300 T240 300 T360 300 T480 300" fill="none" stroke="#1aa3c4" stroke-width="2"/>
-              <path d="M0 322 Q60 312 120 322 T240 322 T360 322 T480 322" fill="none" stroke="#34e3d4" stroke-width="1.5" opacity=".5"/>
-            </g>
-          </svg>
-
-          <!-- animated waves at base -->
-          <div class="water" aria-hidden="true">
-            <svg viewBox="0 0 1200 120" preserveAspectRatio="none">
-              <path class="w1" d="M0 60 Q150 20 300 60 T600 60 T900 60 T1200 60 V120 H0 Z" fill="rgba(26,163,196,.35)"/>
-            </svg>
-            <svg viewBox="0 0 1200 120" preserveAspectRatio="none">
-              <path class="w2" d="M0 70 Q150 40 300 70 T600 70 T900 70 T1200 70 V120 H0 Z" fill="rgba(52,227,212,.25)"/>
-            </svg>
-          </div>
-
-          <span class="node-label a" lang="en">PC&nbsp;A</span>
-          <span class="node-label b" lang="en">PC&nbsp;B</span>
-
-          <!-- central QR chip (the pairing token) -->
-          <div class="qr-chip" aria-hidden="true">
-            <svg viewBox="0 0 100 100">
-              <rect width="100" height="100" rx="6" fill="#04222a"/>
-              <g fill="#bff3ef">
-                <rect x="10" y="10" width="26" height="26" rx="3"/><rect x="16" y="16" width="14" height="14" rx="1.5" fill="#04222a"/>
-                <rect x="64" y="10" width="26" height="26" rx="3"/><rect x="70" y="16" width="14" height="14" rx="1.5" fill="#04222a"/>
-                <rect x="10" y="64" width="26" height="26" rx="3"/><rect x="16" y="70" width="14" height="14" rx="1.5" fill="#04222a"/>
-                <rect x="46" y="10" width="6" height="6"/><rect x="46" y="22" width="6" height="6"/><rect x="46" y="46" width="6" height="6"/>
-                <rect x="58" y="58" width="6" height="6"/><rect x="70" y="58" width="6" height="6"/><rect x="82" y="70" width="8" height="8"/>
-                <rect x="58" y="70" width="6" height="6"/><rect x="70" y="82" width="6" height="6"/><rect x="58" y="82" width="6" height="6"/>
-                <rect x="46" y="58" width="6" height="6"/><rect x="46" y="70" width="6" height="6"/><rect x="46" y="82" width="6" height="6"/>
-              </g>
-            </svg>
-          </div>
-        </figure>
+          <!-- Faint lines from phone scanning to both PCs (pairing channel) -->
+          <line class="line-ws" x1="86" y1="138" x2="50" y2="105" style="opacity:.4"/>
+          <line class="line-ws" x1="114" y1="138" x2="150" y2="105" style="opacity:.4"/>
+        </svg>
       </div>
     </div>
   </section>
 
-  <div class="wrap"><div class="rule"></div></div>
-
-  <!-- ===================== HOW IT WORKS ===================== -->
-  <section id="how">
-    <div class="wrap">
-      <div class="sec-head reveal">
-        <p class="kicker"><span lang="en">How it works</span></p>
-        <h2>QRで橋を架け、直接わたす。<span class="en" lang="en">Bridge with a QR, then cross directly.</span></h2>
-        <p class="sec-lede">スマホはあくまで「橋渡し役」。一度ペアになれば、ファイルは PC から PC へ最短経路で渡ります。
-          <span class="en" lang="en">Your phone is just the bridge. Once paired, files take the shortest path straight between your PCs.</span>
-        </p>
-      </div>
-
-      <ol class="steps">
-        <li class="step reveal">
-          <div class="ico" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 21v.01M17 21h-3M21 14v3"/></svg>
-          </div>
-          <h3>QRを表示する</h3>
-          <p>PC-A が QR コードを表示します。
-            <span class="en" lang="en">PC&nbsp;A displays a pairing QR code.</span>
-          </p>
-        </li>
-        <li class="step reveal">
-          <div class="ico" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 5h6M11 18h2"/><path d="m8.5 11 2 2 3.5-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </div>
-          <h3>スマホが橋渡し</h3>
-          <p>スマホで両 PC の QR を読むと、2 台が結び付けられます。
-            <span class="en" lang="en">Your phone scans both PCs' QR codes and links the two together.</span>
-          </p>
-        </li>
-        <li class="step reveal">
-          <div class="ico" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h16"/><path d="m14 6 6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="4" cy="12" r="2" fill="currentColor"/></svg>
-          </div>
-          <h3>直接わたる</h3>
-          <p>あとはファイルが端末から端末へ直接転送されます。
-            <span class="en" lang="en">From there, files transfer directly device-to-device.</span>
-          </p>
-        </li>
-      </ol>
-
-      <!-- 3-tier connection fallback -->
-      <div class="sec-head reveal" style="margin-top:clamp(54px,7vw,84px);margin-bottom:30px">
-        <p class="kicker"><span lang="en">Smart connection · 3-tier fallback</span></p>
-        <h2 style="font-size:clamp(1.6rem,3vw,2.3rem)">いちばん速い道を、自動で選ぶ。<span class="en" lang="en">It automatically picks the fastest available route.</span></h2>
-        <p class="sec-lede">ネットワーク環境に合わせて 3 段階で接続を試みます。同じ LAN なら一瞬、離れていても NAT を越えて P2P、それも難しければリレーへ。
-          <span class="en" lang="en">Ferry tries three tiers in order — instant on the same LAN, NAT-traversing P2P across networks, and a relay as a last resort.</span>
-        </p>
-      </div>
-
-      <div class="ladder">
-        <div class="tier t1 reveal">
-          <div class="rank">1</div>
-          <div class="meta">
-            <h4>TCP 直接接続 <span class="pill">LAN · fastest</span></h4>
-            <span class="en" lang="en">Direct TCP on the local network</span>
-            <p>同じネットワーク内なら、サーバーを一切経由せず最速で直結します。</p>
-          </div>
-          <div class="arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M6 13l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-        </div>
-        <div class="tier t2 reveal">
-          <div class="rank">2</div>
-          <div class="meta">
-            <h4>UDP ホールパンチ <span class="pill">NAT traversal · P2P</span></h4>
-            <span class="en" lang="en">UDP hole-punching across NATs</span>
-            <p>離れた回線でも STUN で経路を探り、NAT を越えて端末同士を直接つなぎます。</p>
-          </div>
-          <div class="arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M6 13l6 6 6-6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-        </div>
-        <div class="tier t3 reveal">
-          <div class="rank">3</div>
-          <div class="meta">
-            <h4>WebSocket リレー <span class="pill">last resort</span></h4>
-            <span class="en" lang="en">WebSocket relay — last resort</span>
-            <p>直接つなげない環境でも、リレーを経由して確実に届けます。</p>
-          </div>
-        </div>
-      </div>
+  <!-- ===================== TRANSPORT TIERS STRIP ===================== -->
+  <section class="formats" aria-label="転送経路 / Transport tiers">
+    <div class="wrap formats-inner">
+      <span class="lbl">経路 / Transport</span>
+      <span class="chip live">TCP Direct</span>
+      <span class="chip live">UDP Hole-Punch</span>
+      <span class="chip live">WebSocket Relay</span>
+      <span class="lbl" style="margin-left:.6rem">整合性 / Integrity</span>
+      <span class="chip">SHA-256</span>
+      <span class="chip">Resume</span>
     </div>
   </section>
-
-  <div class="wrap"><div class="rule"></div></div>
 
   <!-- ===================== FEATURES ===================== -->
-  <section id="features">
+  <section class="sec" id="features" aria-labelledby="feat-title">
     <div class="wrap">
       <div class="sec-head reveal">
-        <p class="kicker"><span lang="en">Features</span></p>
-        <h2>運ぶことに、ひたむき。<span class="en" lang="en">Built to carry your files — and nothing else.</span></h2>
-        <p class="sec-lede">チャットも広告もありません。Ferry はファイルを正確に、安全に、確実に届けることだけを考えて作られています。
-          <span class="en" lang="en">No chat, no ads. Ferry does one thing: move your files accurately, safely, and reliably.</span>
+        <span class="eyebrow">Features</span>
+        <h2 id="feat-title">サーバーを介さず、PC 同士で直接。</h2>
+        <p class="h2-en" lang="en">Direct, peer-to-peer — without a middleman cloud.</p>
+        <p lang="ja">QR ペアリングと 3 段フォールバックで、家でもオフィスでもキャリア NAT 越しでも届く。Ferry は接続の難しい部分を全部引き受けます。
+          <span class="en" lang="en">QR pairing plus a three-tier fallback gets your files across, whether you're on the same LAN, behind home NATs, or on a carrier-grade network.</span>
         </p>
       </div>
 
-      <div class="features">
-        <article class="feat reveal">
-          <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 21v.01M17 21h-3M21 14v3"/></svg></div>
-          <h3>QRペアリング<span class="en" lang="en">QR pairing</span></h3>
-          <p>スマホをかざすだけ。複雑な設定や IP の入力は要りません。
-            <span class="en" lang="en">Just hold up your phone — no IP addresses or fiddly setup.</span>
+      <div class="feat-grid">
+
+        <article class="card wide reveal" style="--d:40ms">
+          <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM18 14h3M14 18h3v3M18 21h3v-3"/></svg></div>
+          <span class="h3-en" lang="en">QR Pairing</span>
+          <h3 lang="ja">QR ペアリングで 2 台の PC を即接続</h3>
+          <p lang="ja">送信側 PC に表示された QR をスマホで読むだけで、もう一台の PC とセッションが成立。アカウント登録もメアド共有も不要です。
+            <span class="en" lang="en">Scan the sender PC's QR with your phone and the receiver PC pairs automatically. No accounts, no email exchange, no server signup.</span>
+          </p>
+          <div class="tags"><span>QR</span><span>Pair</span><span>Zero-Auth</span></div>
+        </article>
+
+        <article class="card reveal" style="--d:100ms">
+          <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M4 12l4-4M4 12l4 4M20 12l-4-4M20 12l-4 4"/></svg></div>
+          <span class="h3-en" lang="en">TCP Direct</span>
+          <h3 lang="ja">TCP 直接接続で LAN 内最速</h3>
+          <p lang="ja">同一 LAN・到達可能なグローバル IP では TCP で直結。中継サーバーを経由しない最短経路で、ハードウェア上限まで速度を出します。
+            <span class="en" lang="en">Within a LAN or with reachable IPs, Ferry opens a direct TCP socket — no relay hop, full link-rate throughput.</span>
           </p>
         </article>
-        <article class="feat reveal">
-          <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M6 13l6 6 6-6"/><path d="M5 5h14"/></svg></div>
-          <h3>3階層フォールバック<span class="en" lang="en">3-tier fallback</span></h3>
-          <p>TCP直接 → UDP P2P → リレー。環境を問わず最適な経路で接続します。
-            <span class="en" lang="en">TCP → UDP P2P → relay: the best route for any network.</span>
+
+        <article class="card reveal" style="--d:160ms">
+          <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="12" r="3"/><path d="M9 12h6M3 18l4-3M21 6l-4 3"/><path d="M9 6L6 9M15 18l3-3"/></svg></div>
+          <span class="h3-en" lang="en">UDP Hole-Punching</span>
+          <h3 lang="ja">UDP ホールパンチで NAT 越え P2P</h3>
+          <p lang="ja">家庭用ルーターの背後同士でも、UDP の同時送出で NAT に穴を開けて直結。中継せず P2P で転送します。
+            <span class="en" lang="en">Behind home routers? Ferry coordinates a simultaneous UDP send to punch through both NATs and connect peer-to-peer.</span>
           </p>
         </article>
-        <article class="feat reveal">
-          <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 6v6c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6l-8-4z"/><path d="m9 12 2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-          <h3>SHA-256で検証<span class="en" lang="en">SHA-256 integrity</span></h3>
-          <p>送ったファイルと受け取ったファイルが同一であることを必ず確認します。
-            <span class="en" lang="en">Every transfer is hash-verified end to end.</span>
+
+        <article class="card reveal" style="--d:60ms">
+          <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7c4 4 14 4 18 0M3 12c4 4 14 4 18 0M3 17c4 4 14 4 18 0"/></svg></div>
+          <span class="h3-en" lang="en">WebSocket Relay Fallback</span>
+          <h3 lang="ja">WebSocket リレー自動フォールバック</h3>
+          <p lang="ja">直結も穴開けも無理なキャリアグレード NAT 環境では、暗号化された WebSocket リレーに自動でフォールバック。
+            <span class="en" lang="en">When direct paths fail (CGNAT, hostile firewalls), Ferry falls back to an encrypted WebSocket relay — automatically.</span>
           </p>
         </article>
-        <article class="feat reveal">
-          <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-          <h3>転送レジューム<span class="en" lang="en">Resumable transfers</span></h3>
-          <p>接続が切れても大丈夫。再接続すれば転送を再開して復旧します。
-            <span class="en" lang="en">Lost the connection? Reconnect and the transfer resumes.</span>
+
+        <article class="card reveal" style="--d:120ms">
+          <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg></div>
+          <span class="h3-en" lang="en">Path Indicator</span>
+          <h3 lang="ja">接続経路を 🟢🟡🔴 で可視化</h3>
+          <p lang="ja">いま TCP 直結なのか、UDP ホールパンチなのか、リレー経由なのかが一目で分かるステータスライト。
+            <span class="en" lang="en">A status light shows at a glance whether you're on TCP direct, UDP punched, or relay — so you always know which path you got.</span>
           </p>
         </article>
-        <article class="feat reveal">
-          <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"/></svg></div>
-          <h3>オンライン検出<span class="en" lang="en">Presence detection</span></h3>
-          <p>ペアの相手がいま使えるかどうか、プレゼンスでひと目で分かります。
-            <span class="en" lang="en">See at a glance whether your paired device is online.</span>
+
+        <article class="card reveal" style="--d:180ms">
+          <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 12V6h6"/><path d="M12 8v4l3 2"/></svg></div>
+          <span class="h3-en" lang="en">Resume Transfers</span>
+          <h3 lang="ja">接続断からの転送レジューム</h3>
+          <p lang="ja">回線が落ちても再ペアリング後にチャンク単位で続きから再開。ギガ単位の転送中に切られても、最初からやり直しません。
+            <span class="en" lang="en">If the link drops mid-transfer, Ferry resumes from the last verified chunk after reconnect — no starting over on gigabyte files.</span>
           </p>
         </article>
-        <article class="feat reveal">
-          <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z" stroke-linejoin="round"/></svg></div>
-          <h3>Native AOTで軽快<span class="en" lang="en">Native AOT speed</span></h3>
-          <p>.NET 10 と Avalonia UI、Native AOT でビルド。起動も動作も俊敏です。
-            <span class="en" lang="en">Built on .NET 10 + Avalonia with Native AOT — fast to launch, light to run.</span>
+
+        <article class="card reveal" style="--d:80ms">
+          <div class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4v6c0 5-3.5 7.5-8 8-4.5-.5-8-3-8-8V7z"/><path d="M9 12l2 2 4-4"/></svg></div>
+          <span class="h3-en" lang="en">SHA-256 Integrity</span>
+          <h3 lang="ja">SHA-256 ハッシュで改竄検知</h3>
+          <p lang="ja">送信前後でファイル全体の SHA-256 を比較。経路上での破損・改竄が起きていれば自動で検出して中止します。
+            <span class="en" lang="en">Ferry hashes every file end-to-end with SHA-256 and aborts on mismatch — so silent corruption or tampering never lands on disk.</span>
           </p>
         </article>
+
       </div>
     </div>
   </section>
 
-  <div class="wrap"><div class="rule"></div></div>
-
-  <!-- ===================== PLATFORM AVAILABILITY ===================== -->
-  <section id="download">
+  <!-- ===================== HOW IT WORKS / DIAGRAM ===================== -->
+  <section class="sec" aria-labelledby="how-title" style="padding-top:0">
     <div class="wrap">
-      <div class="sec-head reveal" style="text-align:center;margin-inline:auto">
-        <p class="kicker" style="justify-content:center"><span lang="en">Availability</span></p>
-        <h2>もうすぐ、すべての岸へ。<span class="en" lang="en">Coming soon to every shore.</span></h2>
+      <div class="sec-head reveal">
+        <span class="eyebrow">How it works</span>
+        <h2 id="how-title">3 ステップで、橋がかかる。</h2>
+        <p class="h2-en" lang="en">Three steps. The bridge is open.</p>
       </div>
 
-      <div class="platforms reveal">
-        <span class="soon-badge"><span class="pulse" style="width:7px;height:7px;border-radius:50%;background:#04222a"></span>近日公開 <span lang="en">/ Coming soon</span></span>
-        <p class="sec-lede" style="margin-inline:auto;margin-top:0">最初の公開ビルドを準備中です。すべての主要プラットフォーム向けに、無料でお届けします。
-          <span class="en" lang="en">The first public build is on its way — free, for every major platform.</span>
-        </p>
-
-        <div class="plat-grid">
-          <div class="plat">
-            <div class="pico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.4 10.5 4.3v7.2H3V5.4zM11.5 4.2 21 3v8.5h-9.5V4.2zM3 12.5h7.5v7.2L3 18.6v-6.1zM11.5 12.5H21V21l-9.5-1.3v-7.2z"/></svg></div>
-            <h4>Windows</h4>
-            <div class="archs"><span class="arch">x64</span><span class="arch">ARM64</span></div>
+      <div class="split">
+        <div class="dropzone reveal" role="img" aria-label="送信 PC が QR を出し、スマホで読み取り、受信 PC とペアリングして転送開始 / Sender shows a QR, phone scans it, receiver pairs and transfer starts">
+          <div class="dz-row">
+            <div class="dz-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h7v7h-7z" fill="none"/></svg></div>
+            <div><b lang="ja">送信 PC が QR を表示</b><span class="en" lang="en">Sender PC shows a QR code</span></div>
           </div>
-          <div class="plat">
-            <div class="pico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 12.6c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.1-2.8.8-3.5.8-.7 0-1.9-.8-3.1-.8-1.6 0-3.1.9-3.9 2.4-1.7 2.9-.4 7.2 1.2 9.5.8 1.2 1.7 2.5 3 2.4 1.2-.05 1.6-.8 3.1-.8 1.4 0 1.8.8 3.1.76 1.3-.02 2.1-1.2 2.9-2.3.9-1.3 1.3-2.6 1.3-2.7-.03-.02-2.5-1-2.5-3.9zM14.1 5.6c.7-.8 1.1-2 1-3.1-1 .04-2.1.7-2.8 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.8-1.4z"/></svg></div>
-            <h4>macOS</h4>
-            <div class="archs"><span class="arch">Apple Silicon</span></div>
-          </div>
-          <div class="plat">
-            <div class="pico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.5 2c-1.7 0-2.6 1.5-2.6 3.2 0 .9.2 1.6.2 2.4 0 .9-.7 1.6-1.3 2.6-.7 1-1.5 2.1-1.5 3.8 0 .5.1 1 .2 1.4-.4.4-.7.9-.7 1.5 0 .3.1.6.2.8-.6.5-1 1.1-1 1.9 0 1.4 1.5 2.2 3.4 2.2.8 0 1.5-.2 2.1-.5.6.3 1.3.5 2.1.5 1.9 0 3.4-.8 3.4-2.2 0-.7-.3-1.3-.9-1.8.1-.3.2-.6.2-.9 0-.6-.3-1.1-.7-1.5.1-.5.2-1 .2-1.4 0-1.7-.8-2.8-1.5-3.8-.6-1-1.3-1.7-1.3-2.6 0-.8.2-1.5.2-2.4C15.1 3.5 14.2 2 12.5 2zm-1 4.2c.3 0 .6.3.6.8s-.3.8-.6.8-.6-.3-.6-.8.3-.8.6-.8zm2 0c.3 0 .6.3.6.8s-.3.8-.6.8-.5-.3-.5-.8.2-.8.5-.8z"/></svg></div>
-            <h4>Linux</h4>
-            <div class="archs"><span class="arch">x64</span><span class="arch">ARM64</span></div>
+          <div class="dz-arrow" aria-hidden="true">↓ &nbsp; スマホで読む / Scan with phone &nbsp; ↓</div>
+          <div class="dz-row">
+            <div class="dz-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="12" r="3"/><path d="M9 12h6"/></svg></div>
+            <div><b lang="ja">受信 PC とペアリング → 自動転送</b><span class="en" lang="en">Receiver pairs, transfer auto-starts</span></div>
           </div>
         </div>
 
-        <p class="plat-foot">公開まで、開発の進み具合は GitHub でご覧いただけます。
-          <span class="en" lang="en">Until launch, follow development progress on GitHub.</span>
-        </p>
-        <div style="margin-top:24px">
-          <a class="btn btn-primary" href="https://github.com/1llum1n4t1s/Ferry" target="_blank" rel="noopener noreferrer">
-            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 .9 2.6.6 3.3.4.1-.7.4-1.2.7-1.5-2.5-.3-5.2-1.3-5.2-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 5 18.3 5.3 18.3 5.3c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.2 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
-            GitHubで見る <span lang="en" style="opacity:.7;font-weight:400">/ View on GitHub</span>
+        <ol class="how-list reveal" style="--d:120ms">
+          <li><span class="num">1</span><div><b lang="ja">ファイルをドロップして QR を出す</b> <span class="en" lang="en">Drop the file, show the QR.</span><br><span style="color:var(--muted);font-size:.88rem" lang="ja">送信側の Ferry に転送したいファイルを置くと、ペアリング用 QR コードが表示されます。</span></div></li>
+          <li><span class="num">2</span><div><b lang="ja">スマホで QR を読み取る</b> <span class="en" lang="en">Scan it with your phone.</span><br><span style="color:var(--muted);font-size:.88rem" lang="ja">受信側 PC の URL をスマホ経由で渡し、もう一台の Ferry をペアリングさせます。</span></div></li>
+          <li><span class="num">3</span><div><b lang="ja">最適経路で自動転送</b> <span class="en" lang="en">Ferry picks the best path.</span><br><span style="color:var(--muted);font-size:.88rem" lang="ja">TCP 直結 → UDP ホールパンチ → WebSocket リレーの順で試して、繋がる経路で勝手に運びます。</span></div></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== SYSTEM REQUIREMENTS ===================== -->
+  <section class="sec" id="requirements" aria-labelledby="req-title" style="padding-top:0">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <span class="eyebrow">System Requirements</span>
+        <h2 id="req-title">動作環境</h2>
+        <p class="h2-en" lang="en">System requirements</p>
+      </div>
+      <div class="req-grid">
+        <div class="req reveal" style="--d:40ms">
+          <div class="k">OS</div>
+          <div class="v">Windows / macOS / Linux<small lang="ja">クロスプラットフォーム対応</small></div>
+        </div>
+        <div class="req reveal" style="--d:90ms">
+          <div class="k">Architecture</div>
+          <div class="v">x64 &amp; ARM64<small lang="ja">Windows / macOS / Linux で両対応</small></div>
+        </div>
+        <div class="req reveal" style="--d:140ms">
+          <div class="k">Runtime</div>
+          <div class="v">不要 / None<small lang="en">Native AOT — .NET 10 self-contained</small></div>
+        </div>
+        <div class="req reveal" style="--d:190ms">
+          <div class="k">Pairing</div>
+          <div class="v">QR 対応スマホ<small lang="en">Any phone with a QR scanner</small></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== DOWNLOAD ===================== -->
+  <section class="sec download" id="download" aria-labelledby="dl-title">
+    <div class="wrap">
+      <div class="dl-panel reveal">
+        <div class="dl-head">
+          <div>
+            <span class="eyebrow">Download</span>
+            <h2 id="dl-title">今すぐ手に入れる</h2>
+            <p class="h2-en" lang="en">Get Ferry for your platform</p>
+          </div>
+          <span class="price-pill">¥0 · 完全無料 / Always free</span>
+        </div>
+
+        <div class="dl-grid">
+          <a class="dl-card" id="dl-x64" data-suggested href="https://ferry.nephilim.jp/Ferry-win-x64-Setup.exe" download>
+            <div class="dl-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5 10.5 4v7H3z"/><path d="M10.5 4 21 2.5V11h-10.5z"/><path d="M3 13h7.5v7L3 18.5z"/><path d="M10.5 13H21v8.5L10.5 20z"/></svg></div>
+            <div>
+              <span class="arch">Windows · x64</span>
+              <span class="os" lang="en">Intel / AMD 64-bit · Setup.exe</span>
+            </div>
+            <span class="go" aria-hidden="true">↓</span>
           </a>
+
+          <a class="dl-card" id="dl-arm64" href="https://ferry.nephilim.jp/Ferry-win-arm64-Setup.exe" download>
+            <div class="dl-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5 10.5 4v7H3z"/><path d="M10.5 4 21 2.5V11h-10.5z"/><path d="M3 13h7.5v7L3 18.5z"/><path d="M10.5 13H21v8.5L10.5 20z"/></svg></div>
+            <div>
+              <span class="arch">Windows · ARM64</span>
+              <span class="os" lang="en">ARM 64-bit (Snapdragon等) · Setup.exe</span>
+            </div>
+            <span class="go" aria-hidden="true">↓</span>
+          </a>
+
+          <a class="dl-card" href="https://ferry.nephilim.jp/Ferry-osx-arm64-Setup.exe" download>
+            <div class="dl-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3a3 3 0 0 0-3 3M9 8c-2 0-4 2-4 5s2 8 5 8c1.5 0 1.5-1 3-1s1.5 1 3 1c3 0 5-5 5-8s-2-5-4-5c-1.5 0-2 1-4 1s-2.5-1-4-1z"/></svg></div>
+            <div>
+              <span class="arch">macOS · ARM64</span>
+              <span class="os" lang="en">Apple Silicon (M1/M2/M3) · Setup</span>
+            </div>
+            <span class="go" aria-hidden="true">↓</span>
+          </a>
+
+          <a class="dl-card" href="https://ferry.nephilim.jp/Ferry-linux-x64-Setup.exe" download>
+            <div class="dl-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c-2 0-3 2-3 5 0 2 1 4 1 5l-3 6c-.5 1 0 2 1 2h8c1 0 1.5-1 1-2l-3-6c0-1 1-3 1-5 0-3-1-5-3-5z"/><circle cx="10" cy="8" r=".7" fill="currentColor"/><circle cx="14" cy="8" r=".7" fill="currentColor"/></svg></div>
+            <div>
+              <span class="arch">Linux · x64</span>
+              <span class="os" lang="en">glibc-based distros · AppImage</span>
+            </div>
+            <span class="go" aria-hidden="true">↓</span>
+          </a>
+
+          <a class="dl-card" href="https://ferry.nephilim.jp/Ferry-linux-arm64-Setup.exe" download>
+            <div class="dl-ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c-2 0-3 2-3 5 0 2 1 4 1 5l-3 6c-.5 1 0 2 1 2h8c1 0 1.5-1 1-2l-3-6c0-1 1-3 1-5 0-3-1-5-3-5z"/><circle cx="10" cy="8" r=".7" fill="currentColor"/><circle cx="14" cy="8" r=".7" fill="currentColor"/></svg></div>
+            <div>
+              <span class="arch">Linux · ARM64</span>
+              <span class="os" lang="en">Raspberry Pi / ARM servers · AppImage</span>
+            </div>
+            <span class="go" aria-hidden="true">↓</span>
+          </a>
+        </div>
+
+        <div class="dl-note">
+          <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M21 3l-9 9-3-3"/></svg> <span lang="ja">Velopack による自動更新に対応</span><span class="en" lang="en">&nbsp;Auto-updates via Velopack</span></span>
+          <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 6v6c0 5 3.5 7.5 8 8 4.5-.5 8-3 8-8V6z"/></svg> <span lang="ja">マルウェアではない正規ソフトウェア</span><span class="en" lang="en">&nbsp;Legitimate, non-malicious software</span></span>
+          <span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg> <span lang="ja">ソースコードは GitHub で公開</span><span class="en" lang="en">&nbsp;Source on GitHub</span></span>
+        </div>
+
+        <div class="trust">
+          <div class="reveal" style="--d:40ms">
+            <b lang="en">No Cloud, No Account</b>
+            <p lang="ja">ファイルは PC 同士で直接やり取り。クラウドにも私たちのサーバーにも保存されません。
+              <span class="en" lang="en">Files travel directly between PCs. Nothing is stored on the cloud or on our servers.</span>
+            </p>
+          </div>
+          <div class="reveal" style="--d:90ms">
+            <b lang="en">Transparent &amp; Auditable</b>
+            <p lang="ja">全ソースコードを GitHub で公開。プロトコル仕様も誰でも検証できます。
+              <span class="en" lang="en">Full source is public on GitHub; the wire protocol is open to audit.</span>
+            </p>
+          </div>
+          <div class="reveal" style="--d:140ms">
+            <b lang="en">Fast &amp; Lightweight</b>
+            <p lang="ja">Native AOT で即起動。ランタイムのインストールは要りません。
+              <span class="en" lang="en">Native AOT means instant startup with no runtime install.</span>
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -730,82 +912,110 @@
 </main>
 
 <!-- ===================== FOOTER ===================== -->
-<footer>
+<footer aria-labelledby="foot-title">
+  <h2 id="foot-title" class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Footer</h2>
   <div class="wrap">
     <div class="foot-grid">
-      <div>
-        <div class="foot-brand">
-          <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
-            <path d="M12 40 Q32 14 52 40" fill="none" stroke="#34e3d4" stroke-width="4" stroke-linecap="round"/>
-            <circle cx="12" cy="40" r="6" fill="#34e3d4"/><circle cx="52" cy="40" r="6" fill="#34e3d4"/>
-            <path d="M14 50 Q24 44 32 50 T50 50" fill="none" stroke="#1aa3c4" stroke-width="3" stroke-linecap="round" opacity=".7"/>
+      <div class="foot-brand">
+        <a class="brand" href="#top" aria-label="Ferry home">
+          <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+            <defs><linearGradient id="fm" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#5be3ff"/><stop offset="1" stop-color="#1a3a8a"/>
+            </linearGradient></defs>
+            <circle cx="5" cy="22" r="2.4" fill="#5be3ff"/>
+            <circle cx="27" cy="22" r="2.4" fill="#5be3ff"/>
+            <path d="M5 22 Q16 4 27 22" fill="none" stroke="url(#fm)" stroke-width="2.2" stroke-linecap="round"/>
+            <path d="M8 26 L24 26 L21 29 L11 29 Z" fill="url(#fm)"/>
+            <path d="M16 8 L20 14 L12 14 Z" fill="#5be3ff" opacity="0.9"/>
           </svg>
-          <span>Ferry<span class="dot">.</span></span>
-        </div>
-        <p class="foot-desc">QR でつなぐ、PC 間ダイレクトファイル転送。無料・オープンソースのデスクトップアプリ。
-          <span class="en" lang="en">Free, open-source, cross-platform desktop file transfer — paired by QR, sent peer-to-peer.</span>
+          <span><b>Ferry</b><span lang="ja">フェリー</span></span>
+        </a>
+        <p lang="ja">QR ペアリングで PC 同士を直結し、TCP / UDP / WebSocket の 3 段フォールバックでファイルを P2P 転送するクロスプラットフォーム転送ツール。無料・オープンソース。
+          <span class="en" lang="en">A free, open-source cross-platform file ferry: QR-paired PC-to-PC transfers over TCP direct, UDP hole-punching, or WebSocket relay.</span>
         </p>
-        <div class="legit">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2 4 6v6c0 5 3.4 8.5 8 10 4.6-1.5 8-5 8-10V6l-8-4z"/><path d="m9 12 2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <span>Ferry は無料の正規ソフトウェアです。マルウェア・アドウェア・トラッキングは一切含みません。ソースコードは GitHub で公開されています。
-            <span class="en" lang="en">Ferry is legitimate, non-malicious free software. It contains no malware, adware, or tracking — and its source code is publicly available on GitHub.</span>
-          </span>
-        </div>
       </div>
 
-      <nav class="foot-cols" aria-label="フッターリンク">
-        <div class="foot-col">
-          <h5><span lang="en">Project</span></h5>
-          <ul>
-            <li><a href="https://github.com/1llum1n4t1s/Ferry" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 .9 2.6.6 3.3.4.1-.7.4-1.2.7-1.5-2.5-.3-5.2-1.3-5.2-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 5 18.3 5.3 18.3 5.3c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.2 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>GitHub リポジトリ</a></li>
-            <li><a href="https://github.com/1llum1n4t1s/Ferry#readme" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 4h11l5 5v11H4z"/><path d="M8 12h8M8 16h6"/></svg>README / ドキュメント</a></li>
-            <li><a href="https://github.com/1llum1n4t1s/Ferry/issues" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>不具合報告 / Issues</a></li>
-          </ul>
-        </div>
-        <div class="foot-col">
-          <h5><span lang="en">On this page</span></h5>
-          <ul>
-            <li><a href="#how">仕組み <span lang="en" style="opacity:.55">/ How</span></a></li>
-            <li><a href="#features">特長 <span lang="en" style="opacity:.55">/ Features</span></a></li>
-            <li><a href="#download">入手 <span lang="en" style="opacity:.55">/ Get</span></a></li>
-            <li><a href="#top">ページ先頭へ <span lang="en" style="opacity:.55">/ Top</span></a></li>
-          </ul>
-        </div>
+      <nav class="foot-col" aria-label="Product">
+        <h4>Product</h4>
+        <a href="#features">機能 <span lang="en">/ Features</span></a>
+        <a href="#requirements">動作環境 <span lang="en">/ Requirements</span></a>
+        <a href="#download">ダウンロード <span lang="en">/ Download</span></a>
+      </nav>
+
+      <nav class="foot-col" aria-label="Project">
+        <h4>Project</h4>
+        <a href="https://github.com/1llum1n4t1s/Ferry" target="_blank" rel="noopener noreferrer">GitHub リポジトリ <span lang="en">/ Repository</span></a>
+        <a href="https://github.com/1llum1n4t1s/Ferry/issues" target="_blank" rel="noopener noreferrer">不具合報告 <span lang="en">/ Issues</span></a>
+        <a href="https://github.com/1llum1n4t1s/Ferry/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">ライセンス <span lang="en">/ License</span></a>
+        <span>自動更新 <span lang="en">/ Auto-updates via Velopack</span></span>
       </nav>
     </div>
 
-    <div class="foot-bottom">
-      <span>© 2026 1llum1n4t1s · <span lang="en">Free &amp; Open Source</span></span>
-      <span style="display:inline-flex;flex-wrap:wrap;gap:8px 18px;align-items:center">
-        <span class="tech-tag">⚓ <b>.NET 10</b> + Avalonia UI</span>
-        <span class="tech-tag" lang="en">Auto-updates via <b>Velopack</b></span>
+    <div class="legit">
+      <span class="badge-safe">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 6v6c0 5 3.5 7.5 8 8 4.5-.5 8-3 8-8V6z"/><path d="M9 12l2 2 4-4"/></svg>
+        正規ソフトウェア / Legitimate software
       </span>
+      <p>
+        <span lang="ja">Ferry はマルウェアやアドウェアを含まない、正規の無料オープンソース・ソフトウェアです。トラッキングや広告は一切ありません。© 2026 1llum1n4t1s.</span>
+        <span class="en" lang="en">Ferry is legitimate, free and open-source software. It contains no malware or adware, and performs no tracking. © 2026 1llum1n4t1s.</span>
+      </p>
     </div>
   </div>
 </footer>
 
-<!-- Progressive enhancement only: scroll-reveal.
-     The page is fully visible & functional without JS: the hidden state is gated behind
-     html.js, which is only added below once we KNOW the observer will run. If JS is off,
-     IntersectionObserver is missing, or the user prefers reduced motion, html.js is never
-     set, so all .reveal content renders immediately. -->
 <script>
+/* Progressive enhancement only — page is fully functional & visible without JS. */
 (function(){
-  // Bail (leaving content visible) if we can't progressively enhance.
-  if(!('IntersectionObserver' in window)) return;
-  if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  // Only now do we opt into the hidden-then-reveal behavior.
-  document.documentElement.classList.add('js');
+  /* 1) Scroll-reveal: reveal sections as they enter the viewport. */
+  var sections = document.querySelectorAll('section, footer');
+  if (reduce || !('IntersectionObserver' in window)) {
+    sections.forEach(function(s){ s.classList.add('is-in'); });
+  } else {
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (e.isIntersecting){ e.target.classList.add('is-in'); io.unobserve(e.target); }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    sections.forEach(function(s){ io.observe(s); });
+    /* hero is in view immediately */
+    var hero = document.querySelector('.hero');
+    if (hero) hero.classList.add('is-in');
+  }
 
-  var io = new IntersectionObserver(function(entries){
-    entries.forEach(function(e){
-      if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); }
+  /* 2) OS-architecture hint: highlight the likely-correct Windows download.
+        Ferry channels include win-x64 and win-arm64, so this hint is meaningful. */
+  try {
+    var ua = (navigator.userAgent || '') + ' ' + (navigator.platform || '');
+    var isArm = /aarch64|arm64|ARM\b/i.test(ua);
+    var x64 = document.getElementById('dl-x64');
+    var arm = document.getElementById('dl-arm64');
+    var primarySub = document.getElementById('primary-dl-sub');
+    var primaryBtn = document.getElementById('primary-dl');
+    if (isArm && arm && x64) {
+      arm.setAttribute('data-suggested','');
+      x64.removeAttribute('data-suggested');
+      arm.classList.add('show-suggest');
+      if (primarySub) primarySub.textContent = 'Windows ARM64';
+      if (primaryBtn) primaryBtn.setAttribute('href','https://ferry.nephilim.jp/Ferry-win-arm64-Setup.exe');
+    } else if (x64) {
+      x64.classList.add('show-suggest');
+    }
+  } catch(e){ /* no-op */ }
+
+  /* 3) Card hover spotlight follows the cursor. */
+  if (!reduce) {
+    document.querySelectorAll('.card').forEach(function(card){
+      card.addEventListener('pointermove', function(ev){
+        var r = card.getBoundingClientRect();
+        card.style.setProperty('--mx', (ev.clientX - r.left) + 'px');
+        card.style.setProperty('--my', (ev.clientY - r.top) + 'px');
+      });
     });
-  },{threshold:.12, rootMargin:'0px 0px -8% 0px'});
-  document.querySelectorAll('.reveal').forEach(function(el){ io.observe(el); });
+  }
 })();
 </script>
-
 </body>
 </html>
