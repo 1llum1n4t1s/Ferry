@@ -92,6 +92,8 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">स्थानान्तरणं निराकृतम्</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">पुनरारम्भः विफलः</x:String>
+  <x:String x:Key="Text.Transfer.Retrying" xml:space="preserve">पुनः प्रयत्नं करोति ({0}/{1})…</x:String>
+  <x:String x:Key="Text.Transfer.ConnectFailed" xml:space="preserve">संयोजनं स्थापयितुं न शक्यते</x:String>
   <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
   <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
   <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>

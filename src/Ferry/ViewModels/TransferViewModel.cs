@@ -346,7 +346,17 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                         item.State = TransferState.InProgress;
                     }
 
-                    await EnsureConnectedAsync(peer, cts.Token);
+                    try
+                    {
+                        await EnsureConnectedAsync(peer, cts.Token);
+                    }
+                    catch (OperationCanceledException) when (!cts.IsCancellationRequested)
+                    {
+                        // 並列送信の相互キャンセルや接続の置換など、この item 自身のキャンセルではない
+                        // 接続中断。OCE のまま伝播させると下の no-retry catch が「キャンセル」扱いに
+                        // 確定させるため、一過性エラーに変換してリトライ分岐へ回す
+                        throw new InvalidOperationException(App.Text("Transfer.ConnectFailed"));
+                    }
                     // UI 行と同じ TransferId を渡し、進捗・キャンセル・一時停止を対応付ける
                     await _transferService.SendFileAsync(absolutePath, relativePath, item.TransferId, cts.Token);
 

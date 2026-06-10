@@ -55,6 +55,15 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     private readonly SemaphoreSlim _connectGate = new(1, 1);
 
     /// <summary>
+    /// 現在の State=Connecting を立てたのが着信監視ループ (listener) かどうか。
+    /// listener のキャンセル復旧ブロックは、自分が立てた Connecting だけを Disconnected に
+    /// 巻き戻すためにこれを確認する。ConnectToPeerAsync が Connecting を立て直した後に
+    /// listener の遅延キャンセル処理が走っても、オンデマンド接続側の状態と transport を
+    /// 誤って破棄しないようにする (同時接続競合時の踏み潰し防止)。
+    /// </summary>
+    private volatile bool _connectingByListener;
+
+    /// <summary>
     /// v1.0.38 review fix: 現在 StartListeningForConnection で監視中のピア ID。
     /// ProbeRouteAsync 終了時にこの値を使って着信監視を再開する。
     /// ConnectedPeer?.SessionId は接続成立後にしか入らないため復元用には使えない。
@@ -294,6 +303,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         // 招いていたため撤去。per-nonce key + 本 HashSet のみで stale dedupe する。
         var processedProbeNonces = new System.Collections.Generic.HashSet<string>();
 
+        // この iteration で自分が SetState(Connecting) を立てて着信 offer を処理中かどうか。
+        // キャンセル catch で State を復旧する条件に使う (ConnectToPeerAsync 側が立てた Connecting を
+        // 誤って巻き戻さないよう、自分が立てたときだけ復旧する)
+        var processingOffer = false;
+
         // ポーリング用 Firebase クライアントはループ全体で再利用する
         // （毎反復で new すると接続/TLS ハンドシェイクの churn が発生するため）
         using var pollingSignaling = new FirebaseSignaling(_databaseUrl);
@@ -302,6 +316,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         {
             try
             {
+                processingOffer = false;
+
                 if (State is PeerState.Connected or PeerState.Connecting)
                 {
                     await Task.Delay(2000, ct);
@@ -369,7 +385,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 }
 
                 Util.Logger.Log($"着信接続情報検知！ Answer 側として接続開始: pairId={pairId}, ips=[{string.Join(", ", offer.Ips.Select(Util.Logger.MaskIp))}], port={offer.Port}");
+                _connectingByListener = true;  // Connecting の所有権は listener (キャンセル復旧の判定に使う)
                 SetState(PeerState.Connecting);
+                processingOffer = true;
                 StatusMessageChanged?.Invoke(this, "Status.Phase.TcpConnecting");
 
                 _signaling?.Dispose();
@@ -427,6 +445,19 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
+                // 監視停止 (ピア切替 / ピア削除 / 接続開始) によるキャンセル。着信 offer 処理中
+                // (リレー試行中など) に中断された場合、Connecting のまま残すと次の監視ループが
+                // 「接続中」と誤認して着信を永久に処理できなくなるため、自分が立てた Connecting に
+                // 限り後始末して Disconnected へ戻す (ConnectToPeerAsync のキャンセル経路と対称)。
+                // _connectingByListener は ConnectToPeerAsync が Connecting を立て直した後の
+                // 遅延キャンセル処理がオンデマンド側の状態 / transport を踏み潰すのを防ぐ
+                if (processingOffer && State == PeerState.Connecting && _connectingByListener)
+                {
+                    DetachTransportEvents();
+                    _transport?.Dispose();
+                    _transport = null;
+                    SetState(PeerState.Disconnected);
+                }
                 Util.Logger.Log("着信接続監視: 正常キャンセル");
                 break;
             }
@@ -521,6 +552,23 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         // 順序を逆 (Gate→Cancel) にすると、自然完了しない孤児ポーラーを抱えたまま待ち、自己デッドロックする。
         _connectCts?.Cancel();
         await _connectGate.WaitAsync(ct);
+
+        // 所有権がまだ _transport に移っていないローカル transport を例外/キャンセル経路で確実に破棄する。
+        // (bound ソケット / LISTEN ポートが GC ファイナライザ回収までリークするのを防ぐ。Dispose は冪等)
+        TcpDirectTransport? tcpTransport = null;
+        UdpHolePunchTransport? udpTransport = null;
+        void DisposeOrphanTransports()
+        {
+            if (tcpTransport != null && !ReferenceEquals(tcpTransport, _transport))
+            {
+                try { tcpTransport.Dispose(); } catch { }
+            }
+            if (udpTransport != null && !ReferenceEquals(udpTransport, _transport))
+            {
+                try { udpTransport.Dispose(); } catch { }
+            }
+        }
+
         try
         {
             _connectCts?.Dispose();
@@ -528,6 +576,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             var linked = _connectCts.Token;
 
             Util.Logger.Log($"オンデマンド接続開始: peer={peerId}, deviceId={_deviceId}");
+            _connectingByListener = false;  // Connecting の所有権をオンデマンド接続側へ移す
             SetState(PeerState.Connecting);
 
             // 着信監視を一時停止（自分の Offer を自分で拾わないように）
@@ -549,7 +598,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
             // ① TCP リスナー起動 → offer 送信（STUN なし）
             StatusMessageChanged?.Invoke(this, "Status.Phase.TcpPreparing");
-            var tcpTransport = new TcpDirectTransport();
+            tcpTransport = new TcpDirectTransport();
             var port = tcpTransport.StartListener();
 
             var localIps = TcpDirectTransport.GetLocalIpAddresses();
@@ -566,9 +615,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
             // ② TCP accept + Answer ポーリングを同時待機
             StatusMessageChanged?.Invoke(this, "Status.Phase.TcpConnecting");
-            //    Answer が TCP 結果を通知してくるので、固定タイムアウト不要
+            //    Answer が TCP 結果を通知してくるので、固定タイムアウト不要。
+            //    answer ポーリングは専用 CTS で持ち、TCP 成功時に確認応答待ちを打ち切れるようにする
+            using var answerCts = CancellationTokenSource.CreateLinkedTokenSource(linked);
             var tcpAcceptTask = tcpTransport.AcceptAsync(linked);
-            var answerTask = _signaling.WaitForSdpAsync(pairId, "answer", ct: linked);
+            var answerTask = _signaling.WaitForSdpAsync(pairId, "answer", ct: answerCts.Token);
 
             // どちらか先に完了した方で判断
             var completedTask = await Task.WhenAny(tcpAcceptTask, answerTask);
@@ -583,9 +634,19 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 _transport = tcpTransport;
                 AttachTransportEvents();
 
-                // Answer ポーリングも完了を待つ（確認応答）
-                await answerTask;
-                Util.Logger.Log("接続確認応答受信");
+                // Answer ポーリングも完了を待つ（確認応答）。WaitForSdpAsync は内部例外を握りつぶして
+                // 無限ポーリングするため、受信側の answer 書き込みが失敗すると TCP 確立済みなのに
+                // ここで永久待機する。確認応答は補助情報なので 10 秒で打ち切って接続成立を優先する
+                answerCts.CancelAfter(TimeSpan.FromSeconds(10));
+                try
+                {
+                    await answerTask;
+                    Util.Logger.Log("接続確認応答受信");
+                }
+                catch (OperationCanceledException) when (!linked.IsCancellationRequested)
+                {
+                    Util.Logger.Log("接続確認応答タイムアウト (TCP 確立済みのため続行)", Util.LogLevel.Warning);
+                }
             }
             else
             {
@@ -595,62 +656,82 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 {
                     answerJson = await answerTask;
                 }
+                catch (OperationCanceledException)
+                {
+                    // ユーザーの転送キャンセル / 新しい接続要求 / 切断によるキャンセル。ここで握りつぶすと
+                    // answerJson=null のまま下の Connected 遷移へ素通りし、transport 不在の State=Connected が
+                    // 残留して以後の送信が全て「接続されていません」で恒久失敗する (2026-06-10 実機ログで発生)。
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     Util.Logger.Log($"Answer 受信エラー: {ex.Message}", Util.LogLevel.Error);
                 }
-
-                tcpTransport.Dispose(); // TCP は不要
-                // WhenAny 敗者の AcceptAsync を観測する。Dispose→listener.Stop() で走行中の
-                // AcceptTcpClientAsync が SocketError.Interrupted の SocketException を投げるが、
-                // ct 自体は未キャンセル (OperationCanceledException ではない) ため未観測のまま
-                // finalizer で UnobservedTaskException 化する。ProbeRouteAsync と同様に握りつぶす。
-                _ = ObserveTaskAsync(tcpAcceptTask);
-
-                if (answerJson != null)
+                finally
                 {
-                    Util.Logger.Log("Answer が TCP 失敗報告 → STUN/UDP ホールパンチ試行");
-                    StatusMessageChanged?.Invoke(this, "Status.Phase.StunQuery");
+                    tcpTransport.Dispose(); // TCP は不要 (キャンセル経路でも listener を確実に閉じる)
+                    // WhenAny 敗者の AcceptAsync を観測する。Dispose→listener.Stop() で走行中の
+                    // AcceptTcpClientAsync が SocketError.Interrupted の SocketException を投げるが、
+                    // ct 自体は未キャンセル (OperationCanceledException ではない) ため未観測のまま
+                    // finalizer で UnobservedTaskException 化する。ProbeRouteAsync と同様に握りつぶす。
+                    _ = ObserveTaskAsync(tcpAcceptTask);
+                }
 
-                    // ③ STUN + UDP ホールパンチを試行
-                    var udpTransport = new UdpHolePunchTransport();
-                    var stunResult = await udpTransport.GetExternalEndpointAsync(ct: linked);
+                // Answer 不達 = シグナリング不成立。失敗を確定させずに先へ進むと transport が無いまま
+                // Connected になるため、ここで接続失敗として throw する (外側 catch が State=Error にする)
+                if (answerJson == null)
+                    throw new InvalidOperationException("Answer を受信できませんでした");
 
-                    if (stunResult != null)
+                Util.Logger.Log("Answer が TCP 失敗報告 → STUN/UDP ホールパンチ試行");
+                StatusMessageChanged?.Invoke(this, "Status.Phase.StunQuery");
+
+                // ③ STUN + UDP ホールパンチを試行
+                udpTransport = new UdpHolePunchTransport();
+                var stunResult = await udpTransport.GetExternalEndpointAsync(ct: linked);
+
+                if (stunResult != null)
+                {
+                    Util.Logger.Log($"STUN 外部エンドポイント取得: {Util.Logger.MaskIp(stunResult.Value.ip)}:{stunResult.Value.port}");
+
+                    // 外部エンドポイントを offer に追加送信
+                    var updatedOffer = new ConnectionInfo
                     {
-                        Util.Logger.Log($"STUN 外部エンドポイント取得: {Util.Logger.MaskIp(stunResult.Value.ip)}:{stunResult.Value.port}");
+                        Ips = localIps,
+                        Port = port,
+                        ExternalIp = stunResult.Value.ip,
+                        ExternalPort = stunResult.Value.port,
+                        RelayUrl = RelayUrl,
+                        From = _deviceId,  // v1.0.38 review fix v2
+                    };
+                    await _signaling.SendSdpOfferAsync(pairId, SerializeConnectionInfo(updatedOffer), linked);
 
-                        // 外部エンドポイントを offer に追加送信
-                        var updatedOffer = new ConnectionInfo
-                        {
-                            Ips = localIps,
-                            Port = port,
-                            ExternalIp = stunResult.Value.ip,
-                            ExternalPort = stunResult.Value.port,
-                            RelayUrl = RelayUrl,
-                            From = _deviceId,  // v1.0.38 review fix v2
-                        };
-                        await _signaling.SendSdpOfferAsync(pairId, SerializeConnectionInfo(updatedOffer), linked);
+                    StatusMessageChanged?.Invoke(this, "Status.Phase.UdpHolePunch");
+                    connected = await TryUdpHolePunchOfferAsync(udpTransport, pairId, linked);
+                }
+                else
+                {
+                    Util.Logger.Log("STUN 外部エンドポイント取得失敗（UDP ホールパンチ不可）");
+                    udpTransport.Dispose();
+                }
 
-                        StatusMessageChanged?.Invoke(this, "Status.Phase.UdpHolePunch");
-                        connected = await TryUdpHolePunchOfferAsync(udpTransport, pairId, linked);
-                    }
-                    else
-                    {
-                        Util.Logger.Log("STUN 外部エンドポイント取得失敗（UDP ホールパンチ不可）");
-                        udpTransport.Dispose();
-                    }
-
-                    // ④ WebSocket リレーにフォールバック
-                    if (!connected)
-                    {
-                        StatusMessageChanged?.Invoke(this, "Status.Phase.Relay");
-                        var relayConnected = await TryRelayConnectAsync(pairId, "offer", linked);
-                        if (!relayConnected)
-                            throw new InvalidOperationException("全ての接続方法が失敗しました");
-                    }
+                // ④ WebSocket リレーにフォールバック
+                if (!connected)
+                {
+                    StatusMessageChanged?.Invoke(this, "Status.Phase.Relay");
+                    var relayConnected = await TryRelayConnectAsync(pairId, "offer", linked);
+                    if (!relayConnected)
+                        throw new InvalidOperationException("全ての接続方法が失敗しました");
                 }
             }
+
+            // キャンセル発火と最終 await の成功完了が重なるレース (UDP PUNCH_ACK / answer 取得が
+            // キャンセルと同時に完了するケース) を閉じる: 発火済みなら成功扱いにせず
+            // 外側 OCE catch の後始末 (transport 破棄 + Disconnected) に収束させる
+            linked.ThrowIfCancellationRequested();
+
+            // 防御: どの経路でも transport が確立していなければ Connected を立てない (偽 Connected 残留の安全網)
+            if (_transport == null || !_transport.IsConnected)
+                throw new InvalidOperationException("接続経路が確立されていません");
 
             ConnectedPeer = new PeerInfo
             {
@@ -663,13 +744,23 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         }
         catch (OperationCanceledException)
         {
-            // 新しい接続要求 (または DisconnectAsync) に追い越されてキャンセルされた正常系。
-            // State は追い越した側のフローが設定するため、ここでは Error にしない。
-            Util.Logger.Log("接続試行がキャンセルされました（新しい接続要求に置換）");
+            // 新しい接続要求 / DisconnectAsync / ユーザーの転送キャンセルに中断された正常系。
+            // Connecting のまま残すと Probe や接続判定が「接続中」と誤認するため、後始末して Disconnected へ戻す。
+            // 追い越した側の新しい ConnectToPeerAsync は gate 取得後に自分で Connecting を立て直すので競合しない。
+            DisposeOrphanTransports();
+            if (State == PeerState.Connecting)
+            {
+                DetachTransportEvents();
+                _transport?.Dispose();
+                _transport = null;
+                SetState(PeerState.Disconnected);
+            }
+            Util.Logger.Log("接続試行がキャンセルされました（ユーザー操作または新しい接続要求）");
             throw;
         }
         catch (Exception ex)
         {
+            DisposeOrphanTransports();
             Util.Logger.Log($"接続エラー: {ex.Message}", Util.LogLevel.Error);
             SetState(PeerState.Error);
             throw;
@@ -1003,6 +1094,13 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             udpTransport.Dispose();
             return false;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // ユーザーの転送キャンセル / 接続置換。false (UDP 失敗) に変換するとキャンセル後も
+            // リレー試行へ進んでしまうため、キャンセルとして伝播する (リレー段の rethrow と対称)
+            udpTransport.Dispose();
+            throw;
+        }
         catch (Exception ex)
         {
             Util.Logger.Log($"UDP ホールパンチ（Offer 側）失敗: {ex.Message}", Util.LogLevel.Warning);
@@ -1054,6 +1152,14 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             udpTransport?.Dispose();
             return false;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // 監視停止によるキャンセル。false (UDP 失敗) に変換するとキャンセル後もリレー試行へ
+            // 進んでしまうため、キャンセルとして伝播する (Offer 側 / リレー段の rethrow と対称。
+            // listener 側のキャンセル catch が状態復旧を行う)
+            udpTransport?.Dispose();
+            throw;
+        }
         catch (Exception ex)
         {
             Util.Logger.Log($"UDP ホールパンチ（Answer 側）失敗: {ex.Message}", Util.LogLevel.Warning);
@@ -1073,10 +1179,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             return false;
         }
 
+        WebSocketRelayTransport? relayTransport = null;
         try
         {
             Util.Logger.Log($"WebSocket リレー接続試行: role={role}");
-            var relayTransport = new WebSocketRelayTransport(RelayUrl, pairId, role);
+            relayTransport = new WebSocketRelayTransport(RelayUrl, pairId, role);
 
             using var relayCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             relayCts.CancelAfter(TimeSpan.FromSeconds(30));
@@ -1089,8 +1196,16 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             AttachTransportEvents();
             return true;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // ユーザーの転送キャンセル / 接続置換。false (リレー失敗) に変換すると上位が
+            // 「全ての接続方法が失敗」の Error 扱いにするため、キャンセルとして伝播する
+            relayTransport?.Dispose();
+            throw;
+        }
         catch (Exception ex)
         {
+            relayTransport?.Dispose();
             Util.Logger.Log($"WebSocket リレー接続失敗: {ex.Message}", Util.LogLevel.Warning);
             return false;
         }
