@@ -92,8 +92,8 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Translatio reiecta</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Resumptio defecit</x:String>
-  <x:String x:Key="Text.Transfer.Retrying" xml:space="preserve">Retrying ({0}/{1})…</x:String>
-  <x:String x:Key="Text.Transfer.ConnectFailed" xml:space="preserve">Could not establish a connection</x:String>
+  <x:String x:Key="Text.Transfer.Retrying" xml:space="preserve">Iterum temptans ({0}/{1})…</x:String>
+  <x:String x:Key="Text.Transfer.ConnectFailed" xml:space="preserve">Conexionem constituere non potuit</x:String>
   <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
   <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
   <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>

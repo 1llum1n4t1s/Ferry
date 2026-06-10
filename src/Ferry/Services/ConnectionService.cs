@@ -1152,6 +1152,14 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             udpTransport?.Dispose();
             return false;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // 監視停止によるキャンセル。false (UDP 失敗) に変換するとキャンセル後もリレー試行へ
+            // 進んでしまうため、キャンセルとして伝播する (Offer 側 / リレー段の rethrow と対称。
+            // listener 側のキャンセル catch が状態復旧を行う)
+            udpTransport?.Dispose();
+            throw;
+        }
         catch (Exception ex)
         {
             Util.Logger.Log($"UDP ホールパンチ（Answer 側）失敗: {ex.Message}", Util.LogLevel.Warning);
