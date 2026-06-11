@@ -53,12 +53,6 @@ public interface IConnectionService
     Task<string> StartPairingSessionAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// アプリ内 URL 貼り付けによるペアリング。カメラ無し PC 同士で Bridge ページを介さずに完結する。
-    /// 相手 PC のペアリングリンクを受け取り、Firebase pairings/ への直接書き込みでペアリング成立させる。
-    /// </summary>
-    Task<(bool Success, string Message)> PairFromUrlAsync(string peerInviteUrl, CancellationToken ct = default);
-
-    /// <summary>
     /// v1.0.38: アプリ内ペアリングコード貼り付け。URL ではなく 32 文字 hex (相手の sessionId) を受け取る。
     /// ブラウザでうっかり開かれる事故を防ぐため URL から GUID 風文字列に変更。
     /// </summary>

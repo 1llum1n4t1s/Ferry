@@ -29,7 +29,6 @@ public class TransferItemTests
         Assert.Equal(string.Empty, item.FileName);
         Assert.Equal(0L, item.FileSize);
         Assert.Equal(0L, item.TransferredBytes);
-        Assert.Equal(-1, item.LastConfirmedChunkIndex);
         Assert.Equal(0, item.TotalChunks);
         Assert.Equal(TransferDirection.Send, item.Direction);
         Assert.Equal(TransferState.Pending, item.State);

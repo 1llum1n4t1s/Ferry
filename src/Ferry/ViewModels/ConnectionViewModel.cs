@@ -790,7 +790,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     /// Release 時に dequeue して順次処理する (複数 peer 同時 Online 時に最初の 1 つしか
     /// probe されないバグの修正)。lock(_probeQueueLock) で保護。</summary>
     private readonly Queue<PairedPeer> _probeQueue = new();
-    private readonly object _probeQueueLock = new();
+    private readonly Lock _probeQueueLock = new();
     /// <summary>同じピアへの Probe 連発を防ぐクールダウン (Online flap 対策)。</summary>
     private static readonly TimeSpan ProbeCooldown = TimeSpan.FromMinutes(5);
 

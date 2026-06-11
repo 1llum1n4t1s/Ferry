@@ -37,9 +37,6 @@ public sealed partial class TransferItem : ObservableObject
     [NotifyPropertyChangedFor(nameof(DisplayInfo))]
     public partial long TransferredBytes { get; set; }
 
-    /// <summary>最後に確認済みのチャンクインデックス。</summary>
-    public int LastConfirmedChunkIndex { get; set; } = -1;
-
     /// <summary>送信側フロー制御: 受信側 FlowAck が報告した「書き込み済みチャンク数」。
     /// v1.0.46 追加。SendChunksAsync がこの値を基準にウィンドウを超えて先行しないよう待機する。
     /// 受信スレッドからの更新 / 送信ループからの読み取りを跨ぐため Volatile で読み書きする。

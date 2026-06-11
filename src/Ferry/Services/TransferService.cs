@@ -505,7 +505,6 @@ public sealed class TransferService : ITransferService, IDisposable
     /// </summary>
     private async Task SendChunksAsync(string filePath, Guid transferId, int startChunk, TransferItem item, CancellationToken ct, System.Security.Cryptography.IncrementalHash? hashSink = null)
     {
-        var sentCount = 0;
         // P-11: 進捗通知の throttle (UI スレッドへの Post と PropertyChanged 発火を抑制)。
         // 時間ベース (60ms = 16fps 相当) に切り替え、UI から見える滑らかさは維持しつつ通知頻度を一定化
         var lastProgressTick = Environment.TickCount64;
@@ -610,9 +609,6 @@ public sealed class TransferService : ITransferService, IDisposable
             item.TransferredBytes = (long)(index + 1) * TransferProtocol.ChunkSize;
             if (item.TransferredBytes > item.FileSize)
                 item.TransferredBytes = item.FileSize;
-            item.LastConfirmedChunkIndex = index;
-
-            sentCount++;
 
             // 進捗通知（時間ベース throttle、60ms 経過時のみ）
             var nowTick = Environment.TickCount64;
@@ -646,12 +642,19 @@ public sealed class TransferService : ITransferService, IDisposable
     /// fire-and-forget で握り潰してハンドラ側をブロックしない。
     /// </summary>
     private void SendRejectFireAndForget(Guid transferId, string reason)
+        => SendFireAndForget(FileChunker.CreateRejectMessage(transferId, reason), "FileReject");
+
+    /// <summary>
+    /// opop C-6: 制御メッセージ (Reject / ACK / Pong / ResumeResponse / Approve) の fire-and-forget
+    /// 送信を統一するヘルパー。例外は握り潰してログのみ (受信スレッドをブロックしない +
+    /// UnobservedTaskException 防止) という方針をここ 1 箇所で保証する。
+    /// </summary>
+    private void SendFireAndForget(byte[] message, string label)
     {
-        var rejectMessage = FileChunker.CreateRejectMessage(transferId, reason);
         _ = Task.Run(async () =>
         {
-            try { await _connectionService.SendAsync(rejectMessage); }
-            catch (Exception ex) { Util.Logger.Log($"FileReject 送信エラー: {ex.Message}", Util.LogLevel.Warning); }
+            try { await _connectionService.SendAsync(message); }
+            catch (Exception ex) { Util.Logger.Log($"{label} 送信エラー: {ex.Message}", Util.LogLevel.Warning); }
         });
     }
 
@@ -890,7 +893,6 @@ public sealed class TransferService : ITransferService, IDisposable
             }
 
             state.Item.TransferredBytes = state.WrittenBytes;
-            state.Item.LastConfirmedChunkIndex = chunkIndex;
 
             // 進捗通知（P-11: 時間ベース throttle、60ms 経過時のみ。送信側と統一）
             var nowTick = Environment.TickCount64;
@@ -945,19 +947,7 @@ public sealed class TransferService : ITransferService, IDisposable
         }
 
         // ACK を送信（送信側に結果を通知）— fire-and-forget でブロッキングを回避
-        var ackMessage = FileChunker.CreateAckMessage(hashMatch, sha256Bytes);
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await _connectionService.SendAsync(ackMessage);
-                Util.Logger.Log("ACK 送信完了");
-            }
-            catch (Exception ex)
-            {
-                Util.Logger.Log($"ACK 送信エラー: {ex.Message}", Util.LogLevel.Warning);
-            }
-        });
+        SendFireAndForget(FileChunker.CreateAckMessage(hashMatch, sha256Bytes), "ACK");
 
         if (hashMatch)
         {
@@ -1139,7 +1129,9 @@ public sealed class TransferService : ITransferService, IDisposable
         var (transferId, ackedChunks) = parsed.Value;
         var found = _activeTransfers.TryGetValue(transferId, out var item);
         // v1.0.47: ack 到達と item 解決を可視化（found=false が続くなら配線/transferId 不一致を疑う）
-        Util.Logger.Log($"FlowAck 受信: transferId={transferId} acked={ackedChunks} found={found}", Util.LogLevel.Debug);
+        // opop P-1: FlowAck ごと (4MB ごと) に呼ばれるため、Release (Info 以上) では補間文字列の構築自体を省く
+        if (Util.Logger.IsEnabled(Util.LogLevel.Debug))
+            Util.Logger.Log($"FlowAck 受信: transferId={transferId} acked={ackedChunks} found={found}", Util.LogLevel.Debug);
         if (found && item != null)
         {
             if (ackedChunks > Volatile.Read(ref item.FlowAckedChunks))
@@ -1150,18 +1142,7 @@ public sealed class TransferService : ITransferService, IDisposable
     private void HandlePing()
     {
         // fire-and-forget でブロッキングを回避
-        var pong = FileChunker.CreatePongMessage();
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await _connectionService.SendAsync(pong);
-            }
-            catch (Exception ex)
-            {
-                Util.Logger.Log($"Pong 送信エラー: {ex.Message}", Util.LogLevel.Warning);
-            }
-        });
+        SendFireAndForget(FileChunker.CreatePongMessage(), "Pong");
     }
 
     private void HandleResumeRequest(byte[] data)
@@ -1170,18 +1151,7 @@ public sealed class TransferService : ITransferService, IDisposable
         Util.Logger.Log($"レジュームリクエスト受信: transferId={transferId}, lastChunk={lastChunkIndex}");
 
         // レジューム応答（現時点では非対応として拒否）— fire-and-forget でブロッキングを回避
-        var response = FileChunker.CreateResumeResponseMessage(transferId, false, lastChunkIndex);
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await _connectionService.SendAsync(response);
-            }
-            catch (Exception ex)
-            {
-                Util.Logger.Log($"レジューム応答送信エラー: {ex.Message}", Util.LogLevel.Warning);
-            }
-        });
+        SendFireAndForget(FileChunker.CreateResumeResponseMessage(transferId, false, lastChunkIndex), "レジューム応答");
     }
 
     private void HandleResumeResponse(byte[] data)
@@ -1254,12 +1224,7 @@ public sealed class TransferService : ITransferService, IDisposable
 
         // v1.0.38: 送信側に FileApprove を送って、チャンク送信を開始させる
         // (送信側は FileMeta 送信後にこれを待っている)
-        var approveMessage = FileChunker.CreateApproveMessage(tid);
-        _ = Task.Run(async () =>
-        {
-            try { await _connectionService.SendAsync(approveMessage); }
-            catch (Exception ex) { Util.Logger.Log($"FileApprove 送信エラー: {ex.Message}", Util.LogLevel.Warning); }
-        });
+        SendFireAndForget(FileChunker.CreateApproveMessage(tid), "FileApprove");
     }
 
     /// <summary>受信承認待ちの転送を拒否する。送信側に FileReject を送信する。</summary>

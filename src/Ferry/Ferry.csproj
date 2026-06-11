@@ -40,7 +40,7 @@
     <PackageReference Include="Avalonia.Desktop" Version="12.0.4" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.4" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.4" />
-    <!-- 注意: Avalonia 本体は 12.0.3 だが、Avalonia.Diagnostics は本記事時点で 11.3.16 が最新 (12 系未公開)。
+    <!-- 注意: Avalonia 本体は 12 系だが、Avalonia.Diagnostics は 11 系が最新 (12 系未公開)。
          Debug ビルド専用のデベロッパーツールで Release には含まれないため、互換性警告が出ても許容する。
          Avalonia.Diagnostics 12 が公開され次第バージョンを揃える -->
     <PackageReference Include="Avalonia.Diagnostics" Version="11.3.17" Condition="'$(Configuration)' == 'Debug'" />

@@ -175,6 +175,10 @@ public sealed class FirebaseSignaling : IDisposable
         var pollCount = 0;
         var lastErrorLog = 0; // エラーログ抑制用カウンタ
         var consecutiveErrors = 0; // rere #F-012: exponential backoff 用カウンタ
+        // opop P-2: createdAt は offer 書き込み時に 1 回セットされる不変値なので、鮮度チェックを
+        // 一度通過したら以降のループでは再取得しない (毎ループ 2 リクエスト → 1 に半減。
+        // 400ms ポーリング × 接続待ち時間ぶんの Firebase read 削減 = Spark 帯域に直結)
+        var freshnessPassed = false;
 
         while (!ct.IsCancellationRequested)
         {
@@ -182,7 +186,7 @@ public sealed class FirebaseSignaling : IDisposable
             try
             {
                 // minCreatedAt が設定されている場合、createdAt タイムスタンプで鮮度を検証する
-                if (minCreatedAt > 0)
+                if (minCreatedAt > 0 && !freshnessPassed)
                 {
                     // Firebase ライブラリはノード未存在時に例外を投げることがあるため個別に捕捉
                     long? createdAt = null;
@@ -212,6 +216,7 @@ public sealed class FirebaseSignaling : IDisposable
                     }
 
                     Util.Logger.Log($"SDP 鮮度チェック通過 ({watchField}): createdAt={createdAt.Value}");
+                    freshnessPassed = true;
                 }
 
                 // SDP データの取得（未存在時は null を返す場合と例外を投げる場合がある）
