@@ -562,7 +562,9 @@ public sealed class TransferService : ITransferService, IDisposable
             // 効くため、高 RTT 回線で FlowAck の往復遅延が 32MB 窓を不要に律速するのを避ける。
             // 受信側の FlowAck 送信は経路非依存で常時行われる (送信側だけのガードなら両側判定の
             // 食い違いによる stall が構造的に起きない) ので、ここでの判定だけで安全に無効化できる。
-            if (_connectionService.Route == ConnectionRoute.Relay)
+            // PR#5 Codex 指摘: Route が確定できていない (Unknown) 場合は安全側に倒してフロー制御を有効にする
+            // (実際はリレーなのに Unknown のままだと ~55秒切断が再発するため)
+            if (_connectionService.Route is not (ConnectionRoute.Direct or ConnectionRoute.StunAssisted))
             {
                 var flowWaitStart = Environment.TickCount64;
                 // v1.0.47: 発火を一度だけ Info ログに残す。これが出ていれば「送信が受信ドレインに律速された＝

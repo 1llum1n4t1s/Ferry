@@ -194,9 +194,11 @@ public sealed class FirebaseSignaling : IDisposable
                             .Child("createdAt")
                             .OnceSingleAsync<long?>();
                     }
-                    catch
+                    catch (Exception ex) when (!IsQuotaOrServerError(ex))
                     {
-                        // ノード未存在 or null レスポンス → createdAt = null として扱う
+                        // ノード未存在 or null レスポンス → createdAt = null として扱う。
+                        // PR#5 Codex 指摘: 402/429/503 (枠超過/サービス停止系) はここで握らず
+                        // 外側 catch のステータス分類ログ + backoff に到達させる
                     }
 
                     if (createdAt == null || createdAt.Value < minCreatedAt)
@@ -222,9 +224,9 @@ public sealed class FirebaseSignaling : IDisposable
                         .Child(watchField)
                         .OnceSingleAsync<SignalingValue>();
                 }
-                catch
+                catch (Exception ex) when (!IsQuotaOrServerError(ex))
                 {
-                    // ノード未存在 → value = null として扱う
+                    // ノード未存在 → value = null として扱う (枠超過系は外側 catch へ、上記と同様)
                 }
 
                 if (value != null && !string.IsNullOrEmpty(value.Data))
@@ -276,6 +278,13 @@ public sealed class FirebaseSignaling : IDisposable
     /// rere #F-003: 例外チェーンから HTTP ステータスコードを抽出して " status=NNN" 形式で返す。
     /// 取得できなければ空文字。FirebaseException は ResponseData/InnerException に HTTP 情報を持つ。
     /// </summary>
+    /// <summary>
+    /// PR#5 Codex 指摘対応: 枠超過/サービス停止系 (402/429/503) かどうかを判定する。
+    /// ポーリングの内側 catch (ノード未存在の握り潰し) がこれらを誤って吸収しないためのフィルタ。
+    /// </summary>
+    private static bool IsQuotaOrServerError(Exception ex)
+        => DescribeHttpStatus(ex) is " status=402" or " status=429" or " status=503";
+
     private static string DescribeHttpStatus(Exception ex)
     {
         for (Exception? e = ex; e != null; e = e.InnerException)

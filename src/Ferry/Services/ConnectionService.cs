@@ -1228,6 +1228,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         _transport.ChannelClosed += OnChannelClosed;
         _transport.DataReceived += OnDataReceived;
         _transport.RouteChanged += OnTransportRouteChanged;
+        // PR#5 Codex 指摘: transport が ConnectAsync 中（Attach 前）に RouteChanged を発火済みだと
+        // Route が Unknown のまま残り、リレー経路のフロー制御ガードが誤って無効化される。
+        // Attach 時点の現在値を即時同期して取りこぼしを防ぐ
+        if (_transport.Route != ConnectionRoute.Unknown && _transport.Route != Route)
+            OnTransportRouteChanged(_transport, _transport.Route);
     }
 
     private void DetachTransportEvents()
