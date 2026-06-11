@@ -291,11 +291,13 @@ public sealed class FirebaseSignaling : IDisposable
         {
             if (e is System.Net.Http.HttpRequestException { StatusCode: { } code })
                 return $" status={(int)code}";
-            if (e is FirebaseException fe && !string.IsNullOrEmpty(fe.ResponseData))
+            if (e is FirebaseException fe)
             {
-                // ResponseData 先頭 100 文字に含まれるエラー本文からの推定は行わず、
-                // InnerException 側の HttpRequestException で拾えなかった場合のマーカーのみ
-                return " status=firebase-error";
+                // PR#5 Codex 指摘: FirebaseException は HTTP ステータスを StatusCode に保持する。
+                // default(0) はステータス未設定 (非 HTTP 要因) なのでマーカーのみ返す
+                return fe.StatusCode != default
+                    ? $" status={(int)fe.StatusCode}"
+                    : " status=firebase-error";
             }
         }
         return string.Empty;
