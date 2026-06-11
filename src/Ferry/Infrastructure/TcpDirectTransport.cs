@@ -179,7 +179,8 @@ public sealed class TcpDirectTransport : ITransport
     private static string[]? s_cachedLocalIps;
     private static long s_cachedLocalIpsTicks;
     private const long LocalIpsCacheTtlTicks = TimeSpan.TicksPerSecond * 30; // 30 秒
-    private static readonly object s_localIpsLock = new();
+    // .NET 9+ の System.Threading.Lock: lock 文で専用高速パスを通る (AOT 安全)
+    private static readonly Lock s_localIpsLock = new();
 
     static TcpDirectTransport()
     {

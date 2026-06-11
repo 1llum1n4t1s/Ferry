@@ -168,6 +168,10 @@ public static class Logger
         }
     }
 
+    /// <summary>指定レベルのログが実際に出力されるか。ホットパスで補間文字列の構築自体を
+    /// スキップするためのガード (補間は Log 呼び出し前に eager 評価されるため)。</summary>
+    public static bool IsEnabled(LogLevel level) => level >= MinLogLevel && _logger != null;
+
     /// <summary>
     /// ログを出力する
     /// </summary>

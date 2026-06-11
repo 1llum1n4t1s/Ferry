@@ -121,63 +121,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     }
 
     /// <summary>
-    /// アプリ内 URL 貼り付けによるペアリング (Bridge ページを経由しない、カメラ無し PC 同士向け)。
-    /// 相手 PC の招待リンク (https://ferry-edf09.web.app/?sid=...&amp;name=...) を受け取り、
-    /// 自セッションを sidA、URL から取得したセッションを sidB として
-    /// Firebase の pairings/ に書き込む。両 PC は StartWatchingPairing で成立を検知する。
-    /// </summary>
-    /// <param name="peerInviteUrl">相手 PC に表示されているペアリングリンク。</param>
-    /// <returns>ペアリング成功時 true。URL 形式不正 / 自己 URL / セッション未存在の場合は false + 理由メッセージ。</returns>
-    public async Task<(bool Success, string Message)> PairFromUrlAsync(string peerInviteUrl, CancellationToken ct = default)
-    {
-        if (_signaling == null)
-            return (false, "ペアリング待機を開始してから実行してください。");
-
-        if (string.IsNullOrWhiteSpace(peerInviteUrl))
-            return (false, "URL が空です。");
-
-        // URL から sid / name を抽出 (System.Web.HttpUtility を避け、手動パース)
-        string? sidB = null;
-        string? nameB = null;
-        try
-        {
-            var uri = new Uri(peerInviteUrl.Trim());
-            var query = uri.Query.TrimStart('?');
-            foreach (var pair in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
-            {
-                var idx = pair.IndexOf('=');
-                if (idx < 0) continue;
-                var key = Uri.UnescapeDataString(pair[..idx]);
-                var value = Uri.UnescapeDataString(pair[(idx + 1)..]);
-                if (key == "sid") sidB = value;
-                else if (key == "name") nameB = value;
-            }
-        }
-        catch
-        {
-            return (false, "Ferry のペアリングリンクではありません。URL を確認してください。");
-        }
-
-        if (string.IsNullOrEmpty(sidB))
-            return (false, "URL に sid パラメータが含まれていません。");
-
-        if (sidB == _deviceId)
-            return (false, "これは自分の PC の URL です。もう片方の PC のリンクを貼り付けてください。");
-
-        // 相手セッションの存在を確認
-        var (exists, displayName) = await _signaling.CheckSessionAsync(sidB, ct);
-        if (!exists)
-            return (false, "ペアリング先のセッションが見つかりません。相手の PC でアプリが起動していることを確認してください。");
-
-        // pairings/ に書き込み → 両 PC の StartWatchingPairing が成立を検知する
-        var resolvedNameB = string.IsNullOrEmpty(nameB) ? displayName ?? "PC-B" : nameB;
-        await _signaling.SubmitPairingAsync(_deviceId, _displayName, sidB, resolvedNameB, ct);
-        return (true, $"「{_displayName}」と「{resolvedNameB}」をペアリングしました。");
-    }
-
-    /// <summary>
     /// v1.0.38: ペアリングコード (32 文字 hex = sessionId) を直接受け取ってペアリングする。
-    /// URL を貼り付ける旧 PairFromUrlAsync と違ってブラウザで開かれる事故が起きない。
+    /// URL 貼り付け方式 (旧 PairFromUrlAsync、Bridge の URL ペアリング撤去に伴い削除) と違って
+    /// ブラウザで開かれる事故が起きない。
     /// </summary>
     public async Task<(bool Success, string Message)> PairFromCodeAsync(string code, CancellationToken ct = default)
     {
@@ -332,7 +278,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 {
                     if (processedProbeNonces.Contains(probeNonce)) continue;
                     var probeOffer = DeserializeConnectionInfo(probeOfferJson);
-                    if (probeOffer == null || probeOffer.From == _deviceId) continue;
+                    // rere #A1-001: probe も通常 offer と同様、送信元がペア相手であることを要求する
+                    if (probeOffer == null || probeOffer.From != peerId) continue;
                     try
                     {
                         await HandleProbeOfferAsync(probeOffer, pairId, probeNonce, ct);
@@ -377,9 +324,16 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 }
 
                 // v1.0.38 review fix v2: 自分自身が送信した offer は無視する (保険)
-                if (offer.From == _deviceId)
+                // rere #A1-001: 「自分以外」だけでなく「ペア相手の deviceId と一致」を要求する。
+                // pairId を知る第三者が signaling に偽 offer を書き込んだとき、攻撃者の IP へ
+                // TCP 接続しに行く誘導 (MITM) を防ぐ (relay 側の hashPairId 防御と対称化)
+                if (offer.From != peerId)
                 {
-                    Util.Logger.Log($"自己 offer を無視: pairId={pairId}");
+                    Util.Logger.Log(
+                        offer.From == _deviceId
+                            ? $"自己 offer を無視: pairId={pairId}"
+                            : $"ペア相手以外からの offer を破棄: pairId={pairId}, from={Util.Logger.MaskDeviceId(offer.From)}",
+                        Util.LogLevel.Warning);
                     minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     continue;
                 }
@@ -1220,6 +1174,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         _transport.ChannelClosed += OnChannelClosed;
         _transport.DataReceived += OnDataReceived;
         _transport.RouteChanged += OnTransportRouteChanged;
+        // PR#5 Codex 指摘: transport が ConnectAsync 中（Attach 前）に RouteChanged を発火済みだと
+        // Route が Unknown のまま残り、リレー経路のフロー制御ガードが誤って無効化される。
+        // Attach 時点の現在値を即時同期して取りこぼしを防ぐ
+        if (_transport.Route != ConnectionRoute.Unknown && _transport.Route != Route)
+            OnTransportRouteChanged(_transport, _transport.Route);
     }
 
     private void DetachTransportEvents()

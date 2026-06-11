@@ -175,6 +175,10 @@ public sealed class FirebaseSignaling : IDisposable
         var pollCount = 0;
         var lastErrorLog = 0; // エラーログ抑制用カウンタ
         var consecutiveErrors = 0; // rere #F-012: exponential backoff 用カウンタ
+        // opop P-2: createdAt は offer 書き込み時に 1 回セットされる不変値なので、鮮度チェックを
+        // 一度通過したら以降のループでは再取得しない (毎ループ 2 リクエスト → 1 に半減。
+        // 400ms ポーリング × 接続待ち時間ぶんの Firebase read 削減 = Spark 帯域に直結)
+        var freshnessPassed = false;
 
         while (!ct.IsCancellationRequested)
         {
@@ -182,7 +186,7 @@ public sealed class FirebaseSignaling : IDisposable
             try
             {
                 // minCreatedAt が設定されている場合、createdAt タイムスタンプで鮮度を検証する
-                if (minCreatedAt > 0)
+                if (minCreatedAt > 0 && !freshnessPassed)
                 {
                     // Firebase ライブラリはノード未存在時に例外を投げることがあるため個別に捕捉
                     long? createdAt = null;
@@ -194,9 +198,11 @@ public sealed class FirebaseSignaling : IDisposable
                             .Child("createdAt")
                             .OnceSingleAsync<long?>();
                     }
-                    catch
+                    catch (Exception ex) when (!IsQuotaOrServerError(ex))
                     {
-                        // ノード未存在 or null レスポンス → createdAt = null として扱う
+                        // ノード未存在 or null レスポンス → createdAt = null として扱う。
+                        // PR#5 Codex 指摘: 402/429/503 (枠超過/サービス停止系) はここで握らず
+                        // 外側 catch のステータス分類ログ + backoff に到達させる
                     }
 
                     if (createdAt == null || createdAt.Value < minCreatedAt)
@@ -210,6 +216,7 @@ public sealed class FirebaseSignaling : IDisposable
                     }
 
                     Util.Logger.Log($"SDP 鮮度チェック通過 ({watchField}): createdAt={createdAt.Value}");
+                    freshnessPassed = true;
                 }
 
                 // SDP データの取得（未存在時は null を返す場合と例外を投げる場合がある）
@@ -222,9 +229,9 @@ public sealed class FirebaseSignaling : IDisposable
                         .Child(watchField)
                         .OnceSingleAsync<SignalingValue>();
                 }
-                catch
+                catch (Exception ex) when (!IsQuotaOrServerError(ex))
                 {
-                    // ノード未存在 → value = null として扱う
+                    // ノード未存在 → value = null として扱う (枠超過系は外側 catch へ、上記と同様)
                 }
 
                 if (value != null && !string.IsNullOrEmpty(value.Data))
@@ -241,10 +248,17 @@ public sealed class FirebaseSignaling : IDisposable
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
-                // エラーは30回に1回だけログ出力（WARN スパム防止）
-                if (pollCount - lastErrorLog >= 30)
+                // rere #F-003: HTTP ステータスを分類してログに併記する。Spark 無料枠超過 (402/429/503 系で
+                // 全ペア一斉失敗) と個別ネットワーク不調を事後ログで切り分けられるようにする。
+                // 枠超過の可能性が高いステータスは間引き対象外で即 Error 出力する
+                var statusInfo = DescribeHttpStatus(ex);
+                var likelyQuota = statusInfo is " status=402" or " status=429" or " status=503";
+                if (likelyQuota || pollCount - lastErrorLog >= 30)
                 {
-                    Util.Logger.Log($"SDP ポーリングエラー ({watchField}): {ex.Message}", Util.LogLevel.Warning);
+                    Util.Logger.Log(
+                        $"SDP ポーリングエラー ({watchField}): {ex.Message}{statusInfo}" +
+                        (likelyQuota ? " (Firebase 枠超過/サービス停止の可能性)" : string.Empty),
+                        likelyQuota ? Util.LogLevel.Error : Util.LogLevel.Warning);
                     lastErrorLog = pollCount;
                 }
                 // rere レビュー #F-012: 例外発生時は exponential backoff + jitter で
@@ -263,6 +277,35 @@ public sealed class FirebaseSignaling : IDisposable
         }
 
         throw new OperationCanceledException(ct);
+    }
+
+    /// <summary>
+    /// rere #F-003: 例外チェーンから HTTP ステータスコードを抽出して " status=NNN" 形式で返す。
+    /// 取得できなければ空文字。FirebaseException は ResponseData/InnerException に HTTP 情報を持つ。
+    /// </summary>
+    /// <summary>
+    /// PR#5 Codex 指摘対応: 枠超過/サービス停止系 (402/429/503) かどうかを判定する。
+    /// ポーリングの内側 catch (ノード未存在の握り潰し) がこれらを誤って吸収しないためのフィルタ。
+    /// </summary>
+    private static bool IsQuotaOrServerError(Exception ex)
+        => DescribeHttpStatus(ex) is " status=402" or " status=429" or " status=503";
+
+    private static string DescribeHttpStatus(Exception ex)
+    {
+        for (Exception? e = ex; e != null; e = e.InnerException)
+        {
+            if (e is System.Net.Http.HttpRequestException { StatusCode: { } code })
+                return $" status={(int)code}";
+            if (e is FirebaseException fe)
+            {
+                // PR#5 Codex 指摘: FirebaseException は HTTP ステータスを StatusCode に保持する。
+                // default(0) はステータス未設定 (非 HTTP 要因) なのでマーカーのみ返す
+                return fe.StatusCode != default
+                    ? $" status={(int)fe.StatusCode}"
+                    : " status=firebase-error";
+            }
+        }
+        return string.Empty;
     }
 
     /// <summary>

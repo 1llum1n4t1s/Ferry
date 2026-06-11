@@ -78,4 +78,11 @@ public static class TransferProtocol
     /// <summary>受信側が FlowAck を送る間隔 (チャンク数)。64 chunks = 4MB ごと。
     /// ウィンドウ (512) の 1/8 刻みで送ることで送信側のウィンドウ待機を滑らかに解消する。</summary>
     public const int FlowAckIntervalChunks = 64;
+
+    /// <summary>受信を受け付ける FileSize の絶対上限 (1TB)。
+    /// rere #A2-001: <see cref="Infrastructure.FileChunker.CalculateTotalChunks"/> の int キャストは
+    /// FileSize ≈ 137TB 超で桁溢れし、悪意ある FileMeta の負/折り返し TotalChunks が
+    /// 「再計算値との一致検証」を素通りして new bool[負値] の未処理例外を起こす。
+    /// 一致検証より前にこの上限で弾くことで桁溢れ域に到達させない (1TB = TotalChunks 約 1,600 万)。</summary>
+    public const long MaxFileSizeBytes = 1L << 40;
 }

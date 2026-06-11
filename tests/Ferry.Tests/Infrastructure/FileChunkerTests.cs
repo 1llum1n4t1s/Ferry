@@ -581,4 +581,47 @@ public class FileChunkerTests : IDisposable
         Assert.Equal(TransferProtocol.FileAck, ackMsg[0]);
         Assert.Equal(1, ackMsg[1]); // success
     }
+
+    // ==================== FileHash (rere #B1-001: TransferId プレフィクス付き) ====================
+
+    [Fact]
+    public void CreateFileHashMessage_TransferIdとSha256がラウンドトリップすること()
+    {
+        var transferId = Guid.NewGuid();
+        var sha256 = new byte[32];
+        Random.Shared.NextBytes(sha256);
+
+        var msg = FileChunker.CreateFileHashMessage(transferId, sha256);
+        Assert.Equal(TransferProtocol.FileHash, msg[0]);
+        Assert.Equal(1 + 16 + 32, msg.Length);
+
+        var parsed = FileChunker.ParseFileHash(msg);
+        Assert.NotNull(parsed);
+        Assert.Equal(transferId, parsed!.Value.TransferId);
+        Assert.Equal(sha256, parsed.Value.Sha256);
+    }
+
+    [Fact]
+    public void ParseFileHash_旧形式の短いメッセージはnullを返すこと()
+    {
+        // 旧形式 [種別][sha256 32byte] = 33byte は TransferId なしのため拒否される
+        var legacy = new byte[1 + 32];
+        legacy[0] = TransferProtocol.FileHash;
+        Assert.Null(FileChunker.ParseFileHash(legacy));
+    }
+
+    [Fact]
+    public void ParseLegacyFileHash_旧形式33byteからSha256を抽出できること()
+    {
+        // v1.0.50 以前との混在期間フォールバック (受信側のみ)
+        var sha256 = new byte[32];
+        Random.Shared.NextBytes(sha256);
+        var legacy = new byte[1 + 32];
+        legacy[0] = TransferProtocol.FileHash;
+        sha256.CopyTo(legacy, 1);
+
+        var parsed = FileChunker.ParseLegacyFileHash(legacy);
+        Assert.NotNull(parsed);
+        Assert.Equal(sha256, parsed);
+    }
 }

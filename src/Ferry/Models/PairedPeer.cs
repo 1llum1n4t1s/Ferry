@@ -32,8 +32,19 @@ public sealed partial class PairedPeer : ObservableObject
     /// <summary>最終転送日時 (UTC)。</summary>
     public DateTime? LastTransferAt { get; set; }
 
-    /// <summary>現在の接続経路（接続時に更新、未接続時は Unknown）。ランタイム専用。</summary>
+    /// <summary>現在の接続経路（接続時に更新、未接続時は Unknown）。ランタイム専用。
+    /// 派生プロパティ群は [NotifyPropertyChangedFor] で宣言的に連動通知する (TransferItem と同パターン。
+    /// 手書き OnRouteChanged 列挙だと派生プロパティ追加時に通知漏れが起きやすい)。</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RouteText))]
+    [NotifyPropertyChangedFor(nameof(IsConnected))]
+    [NotifyPropertyChangedFor(nameof(IsLanRoute))]
+    [NotifyPropertyChangedFor(nameof(IsP2pRoute))]
+    [NotifyPropertyChangedFor(nameof(IsRelayRoute))]
+    [NotifyPropertyChangedFor(nameof(IsRouteUnknown))]
+    [NotifyPropertyChangedFor(nameof(RouteBadgeIcon))]
+    [NotifyPropertyChangedFor(nameof(RouteBadgeLabel))]
+    [NotifyPropertyChangedFor(nameof(RouteBadgeTooltip))]
     [JsonIgnore]
     public partial ConnectionRoute Route { get; set; } = ConnectionRoute.Unknown;
 
@@ -122,16 +133,4 @@ public sealed partial class PairedPeer : ObservableObject
         _ => "接続経路を確認中…",
     };
 
-    partial void OnRouteChanged(ConnectionRoute value)
-    {
-        OnPropertyChanged(nameof(RouteText));
-        OnPropertyChanged(nameof(IsConnected));
-        OnPropertyChanged(nameof(IsLanRoute));
-        OnPropertyChanged(nameof(IsP2pRoute));
-        OnPropertyChanged(nameof(IsRelayRoute));
-        OnPropertyChanged(nameof(IsRouteUnknown));
-        OnPropertyChanged(nameof(RouteBadgeIcon));
-        OnPropertyChanged(nameof(RouteBadgeLabel));
-        OnPropertyChanged(nameof(RouteBadgeTooltip));
-    }
 }
