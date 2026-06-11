@@ -212,6 +212,9 @@ public static class FileChunker
     /// </summary>
     public static byte[] CreateFileHashMessage(Guid transferId, byte[] sha256)
     {
+        // 呼び出し元の誤用 (SHA-256 以外のハッシュ長) を明確な例外で検出する
+        if (sha256.Length != 32)
+            throw new ArgumentException($"SHA-256 は 32 バイト必要: 実際={sha256.Length}", nameof(sha256));
         var message = new byte[1 + 16 + 32];
         message[0] = TransferProtocol.FileHash;
         transferId.TryWriteBytes(message.AsSpan(1, 16));
