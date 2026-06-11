@@ -982,9 +982,11 @@ public sealed class TransferService : ITransferService, IDisposable
             // 自動更新は両端同時ではないため、旧送信側からのハッシュは受信中の転送が 1 件だけの
             // ときに限り旧ロジックで紐付ける (複数受信中は誤紐付けリスクがあるので破棄)
             var legacySha = FileChunker.ParseLegacyFileHash(data);
-            if (legacySha != null && _receiveStates.Count == 1)
+            // ConcurrentDictionary の Count → Values.First() は非原子なので、スナップショットに対して
+            // 「受信中 1 件」判定と取得を行う (要素が並行削除されても InvalidOperationException にならない)
+            if (legacySha != null && _receiveStates.ToArray() is [var legacyEntry])
             {
-                var legacyState = _receiveStates.Values.First();
+                var legacyState = legacyEntry.Value;
                 if (string.IsNullOrEmpty(legacyState.ExpectedSha256))
                 {
                     legacyState.ExpectedSha256 = Convert.ToHexString(legacySha).ToLowerInvariant();
