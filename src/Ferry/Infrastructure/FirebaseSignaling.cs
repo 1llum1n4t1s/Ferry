@@ -241,10 +241,17 @@ public sealed class FirebaseSignaling : IDisposable
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
-                // エラーは30回に1回だけログ出力（WARN スパム防止）
-                if (pollCount - lastErrorLog >= 30)
+                // rere #F-003: HTTP ステータスを分類してログに併記する。Spark 無料枠超過 (402/429/503 系で
+                // 全ペア一斉失敗) と個別ネットワーク不調を事後ログで切り分けられるようにする。
+                // 枠超過の可能性が高いステータスは間引き対象外で即 Error 出力する
+                var statusInfo = DescribeHttpStatus(ex);
+                var likelyQuota = statusInfo is " status=402" or " status=429" or " status=503";
+                if (likelyQuota || pollCount - lastErrorLog >= 30)
                 {
-                    Util.Logger.Log($"SDP ポーリングエラー ({watchField}): {ex.Message}", Util.LogLevel.Warning);
+                    Util.Logger.Log(
+                        $"SDP ポーリングエラー ({watchField}): {ex.Message}{statusInfo}" +
+                        (likelyQuota ? " (Firebase 枠超過/サービス停止の可能性)" : string.Empty),
+                        likelyQuota ? Util.LogLevel.Error : Util.LogLevel.Warning);
                     lastErrorLog = pollCount;
                 }
                 // rere レビュー #F-012: 例外発生時は exponential backoff + jitter で
@@ -263,6 +270,26 @@ public sealed class FirebaseSignaling : IDisposable
         }
 
         throw new OperationCanceledException(ct);
+    }
+
+    /// <summary>
+    /// rere #F-003: 例外チェーンから HTTP ステータスコードを抽出して " status=NNN" 形式で返す。
+    /// 取得できなければ空文字。FirebaseException は ResponseData/InnerException に HTTP 情報を持つ。
+    /// </summary>
+    private static string DescribeHttpStatus(Exception ex)
+    {
+        for (Exception? e = ex; e != null; e = e.InnerException)
+        {
+            if (e is System.Net.Http.HttpRequestException { StatusCode: { } code })
+                return $" status={(int)code}";
+            if (e is FirebaseException fe && !string.IsNullOrEmpty(fe.ResponseData))
+            {
+                // ResponseData 先頭 100 文字に含まれるエラー本文からの推定は行わず、
+                // InnerException 側の HttpRequestException で拾えなかった場合のマーカーのみ
+                return " status=firebase-error";
+            }
+        }
+        return string.Empty;
     }
 
     /// <summary>

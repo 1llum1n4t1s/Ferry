@@ -206,21 +206,25 @@ public static class FileChunker
     }
 
     /// <summary>
-    /// ファイル SHA-256 後送りメッセージを生成する [種別 1byte] [sha256 32byte]。P-3 プロトコル拡張。
+    /// ファイル SHA-256 後送りメッセージを生成する [種別 1byte] [TransferId 16byte] [sha256 32byte]。P-3 プロトコル拡張。
+    /// rere #B1-001: 並列転送 (ParallelTransferCount>1) で別ファイルへハッシュが誤紐付けされないよう
+    /// FileChunk/FileReject と同様に TransferId プレフィクスを持つ (旧形式 [種別][sha256] とは非互換)。
     /// </summary>
-    public static byte[] CreateFileHashMessage(byte[] sha256)
+    public static byte[] CreateFileHashMessage(Guid transferId, byte[] sha256)
     {
-        var message = new byte[1 + 32];
+        var message = new byte[1 + 16 + 32];
         message[0] = TransferProtocol.FileHash;
-        sha256.AsSpan(0, 32).CopyTo(message.AsSpan(1));
+        transferId.TryWriteBytes(message.AsSpan(1, 16));
+        sha256.AsSpan(0, 32).CopyTo(message.AsSpan(17));
         return message;
     }
 
-    /// <summary>FileHash メッセージから SHA-256 バイト列を抽出する。</summary>
-    public static byte[]? ParseFileHash(ReadOnlySpan<byte> message)
+    /// <summary>FileHash メッセージから TransferId と SHA-256 バイト列を抽出する。</summary>
+    public static (Guid TransferId, byte[] Sha256)? ParseFileHash(ReadOnlySpan<byte> message)
     {
-        if (message.Length < 1 + 32) return null;
-        return message.Slice(1, 32).ToArray();
+        if (message.Length < 1 + 16 + 32) return null;
+        var transferId = new Guid(message.Slice(1, 16));
+        return (transferId, message.Slice(17, 32).ToArray());
     }
 
     /// <summary>

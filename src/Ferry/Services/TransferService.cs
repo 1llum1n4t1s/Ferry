@@ -286,7 +286,7 @@ public sealed class TransferService : ITransferService, IDisposable
             // 4. 確定したハッシュを後送り
             var sha256Bytes = hashSink.GetHashAndReset();
             item.Sha256Hash = Convert.ToHexString(sha256Bytes).ToLowerInvariant();
-            var hashMessage = FileChunker.CreateFileHashMessage(sha256Bytes);
+            var hashMessage = FileChunker.CreateFileHashMessage(transferId, sha256Bytes);
             await _connectionService.SendAsync(hashMessage, ct);
 
             Util.Logger.Log($"ファイル送信完了: {displayName}, SHA256={item.Sha256Hash[..16]}…");
@@ -558,24 +558,31 @@ public sealed class TransferService : ITransferService, IDisposable
             // ローカル送信バッファ受理で即返り end-to-end の流量制御が効かないため、これが無いと送信側が受信ドレイン
             // 速度を超えて Cloudflare 中継バッファへ流し込み、~55秒で接続が切断される。TCP/UDP 経路では各 transport の
             // 自然なバックプレッシャー (WriteAsync の await / UDP 内部ウィンドウ) が先に効くためこの待機はほぼ発生しない。
-            var flowWaitStart = Environment.TickCount64;
-            // v1.0.47: 発火を一度だけ Info ログに残す。これが出ていれば「送信が受信ドレインに律速された＝
-            // フロー制御が機能した＝Cloudflare 中継バッファは窓 (32MB) で頭打ち」と確定できる。
-            if (!flowControlEngagedLogged
-                && index - Volatile.Read(ref item.FlowAckedChunks) >= TransferProtocol.FlowControlWindowChunks)
+            // rere #D-003: window 待機はリレー経路のみ。TCP/UDP は transport 自身のバックプレッシャーが
+            // 効くため、高 RTT 回線で FlowAck の往復遅延が 32MB 窓を不要に律速するのを避ける。
+            // 受信側の FlowAck 送信は経路非依存で常時行われる (送信側だけのガードなら両側判定の
+            // 食い違いによる stall が構造的に起きない) ので、ここでの判定だけで安全に無効化できる。
+            if (_connectionService.Route == ConnectionRoute.Relay)
             {
-                flowControlEngagedLogged = true;
-                Util.Logger.Log(
-                    $"フロー制御 window 発火（受信ドレイン律速に移行）: transferId={transferId} index={index} " +
-                    $"acked={Volatile.Read(ref item.FlowAckedChunks)} window={TransferProtocol.FlowControlWindowChunks}",
-                    Util.LogLevel.Info);
-            }
-            while (index - Volatile.Read(ref item.FlowAckedChunks) >= TransferProtocol.FlowControlWindowChunks)
-            {
-                ct.ThrowIfCancellationRequested();
-                if (Environment.TickCount64 - flowWaitStart > FlowAckStallTimeoutMs)
-                    throw new TimeoutException("受信側からの進捗確認が途絶えました（フロー制御タイムアウト）");
-                await Task.Delay(10, ct);
+                var flowWaitStart = Environment.TickCount64;
+                // v1.0.47: 発火を一度だけ Info ログに残す。これが出ていれば「送信が受信ドレインに律速された＝
+                // フロー制御が機能した＝Cloudflare 中継バッファは窓 (32MB) で頭打ち」と確定できる。
+                if (!flowControlEngagedLogged
+                    && index - Volatile.Read(ref item.FlowAckedChunks) >= TransferProtocol.FlowControlWindowChunks)
+                {
+                    flowControlEngagedLogged = true;
+                    Util.Logger.Log(
+                        $"フロー制御 window 発火（受信ドレイン律速に移行）: transferId={transferId} index={index} " +
+                        $"acked={Volatile.Read(ref item.FlowAckedChunks)} window={TransferProtocol.FlowControlWindowChunks}",
+                        Util.LogLevel.Info);
+                }
+                while (index - Volatile.Read(ref item.FlowAckedChunks) >= TransferProtocol.FlowControlWindowChunks)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    if (Environment.TickCount64 - flowWaitStart > FlowAckStallTimeoutMs)
+                        throw new TimeoutException("受信側からの進捗確認が途絶えました（フロー制御タイムアウト）");
+                    await Task.Delay(10, ct);
+                }
             }
 
             // アップロード帯域制限。0 (無制限) なら即 return。ペイロード本体のバイト数で計測する
@@ -619,6 +626,11 @@ public sealed class TransferService : ITransferService, IDisposable
         }
 
         // 最終進捗通知
+        // rere #B1-004: 最終チャンク送信と相手側キャンセル (FileReject → Cancelled) のレースで
+        // Cancelled を Completed で上書きしないよう、ct と現在 state を確認してから確定する
+        ct.ThrowIfCancellationRequested();
+        if (item.State == TransferState.Cancelled)
+            return;
         item.TransferredBytes = item.FileSize;
         item.State = TransferState.Completed;
         ProgressChanged?.Invoke(this, item);
@@ -668,8 +680,12 @@ public sealed class TransferService : ITransferService, IDisposable
         }
 
         // メタデータの整合性検証（攻撃者制御の値で巨大確保・ディスク枯渇を起こさせない）
+        // rere #A2-001: FileSize の絶対上限を先に検証する。上限なしだと CalculateTotalChunks の
+        // int キャスト桁溢れにより負の TotalChunks が一致検証を素通りし、承認時の
+        // new bool[TotalChunks] で未処理例外になる。TotalChunks < 0 も明示拒否 (多層防御)
         // TotalChunks は FileSize から導出される値と一致しなければ拒否する
-        if (meta.FileSize < 0 || meta.TotalChunks != FileChunker.CalculateTotalChunks(meta.FileSize))
+        if (meta.FileSize < 0 || meta.FileSize > TransferProtocol.MaxFileSizeBytes
+            || meta.TotalChunks < 0 || meta.TotalChunks != FileChunker.CalculateTotalChunks(meta.FileSize))
         {
             Util.Logger.Log($"不正なメタデータを拒否: FileSize={meta.FileSize}, TotalChunks={meta.TotalChunks}", Util.LogLevel.Warning);
             // この時点では TransferId のパース可否すら未確認なので Reject 送信はスキップ
@@ -967,27 +983,26 @@ public sealed class TransferService : ITransferService, IDisposable
     /// </summary>
     private void HandleFileHash(byte[] data)
     {
-        var sha256Bytes = FileChunker.ParseFileHash(data);
-        if (sha256Bytes is null)
+        var parsed = FileChunker.ParseFileHash(data);
+        if (parsed is null)
         {
             Util.Logger.Log("FileHash メッセージのパースに失敗", Util.LogLevel.Warning);
             return;
         }
 
-        // FileHash は転送ごとに 1 つだけ送られる前提。受信中の状態を 1 つ探して紐付ける。
-        // 複数同時受信時は最後に書き込まれた chunk の TransferId を使う必要があるが、
-        // Ferry は逐次転送（接続あたり 1 ファイル送信 1 受信）なので _receiveStates から 1 つ取る
+        // rere #B1-001: メッセージに含まれる TransferId で受信状態を直接引く。
+        // 旧実装は「最初の ExpectedSha256 未確定 state」に紐付けており、並列転送
+        // (ParallelTransferCount>1) で別ファイルのハッシュを取り違える余地があった。
+        var (transferId, sha256Bytes) = parsed.Value;
         var hex = Convert.ToHexString(sha256Bytes).ToLowerInvariant();
-        foreach (var kv in _receiveStates)
+        if (_receiveStates.TryGetValue(transferId, out var state))
         {
-            var state = kv.Value;
-            if (!string.IsNullOrEmpty(state.ExpectedSha256)) continue; // 既に確定済みはスキップ
             state.ExpectedSha256 = hex;
             Util.Logger.Log($"FileHash 受信: {state.FileName}, SHA256={hex[..16]}…");
             TryCompleteReceiveIfReady(state);
             return;
         }
-        Util.Logger.Log($"FileHash 受信したが該当する受信状態なし: SHA256={hex[..16]}…", Util.LogLevel.Warning);
+        Util.Logger.Log($"FileHash 受信したが該当する受信状態なし: transferId={transferId}, SHA256={hex[..16]}…", Util.LogLevel.Warning);
     }
 
     /// <summary>全 chunk 受信 AND 期待ハッシュ確定の両方が揃ったときだけ CompleteReceive を呼ぶ。</summary>
@@ -1174,12 +1189,21 @@ public sealed class TransferService : ITransferService, IDisposable
         Util.Logger.Log($"受信承認: {state.FileName}");
 
         // 受信用ファイルストリームを開く
+        // rere #C2-001: バッファを 1MB に拡大 (デフォルト 4KB) + SetLength で全長を事前確保する。
+        // 事前確保により sparse 拡張による断片化を防ぎ、HDD/暗号化ボリュームでの受信スループット低下と
+        // 転送途中のディスク満杯エラー (途中まで書いて失敗) を承認時点で前倒し検出できる
         try
         {
-            state.FileStream = new FileStream(state.SavePath, FileMode.Create, FileAccess.Write, FileShare.None);
+            state.FileStream = new FileStream(
+                state.SavePath, FileMode.Create, FileAccess.Write, FileShare.None,
+                bufferSize: 1 << 20, FileOptions.None);
+            state.FileStream.SetLength(state.FileSize);
         }
         catch (Exception ex)
         {
+            // SetLength 失敗 (ディスク不足等) 時に開きかけのストリームを残さない
+            state.FileStream?.Dispose();
+            state.FileStream = null;
             Util.Logger.Log($"受信ファイル作成エラー: {ex.Message}", Util.LogLevel.Error);
             state.Item.State = TransferState.Error;
             state.Item.ErrorMessage = ex.Message;

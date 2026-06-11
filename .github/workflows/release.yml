@@ -82,11 +82,23 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
+          # rere #F-001: manifest (releases.*.json) は必ず最後にアップロードする。
+          # glob 順 (偶然 nupkg が先) に依存すると、manifest が指す nupkg が R2 に
+          # まだ無い時間窓ができ、その間の更新チェックが 404 で失敗する
           count=0
           for f in velopack-packages/*; do
             [ -f "$f" ] || continue
             name=$(basename "$f")
-            echo "::group::Upload (feed) $name"
+            case "$name" in releases.*.json) continue ;; esac
+            echo "::group::Upload (feed payload) $name"
+            wrangler r2 object put "ferry-updates/$name" --file="$f" --remote
+            echo "::endgroup::"
+            count=$((count + 1))
+          done
+          for f in velopack-packages/releases.*.json; do
+            [ -f "$f" ] || continue
+            name=$(basename "$f")
+            echo "::group::Upload (feed manifest) $name"
             wrangler r2 object put "ferry-updates/$name" --file="$f" --remote
             echo "::endgroup::"
             count=$((count + 1))

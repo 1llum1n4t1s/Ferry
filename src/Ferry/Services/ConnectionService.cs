@@ -332,7 +332,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 {
                     if (processedProbeNonces.Contains(probeNonce)) continue;
                     var probeOffer = DeserializeConnectionInfo(probeOfferJson);
-                    if (probeOffer == null || probeOffer.From == _deviceId) continue;
+                    // rere #A1-001: probe も通常 offer と同様、送信元がペア相手であることを要求する
+                    if (probeOffer == null || probeOffer.From != peerId) continue;
                     try
                     {
                         await HandleProbeOfferAsync(probeOffer, pairId, probeNonce, ct);
@@ -377,9 +378,16 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 }
 
                 // v1.0.38 review fix v2: 自分自身が送信した offer は無視する (保険)
-                if (offer.From == _deviceId)
+                // rere #A1-001: 「自分以外」だけでなく「ペア相手の deviceId と一致」を要求する。
+                // pairId を知る第三者が signaling に偽 offer を書き込んだとき、攻撃者の IP へ
+                // TCP 接続しに行く誘導 (MITM) を防ぐ (relay 側の hashPairId 防御と対称化)
+                if (offer.From != peerId)
                 {
-                    Util.Logger.Log($"自己 offer を無視: pairId={pairId}");
+                    Util.Logger.Log(
+                        offer.From == _deviceId
+                            ? $"自己 offer を無視: pairId={pairId}"
+                            : $"ペア相手以外からの offer を破棄: pairId={pairId}, from={Util.Logger.MaskDeviceId(offer.From)}",
+                        Util.LogLevel.Warning);
                     minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     continue;
                 }

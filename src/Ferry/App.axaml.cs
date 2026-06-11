@@ -24,6 +24,9 @@ public partial class App : Application
 {
     private MainWindow? _mainWindow;
     private ResourceDictionary? _activeLocale;
+    // rere #B2-001: 全ロケールのフォールバック先として常時マージしておく en_US 辞書。
+    // 選択ロケールに欠損キーがあっても DynamicResource が空白にならず英語で表示される
+    private ResourceDictionary? _baseLocale;
     private ISettingsService? _settingsService;
 
     /// <summary>TransferService のインスタンス（MainWindow からのアクセス用）。</summary>
@@ -260,10 +263,20 @@ public partial class App : Application
             targetLocale == app._activeLocale)
             return;
 
-        if (app._activeLocale != null)
+        // rere #B2-001: en_US をベース辞書として MergedDictionaries の先頭側に常時敷く。
+        // Avalonia のリソース解決は後に追加した辞書が優先（後勝ち）なので、選択ロケールを
+        // 後ろに Add すれば「選択ロケール優先・欠損キーは en_US」のフォールバックになる
+        if (app._baseLocale == null && app.Resources["en_US"] is ResourceDictionary baseLocale)
+        {
+            app._baseLocale = baseLocale;
+            app.Resources.MergedDictionaries.Add(baseLocale);
+        }
+
+        if (app._activeLocale != null && !ReferenceEquals(app._activeLocale, app._baseLocale))
             app.Resources.MergedDictionaries.Remove(app._activeLocale);
 
-        app.Resources.MergedDictionaries.Add(targetLocale);
+        if (!ReferenceEquals(targetLocale, app._baseLocale))
+            app.Resources.MergedDictionaries.Add(targetLocale);
         app._activeLocale = targetLocale;
     }
 

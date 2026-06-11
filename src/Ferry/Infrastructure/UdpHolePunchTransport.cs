@@ -39,6 +39,10 @@ public sealed class UdpHolePunchTransport : ITransport
     private const int RetransmitIntervalMs = 100;
     private const int RetransmitTimeoutMs = 300;
     private const int MaxFragments = 16384;     // 1メッセージ最大フラグメント数（攻撃者制御 fragCount による OOM 防止。約19MB相当）
+    // rere #B1-007: 1 回の SendAsync が ACK 待ちで滞留できる上限。相手無応答 (クラッシュ等、UDP は
+    // 切断イベントが無い) の検知線。再送は RetransmitIntervalMs で回り続けるため、健全な相手なら
+    // 30 秒あれば必ず ACK が返る
+    private const int SendDeadlineMs = 30_000;
 
     // === ソケット ===
     private readonly UdpClient _udp;
@@ -174,30 +178,42 @@ public sealed class UdpHolePunchTransport : ITransport
         var pending = new PendingMessage(fragments.Length);
         _pendingMessages[(uint)msgId] = pending;
 
-        // 各フラグメントをウィンドウ制御付きで送信
-        foreach (var frag in fragments)
+        // rere #B1-007: 相手プロセス消滅などで ACK が永久に返らないと、_windowSem (Release は ACK 経路のみ)
+        // と Completion 待ちが hang する。ct を渡さない fire-and-forget 呼び出し (FlowAck/Reject/Pong) でも
+        // 有界になるよう、送信単位のデッドラインを設ける
+        using var deadlineCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadlineCts.CancelAfter(TimeSpan.FromMilliseconds(SendDeadlineMs));
+        try
         {
-            await _windowSem.WaitAsync(ct);
-
-            var seq = (uint)Interlocked.Increment(ref _nextSeq);
-            // シーケンス番号をパケットに書き込み（Slice で範囲を明示）
-            BinaryPrimitives.WriteUInt32BigEndian(frag.AsSpan(1, 4), seq);
-
-            var info = new SentPacketInfo(seq, (uint)msgId, frag);
-            _sentPackets[seq] = info;
-
-            try
+            // 各フラグメントをウィンドウ制御付きで送信
+            foreach (var frag in fragments)
             {
-                await _udp.SendAsync(frag, frag.Length, _remoteEp);
+                await _windowSem.WaitAsync(deadlineCts.Token);
+
+                var seq = (uint)Interlocked.Increment(ref _nextSeq);
+                // シーケンス番号をパケットに書き込み（Slice で範囲を明示）
+                BinaryPrimitives.WriteUInt32BigEndian(frag.AsSpan(1, 4), seq);
+
+                var info = new SentPacketInfo(seq, (uint)msgId, frag);
+                _sentPackets[seq] = info;
+
+                try
+                {
+                    await _udp.SendAsync(frag, frag.Length, _remoteEp);
+                }
+                catch (SocketException ex)
+                {
+                    Util.Logger.Log($"UDP 送信エラー: {ex.Message}", Util.LogLevel.Warning);
+                }
             }
-            catch (SocketException ex)
-            {
-                Util.Logger.Log($"UDP 送信エラー: {ex.Message}", Util.LogLevel.Warning);
-            }
+
+            // 全フラグメントの ACK 完了を待つ
+            await pending.Completion.Task.WaitAsync(deadlineCts.Token);
         }
-
-        // 全フラグメントの ACK 完了を待つ
-        await pending.Completion.Task.WaitAsync(ct);
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new TimeoutException($"UDP 送信が ACK 待ちでタイムアウトしました ({SendDeadlineMs / 1000}s、相手無応答)");
+        }
     }
 
     public void Close()
@@ -212,6 +228,11 @@ public sealed class UdpHolePunchTransport : ITransport
         _loopCts = null;
 
         try { _udp.Close(); } catch { }
+
+        // rere #B1-005: ACK 待ちで停止中の SendAsync (特に ct なしの fire-and-forget 呼び出し) が
+        // 永久待機しないよう、未完了の Completion を解決してから辞書を空にする
+        foreach (var p in _pendingMessages.Values)
+            p.Completion.TrySetException(new OperationCanceledException("UDP 接続がクローズされました"));
 
         // 未完成メッセージ・未 ACK パケットを解放（切断時のメモリ滞留を防止）
         _receivingMessages.Clear();
