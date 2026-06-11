@@ -988,6 +988,21 @@ public sealed class TransferService : ITransferService, IDisposable
         var parsed = FileChunker.ParseFileHash(data);
         if (parsed is null)
         {
+            // PR#5 Codex 指摘: v1.0.50 以前の旧形式 (TransferId なし 33byte) との混在期間フォールバック。
+            // 自動更新は両端同時ではないため、旧送信側からのハッシュは受信中の転送が 1 件だけの
+            // ときに限り旧ロジックで紐付ける (複数受信中は誤紐付けリスクがあるので破棄)
+            var legacySha = FileChunker.ParseLegacyFileHash(data);
+            if (legacySha != null && _receiveStates.Count == 1)
+            {
+                var legacyState = _receiveStates.Values.First();
+                if (string.IsNullOrEmpty(legacyState.ExpectedSha256))
+                {
+                    legacyState.ExpectedSha256 = Convert.ToHexString(legacySha).ToLowerInvariant();
+                    Util.Logger.Log($"FileHash (旧形式) 受信: {legacyState.FileName}, SHA256={legacyState.ExpectedSha256[..16]}…");
+                    TryCompleteReceiveIfReady(legacyState);
+                    return;
+                }
+            }
             Util.Logger.Log("FileHash メッセージのパースに失敗", Util.LogLevel.Warning);
             return;
         }

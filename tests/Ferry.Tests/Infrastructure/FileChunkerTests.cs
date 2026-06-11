@@ -609,4 +609,19 @@ public class FileChunkerTests : IDisposable
         legacy[0] = TransferProtocol.FileHash;
         Assert.Null(FileChunker.ParseFileHash(legacy));
     }
+
+    [Fact]
+    public void ParseLegacyFileHash_旧形式33byteからSha256を抽出できること()
+    {
+        // v1.0.50 以前との混在期間フォールバック (受信側のみ)
+        var sha256 = new byte[32];
+        Random.Shared.NextBytes(sha256);
+        var legacy = new byte[1 + 32];
+        legacy[0] = TransferProtocol.FileHash;
+        sha256.CopyTo(legacy, 1);
+
+        var parsed = FileChunker.ParseLegacyFileHash(legacy);
+        Assert.NotNull(parsed);
+        Assert.Equal(sha256, parsed);
+    }
 }

@@ -230,6 +230,14 @@ public static class FileChunker
         return (transferId, message.Slice(17, 32).ToArray());
     }
 
+    /// <summary>旧形式 (v1.0.50 以前、TransferId なし [種別][sha256 32byte]) の FileHash から
+    /// SHA-256 を抽出する。新旧混在期間 (自動更新は両端同時でない) の受信側フォールバック用。</summary>
+    public static byte[]? ParseLegacyFileHash(ReadOnlySpan<byte> message)
+    {
+        if (message.Length < 1 + 32) return null;
+        return message.Slice(1, 32).ToArray();
+    }
+
     /// <summary>
     /// ファイルの SHA-256 ハッシュを計算する。
     /// </summary>
