@@ -269,7 +269,7 @@ public partial class App : Application
         if (app._baseLocale == null && app.Resources["en_US"] is ResourceDictionary baseLocale)
         {
             app._baseLocale = baseLocale;
-            app.Resources.MergedDictionaries.Add(baseLocale);
+            app.Resources.MergedDictionaries.Insert(0, baseLocale);
         }
 
         if (app._activeLocale != null && !ReferenceEquals(app._activeLocale, app._baseLocale))
