@@ -37,3 +37,6 @@ build/resources/app/App.icns
 
 # Cloudflare Workers ローカル開発キャッシュ (infra/cloudflare/relay 配下)
 .wrangler/
+
+# ローカルリリース作業ディレクトリ (scripts/release-local.ps1)
+local-release/

@@ -22,7 +22,7 @@ dotnet test tests/Ferry.Tests/Ferry.Tests.csproj --filter "FullyQualifiedName~Fi
 cd src/Ferry.Bridge && firebase deploy --only hosting
 ```
 
-> リリースは手動 `dotnet` ではなく、`release/**` ブランチへの push で CI が行う（後述「自動更新と配信」）。
+> Windows 向けリリースは `pwsh scripts/release-local.ps1` でローカル実行する（コード署名のため）。macOS / Linux と Bridge ページは `release/**` ブランチへの push で CI が配信する（後述「自動更新と配信」）。
 
 ## アーキテクチャ
 
@@ -108,14 +108,19 @@ signaling/{pairId}/probeAnswers/{nonce}             = TimedSignalingValue { Data
 
 Velopack による自動更新の配信元は **Cloudflare R2**（カスタムドメイン `https://ferry.nephilim.jp`、bucket `ferry-updates`）。クライアントは `App.axaml.cs` の `UpdateBaseUrl` 定数 + `Velopack.Sources.SimpleWebSource` で更新を取得する（旧 `GithubSource` から移行済み）。`Check4Update` は起動時 + 24時間ごとに実行。
 
-リリースは `release/**` ブランチへの push で `.github/workflows/release.yml` が発火し、以下を順に呼ぶ（GitHub Releases は使わず R2 単独配信）:
+**Windows リリース (ローカル実行)**: `pwsh scripts/release-local.ps1` — Lhamiel で確立したローカル署名付きリリースフローの横展開。コード署名 (Authenticode、Certum **Open Source Code Signing in the cloud**、CN=`Open Source Developer Yuichiro Shinozaki`) は SimplySign Desktop のトークンログイン中セッション + スマホ OTP が必要で GitHub Actions からは署名できないため、win-x64 / win-arm64 の 2 チャンネルはローカルスクリプトでリリースする。スクリプトは publish (Native AOT) → `vpk pack` + **Authenticode 署名** (`--signParams`、タイムスタンプ `http://time.certum.pl`) → 署名検証 → `wrangler` (pnpm dlx) で R2 バケット `ferry-updates` にアップロード (manifest は最後) → 配信確認 (`releases.{channel}.json` HTTP 200) → **manifest 外の旧 `*.nupkg` を Cloudflare API V4 で自動削除** (Aggressive 保持戦略。今回ビルドしないチャンネルの manifest は R2 から取得して keep set に加えるため、macOS / Linux の nupkg は誤削除しない) まで一括実行。Cloudflare トークンは `C:\Users\IMT\dev\Secret\secrets.json` の `cloudflare.api_token` を実行時に読む。動作確認は `-SkipUpload` (ビルド + 署名のみ)、RID 絞り込みは `-Runtimes win-x64`。**実行前提: SimplySign Desktop がトークンログイン済み** (証明書が CurrentUser\My に見えること。スクリプトがプリフライトで検査して落とす)。**`/vava` は `vava.config.json` の `localRelease` キーを読んでこのスクリプトを自動実行する**。
+
+**macOS / Linux + Bridge (CI)**: `release/**` ブランチへの push で `.github/workflows/release.yml` が発火し、以下を順に呼ぶ（GitHub Releases は使わず R2 単独配信）:
 
 - `build.yml` — 5 ランタイムを Native AOT 発行
 - `package.yml` — ユーザー向け配布物（zip / deb / rpm / AppImage）
 - `velopack.yml` — Velopack 自動更新パッケージ（`vpk pack --channel <runtime>` → `releases.<channel>.json` + nupkg）
 - `r2-upload` job — フィードとインストーラを `wrangler` で R2 にアップロード（要 Secrets: `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`）
+- `firebase-deploy` job — Bridge ページ (`src/Ferry.Bridge`) を Firebase Hosting に deploy
 
-バージョンは `Directory.Build.props` の `<Version>` 単一管理（`version` job が抽出）。GitHub Actions はコミット SHA で固定。
+> ⚠️ release.yml は現状 win-x64 / win-arm64 も**未署名で**ビルド・アップロードするため、ローカル署名リリースの後に `release/**` を push すると署名済み Setup.exe / nupkg が未署名版で上書きされる。運用順序 (CI 完走後にローカルスクリプトを実行) か、release.yml の matrix から win-* を除外する対応が必要（要判断）。
+
+バージョンは `Directory.Build.props` の `<Version>` 単一管理（CI では `version` job が抽出、ローカルスクリプトも同ファイルを読む）。GitHub Actions はコミット SHA で固定。
 
 ### 転送プロトコル
 
