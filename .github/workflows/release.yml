@@ -174,6 +174,25 @@ jobs:
             done < <(jq -r '.Assets[]?.FileName // empty' "$manifest_path")
           done
 
+          # win-x64 / win-arm64 はローカル署名リリース (scripts/release-local.ps1) が配信する
+          # ため CI 成果物には存在しない。R2 上の releases.win-*.json を keep set に取り込み、
+          # 署名済み win nupkg を「manifest 外」と誤判定して削除しないようにする。
+          # クエリ付き URL で CDN キャッシュをバイパスし、取得失敗時は誤削除防止のため
+          # cleanup を安全側で中止する (release-local.ps1 側の osx/linux keep 取り込みと対称)。
+          for channel in win-x64 win-arm64; do
+            manifest_url="https://ferry.nephilim.jp/releases.${channel}.json?cb=$(date +%s)"
+            if ! remote_json=$(curl --fail --silent --max-time 30 \
+                 --retry 3 --retry-delay 5 --retry-all-errors "$manifest_url"); then
+              echo "::error::releases.${channel}.json の取得に失敗しました。署名済み win nupkg の誤削除を防ぐため cleanup を中止します。"
+              exit 1
+            fi
+            while IFS= read -r filename; do
+              if [[ -n "$filename" && "$filename" != "null" ]]; then
+                keep_map["$filename"]=1
+              fi
+            done < <(echo "$remote_json" | jq -r '.Assets[]?.FileName // empty')
+          done
+
           echo "::group::manifest 内の保持対象 nupkg (${#keep_map[@]} files)"
           for k in "${!keep_map[@]}"; do echo "  $k"; done | sort
           echo "::endgroup::"

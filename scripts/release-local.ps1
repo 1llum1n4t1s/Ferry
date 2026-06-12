@@ -30,11 +30,10 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 # ---- 定数 ----
-# TODO(要人間判断): Ferry の NuGet 側 Velopack は 1.1.1 (VelopackUpdateDialog.Avalonia 1.0.6 経由の
-# transitive)、CI (velopack.yml) は vpk を未 pin (= latest 1.x) でインストールしていた。
-# テンプレート (Lhamiel) の固定値とはメジャー乖離があるため、初回実行前に vpk 1.1.1 への
-# 引き上げを検討すること (フィード形式の互換性確認込み)。
-$VpkVersion = '0.0.1369-g1d5c984'   # Lhamiel テンプレート値 (上記 TODO 参照)
+# Ferry の NuGet 側 Velopack は 1.1.1 (VelopackUpdateDialog.Avalonia 1.0.6 経由の transitive)、
+# 旧 CI (velopack.yml) も vpk 未 pin (= latest 1.x) で R2 フィードを生成してきたため、
+# フィード形式の互換性を保つ 1.1.1 に固定する (NuGet 側と同一バージョン原則)。
+$VpkVersion = '1.1.1'
 $WranglerVersion = '4.92.0'         # サプライチェーン対策でバージョン固定
 $Bucket = 'ferry-updates'
 $BaseUrl = 'https://ferry.nephilim.jp'

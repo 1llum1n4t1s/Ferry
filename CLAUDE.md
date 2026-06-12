@@ -112,13 +112,13 @@ Velopack による自動更新の配信元は **Cloudflare R2**（カスタム�
 
 **macOS / Linux + Bridge (CI)**: `release/**` ブランチへの push で `.github/workflows/release.yml` が発火し、以下を順に呼ぶ（GitHub Releases は使わず R2 単独配信）:
 
-- `build.yml` — 5 ランタイムを Native AOT 発行
+- `build.yml` — 5 ランタイムを Native AOT 発行（win-* は `package.yml` の portable zip 用に残置）
 - `package.yml` — ユーザー向け配布物（zip / deb / rpm / AppImage）
-- `velopack.yml` — Velopack 自動更新パッケージ（`vpk pack --channel <runtime>` → `releases.<channel>.json` + nupkg）
-- `r2-upload` job — フィードとインストーラを `wrangler` で R2 にアップロード（要 Secrets: `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`）
+- `velopack.yml` — Velopack 自動更新パッケージ（`vpk pack --channel <runtime>` → `releases.<channel>.json` + nupkg）。**win-x64 / win-arm64 は matrix から除外済み** — 未署名 win フィードがローカル署名リリースの成果物を R2 上で上書きしないため
+- `r2-upload` job — フィードとインストーラを `wrangler` で R2 にアップロード（要 Secrets: `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`）。**cleanup は R2 上の `releases.win-*.json` を keep set に取り込む**（CI 成果物に win manifest が無いため、取り込まないと署名済み win nupkg を「manifest 外」と誤判定して削除する。取得失敗時は安全側で cleanup を中止）
 - `firebase-deploy` job — Bridge ページ (`src/Ferry.Bridge`) を Firebase Hosting に deploy
 
-> ⚠️ release.yml は現状 win-x64 / win-arm64 も**未署名で**ビルド・アップロードするため、ローカル署名リリースの後に `release/**` を push すると署名済み Setup.exe / nupkg が未署名版で上書きされる。運用順序 (CI 完走後にローカルスクリプトを実行) か、release.yml の matrix から win-* を除外する対応が必要（要判断）。
+> ℹ️ `package.yml` の win portable zip (`ferry_*.zip`) は引き続き CI で生成される未署名バイナリ（ランディングページ未参照のため影響は限定的）。署名対象に含めたい場合はローカルスクリプトへの移植が必要。
 
 バージョンは `Directory.Build.props` の `<Version>` 単一管理（CI では `version` job が抽出、ローカルスクリプトも同ファイルを読む）。GitHub Actions はコミット SHA で固定。
 
