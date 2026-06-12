@@ -207,12 +207,21 @@ $releasedChannels = @($Runtimes | ForEach-Object { $RuntimeMatrix[$_].Channel })
 foreach ($channel in ($AllChannels | Where-Object { $releasedChannels -notcontains $_ })) {
     $url = "$BaseUrl/releases.$channel.json"
     try {
-        $remote = Invoke-RestMethod -Uri $url -TimeoutSec 30 -MaximumRetryCount 3 -RetryIntervalSec 5
+        # クエリで CDN キャッシュをバイパス。R2 は text 系でない Content-Type で返すことが
+        # あり、その場合 .Content は byte[] になるため UTF-8 デコードしてから JSON parse する
+        $resp = Invoke-WebRequest -Uri "${url}?_=$([Guid]::NewGuid().ToString('N'))" `
+            -Headers @{ 'Cache-Control' = 'no-cache' } -TimeoutSec 30 -MaximumRetryCount 3 -RetryIntervalSec 5
+        $raw = $resp.Content
+        if ($raw -is [byte[]]) { $raw = [System.Text.Encoding]::UTF8.GetString($raw) }
+        $remote = $raw | ConvertFrom-Json
     } catch {
         throw "他チャンネル manifest の取得に失敗 ($url)。keep set が不完全なため cleanup を中止します — $($_.Exception.Message)"
     }
     $assetsProp = $remote.PSObject.Properties['Assets']
-    if ($assetsProp -and $assetsProp.Value) {
+    if (-not $assetsProp) {
+        throw "他チャンネル manifest の形式が想定外です ($url)。keep set が不完全なため cleanup を中止します"
+    }
+    if ($assetsProp.Value) {
         foreach ($asset in $assetsProp.Value) {
             if ($asset.FileName) { $keep[$asset.FileName] = $true }
         }
