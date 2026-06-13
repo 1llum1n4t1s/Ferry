@@ -10,7 +10,7 @@
     <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
 
     <Product>Ferry</Product>
-    <Version>1.0.53</Version>
+    <!-- Version は Directory.Build.props で単一管理 (ここで再定義すると props を上書きして同期漏れの元) -->
     <Description>P2P File Transfer Application</Description>
   </PropertyGroup>
 
