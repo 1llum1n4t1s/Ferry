@@ -9,7 +9,9 @@ on:
     # win-x64 / win-arm64 はローカル署名 (scripts/release-local.ps1)、linux は署名不要のため、
     # これらの secret は osx ジョブのみが参照する。未投入だと未署名 pkg が Gatekeeper に
     # 弾かれるため、osx ジョブは APPLE_CERT_APP_P12_BASE64 が空なら明示的に fail する。
-    # 公証は App Store Connect API キー (.p8) 方式 (app-specific password より失効・権限管理が容易)。
+    # 公証は app-specific password 方式 (Apple ID + Team ID + アプリ用パスワード)。
+    # ※ App Store Connect API キー (.p8) 方式は Team Key + Developer 権限が必須で、個人キー/
+    #   権限不足だと notarytool が invalidAsn1 を返すため、確実な app-specific password 方式を採用。
     secrets:
       APPLE_CERT_APP_P12_BASE64:
         required: false   # DeveloperID_Application.p12 (.app 署名用) の base64
@@ -21,12 +23,12 @@ on:
         required: false   # 例: "Developer ID Application: Yuichiro Shinozaki (TEAMID)"
       APPLE_SIGN_INSTALL_IDENTITY:
         required: false   # 例: "Developer ID Installer: Yuichiro Shinozaki (TEAMID)"
-      APPLE_API_KEY_P8_BASE64:
-        required: false   # App Store Connect API キー (.p8) の base64
-      APPLE_API_KEY_ID:
-        required: false   # API キー ID (例: 7Z24XWH2Z3)
-      APPLE_API_ISSUER_ID:
-        required: false   # App Store Connect の Issuer ID (UUID)
+      APPLE_ID:
+        required: false   # 公証用 Apple ID (メールアドレス)
+      APPLE_TEAM_ID:
+        required: false   # 10 桁の Team ID (例: SL228Y8UUR)
+      APPLE_APP_PASSWORD:
+        required: false   # appleid.apple.com で発行した app-specific password
 
 # rere レビュー #A2-009: workflow level の最小権限を明示
 permissions:
@@ -139,23 +141,18 @@ jobs:
       - name: notarytool プロファイルを作成 (macOS)
         if: startsWith(matrix.runtime, 'osx-')
         env:
-          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
           set -euo pipefail
           # vpk が --notaryProfile で参照する名前付きプロファイルをキーチェーンに保存。
-          # App Store Connect API キー (.p8) 方式。
-          KEY_PATH="$RUNNER_TEMP/ferry-AuthKey.p8"
-          echo "$APPLE_API_KEY_P8_BASE64" | base64 --decode > "$KEY_PATH"
-          # 診断: CI 上での .p8 デコード健全性 (秘密値は出さない。size/先頭行/各IDの長さのみ)
-          echo "diag: p8=$(wc -c < "$KEY_PATH")B first=[$(head -1 "$KEY_PATH")] keyid_len=${#APPLE_API_KEY_ID} issuer_len=${#APPLE_API_ISSUER_ID}"
+          # app-specific password 方式 (Apple ID + Team ID + appleid.apple.com 発行のアプリ用パスワード)。
           xcrun notarytool store-credentials "ferry-notary" \
-            --key "$KEY_PATH" \
-            --key-id "$APPLE_API_KEY_ID" \
-            --issuer "$APPLE_API_ISSUER_ID" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" \
             --keychain "$FERRY_KEYCHAIN_PATH"
-          rm -f "$KEY_PATH"
       - name: Create Velopack package (macOS)
         if: startsWith(matrix.runtime, 'osx-')
         # --signAppIdentity / --signInstallIdentity / --notaryProfile を渡すと vpk が
