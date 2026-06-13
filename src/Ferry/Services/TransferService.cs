@@ -705,18 +705,37 @@ public sealed class TransferService : ITransferService, IDisposable
             return;
         }
 
+        // 制御文字（特に NUL '\0'）を含むファイル名/相対パスを早期に弾く。これらは後段の Path.* で
+        // ArgumentException("Null character in path") を誘発し、未捕捉だと受信ループ→ChannelClosed で
+        // 接続が切れる（細工 FileMeta 1 通で進行中転送を切断できるリモート DoS）。SafePath 側でも
+        // 多層防御するが、ここで明示 Reject すると送信側が 60s タイムアウトを待たず即失敗を受け取れる。
+        if (Util.SafePath.ContainsControlChar(meta.FileName) || Util.SafePath.ContainsControlChar(meta.RelativePath))
+        {
+            Util.Logger.Log("制御文字を含むファイル名/パスを拒否", Util.LogLevel.Warning);
+            SendRejectFireAndForget(transferIdGuid, "不正なファイル名 (制御文字)");
+            return;
+        }
+
         var displayName = meta.RelativePath ?? meta.FileName;
         Util.Logger.Log($"ファイル受信開始: {displayName}, サイズ={meta.FileSize}, チャンク数={meta.TotalChunks}, TransferId={meta.TransferId}");
 
         var saveDir = _settingsService.Settings.SaveDirectory;
 
+        // 送信元 OS のパス区切りに依存しないよう、受信した相対パスを '/' へ正規化してから分解・検証する
+        // （Windows 送信 → mac/Linux 受信の混在を吸収。区切り/トラバーサル判定は Util.SafePath に集約）。
+        var normalizedRelativePath = meta.RelativePath is null
+            ? null
+            : Util.SafePath.NormalizeSeparators(meta.RelativePath);
+
         // RelativePath がある場合はフォルダ構造を再現
         string savePath;
-        if (!string.IsNullOrEmpty(meta.RelativePath))
+        if (!string.IsNullOrEmpty(normalizedRelativePath))
         {
-            // パストラバーサル防止
-            var normalized = meta.RelativePath.Replace('\\', '/');
-            if (normalized.Contains(".."))
+            // パストラバーサル防止: ".." を「パス要素単位」で弾く
+            // （substring 判定だと "my..file.txt" のような正規名を誤って拒否してしまう）。
+            // 併せて先頭要素が空（先頭 "/"）/ "." の不正 root も弾く（保存先サイレントフラット化の防止）。
+            if (Util.SafePath.HasParentTraversal(normalizedRelativePath)
+                || Util.SafePath.HasUnsafeRoot(normalizedRelativePath))
             {
                 Util.Logger.Log($"不正な RelativePath を検出: {meta.RelativePath}", Util.LogLevel.Warning);
                 SendRejectFireAndForget(transferIdGuid, "不正なファイルパス (パストラバーサル)");
@@ -724,7 +743,7 @@ public sealed class TransferService : ITransferService, IDisposable
             }
 
             // ルートフォルダ名を取得（例: "photos/sub/file.jpg" → "photos"）
-            var parts = normalized.Split('/');
+            var parts = normalizedRelativePath.Split('/');
             var rootFolder = parts[0];
 
             // 同名フォルダ/ファイルが存在する場合、ルートフォルダ名をリネーム
@@ -752,19 +771,27 @@ public sealed class TransferService : ITransferService, IDisposable
         }
         else
         {
-            // パストラバーサル防止: ピア制御のファイル名はディレクトリ要素を除去する
-            savePath = Path.Combine(saveDir, Path.GetFileName(meta.FileName));
+            // パストラバーサル防止: ピア制御のファイル名はディレクトリ要素を除去し、空 / "." / ".." を弾く。
+            // SafeFileName は区切り正規化込みなので、Windows 送信側の '\' 区切りでも mac/Linux で正しく剥がれる
+            // （旧実装は単独ファイル経路だけ '\' を剥がさず非対称だった）。
+            var safeName = Util.SafePath.SafeFileName(meta.FileName);
+            if (safeName is null)
+            {
+                Util.Logger.Log($"不正なファイル名を拒否: {meta.FileName}", Util.LogLevel.Warning);
+                SendRejectFireAndForget(transferIdGuid, "不正なファイル名");
+                return;
+            }
+            savePath = Path.Combine(saveDir, safeName);
             // 単独ファイルの同名リネーム
             savePath = GetUniquePath(savePath);
         }
 
-        // パストラバーサル最終防御: 組み立てた保存先が saveDir 配下に収まることを検証
-        // （RelativePath 経路の絶対パス混入や Path.Combine の親破棄挙動を弾く）
-        var fullSaveDir = Path.GetFullPath(saveDir);
-        var dirWithSep = fullSaveDir.EndsWith(Path.DirectorySeparatorChar)
-            ? fullSaveDir
-            : fullSaveDir + Path.DirectorySeparatorChar;
-        if (!Path.GetFullPath(savePath).StartsWith(dirWithSep, StringComparison.OrdinalIgnoreCase))
+        // パストラバーサル最終防御: 組み立てた保存先が saveDir 配下に収まることを検証する
+        // （RelativePath 経路の絶対パス混入や Path.Combine の親破棄挙動を弾く）。
+        // 文字列 StartsWith はクロス OS で区切り・大小・正規化の差が出る（case-sensitive な Linux で
+        // OrdinalIgnoreCase が誤許可寄りに倒れる等）ため、Util.SafePath.IsWithinDirectory で
+        // Path.GetRelativePath ベースに判定し OS 既定の比較規則に委ねる。
+        if (!Util.SafePath.IsWithinDirectory(saveDir, savePath))
         {
             Util.Logger.Log($"保存パスが保存先ディレクトリ外を指しています: {savePath}", Util.LogLevel.Warning);
             SendRejectFireAndForget(transferIdGuid, "保存パスが許可範囲外です");
@@ -952,6 +979,7 @@ public sealed class TransferService : ITransferService, IDisposable
         if (hashMatch)
         {
             FileReceived?.Invoke(this, state.Item);
+            MaybePlayReceiveNotification(state.Item.PeerId);
         }
         else
         {
@@ -966,6 +994,21 @@ public sealed class TransferService : ITransferService, IDisposable
         // 全受信完了時にフォルダマッピングキャッシュをクリア
         if (_receiveStates.IsEmpty)
             _folderMappings.Clear();
+    }
+
+    /// <summary>
+    /// 受信完了時に通知音を鳴らす。通知音設定が ON かつ当該ピアが <see cref="Models.AppSettings.MutedPeerIds"/>
+    /// でミュートされていないときのみ。AutoAccept 経路もここを通る（CompleteReceive が唯一の受信完了点）。
+    /// 再生は best-effort・非ブロッキングで、失敗してもファイル受信自体には影響しない。
+    /// </summary>
+    private void MaybePlayReceiveNotification(string peerId)
+    {
+        var settings = _settingsService.Settings;
+        if (!settings.EnableNotificationSound)
+            return;
+        if (!string.IsNullOrEmpty(peerId) && settings.MutedPeerIds.Contains(peerId))
+            return;
+        Util.NotificationSound.Play();
     }
 
     /// <summary>

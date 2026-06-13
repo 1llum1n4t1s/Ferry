@@ -137,8 +137,8 @@
   <!-- Settings: Appearance (extended) -->
 
   <!-- Settings: Auto Start -->
-  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Magsimula kasama ng Windows</x:String>
-  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Irehistro sa Windows startup sa pamamagitan ng registry</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Magsimula kapag nag-log in</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Awtomatikong simulan ang Ferry kapag naka-log in ka</x:String>
   <!-- v1.0.48: 帯域制限と並列転送数（英語フォールバック） -->
   <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">Upload Limit (KB/s)</x:String>
   <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">Outbound bandwidth cap. 0 = unlimited</x:String>

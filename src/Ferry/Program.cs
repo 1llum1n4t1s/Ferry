@@ -32,9 +32,8 @@ internal sealed class Program
         {
             Logger.Initialize(new LoggerConfig
             {
-                LogDirectory = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "Ferry", "logs"),
+                // OS 別のログ配置（mac=~/Library/Logs/Ferry 等）は Util.AppPaths に集約。
+                LogDirectory = Util.AppPaths.GetLogDirectory(),
                 FilePrefix = "Ferry",
             });
         }

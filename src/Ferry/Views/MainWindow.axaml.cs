@@ -73,8 +73,10 @@ public partial class MainWindow : Window
         // 最小化→トレイ監視（M-9: 自作 WindowStateObserver を Avalonia 標準の Subscribe(Action<T>) に統一）
         this.GetObservable(WindowStateProperty).Subscribe(state =>
         {
+            // macOS は最小化=Dock 格納が OS 慣習なので、トレイ格納(Hide)は Windows/Linux のみで行う。
             if (state == WindowState.Minimized
-                && _mainVm?.Settings?.MinimizeToTray == true)
+                && _mainVm?.Settings?.MinimizeToTray == true
+                && !OperatingSystem.IsMacOS())
             {
                 ShowInTaskbar = false;
                 Hide();
@@ -92,7 +94,7 @@ public partial class MainWindow : Window
             if (_mainVm?.Settings?.StartMinimized == true)
             {
                 WindowState = WindowState.Minimized;
-                if (_mainVm.Settings.MinimizeToTray)
+                if (_mainVm.Settings.MinimizeToTray && !OperatingSystem.IsMacOS())
                 {
                     ShowInTaskbar = false;
                     Hide();
@@ -226,6 +228,16 @@ public partial class MainWindow : Window
         _savePositionDebounceTimer?.Dispose();
         _savePositionDebounceTimer = null;
         SaveWindowPosition();
+
+        // macOS: 赤信号ボタン(Close)はアプリを終了せずウィンドウを隠す慣習。終了はメニューバー(トレイ)の
+        // 「終了」/ Cmd+Q に委ねる。これがないと mac で × を押すたびに転送中 transport が切れてしまう。
+        // （アプリ生存は ShutdownMode.OnExplicitShutdown 前提。復帰はメニューバーアイコン/Dock から）。
+        if (OperatingSystem.IsMacOS() && !_closed)
+        {
+            e.Cancel = true;
+            Hide();
+            return;
+        }
 
         // X ボタン押下時は Windows 標準の感覚どおり常に終了させる。
         // 「MinimizeToTray」設定は最小化ボタン押下時のトレイ格納のみに効かせる

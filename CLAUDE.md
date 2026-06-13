@@ -104,6 +104,19 @@ signaling/{pairId}/probeAnswers/{nonce}             = TimedSignalingValue { Data
 - リフレクションベースのシリアライズは使用不可
 - `ConnectionInfo` にプロパティを追加する場合は `ConnectionInfoJsonContext` の更新が必要
 
+### プラットフォーム差の吸収（Win / mac / Linux）
+
+OS 依存処理は実行時分岐（`OperatingSystem.IsWindows()/IsMacOS()/IsLinux()`、AOT でトリミング安全）で 1 箇所に閉じ込める。新たに OS 依存コードを足すときは下記の既存吸収点に倣う。
+
+- **ログイン時自動起動** (`Util.AutoStartManager.Apply`): `SettingsService.SetAutoStart` が委譲。**Win=レジストリ Run キー** / **mac=`~/Library/LaunchAgents/com.1llum1n4t1s.ferry.plist`（`RunAtLoad`、`.app` なら `open` で起動）** / **Linux=`$XDG_CONFIG_HOME/autostart/ferry.desktop`（AppImage 時は `$APPIMAGE` を Exec）** を生成/削除する。設定 UI（`AutoStartWithWindows` トグル）は全 OS で機能し、ラベルは OS 中立文言（「ログイン時に起動」/「Start at login」）。JSON プロパティ名 `AutoStartWithWindows` は既存 `settings.json` 互換のため**改名しない**。`App.axaml.cs` 起動時に有効なら `SetAutoStart(true)` を冪等再適用し、更新で実行パスが変わっても追従する（self-heal）
+- **多重起動の前面化** (`SingleInstanceGuard`): 上記のとおり Mutex + Named Pipe で全 OS 対称
+- **× ボタン / 最小化トレイ格納** (`MainWindow.OnClosing` / `WindowStateProperty` observable): **macOS は × で終了せず `Hide()`**（赤信号ボタン慣習。終了はメニューバー「終了」/Cmd+Q。これがないと転送中 transport が切れる）。最小化トレイ格納（`ShowInTaskbar=false`+`Hide`）は **Win/Linux 限定**（mac は最小化=Dock 慣習なのでスキップ）
+- **ファイラ起動** (`Util.ShellHelper.OpenFolder`): Win=`explorer.exe` / mac=`open` / Linux=`xdg-open`。非 Windows は `ArgumentList` でパスを渡す
+- **通知音** (`Util.NotificationSound.Play`): 受信完了時に `TransferService.CompleteReceive`(検証成功・AutoAccept 経路含む)から呼ぶ。Win=`MessageBeep`(user32 P/Invoke。`System.Media.SystemSounds` は Windows 専用アセンブリ依存で cross-plat net10.0 から参照不可) / mac=`afplay Glass.aiff` / Linux=`canberra-gtk-play`→`paplay`。設定 `EnableNotificationSound` が ON かつ送信元ピアが `AppSettings.MutedPeerIds` に無いときのみ鳴らす(best-effort、失敗は無視)。`MutedPeerIds` はこのゲートが唯一の consumer（populate する per-peer ミュート UI は未実装の足場）
+- **macOS Local Network 許可**: LAN 直結（TCP/UDP）は macOS のローカルネットワークプライバシ対象。`build/resources/app/App.plist` に `NSLocalNetworkUsageDescription` を持たせ、初回プロンプトに自前文言を出す（拒否されると直結不可→リレー転落）。mDNS/Bonjour 不使用のため `NSBonjourServices` は不要
+- **データ配置パス** (`Util.AppPaths`): ログ出力先を OS 別に解決（Win=`%LOCALAPPDATA%\Ferry\logs` / mac=`~/Library/Logs/Ferry` / Linux=`~/.local/share/Ferry/logs`）。`LocalApplicationData` の mac 非慣習・空文字化リスクを明示パスで回避。settings/peers は移行リスクで `ApplicationData` 据置（詳細は §ログとデバッグ）
+- **ファイアウォール** (`FirewallHelper`): Windows のみ netsh で受信許可。mac は署名済みアプリの初回 listen 時に OS が許可ダイアログ、Linux は ufw/firewalld 手動許可（いずれも未許可なら直結失敗→リレー）
+
 ### 自動更新と配信（CI/CD）
 
 Velopack による自動更新の配信元は **Cloudflare R2**（カスタムドメイン `https://ferry.nephilim.jp`、bucket `ferry-updates`）。クライアントは `App.axaml.cs` の `UpdateBaseUrl` 定数 + `Velopack.Sources.SimpleWebSource` で更新を取得する（旧 `GithubSource` から移行済み）。`Check4Update` は起動時 + 24時間ごとに実行。
@@ -140,7 +153,7 @@ TCP / WebSocket 上の長さプレフィクス付きバイナリプロトコル�
 | Ping / Pong | 0x10 / 0x11 | キープアライブ |
 | ResumeRequest / ResumeResponse | 0x20 / 0x21 | レジューム関連 (現状応答は false 固定) |
 
-受信側（`TransferService.HandleFileChunk`）は **TransferId で受信状態を引き、`chunkIndex × ChunkSize` のオフセットへ `Seek` して書き込む**ため、UDP の順不同到着でも正しく再構成できる。受信完了は全 chunkIndex 受信（ビットマップ `ReceivedChunkSet`）で判定し、最後に SHA-256 でファイル整合性を検証する。受信ファイル名・相対パスはパストラバーサル防止のため保存先ディレクトリ配下に収まることを検証する。
+受信側（`TransferService.HandleFileChunk`）は **TransferId で受信状態を引き、`chunkIndex × ChunkSize` のオフセットへ `Seek` して書き込む**ため、UDP の順不同到着でも正しく再構成できる。受信完了は全 chunkIndex 受信（ビットマップ `ReceivedChunkSet`）で判定し、最後に SHA-256 でファイル整合性を検証する。受信ファイル名・相対パスはパストラバーサル防止のため保存先ディレクトリ配下に収まることを検証する。検証ロジックは純関数 `Util.SafePath`（`NormalizeSeparators` / `HasParentTraversal` / `HasUnsafeRoot` / `SafeFileName` / `IsWithinDirectory`）に集約。**送信元 OS のパス区切りに依存しない**よう受信した `FileName`/`RelativePath` を `\`→`/` 正規化してから basename 抽出・`..` パス要素判定し（Windows 送信 → mac/Linux 受信の混在を吸収。単独ファイル経路も正規化して非対称を解消）、最終防御は `StartsWith` ではなく `Path.GetRelativePath` ベースで saveDir 配下を強制する（区切り・大小・正規化のクロス OS 差を OS 既定の比較規則に委ねる）。シンボリックリンク追跡は文字列防御の対象外（攻撃には saveDir への事前書込権限が必要で、信頼モデル§の設計途上事項）。回帰は `SafePathTests`。
 
 UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レイヤー（選択的 ACK・フラグメンテーション 1187 bytes・スライディングウィンドウ 128）を提供する。順序保証はトランスポート層ではなく上記の chunkIndex ベース書き込みで担保している。
 
@@ -174,7 +187,7 @@ UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レ
 - **一時停止 / 再開** (`PauseSendTransfer` / `ResumeSendTransfer`): 送信のみ対応。`_pausedSends`(`ConcurrentDictionary<Guid, byte>`) に TransferId を入れ、`SendChunksAsync` がチャンク送信ループ手前で `_pausedSends.ContainsKey` の間 `Task.Delay(100)` 待機。待機中は `TransferState.Paused`（色 `#FF9F0A`）を表示
 - **自動リトライ**: `SendOneFileAsync` が `MaxSendAttempts=3` でリトライ。2 回目以降は `TransferItem.Note` に「リトライ中…(n/3)」を表示（`OnTransferError` は `_sendCtsByItem` 管理中の送信項目をスキップしてリトライループに委ねる）。`OperationCanceledException` はリトライせず Cancelled 扱い
 - **保存先アドレスバー**: 受信保存先を設定画面から `MainWindow` 上部の常時表示バーへ移動（📁 アイコン + readonly TextBox + 📂 で OS のファイラ起動 + 変更ボタン）。`SettingsView` 側の保存先ブロックは撤去
-- **多重起動防止** (`SingleInstanceGuard`): 名前付き `Mutex`（`Ferry-SingleInstance-Mutex-v1`）で取得失敗時は `EventWaitHandle`（`Ferry-Activate-Event-v1`）で既存インスタンスを前面化させて即終了。`Program.cs` の `VelopackApp...Run()` 直後に `TryAcquire`、`App.axaml.cs` で `StartActivationListener`（Windows 専用、他 OS は no-op で起動継続）
+- **多重起動防止** (`SingleInstanceGuard`): 名前付き `Mutex`（`Ferry-SingleInstance-Mutex-v1`）で取得失敗時は **Named Pipe**（`Ferry-Activate-<user>-v1`）で既存インスタンスへ前面化シグナルを送って即終了。`Program.cs` の `VelopackApp...Run()` 直後に `TryAcquire`、`App.axaml.cs` で `StartActivationListener` を起動。`Mutex`・`NamedPipeServer/ClientStream` とも .NET 上で **Win/mac/Linux すべて対応**（Unix は UDS バック）なので、2 個目起動時の既存ウィンドウ前面化は全 OS で対称に動く（旧 `EventWaitHandle`〔Windows 専用〕から移行）
 - **接続検出の短縮** (#5): `FirebaseSignaling.WaitForSdpAsync` の offer/answer ポーリング間隔を 1000ms → 400ms に短縮し、相手の送信開始から受信開始までの待ちを削減
 
 #### 追加修正 (v1.0.47 後半)
@@ -218,7 +231,7 @@ xUnit v3 + NSubstitute。テスト内の非同期メソッドには `TestContext
 
 ### ログとデバッグ
 
-**SuperLightLogger**（log4net 互換シム + 内蔵 File Target、Native AOT 安全）でファイル出力。場所: `%LOCALAPPDATA%\Ferry\logs\Ferry_YYYYMMDD.log`。DEBUG は全レベル、Release は Info 以上（接続フォールバックの各段を本番でも追えるようにするため）。IP 等の PII はログ出力時に `Util.Logger.MaskIp` で末尾オクテットを伏せる。`Logger.Initialize` は失敗時に `%TEMP%` へフォールバックする（`Program.cs`）。`Util.Logger` は内部で `SuperLightLogger.ILog` を保持し、`LogManager.Configure(b => b.AddSuperLightFile(...).SetMinimumLevel("Trace"))` でローリング設定（旧 NLog から 2026-05 に移行）。
+**SuperLightLogger**（log4net 互換シム + 内蔵 File Target、Native AOT 安全）でファイル出力。出力先は OS 別に `Util.AppPaths.GetLogDirectory` が解決する: **Win=`%LOCALAPPDATA%\Ferry\logs`** / **mac=`~/Library/Logs/Ferry`**（慣習どおり Console.app から見える・常に存在し書込可。`LocalApplicationData` は mac で `~/.local/share` 隠し＝非慣習かつ空文字化のリスクがあるため明示パスに寄せている） / **Linux=`~/.local/share/Ferry/logs`**（XDG）。ファイル名は `Ferry_YYYYMMDD.log`。DEBUG は全レベル、Release は Info 以上（接続フォールバックの各段を本番でも追えるようにするため）。IP 等の PII はログ出力時に `Util.Logger.MaskIp` で末尾オクテットを伏せる。`Logger.Initialize` は失敗時に `%TEMP%`（mac/Linux は `$TMPDIR`）へフォールバックする（`Program.cs`）。なお settings.json / peers.json は DeviceId・ペア情報の移行リスクがあるため従来の `ApplicationData`（mac=`~/.config/Ferry`）配置のまま。`Util.Logger` は内部で `SuperLightLogger.ILog` を保持し、`LogManager.Configure(b => b.AddSuperLightFile(...).SetMinimumLevel("Trace"))` でローリング設定（旧 NLog から 2026-05 に移行）。
 
 **通信デバッグのポイント:**
 - SDP offer/answer ポーリング: `SDP 待機中` ログで現在の待機状態を確認（`createdAt=null` なら Firebase に offer が無い）

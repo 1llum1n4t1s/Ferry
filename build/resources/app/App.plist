@@ -22,5 +22,7 @@
 	<string>FERRY_VERSION</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Ferry uses your local network to transfer files directly with nearby computers.</string>
 </dict>
 </plist>

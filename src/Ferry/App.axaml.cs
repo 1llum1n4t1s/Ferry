@@ -139,6 +139,12 @@ public partial class App : Application
                     }
                 }
             }
+            // 自動起動が有効なら、登録済みエントリを現在の実行ファイルパスへ冪等に更新する。
+            // Velopack 更新等で実行パスが変わっても次回起動時に追従する（Win=レジストリ /
+            // mac=LaunchAgent / Linux=.desktop を SetAutoStart 内で OS 別に再書込）。
+            if (settings.AutoStartWithWindows)
+                settingsService.SetAutoStart(true);
+
             var connectionService = new ConnectionService(settings.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName)
             {
                 RelayUrl = RelayUrl,

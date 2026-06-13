@@ -19,11 +19,21 @@ public static class ShellHelper
 
             // Process.Start が返す Process は OS プロセスハンドルを保持するため using で即解放する
             // （📂を連打されてもハンドルを枯渇させない。ファイラ自体は独立プロセスとして動き続ける）。
-            var psi = OperatingSystem.IsWindows()
-                ? new ProcessStartInfo("explorer.exe", $"\"{dir}\"") { UseShellExecute = true }
-                : OperatingSystem.IsMacOS()
-                    ? new ProcessStartInfo("open", $"\"{dir}\"") { UseShellExecute = false }
-                    : new ProcessStartInfo("xdg-open", $"\"{dir}\"") { UseShellExecute = false };
+            // 非 Windows は ArgumentList で引数を渡し、.NET に OS 流のエスケープを任せる
+            // （パスに二重引用符等が含まれても argv が壊れない）。
+            ProcessStartInfo psi;
+            if (OperatingSystem.IsWindows())
+            {
+                psi = new ProcessStartInfo("explorer.exe", $"\"{dir}\"") { UseShellExecute = true };
+            }
+            else
+            {
+                psi = new ProcessStartInfo(OperatingSystem.IsMacOS() ? "open" : "xdg-open")
+                {
+                    UseShellExecute = false,
+                };
+                psi.ArgumentList.Add(dir);
+            }
             using var _ = Process.Start(psi);
         }
         catch (Exception ex)

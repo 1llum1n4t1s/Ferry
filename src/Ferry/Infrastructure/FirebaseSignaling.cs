@@ -336,6 +336,29 @@ public sealed class FirebaseSignaling : IDisposable
     }
 
     /// <summary>
+    /// signaling/{pairId}/{field} を 1 回だけ読み取り、デコード済み文字列を返す（未存在・一時エラーは null）。
+    /// Offer 側は TCP 失敗報告（answer=needRelay）を受けてから STUN し、ExternalIp 付きの offer を
+    /// 同じノードに上書き再送する。Answer 側がその offer-v2 を読み直して UDP ホールパンチへ進むための単発読み取り。
+    /// （ポーリングは呼出側が担当するため、ここでは 1 回読んで即返す）
+    /// </summary>
+    public async Task<string?> TryReadSdpOnceAsync(string pairId, string field, CancellationToken ct = default)
+    {
+        try
+        {
+            var value = await _client
+                .Child("signaling")
+                .Child(pairId)
+                .Child(field)
+                .OnceSingleAsync<SignalingValue>();
+            if (value != null && !string.IsNullOrEmpty(value.Data))
+                return DecodeBase64(value.Data);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { /* ノード未存在 / 一時的な読み取りエラーは null（呼出側が次のポーリングでリトライ） */ }
+        return null;
+    }
+
+    /// <summary>
     /// SDP Answer を Firebase に書き込む。
     /// </summary>
     public async Task SendSdpAnswerAsync(string pairId, string sdp, CancellationToken ct = default)
