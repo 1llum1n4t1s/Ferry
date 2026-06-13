@@ -136,7 +136,10 @@ internal static class SingleInstanceGuard
     {
         try
         {
-            using var client = new NamedPipeClientStream(".", PipeName(), PipeDirection.Out);
+            // CurrentUserOnly: 同一ユーザー所有のパイプにのみ接続を許す（他ユーザーによる
+            // パイプなりすまし対策。Unix では UDS のファイル権限を所有者限定にする）。
+            using var client = new NamedPipeClientStream(
+                ".", PipeName(), PipeDirection.Out, PipeOptions.CurrentUserOnly);
             client.Connect(1000);
             client.WriteByte(1);
             client.Flush();
@@ -159,9 +162,11 @@ internal static class SingleInstanceGuard
             {
                 try
                 {
+                    // CurrentUserOnly: 同一ユーザーのクライアントのみ接続を許す（他ユーザーからの
+                    // 不正接続・なりすまし対策。Unix では UDS のファイル権限を所有者限定にする）。
                     using var server = new NamedPipeServerStream(
                         PipeName(), PipeDirection.In, 1,
-                        PipeTransmissionMode.Byte, PipeOptions.None);
+                        PipeTransmissionMode.Byte, PipeOptions.CurrentUserOnly);
                     server.WaitForConnection();
                     var b = server.ReadByte();
                     consecutiveFailures = 0;

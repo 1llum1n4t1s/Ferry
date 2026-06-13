@@ -51,8 +51,9 @@ public sealed class TransferService : ITransferService, IDisposable
     /// P-6: キーを string → Guid に変更し、毎チャンクの ToString() ヒープ確保 (1GB で 9MB) を撤去。</summary>
     private readonly ConcurrentDictionary<Guid, ReceiveState> _receiveStates = new();
 
-    /// <summary>フォルダ受信時のルートフォルダ名マッピング（元の名前 → リネーム後の名前）。同一フォルダの全ファイルを同じ先に保存するため。</summary>
-    private readonly ConcurrentDictionary<string, string> _folderMappings = new();
+    /// <summary>フォルダ受信時のルートフォルダ名マッピング（(peerId, 元の名前) → リネーム後の名前）。
+    /// 同一フォルダの全ファイルを同じ先に保存しつつ、別ピアの同名ルートが混ざらないようピアごとに分離する。</summary>
+    private readonly ConcurrentDictionary<(string PeerId, string RootFolder), string> _folderMappings = new();
 
     /// <summary>承認待ちの転送状態（TransferId → ReceiveState）。承認/拒否後に _receiveStates へ移動。</summary>
     private readonly ConcurrentDictionary<Guid, ReceiveState> _pendingApprovals = new();
@@ -721,6 +722,11 @@ public sealed class TransferService : ITransferService, IDisposable
 
         var saveDir = _settingsService.Settings.SaveDirectory;
 
+        // 接続元ピアを FileMeta 到着時点で確定（フォルダ構造マッピングのキーと ReceiveState の双方で使う）。
+        var receivePeerId = _connectionService.ConnectedPeer?.SessionId
+                            ?? _connectionService.CurrentListeningPeerId
+                            ?? string.Empty;
+
         // 送信元 OS のパス区切りに依存しないよう、受信した相対パスを '/' へ正規化してから分解・検証する
         // （Windows 送信 → mac/Linux 受信の混在を吸収。区切り/トラバーサル判定は Util.SafePath に集約）。
         var normalizedRelativePath = meta.RelativePath is null
@@ -747,22 +753,25 @@ public sealed class TransferService : ITransferService, IDisposable
             var rootFolder = parts[0];
 
             // 同名フォルダ/ファイルが存在する場合、ルートフォルダ名をリネーム
-            // 同一フォルダの全ファイルが同じリネーム先になるようキャッシュ
-            var actualRoot = _folderMappings.GetOrAdd(rootFolder, key =>
+            // フォルダ構造マッピングはピアごとに分離する。グローバル共有のままだと、別ピアから同名ルート
+            // （例: "photos"）を連続/同時受信したとき同じ実フォルダに解決され、ディスク上でファイルが
+            // 混ざる。キーを (peerId, rootFolder) のタプルにして分離し（区切り文字不要で衝突しない）、
+            // 値（実フォルダ名）は rootFolder から組み立てる。同一フォルダの全ファイルは同じ先にキャッシュされる。
+            var actualRoot = _folderMappings.GetOrAdd((receivePeerId, rootFolder), _ =>
             {
-                var candidatePath = Path.Combine(saveDir, key);
+                var candidatePath = Path.Combine(saveDir, rootFolder);
                 if (!Directory.Exists(candidatePath) && !File.Exists(candidatePath))
-                    return key;
+                    return rootFolder;
 
                 // "フォルダ名 (2)" のように連番リネーム
                 for (var i = 2; i < 10000; i++)
                 {
-                    var renamed = $"{key} ({i})";
+                    var renamed = $"{rootFolder} ({i})";
                     var renamedPath = Path.Combine(saveDir, renamed);
                     if (!Directory.Exists(renamedPath) && !File.Exists(renamedPath))
                         return renamed;
                 }
-                return $"{key}_{Guid.NewGuid():N}";
+                return $"{rootFolder}_{Guid.NewGuid():N}";
             });
 
             // ルートフォルダ名を置換して保存パスを組み立て
@@ -838,11 +847,9 @@ public sealed class TransferService : ITransferService, IDisposable
                 Direction = TransferDirection.Receive,
                 State = TransferState.WaitingApproval,
                 Sha256Hash = meta.Sha256,
-                // 接続元ピアを FileMeta 到着時点で確定させる（VM 側 ResolveReceivePeer の後付け推測より
-                // 権威ある値。宛先別履歴が誤ピアに混入しないようにする。VM はこれが空のときだけ補完する）。
-                PeerId = _connectionService.ConnectedPeer?.SessionId
-                         ?? _connectionService.CurrentListeningPeerId
-                         ?? string.Empty,
+                // 接続元ピアは FileMeta 到着時点で確定済み（receivePeerId、上部で算出）。VM 側
+                // ResolveReceivePeer の後付け推測より権威ある値で、宛先別履歴が誤ピアに混入しないようにする。
+                PeerId = receivePeerId,
             },
         };
 
