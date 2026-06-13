@@ -54,14 +54,19 @@ Infrastructure/         → FirebaseSignaling, TcpDirectTransport, UdpHolePunchT
 
 ### 接続フロー（3 階層フォールバック）
 
-イベント駆動で固定タイムアウトに依存しない設計:
+イベント駆動で固定タイムアウトに依存しない設計。**STUN は遅延実行**で、LAN で TCP 直結できるケースに STUN レイテンシを乗せない（offer-v1 は STUN 情報なしで即送る）:
 
-1. **Offer 側**: TCP リスナー起動 → offer 送信（STUN 情報なし）→ TCP accept と Answer ポーリングを `WhenAny` で同時待機
+1. **Offer 側**: TCP リスナー起動 → **offer-v1 送信（STUN 情報なし）** → TCP accept と Answer ポーリングを `WhenAny` で同時待機
 2. **Answer 側**: offer 受信 → TCP 接続試行 → 結果を answer に `route` フィールドで通知
    - TCP 成功 → `route = "direct"` → 両側 TCP で接続完了
-   - TCP 失敗 → `route = "needRelay"` → Offer 側が即座に次ステップへ
-3. **TCP 失敗時**: Offer 側が STUN クエリ実行 → UDP ホールパンチ試行（8秒）
+   - TCP 失敗 → `route = "needRelay"` → 双方が次ステップ（UDP）へ
+3. **TCP 失敗時（UDP ホールパンチ）**: ここが非対称で**順序が肝**。`signaling/{pairId}/{role}Endpoint` 経由で双方の外部エンドポイントを交換する。
+   - **Offer 側**: answer(needRelay) 受信 → STUN クエリ → **ExternalIp を載せた offer-v2 を同じ offer ノードに上書き再送**（`SendSdpOfferAsync`）→ Answer の外部エンドポイントを最大 10 秒待つ（`WaitForEndpointAsync`）→ 取得後ホールパンチ
+   - **Answer 側**: 最初に読んだ offer-v1 には ExternalIp が無い。**`WaitForOfferExternalIpAsync` で offer-v2（ExternalIp 付き）を最大 8 秒ポーリングして読み直してから**（`TryReadSdpOnceAsync`）STUN → 自分の外部エンドポイントを publish（`SendEndpointAsync`）→ ホールパンチ。MITM 防御（`offer.From == ペア相手`）は再読み分にも適用
+   - ⚠️ **Answer 側を「最初に読んだ offer の ExternalIp 有無」でゲートしてはいけない**。offer-v1 は常に ExternalIp が空なので、ゲートすると UDP を一切起動せず自分の endpoint も publish しない → Offer 側が endpoint 待ちでタイムアウト → **cross-NAT（別回線・別 NAT）で必ずリレーへ落ちる構造バグ**になる（実際に過去発生・修正済み）
 4. **UDP 失敗時**: WebSocket リレーにフォールバック（`wss://relay.ferry.nephilim.jp/ferry-relay`、Cloudflare Workers + Durable Objects、Hibernation 対応）
+
+> UDP ホールパンチの成功は **NAT タイプ依存**。修正後も両側が CGNAT / symmetric NAT（日本の IPoE 等で多い）だとホールパンチが抜けずリレーに落ちる。「UDP 修正＝必ず P2P」ではない点に注意。
 
 STUN は **Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google STUN (`stun.l.google.com:19302`) を従** の 2 サーバーフォールバック。IPv4 明示指定（`AddressFamily.InterNetwork`）。旧 VPS 自前 coturn (`1llum1n4t1.net:3478`) は Cloudflare 移行に伴い 2026-05 に撤去済み。
 
@@ -153,7 +158,7 @@ TCP / WebSocket 上の長さプレフィクス付きバイナリプロトコル�
 | Ping / Pong | 0x10 / 0x11 | キープアライブ |
 | ResumeRequest / ResumeResponse | 0x20 / 0x21 | レジューム関連 (現状応答は false 固定) |
 
-受信側（`TransferService.HandleFileChunk`）は **TransferId で受信状態を引き、`chunkIndex × ChunkSize` のオフセットへ `Seek` して書き込む**ため、UDP の順不同到着でも正しく再構成できる。受信完了は全 chunkIndex 受信（ビットマップ `ReceivedChunkSet`）で判定し、最後に SHA-256 でファイル整合性を検証する。受信ファイル名・相対パスはパストラバーサル防止のため保存先ディレクトリ配下に収まることを検証する。検証ロジックは純関数 `Util.SafePath`（`NormalizeSeparators` / `HasParentTraversal` / `HasUnsafeRoot` / `SafeFileName` / `IsWithinDirectory`）に集約。**送信元 OS のパス区切りに依存しない**よう受信した `FileName`/`RelativePath` を `\`→`/` 正規化してから basename 抽出・`..` パス要素判定し（Windows 送信 → mac/Linux 受信の混在を吸収。単独ファイル経路も正規化して非対称を解消）、最終防御は `StartsWith` ではなく `Path.GetRelativePath` ベースで saveDir 配下を強制する（区切り・大小・正規化のクロス OS 差を OS 既定の比較規則に委ねる）。シンボリックリンク追跡は文字列防御の対象外（攻撃には saveDir への事前書込権限が必要で、信頼モデル§の設計途上事項）。回帰は `SafePathTests`。
+受信側（`TransferService.HandleFileChunk`）は **TransferId で受信状態を引き、`chunkIndex × ChunkSize` のオフセットへ `Seek` して書き込む**ため、UDP の順不同到着でも正しく再構成できる。受信完了は全 chunkIndex 受信（ビットマップ `ReceivedChunkSet`）で判定し、最後に SHA-256 でファイル整合性を検証する。受信ファイル名・相対パスはパストラバーサル防止のため保存先ディレクトリ配下に収まることを検証する。検証ロジックは純関数 `Util.SafePath`（`NormalizeSeparators` / `HasParentTraversal` / `HasUnsafeRoot` / `SafeFileName` / `IsWithinDirectory`）に集約。**送信元 OS のパス区切りに依存しない**よう受信した `FileName`/`RelativePath` を `\`→`/` 正規化してから basename 抽出・`..` パス要素判定し（Windows 送信 → mac/Linux 受信の混在を吸収。単独ファイル経路も正規化して非対称を解消）、最終防御は `StartsWith` ではなく `Path.GetRelativePath` ベースで saveDir 配下を強制する（区切り・大小・正規化のクロス OS 差を OS 既定の比較規則に委ねる）。加えて **NUL 等の制御文字を含む `FileName`/`RelativePath` は `HandleFileMeta` 冒頭で早期 `FileReject`**（`SafePath.ContainsControlChar`）し、`SafePath.IsWithinDirectory` も例外安全化（throw せず false に倒す）する。これが無いと細工 `FileMeta` の NUL で `Path.*` が `ArgumentException`→受信ループ→`ChannelClosed` で進行中転送を切断できる**リモート DoS**（ペア済み peer から 1 通で発火、early-return しないので `FileReject` も飛ばない）になる。シンボリックリンク追跡は文字列防御の対象外（攻撃には saveDir への事前書込権限が必要で、信頼モデル§の設計途上事項）。回帰は `SafePathTests`。
 
 UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レイヤー（選択的 ACK・フラグメンテーション 1187 bytes・スライディングウィンドウ 128）を提供する。順序保証はトランスポート層ではなく上記の chunkIndex ベース書き込みで担保している。
 
