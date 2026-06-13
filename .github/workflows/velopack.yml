@@ -35,6 +35,8 @@ permissions:
 jobs:
   velopack:
     strategy:
+      # 1 つの runtime (osx の署名等) が失敗しても linux チャンネルの発行を巻き込まない
+      fail-fast: false
       matrix:
         # win-x64 / win-arm64 はローカル署名リリース (scripts/release-local.ps1) に移行済み。
         # CI で未署名の win フィードを生成すると、署名済みバイナリを R2 上で上書きして
@@ -146,6 +148,8 @@ jobs:
           # App Store Connect API キー (.p8) 方式。
           KEY_PATH="$RUNNER_TEMP/ferry-AuthKey.p8"
           echo "$APPLE_API_KEY_P8_BASE64" | base64 --decode > "$KEY_PATH"
+          # 診断: CI 上での .p8 デコード健全性 (秘密値は出さない。size/先頭行/各IDの長さのみ)
+          echo "diag: p8=$(wc -c < "$KEY_PATH")B first=[$(head -1 "$KEY_PATH")] keyid_len=${#APPLE_API_KEY_ID} issuer_len=${#APPLE_API_ISSUER_ID}"
           xcrun notarytool store-credentials "ferry-notary" \
             --key "$KEY_PATH" \
             --key-id "$APPLE_API_KEY_ID" \
