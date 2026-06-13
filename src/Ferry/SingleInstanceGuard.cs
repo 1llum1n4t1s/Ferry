@@ -16,6 +16,10 @@ internal static class SingleInstanceGuard
 {
     private static Mutex? _mutex;
 
+    /// <summary>per-user 化する前の旧ビルドが使っていた固定名 Mutex（Windows でのみ存在しうる）。</summary>
+    private const string LegacyMutexName = "Ferry-SingleInstance-Mutex-v1";
+    private static Mutex? _legacyMutex;
+
     /// <summary>
     /// ユーザーごとに一意な接尾辞。Unix では Mutex / Named Pipe とも /tmp 配下の共有名前空間に
     /// 実体が置かれるため、マシン上の別ユーザー（Fast User Switching / マルチセッション）と
@@ -47,6 +51,17 @@ internal static class SingleInstanceGuard
     {
         try
         {
+            // Windows: per-user 化する前のビルドは固定名 Mutex を使う。Velopack 更新の
+            // 「旧プロセス稼働中に新プロセス起動」が重なる窓で、名前が違うと両方が別々の Mutex を
+            // 取れてしまい二重起動になる。これを防ぐため旧名 Mutex も確認・保持する。
+            // （旧ガードは Windows 限定だったので mac/Linux には旧名インスタンスが存在しない。さらに Unix で
+            //  固定名 Mutex を握ると共有名前空間で別ユーザーを誤ってブロックするため、Windows のみに限定する）
+            if (OperatingSystem.IsWindows() && IsLegacyInstanceRunning())
+            {
+                SignalExistingInstance();
+                return false;
+            }
+
             _mutex = new Mutex(initiallyOwned: false, MutexName());
             bool acquired;
             try
@@ -72,6 +87,44 @@ internal static class SingleInstanceGuard
             // （アプリの基本機能を壊さない方を優先）。
             Ferry.Util.Logger.Log($"多重起動ガードの初期化に失敗（起動は継続）: {ex.Message}", Ferry.Util.LogLevel.Warning);
             return true;
+        }
+    }
+
+    /// <summary>
+    /// 旧ビルド（per-user 化前）の固定名 Mutex を確認する。取得できれば保持して false（旧名インスタンスは
+    /// 居ない）、既に握られていれば true（旧インスタンス稼働中）を返す。取得した Mutex はプロセス生存中
+    /// 保持し続ける（以後の起動も同様に二重起動を検知できる。新インスタンス同士なら Named Pipe で前面化が効く）。
+    /// 旧名 Mutex は Windows 限定運用なので、本メソッドは Windows からのみ呼ぶ。
+    /// </summary>
+    private static bool IsLegacyInstanceRunning()
+    {
+        try
+        {
+            _legacyMutex = new Mutex(initiallyOwned: false, LegacyMutexName);
+            bool acquired;
+            try
+            {
+                acquired = _legacyMutex.WaitOne(TimeSpan.FromSeconds(2));
+            }
+            catch (AbandonedMutexException)
+            {
+                // 旧オーナーが解放せずに落ちた → 取得した扱い
+                acquired = true;
+            }
+
+            if (acquired)
+                return false; // 旧名 Mutex を保持。旧インスタンスは居ない
+
+            // 旧インスタンスが稼働中（旧名 Mutex を握っている）
+            _legacyMutex.Dispose();
+            _legacyMutex = null;
+            return true;
+        }
+        catch
+        {
+            // 旧名 Mutex の確認自体に失敗しても起動は妨げない（best-effort）
+            _legacyMutex = null;
+            return false;
         }
     }
 

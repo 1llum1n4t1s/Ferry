@@ -151,11 +151,7 @@ public static class AutoStartManager
 
         Directory.CreateDirectory(dir);
         var exe = GetExecutablePath();
-        // XDG Desktop Entry の Exec は独自パーサーで処理される。スペース等の予約文字を含むときだけ
-        // ダブルクォートで囲み内部の \ " ` $ をエスケープする（含まない一般パスは無クォートが最も互換）。
-        var execValue = exe.IndexOfAny([' ', '\t']) >= 0
-            ? "\"" + exe.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("`", "\\`").Replace("$", "\\$") + "\""
-            : exe;
+        var execValue = QuoteExecArg(exe);
         var content = $"""
 [Desktop Entry]
 Type=Application
@@ -169,6 +165,26 @@ Hidden=false
 """;
         File.WriteAllText(desktopPath, content);
         Logger.Log($"自動起動を登録（autostart .desktop）: {desktopPath}");
+    }
+
+    /// <summary>
+    /// freedesktop Desktop Entry の Exec キー用に実行ファイルパスを安全にクォートする。
+    /// 仕様: 引数はダブルクォートで囲み、内部の \ " ` $ をバックスラッシュでエスケープする。
+    /// さらに Exec はフィールドコード導入文字 % を持つため、リテラル % は %% へエスケープする。
+    /// 予約文字（空白・( ) &amp; # ; | &lt; &gt; ~ 等）を含むパス
+    /// （例: AppImage の "/home/me/Ferry(1).AppImage"、"~/A&amp;B/Ferry.AppImage"、"50%" を含む名前）でも
+    /// 常にクォートすることで、login 時に Exec 行が壊れて autostart が失敗するのを防ぐ。
+    /// 参考: https://specifications.freedesktop.org/desktop-entry/latest/exec-variables.html
+    /// </summary>
+    private static string QuoteExecArg(string arg)
+    {
+        var inner = arg
+            .Replace("\\", "\\\\")   // バックスラッシュを最初にエスケープ
+            .Replace("\"", "\\\"")
+            .Replace("`", "\\`")
+            .Replace("$", "\\$")
+            .Replace("%", "%%");     // リテラル % は %%（Exec フィールドコードと区別）
+        return "\"" + inner + "\"";
     }
 
     /// <summary>
