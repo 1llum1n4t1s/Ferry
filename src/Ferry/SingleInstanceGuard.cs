@@ -28,8 +28,11 @@ internal static class SingleInstanceGuard
     private static string UserSuffix()
     {
         var user = Environment.UserName ?? "default";
-        // 名前/Unix ソケットパスに安全な英数字のみへ正規化
-        var safe = new string(user.Where(char.IsLetterOrDigit).ToArray());
+        // 名前/Unix ソケットパスに安全な英数字のみへ正規化。
+        // Unix では Named Pipe = Unix Domain Socket で、パス長に 104/108 文字の上限がある。
+        // macOS の $TMPDIR は長く（/var/folders/.../T/）、CoreFXPipe_ プレフィクス + パイプ名と
+        // 合わさると長いユーザー名で上限超過 → 多重起動の前面化が失敗する。先頭 8 文字に切り詰めて回避。
+        var safe = new string(user.Where(char.IsLetterOrDigit).Take(8).ToArray());
         return string.IsNullOrEmpty(safe) ? "default" : safe;
     }
 

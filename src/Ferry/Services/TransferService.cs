@@ -1006,7 +1006,9 @@ public sealed class TransferService : ITransferService, IDisposable
         var settings = _settingsService.Settings;
         if (!settings.EnableNotificationSound)
             return;
-        if (!string.IsNullOrEmpty(peerId) && settings.MutedPeerIds.Contains(peerId))
+        // MutedPeerIds は初期化子付きだが、settings.json に明示的な null が入ると STJ が null を
+        // セットしうるため null 条件演算子で防御する（null = ミュート無し = 鳴らす）。
+        if (!string.IsNullOrEmpty(peerId) && settings.MutedPeerIds?.Contains(peerId) == true)
             return;
         Util.NotificationSound.Play();
     }
