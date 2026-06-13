@@ -114,7 +114,7 @@ Velopack による自動更新の配信元は **Cloudflare R2**（カスタム�
 
 - `build.yml` — 5 ランタイムを Native AOT 発行（win-* は `package.yml` の portable zip 用に残置）
 - `package.yml` — ユーザー向け配布物（zip / deb / rpm / AppImage）
-- `velopack.yml` — Velopack 自動更新パッケージ（`vpk pack --channel <runtime>` → `releases.<channel>.json` + nupkg）。**win-x64 / win-arm64 は matrix から除外済み** — 未署名 win フィードがローカル署名リリースの成果物を R2 上で上書きしないため
+- `velopack.yml` — Velopack 自動更新パッケージ（`vpk pack --channel <runtime>` → `releases.<channel>.json` + nupkg）。**win-x64 / win-arm64 は matrix から除外済み** — 未署名 win フィードがローカル署名リリースの成果物を R2 上で上書きしないため。**osx-arm64 は Developer ID 署名 + notarytool 公証**（一時キーチェーンに証明書 .p12×2 をインポート → `notarytool store-credentials`（**app-specific password 方式**）→ `vpk pack` に `--signAppIdentity` / `--signInstallIdentity` / `--notaryProfile` を渡して .app codesign → .pkg productsign → 公証 → stapler を自動実行。要 Apple Secrets 8 個、手順は [`docs/operations/macos-signing.md`](docs/operations/macos-signing.md)。⚠️ 公証は **app-specific password 方式必須** — App Store Connect API キー方式は Team Key + Developer 権限でないと `invalidAsn1` で失敗する。`matrix: fail-fast: false` で osx 失敗時に linux を巻き込まない）。linux は署名不要
 - `r2-upload` job — フィードとインストーラを `wrangler` で R2 にアップロード（要 Secrets: `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`）。**cleanup は R2 上の `releases.win-*.json` を keep set に取り込む**（CI 成果物に win manifest が無いため、取り込まないと署名済み win nupkg を「manifest 外」と誤判定して削除する。取得失敗時は安全側で cleanup を中止）
 - `firebase-deploy` job — Bridge ページ (`src/Ferry.Bridge`) を Firebase Hosting に deploy
 

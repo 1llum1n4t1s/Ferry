@@ -8,7 +8,7 @@ Apple の **Developer ID 署名 + 公証 (notarization)** を施すと、ユー�
 | OS | 署名方式 | 実行場所 |
 |----|---------|---------|
 | Windows (win-x64 / win-arm64) | Authenticode (Certum / SimplySign) | **ローカル** `scripts/release-local.ps1` (クラウド署名が CI 不可のため) |
-| **macOS (osx-arm64)** | **Developer ID 署名 + notarytool 公証 (App Store Connect API キー方式)** | **CI** `.github/workflows/velopack.yml` (macos ランナー) |
+| **macOS (osx-arm64)** | **Developer ID 署名 + notarytool 公証 (app-specific password 方式)** | **CI** `.github/workflows/velopack.yml` (macos ランナー) |
 | Linux (linux-x64 / linux-arm64) | 署名不要 | CI |
 
 mac は win と逆で、Apple の署名・公証は macOS 上でしか実行できないため **macos-latest ランナー (CI) で署名する**。
@@ -17,31 +17,34 @@ mac は win と逆で、Apple の署名・公証は macOS 上でしか実行で�
 仕組み: `vpk pack` に `--signAppIdentity` / `--signInstallIdentity` / `--notaryProfile` を渡すと、
 Velopack が **`.app` の codesign → `.pkg` の productsign → notarytool への公証申請 → stapler でチケット添付** まで自動実行する。
 
+> ⚠️ **公証は app-specific password 方式を使う（App Store Connect API キー方式は避ける）**。
+> notarytool は **Team Key + Developer 権限** の API キーでないと弾き、しかもエラーを `Error: invalidAsn1`
+> (.p8 形式エラーに見せかけて) 返す。個人キー/権限不足だと .p8 自体が健全でも invalidAsn1 になり詰む
+> (v1.0.53 で踏破)。app-specific password 方式なら Apple ID が Developer アカウントなので種類/権限の罠が無い。
+
 ---
 
 ## クレデンシャルの単一の真実の源 (single source of truth)
 
 署名・公証の素材はすべて **`C:\Users\IMT\dev\Secret\secrets.json` の `apple_signing` ブロック** と
-`C:\Users\IMT\dev\Secret\apple_signing\` ディレクトリ (証明書 `.p12` ×2 + API キー `.p8`) に集約してある。
+`C:\Users\IMT\dev\Secret\apple_signing\` ディレクトリ (証明書 `.p12` ×2) に集約してある。
 
 ```jsonc
 "apple_signing": {
-  "service": "...",
   "team_id": "SL228Y8UUR",
+  "apple_id": "<Apple Developer アカウントのメールアドレス>",          // 公証用
+  "app_specific_password": "xxxx-xxxx-xxxx-xxxx",                      // appleid.apple.com 発行
   "developer_id_application": { "p12_file": "apple_signing/DeveloperID_Application.p12",
                                 "identity": "Developer ID Application: Yuichiro Shinozaki (SL228Y8UUR)" },
   "developer_id_installer":   { "p12_file": "apple_signing/DeveloperID_Installer.p12",
                                 "identity": "Developer ID Installer: Yuichiro Shinozaki (SL228Y8UUR)" },
-  "p12_password": "********",
-  "app_store_connect_api": { "key_id": "7Z24XWH2Z3",
-                             "issuer_id": "********",
-                             "p8_file": "apple_signing/AuthKey_7Z24XWH2Z3.p8",
-                             "note": "..." }
+  "p12_password": "********"
 }
 ```
 
-> パス (`p12_file` / `p8_file`) は `C:\Users\IMT\dev\Secret\` ルートからの相対。`developer_id_*` は
-> ネストオブジェクトで、**identity 文字列は `.identity` サブフィールド** にある点に注意。
+> パス (`p12_file`) は `C:\Users\IMT\dev\Secret\` ルートからの相対。`developer_id_*` はネストオブジェクトで
+> identity 文字列は **`.identity` サブフィールド** にある。
+> (`app_store_connect_api` ブロックは API キー方式の名残。notarytool では使わない。)
 
 GitHub Secrets はこのブロックから派生させた値にすぎない (下記スクリプトで再生成できる)。
 
@@ -56,39 +59,39 @@ GitHub Secrets はこのブロックから派生させた値にすぎない (下
 | `APPLE_CERT_PASSWORD` | `p12_password` |
 | `APPLE_SIGN_APP_IDENTITY` | `developer_id_application.identity` |
 | `APPLE_SIGN_INSTALL_IDENTITY` | `developer_id_installer.identity` |
-| `APPLE_API_KEY_P8_BASE64` | `app_store_connect_api.p8_file` を base64 |
-| `APPLE_API_KEY_ID` | `app_store_connect_api.key_id` |
-| `APPLE_API_ISSUER_ID` | `app_store_connect_api.issuer_id` |
+| `APPLE_ID` | `apple_id`（公証用 Apple ID メール） |
+| `APPLE_TEAM_ID` | `team_id`（= SL228Y8UUR） |
+| `APPLE_APP_PASSWORD` | `app_specific_password` |
 
 ### 再投入 / ローテーション (secrets.json から自動生成して gh で投入)
 
-証明書更新時などに Secrets を入れ直すスクリプト。値は標準出力に出さず、キー名だけ表示する:
+証明書更新・パスワード再発行時などに Secrets を入れ直すスクリプト。値は標準出力に出さず、キー名だけ表示する:
 
 ```powershell
 $ErrorActionPreference = 'Stop'
 $repo = '1llum1n4t1s/Ferry'
 $root = 'C:/Users/IMT/dev/Secret'
-$s = (Get-Content "$root/secrets.json" -Raw | ConvertFrom-Json).apple_signing
+$a = (Get-Content "$root/secrets.json" -Raw | ConvertFrom-Json).apple_signing
 function B64([string]$rel) { [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $root $rel))) }
 $secrets = [ordered]@{
-  APPLE_CERT_APP_P12_BASE64       = B64 $s.developer_id_application.p12_file
-  APPLE_CERT_INSTALLER_P12_BASE64 = B64 $s.developer_id_installer.p12_file
-  APPLE_CERT_PASSWORD             = $s.p12_password
-  APPLE_SIGN_APP_IDENTITY         = $s.developer_id_application.identity
-  APPLE_SIGN_INSTALL_IDENTITY     = $s.developer_id_installer.identity
-  APPLE_API_KEY_P8_BASE64         = B64 $s.app_store_connect_api.p8_file
-  APPLE_API_KEY_ID                = $s.app_store_connect_api.key_id
-  APPLE_API_ISSUER_ID             = $s.app_store_connect_api.issuer_id
+  APPLE_CERT_APP_P12_BASE64       = B64 $a.developer_id_application.p12_file
+  APPLE_CERT_INSTALLER_P12_BASE64 = B64 $a.developer_id_installer.p12_file
+  APPLE_CERT_PASSWORD             = $a.p12_password
+  APPLE_SIGN_APP_IDENTITY         = $a.developer_id_application.identity
+  APPLE_SIGN_INSTALL_IDENTITY     = $a.developer_id_installer.identity
+  APPLE_ID                        = $a.apple_id
+  APPLE_TEAM_ID                   = $a.team_id
+  APPLE_APP_PASSWORD              = $a.app_specific_password
 }
 foreach ($k in $secrets.Keys) { gh secret set $k --repo $repo --body ([string]$secrets[$k]); "set: $k" }
 ```
 
 > ⚠️ Secrets 未投入のまま `release/**` を push すると、osx ジョブが意図的に fail する
-> (未署名 pkg の配信を防ぐガード)。証明書を入れ替えたら上記で再投入してからリリースする。
+> (未署名 pkg の配信を防ぐガード)。証明書/パスワードを入れ替えたら上記で再投入してからリリースする。
 
 ---
 
-## 証明書・API キーを新規発行 / 更新する場合 (Mac 実機)
+## 証明書・パスワードを新規発行 / 更新する場合 (Mac 実機)
 
 `apple_signing` の素材を作り直すときの手順。
 
@@ -98,11 +101,10 @@ foreach ($k in $secrets.Keys) { gh secret set $k --repo $repo --body ([string]$s
    - キーチェーンアクセスで各証明書 (秘密鍵込み) を **個別に `.p12` でエクスポート** →
      `DeveloperID_Application.p12` / `DeveloperID_Installer.p12` として `Secret/apple_signing/` に保存。
      エクスポートパスワードを `apple_signing.p12_password` に記録
-2. **App Store Connect API キー** (公証用):
-   - [App Store Connect](https://appstoreconnect.apple.com) → ユーザーとアクセス → インテグレーション (キー) →
-     **+** で Developer 権限のキーを生成 → `AuthKey_<KEYID>.p8` をダウンロード (再DL不可)
-   - `Secret/apple_signing/` に保存。Key ID と、同ページ上部の **Issuer ID** を
-     `app_store_connect_api.key_id` / `issuer_id` に記録
+2. **公証用 app-specific password**:
+   - [appleid.apple.com](https://appleid.apple.com) → サインインとセキュリティ → **アプリ用パスワード** → 生成
+   - `apple_signing.app_specific_password` に記録。`apple_id` に Apple Developer アカウントのメール、
+     `team_id` に 10 桁の Team ID (`security find-identity` の identity 括弧内) を記録
 3. `secrets.json` の `apple_signing` を更新 → 上記スクリプトで GitHub Secrets を再投入
 
 ---
@@ -128,6 +130,10 @@ spctl -a -vvv /Applications/Ferry.app
 
 ## トラブルシュート
 
+- **`notarytool` が `Error: invalidAsn1`**: app-specific password 方式では通常出ない。API キー(.p8)方式に
+  戻すと、API キーが Team Key + Developer 権限でない場合にこのエラーになる (本ファイル冒頭の警告参照)。
+  app-specific password 方式を維持すること。
+
 - **公証結果が `Invalid`**: Native AOT の hardened runtime で許可が足りない可能性。
   `build/resources/app/App.entitlements` を作り、velopack.yml の macOS `vpk pack` に
   `--signEntitlements build/resources/app/App.entitlements` を足す。.NET の推奨 entitlements:
@@ -145,21 +151,21 @@ spctl -a -vvv /Applications/Ferry.app
   </plist>
   ```
 
-  （まずは entitlements 無し = Velopack デフォルトで通す。AOT で弾かれた場合のみ上記を追加する）
+  （v1.0.53 時点では entitlements 無し = Velopack デフォルトで公証が通った。AOT で弾かれた場合のみ追加する）
 
 - **公証ログの確認** (CI ログに submission-id が出る。Mac から):
   ```bash
-  xcrun notarytool log <submission-id> --key AuthKey_7Z24XWH2Z3.p8 --key-id 7Z24XWH2Z3 --issuer <ISSUER_ID>
+  xcrun notarytool log <submission-id> --keychain-profile ferry-notary
   ```
 
 - **証明書の有効期限**: Developer ID 証明書は 5 年。失効時は「新規発行 / 更新」手順をやり直して
-  `secrets.json` 更新 → Secrets 再投入。
+  `secrets.json` 更新 → Secrets 再投入。app-specific password は失効時に appleid.apple.com で再発行。
 
 ---
 
 ## 今すぐ未署名 pkg を入れたい場合 (暫定)
 
-署名対応は **次回リリース以降** の pkg に効く。現在 R2 にある未署名 pkg を今すぐ入れたいときは、
+署名対応は **v1.0.53 以降** の pkg に効く。それ以前の未署名 pkg を入れたいときは、
 ダウンロード後に隔離属性を剥がす:
 
 ```bash
