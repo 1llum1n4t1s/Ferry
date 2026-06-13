@@ -149,8 +149,8 @@
   <!-- Settings: Appearance (extended) -->
 
   <!-- Settings: Auto Start -->
-  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Start with Windows</x:String>
-  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Register in Windows startup via registry</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Start at login</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Launch Ferry automatically when you sign in</x:String>
 
   <!-- Common: 確認ダイアログ等の共通文言 -->
   <x:String x:Key="Text.Warn" xml:space="preserve">Warning</x:String>

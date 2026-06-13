@@ -118,8 +118,8 @@
   <!-- Settings: Appearance (extended) -->
 
   <!-- Settings: Auto Start -->
-  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Windows와 함께 시작</x:String>
-  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">레지스트리를 통해 Windows 시작 프로그램에 등록</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">로그인 시 시작</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">로그인할 때 Ferry를 자동으로 시작합니다</x:String>
 
   <!-- v1.0.47: 行ごとの転送操作・受信保存先バー -->
   <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">다시 보내기</x:String>

@@ -152,8 +152,8 @@
   <!-- Settings: Appearance (extended) -->
 
   <!-- Settings: Auto Start -->
-  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Windows と同時に起動</x:String>
-  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Windows のスタートアップにレジストリ登録する</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">ログイン時に起動</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">サインイン時に Ferry を自動的に起動します</x:String>
 
   <!-- Common: 確認ダイアログ等の共通文言 -->
   <x:String x:Key="Text.Warn" xml:space="preserve">警告</x:String>

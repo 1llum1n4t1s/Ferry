@@ -77,6 +77,14 @@ public partial class App : Application
         .Select(l => new LocaleItem(l, LocaleDisplayNames.GetValueOrDefault(l, l)))
         .ToArray();
 
+    /// <summary>
+    /// アプリの明示終了（トレイ「終了」/ Cmd+Q / OS シャットダウン）が進行中かどうか。
+    /// macOS は赤信号ボタンの Close ではウィンドウを Hide するだけで終了しない設計のため、
+    /// 「本当に終了したい」経路だけこのフラグを立て、MainWindow.OnClosing がそれを見て
+    /// Hide ではなく実際の close を許可する（これが無いと mac でアプリを終了できない）。
+    /// </summary>
+    public static bool IsExplicitShutdown { get; private set; }
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -95,6 +103,11 @@ public partial class App : Application
             // 切れてファイル転送が落ちる。X ボタンの挙動は MainWindow.OnClosing で MinimizeToTray に応じて
             // 明示制御する (ON=トレイ格納で転送継続 / OFF=desktop.Shutdown で終了)。
             desktop.ShutdownMode = Avalonia.Controls.ShutdownMode.OnExplicitShutdown;
+
+            // Cmd+Q / OS シャットダウン等のフレームワーク起点の終了要求でも明示終了フラグを立てる。
+            // これで macOS の MainWindow.OnClosing が Hide ではなく実際の close を許可する
+            // （トレイ「終了」は自前で desktop.Shutdown を呼ぶ経路でフラグを立てる）。
+            desktop.ShutdownRequested += (_, _) => IsExplicitShutdown = true;
 
             // Avalonia 12 から DataAnnotationsValidationPlugin がデフォルト除外されたため、
             // 旧 11.x で必要だった DisableAvaloniaDataAnnotationValidation() は不要になった。
@@ -139,6 +152,12 @@ public partial class App : Application
                     }
                 }
             }
+            // 自動起動が有効なら、登録済みエントリを現在の実行ファイルパスへ冪等に更新する。
+            // Velopack 更新等で実行パスが変わっても次回起動時に追従する（Win=レジストリ /
+            // mac=LaunchAgent / Linux=.desktop を SetAutoStart 内で OS 別に再書込）。
+            if (settings.AutoStartWithWindows)
+                settingsService.SetAutoStart(true);
+
             var connectionService = new ConnectionService(settings.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName)
             {
                 RelayUrl = RelayUrl,
@@ -369,7 +388,11 @@ public partial class App : Application
         exitItem.Click += (_, _) =>
         {
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            {
+                // macOS で OnClosing が Hide に倒さず実際に終了できるよう、明示終了フラグを立ててから落とす。
+                IsExplicitShutdown = true;
                 desktop.Shutdown();
+            }
         };
         menu.Add(exitItem);
 

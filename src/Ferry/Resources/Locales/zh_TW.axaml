@@ -118,8 +118,8 @@
   <!-- Settings: Appearance (extended) -->
 
   <!-- Settings: Auto Start -->
-  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">隨 Windows 啟動</x:String>
-  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">透過登錄檔註冊至 Windows 啟動項目</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">登入時啟動</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">登入系統時自動啟動 Ferry</x:String>
 
   <!-- v1.0.47: 行ごとの転送操作・受信保存先バー -->
   <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">重新傳送</x:String>

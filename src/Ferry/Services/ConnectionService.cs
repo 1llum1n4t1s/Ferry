@@ -364,10 +364,19 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 await sig.SendSdpAnswerAsync(pairId, answerJson, ct);
 
                 // ② TCP 失敗時: UDP ホールパンチを試行
-                if (!connected && !string.IsNullOrEmpty(offer.ExternalIp) && offer.ExternalPort > 0)
+                // offer-v1 には STUN 情報が無い（Offer 側は answer=needRelay を受信した後に STUN し、
+                // ExternalIp 付きの offer を同じノードへ上書き再送する遅延 STUN 設計）。ここで offer を
+                // 読み直して ExternalIp が載るのを待ってから UDP を試みる。これが無いと最初に読んだ
+                // offer-v1 の ExternalIp が常に空 → UDP を一切起動せず（自分の endpoint も publish せず）
+                // cross-NAT では必ずリレーへ落ちていた（Answer 側が UDP ホールパンチに到達しない構造バグの修正）。
+                if (!connected)
                 {
-                    StatusMessageChanged?.Invoke(this, "Status.Phase.UdpHolePunch");
-                    connected = await TryUdpHolePunchAnswerAsync(offer, pairId, ct);
+                    var udpOffer = await WaitForOfferExternalIpAsync(sig, pairId, offer, peerId, ct);
+                    if (udpOffer != null)
+                    {
+                        StatusMessageChanged?.Invoke(this, "Status.Phase.UdpHolePunch");
+                        connected = await TryUdpHolePunchAnswerAsync(udpOffer, pairId, ct);
+                    }
                 }
 
                 // ③ UDP 失敗時: WebSocket リレーにフォールバック
@@ -1061,6 +1070,46 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             udpTransport.Dispose();
             return false;
         }
+    }
+
+    /// <summary>
+    /// Answer 側が UDP ホールパンチへ進む前に、ExternalIp（STUN 後送り）が載った offer を待つ。
+    /// 既に ExternalIp を持つ offer ならそのまま返す。持たない場合は Offer 側が answer=needRelay 受信後に
+    /// 上書き再送する offer-v2 を最大 8 秒ポーリングして取得する（Offer 側の endpoint 待ち 10 秒に収める）。
+    /// MITM 防御（offer.From == ペア相手）は再読み込み分にも適用する。取得できなければ null（→ リレーへ）。
+    /// </summary>
+    private async Task<ConnectionInfo?> WaitForOfferExternalIpAsync(
+        FirebaseSignaling sig, string pairId, ConnectionInfo initialOffer, string peerId, CancellationToken ct)
+    {
+        // 既に STUN 情報がある offer（probe 等の経路）はそのまま使う。
+        if (!string.IsNullOrEmpty(initialOffer.ExternalIp) && initialOffer.ExternalPort > 0)
+            return initialOffer;
+
+        using var pollCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        pollCts.CancelAfter(TimeSpan.FromSeconds(8));
+        try
+        {
+            while (!pollCts.IsCancellationRequested)
+            {
+                var json = await sig.TryReadSdpOnceAsync(pairId, "offer", pollCts.Token);
+                var updated = json == null ? null : DeserializeConnectionInfo(json);
+                if (updated != null
+                    && updated.From == peerId   // 再読み込みにも MITM 防御を適用（偽 offer すり替え対策）
+                    && !string.IsNullOrEmpty(updated.ExternalIp)
+                    && updated.ExternalPort > 0)
+                {
+                    Util.Logger.Log("offer に外部エンドポイント（STUN）を確認 → UDP ホールパンチへ");
+                    return updated;
+                }
+                await Task.Delay(400, pollCts.Token);
+            }
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // 8 秒以内に ExternalIp 付き offer が来なかった（Offer 側 STUN 失敗等）→ リレーへ委ねる。
+            Util.Logger.Log("offer の外部エンドポイント待機タイムアウト → リレーへフォールバック", Util.LogLevel.Warning);
+        }
+        return null;
     }
 
     /// <summary>

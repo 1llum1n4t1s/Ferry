@@ -135,8 +135,8 @@
   <!-- Settings: Appearance (extended) -->
 
   <!-- Settings: Auto Start -->
-  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Avvia con Windows</x:String>
-  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Registra nell'avvio automatico di Windows tramite il registro</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Avvia all'accesso</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Avvia Ferry automaticamente all'accesso</x:String>
 
   <!-- v1.0.47: 行ごとの転送操作・受信保存先バー -->
   <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">Invia di nuovo</x:String>

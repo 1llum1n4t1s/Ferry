@@ -135,8 +135,8 @@
   <!-- Settings: Appearance (extended) -->
 
   <!-- Settings: Auto Start -->
-  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Iniciar com o Windows</x:String>
-  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Registrar na inicialização do Windows pelo registro</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Iniciar ao fazer login</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Iniciar o Ferry automaticamente ao fazer login</x:String>
 
   <!-- v1.0.47: 行ごとの転送操作・受信保存先バー -->
   <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">Reenviar</x:String>

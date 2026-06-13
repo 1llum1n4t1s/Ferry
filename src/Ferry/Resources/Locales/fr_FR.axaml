@@ -118,8 +118,8 @@
   <!-- Settings: Appearance (extended) -->
 
   <!-- Settings: Auto Start -->
-  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Démarrer avec Windows</x:String>
-  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Inscrire dans le démarrage Windows via le registre</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Lancer à la connexion</x:String>
+  <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Lancer Ferry automatiquement à la connexion</x:String>
 
   <!-- v1.0.47: 行ごとの転送操作・受信保存先バー -->
   <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">Renvoyer</x:String>

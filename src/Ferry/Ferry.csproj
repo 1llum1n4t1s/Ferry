@@ -50,7 +50,7 @@
     <PackageReference Include="VelopackUpdateDialog.Avalonia" Version="1.0.8" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
     <PackageReference Include="FirebaseDatabase.net" Version="5.0.0" />
-    <PackageReference Include="SuperLightLogger" Version="1.0.7" />
+    <PackageReference Include="SuperLightLogger" Version="1.0.8" />
     <!-- Avalonia の Linux サポートが Tmds.DBus.Protocol を transitive に引くため、
          CVE 対応版 (0.93.0) を直接指定して上書きする。-->
     <PackageReference Include="Tmds.DBus.Protocol" Version="0.94.1" />

@@ -73,8 +73,10 @@ public partial class MainWindow : Window
         // 最小化→トレイ監視（M-9: 自作 WindowStateObserver を Avalonia 標準の Subscribe(Action<T>) に統一）
         this.GetObservable(WindowStateProperty).Subscribe(state =>
         {
+            // macOS は最小化=Dock 格納が OS 慣習なので、トレイ格納(Hide)は Windows/Linux のみで行う。
             if (state == WindowState.Minimized
-                && _mainVm?.Settings?.MinimizeToTray == true)
+                && _mainVm?.Settings?.MinimizeToTray == true
+                && !OperatingSystem.IsMacOS())
             {
                 ShowInTaskbar = false;
                 Hide();
@@ -92,7 +94,7 @@ public partial class MainWindow : Window
             if (_mainVm?.Settings?.StartMinimized == true)
             {
                 WindowState = WindowState.Minimized;
-                if (_mainVm.Settings.MinimizeToTray)
+                if (_mainVm.Settings.MinimizeToTray && !OperatingSystem.IsMacOS())
                 {
                     ShowInTaskbar = false;
                     Hide();
@@ -227,14 +229,30 @@ public partial class MainWindow : Window
         _savePositionDebounceTimer = null;
         SaveWindowPosition();
 
-        // X ボタン押下時は Windows 標準の感覚どおり常に終了させる。
+        // 既にアプリ終了処理が進行中なら、ウィンドウは素直に閉じる。
+        // ・X ボタン経路で _closed=true 後に desktop.Shutdown() が各ウィンドウを Close → 本ハンドラを
+        //   再入させるケース（Avalonia の Shutdown() は再入で例外を投げるので二重呼び出しを防ぐ）。
+        // ・トレイ「終了」/ Cmd+Q / OS シャットダウンで App.IsExplicitShutdown が立っているケース
+        //   （macOS でも Hide せず実際に終了させる。これが無いと mac では下の Hide で永遠に終了できない）。
+        if (_closed || App.IsExplicitShutdown)
+            return;
+
+        // macOS: 赤信号ボタン(Close)はアプリを終了せずウィンドウを隠す慣習。終了はメニューバー(トレイ)の
+        // 「終了」/ Cmd+Q に委ねる（そちらは App.IsExplicitShutdown を立てるので上の分岐で素通りする）。
+        // これがないと mac で × を押すたびに転送中 transport が切れてしまう。
+        // （アプリ生存は ShutdownMode.OnExplicitShutdown 前提。復帰はメニューバーアイコン/Dock から）。
+        if (OperatingSystem.IsMacOS())
+        {
+            e.Cancel = true;
+            Hide();
+            return;
+        }
+
+        // Win/Linux の X ボタン押下時は標準の感覚どおり常に終了させる。
         // 「MinimizeToTray」設定は最小化ボタン押下時のトレイ格納のみに効かせる
         // (WindowStateProperty observable 側で処理済み)。
         // ShutdownMode=OnExplicitShutdown 下では X ボタン Close でプロセスが終わらないため、
-        // ここで明示的に desktop.Shutdown() を呼ぶ。
-        // desktop.Shutdown() は各ウィンドウを Close → OnClosing を再入させ、Avalonia の
-        // Shutdown() は再入で例外を投げるので _closed で二重呼び出しを防ぐ。
-        if (_closed) return;
+        // ここで明示的に desktop.Shutdown() を呼ぶ（再入は上の _closed ガードで吸収）。
         _closed = true;
         if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
             desktop.Shutdown();
