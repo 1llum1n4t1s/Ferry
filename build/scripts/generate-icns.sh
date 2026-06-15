@@ -7,14 +7,23 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-SOURCE_PNG="$ROOT_DIR/icon/app_icon.png"
 OUTPUT_ICNS="$ROOT_DIR/build/resources/app/App.icns"
 ICONSET_DIR="$ROOT_DIR/build/resources/app/App.iconset"
+
+# macOS の Dock は透過アイコンだと小さく浮いて見える (船が宙に浮く)。透過を白の角丸カードで
+# 埋めた mac 専用フルブリード版 (app_icon_mac.png) があれば優先し、無ければ従来の透過版を使う。
+# Win(.ico)/Linux(.png) は各 OS が独自に角丸/枠を扱うため透過の app_icon.png のままで良い。
+MAC_PNG="$ROOT_DIR/icon/app_icon_mac.png"
+SOURCE_PNG="$ROOT_DIR/icon/app_icon.png"
+if [[ -f "$MAC_PNG" ]]; then
+    SOURCE_PNG="$MAC_PNG"
+fi
 
 if [[ ! -f "$SOURCE_PNG" ]]; then
     echo "ERROR: ソース PNG が見つかりません: $SOURCE_PNG" >&2
     exit 1
 fi
+echo "macOS icns ソース: $SOURCE_PNG"
 
 # iconset ディレクトリを作成
 rm -rf "$ICONSET_DIR"
