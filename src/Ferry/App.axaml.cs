@@ -41,6 +41,18 @@ public partial class App : Application
     /// </summary>
     private const string RelayUrl = "wss://relay.ferry.nephilim.jp/ferry-relay";
 
+    /// <summary>
+    /// Firebase Realtime DB の既定 URL（シグナリング/プレゼンス用）。
+    /// rere #D-004: 散在していたインライン文字列リテラルを RelayUrl / UpdateBaseUrl と同じ
+    /// 単一の名前付き定数へ寄せる。⚠️ 現状この値は settings.json の FirebaseDatabaseUrl が
+    /// 空のときの「初期値」に過ぎず、RelayUrl と違って settings から上書き可能（＝改ざん面が
+    /// 非対称）。書き換え不可にするか否かは信頼モデル設計判断（design-proposals.md / #D-004 参照）。
+    /// </summary>
+    private const string DefaultFirebaseDatabaseUrl = "https://ferry-edf09-default-rtdb.firebaseio.com";
+
+    /// <summary>Bridge ページ（ペアリング用 QR スキャナ）の既定 URL。空時の初期値。</summary>
+    private const string DefaultBridgePageUrl = "https://ferry-edf09.web.app";
+
     /// <summary>サポートされているロケール一覧。</summary>
     public static readonly string[] SupportedLocales =
     [
@@ -124,12 +136,12 @@ public partial class App : Application
             var needsSave = false;
             if (string.IsNullOrEmpty(settings.FirebaseDatabaseUrl))
             {
-                settings.FirebaseDatabaseUrl = "https://ferry-edf09-default-rtdb.firebaseio.com";
+                settings.FirebaseDatabaseUrl = DefaultFirebaseDatabaseUrl;
                 needsSave = true;
             }
             if (string.IsNullOrEmpty(settings.BridgePageUrl))
             {
-                settings.BridgePageUrl = "https://ferry-edf09.web.app";
+                settings.BridgePageUrl = DefaultBridgePageUrl;
                 needsSave = true;
             }
             if (string.IsNullOrEmpty(settings.SaveDirectory))
