@@ -35,23 +35,8 @@ public partial class App : Application
     /// <summary>自動更新の配信元 URL（Cloudflare R2 ferry-updates 経由）。</summary>
     private const string UpdateBaseUrl = "https://ferry.nephilim.jp";
 
-    /// <summary>
-    /// WebSocket リレーサーバーの URL（NAT 越え用、Cloudflare Workers + Durable Objects 経由）。
-    /// 攻撃面削減のため settings.json から書き換え不可。UpdateBaseUrl と同方針のハードコード。
-    /// </summary>
-    private const string RelayUrl = "wss://relay.ferry.nephilim.jp/ferry-relay";
-
-    /// <summary>
-    /// Firebase Realtime DB の既定 URL（シグナリング/プレゼンス用）。
-    /// rere #D-004: 散在していたインライン文字列リテラルを RelayUrl / UpdateBaseUrl と同じ
-    /// 単一の名前付き定数へ寄せる。⚠️ 現状この値は settings.json の FirebaseDatabaseUrl が
-    /// 空のときの「初期値」に過ぎず、RelayUrl と違って settings から上書き可能（＝改ざん面が
-    /// 非対称）。書き換え不可にするか否かは信頼モデル設計判断（design-proposals.md / #D-004 参照）。
-    /// </summary>
-    private const string DefaultFirebaseDatabaseUrl = "https://ferry-edf09-default-rtdb.firebaseio.com";
-
-    /// <summary>Bridge ページ（ペアリング用 QR スキャナ）の既定 URL。空時の初期値。</summary>
-    private const string DefaultBridgePageUrl = "https://ferry-edf09.web.app";
+    // rere #D-004: Firebase DB / Bridge / Relay の各 URL は Ferry.AppConstants に一本化し、
+    // settings.json からの書き換えを廃止した（改ざん面の対称化。UpdateBaseUrl と同方針）。
 
     /// <summary>サポートされているロケール一覧。</summary>
     public static readonly string[] SupportedLocales =
@@ -132,18 +117,8 @@ public partial class App : Application
             _settingsService = new SettingsService();
             var settingsService = (SettingsService)_settingsService;
             var settings = settingsService.Settings;
-            // 各接続先 URL が未設定の場合はデフォルト値を設定して保存
+            // 接続先 URL は AppConstants に固定（settings からは撤去）。保存先のみ空なら既定値を補う。
             var needsSave = false;
-            if (string.IsNullOrEmpty(settings.FirebaseDatabaseUrl))
-            {
-                settings.FirebaseDatabaseUrl = DefaultFirebaseDatabaseUrl;
-                needsSave = true;
-            }
-            if (string.IsNullOrEmpty(settings.BridgePageUrl))
-            {
-                settings.BridgePageUrl = DefaultBridgePageUrl;
-                needsSave = true;
-            }
             if (string.IsNullOrEmpty(settings.SaveDirectory))
             {
                 settings.SaveDirectory = System.IO.Path.Combine(
@@ -170,9 +145,9 @@ public partial class App : Application
             if (settings.AutoStartWithWindows)
                 settingsService.SetAutoStart(true);
 
-            var connectionService = new ConnectionService(settings.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName)
+            var connectionService = new ConnectionService(AppConstants.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName)
             {
-                RelayUrl = RelayUrl,
+                RelayUrl = AppConstants.RelayUrl,
             };
             var transferService = new TransferService(connectionService, settingsService);
             TransferService = transferService;

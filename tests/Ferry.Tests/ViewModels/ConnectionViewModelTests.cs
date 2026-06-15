@@ -34,7 +34,6 @@ public class ConnectionViewModelTests : IDisposable
         _settingsService.Settings.Returns(new AppSettings
         {
             DisplayName = "TestPC",
-            BridgePageUrl = "https://example.com/bridge",
         });
 
         // デフォルトでペアなし

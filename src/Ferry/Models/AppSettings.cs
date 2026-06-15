@@ -20,14 +20,10 @@ public sealed class AppSettings
     public string SaveDirectory { get; set; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
 
-    /// <summary>Firebase プロジェクト URL（プレースホルダー）。</summary>
-    public string FirebaseDatabaseUrl { get; set; } = string.Empty;
-
-    /// <summary>Firebase Hosting の橋渡しページ URL（プレースホルダー）。</summary>
-    public string BridgePageUrl { get; set; } = string.Empty;
-
-    // WebSocket リレー URL は攻撃面削減のため settings.json から撤去 (2026-05 Cloudflare 移行)。
-    // App.axaml.cs の private const RelayUrl にハードコード。VelopackUpdateDialog の UpdateBaseUrl と同じ方針。
+    // rere #D-004: Firebase DB / Bridge / Relay の各 URL は攻撃面削減のため settings.json から撤去し、
+    // 書き換え不可の const (Ferry.AppConstants) に一本化した。旧 settings.json に残る
+    // FirebaseDatabaseUrl / BridgePageUrl キーは System.Text.Json が未知キーとして無視し、
+    // 次回 SaveAsync で自然に消える（互換上の副作用なし）。UpdateBaseUrl も同方針。
 
     // N-2: 旧 RunAtStartup は AutoStartWithWindows と意味が重複・実機能なしのため削除済み
 

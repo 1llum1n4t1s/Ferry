@@ -34,7 +34,7 @@ public class TransferViewModelTests : IDisposable
         // ConnectionViewModel のスタブ依存
         var qrCodeService = Substitute.For<IQrCodeService>();
         _settingsService = Substitute.For<ISettingsService>();
-        _settingsService.Settings.Returns(new AppSettings { DisplayName = "TestPC", BridgePageUrl = "https://example.com" });
+        _settingsService.Settings.Returns(new AppSettings { DisplayName = "TestPC" });
         var peerRegistry = Substitute.For<IPeerRegistryService>();
         peerRegistry.GetPairedPeers().Returns(new List<PairedPeer>());
         _connectionViewModel = new ConnectionViewModel(_connectionService, qrCodeService, _settingsService, peerRegistry);
@@ -57,7 +57,7 @@ public class TransferViewModelTests : IDisposable
     [Fact(Skip = "UI スレッド (Dispatcher.UIThread) を必要とするためテスト環境では Skip。実機で検証")]
     public void OnApprovalRequested_AutoAccept有効時はPendingApprovalsに積まれず即ApproveTransferが呼ばれること()
     {
-        _settingsService.Settings.Returns(new AppSettings { AutoAcceptFileTransfer = true, DisplayName = "TestPC", BridgePageUrl = "https://example.com" });
+        _settingsService.Settings.Returns(new AppSettings { AutoAcceptFileTransfer = true, DisplayName = "TestPC" });
         var vm = CreateViewModel(withSelectedPeer: true);
         var item = new TransferItem { TransferId = Guid.NewGuid(), FileName = "a.txt", FileSize = 100 };
 
@@ -71,7 +71,7 @@ public class TransferViewModelTests : IDisposable
     [Fact(Skip = "UI スレッド (Dispatcher.UIThread) を必要とするためテスト環境では Skip。実機で検証")]
     public void OnApprovalRequested_AutoAccept無効時はPendingApprovalsに積まれApproveTransferは呼ばれないこと()
     {
-        _settingsService.Settings.Returns(new AppSettings { AutoAcceptFileTransfer = false, DisplayName = "TestPC", BridgePageUrl = "https://example.com" });
+        _settingsService.Settings.Returns(new AppSettings { AutoAcceptFileTransfer = false, DisplayName = "TestPC" });
         var vm = CreateViewModel(withSelectedPeer: true);
         var item = new TransferItem { TransferId = Guid.NewGuid(), FileName = "b.txt", FileSize = 200 };
 
