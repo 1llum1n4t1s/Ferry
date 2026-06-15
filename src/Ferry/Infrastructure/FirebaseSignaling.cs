@@ -95,7 +95,8 @@ public sealed class FirebaseSignaling : IDisposable
                 NameB = string.IsNullOrEmpty(nameB) ? "PC-B" : nameB,
                 CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             });
-        Util.Logger.Log($"ペアリング書き込み: {pairingId}, A={Util.Logger.MaskIp(sidA)}, B={Util.Logger.MaskIp(sidB)}");
+        // sidA/sidB は deviceId(32hex)。MaskIp は IPv4(4オクテット)以外を素通しするため deviceId 用の MaskDeviceId を使う
+        Util.Logger.Log($"ペアリング書き込み: {pairingId}, A={Util.Logger.MaskDeviceId(sidA)}, B={Util.Logger.MaskDeviceId(sidB)}");
     }
 
     /// <summary>

@@ -440,6 +440,22 @@ public sealed class TransferService : ITransferService, IDisposable
 
         var messageType = FileChunker.GetMessageType(data);
 
+        // 細工された短い/壊れたメッセージで個別ハンドラのパースが例外を投げても、受信ループまで
+        // 遡って ChannelClosed→ConnectionLost で進行中転送を切断させない（ペア済み peer から 1 通で
+        // 発火しうるリモート DoS の防止）。当該メッセージのみ破棄して Warning に留める。
+        // SafePath の NUL 制御文字対策と同じ「細工 1 通で受信ループを殺せない」不変条件をプロトコル全体へ拡張。
+        try
+        {
+            DispatchMessage(messageType, data);
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"受信メッセージ処理エラー (type=0x{messageType:X2}, len={data.Length}): {ex.Message}", Util.LogLevel.Warning);
+        }
+    }
+
+    private void DispatchMessage(byte messageType, byte[] data)
+    {
         switch (messageType)
         {
             case TransferProtocol.FileMeta:
@@ -959,48 +975,70 @@ public sealed class TransferService : ITransferService, IDisposable
         state.FileStream?.Dispose();
         state.FileStream = null;
 
-        Util.Logger.Log($"全チャンク受信完了: {state.FileName}, 検証中…");
-
-        // SHA-256 検証（1回のハッシュ計算で検証と ACK 送信の両方に使用）
-        var sha256Bytes = FileChunker.ComputeSha256(state.SavePath);
-        var actualHash = Convert.ToHexString(sha256Bytes).ToLowerInvariant();
-        var hashMatch = string.Equals(actualHash, state.ExpectedSha256, StringComparison.OrdinalIgnoreCase);
-
-        if (hashMatch)
-        {
-            Util.Logger.Log($"SHA-256 検証成功: {state.FileName}");
-            state.Item.State = TransferState.Completed;
-            state.Item.TransferredBytes = state.FileSize;
-            state.Item.SavedFilePath = state.SavePath;
-        }
-        else
-        {
-            Util.Logger.Log($"SHA-256 検証失敗: 期待={state.ExpectedSha256[..16]}…, 実際={actualHash[..16]}…", Util.LogLevel.Error);
-            state.Item.State = TransferState.Error;
-            state.Item.ErrorMessage = "ファイルの整合性検証に失敗しました（SHA-256 不一致）";
-        }
-
-        // ACK を送信（送信側に結果を通知）— fire-and-forget でブロッキングを回避
-        SendFireAndForget(FileChunker.CreateAckMessage(hashMatch, sha256Bytes), "ACK");
-
-        if (hashMatch)
-        {
-            FileReceived?.Invoke(this, state.Item);
-            MaybePlayReceiveNotification(state.Item.PeerId);
-        }
-        else
-        {
-            TransferError?.Invoke(this, state.Item);
-            // 不正なファイルを削除
-            try { File.Delete(state.SavePath); }
-            catch { /* 削除失敗は無視 */ }
-        }
-
-        _receiveStates.TryRemove(state.TransferId, out _);
-
+        // rere #C2-001: SHA-256 の全ファイル再読み込み(大容量で数秒〜十数秒)を受信ループスレッド上で
+        // 同期実行すると、その間 他の並列転送のチャンク/ACK/FlowAck 処理まで止まる(UDP は ACK 停止で
+        // 再送誤発火、リレーは 32MB 窓 stall で切断リスク)。重い検証・ACK・イベント発火を別タスクへ逃がし、
+        // 受信ループは即座に次メッセージへ戻す。
+        // TryCompleteReceiveIfReady は chunk 経路と FileHash 経路の両方から呼ばれ得るので、
+        // _receiveStates から先に atomic に取り除いて二重起動(二重 ACK/二重イベント)を防ぐ。
+        if (!_receiveStates.TryRemove(state.TransferId, out _))
+            return;
         // 全受信完了時にフォルダマッピングキャッシュをクリア
         if (_receiveStates.IsEmpty)
             _folderMappings.Clear();
+
+        Util.Logger.Log($"全チャンク受信完了: {state.FileName}, 検証中…");
+        _ = Task.Run(() => VerifyAndFinalizeReceive(state));
+    }
+
+    /// <summary>受信完了の重い処理(SHA-256 全再読み込み検証・ACK 送信・イベント発火)。受信ループを
+    /// ブロックしないよう <see cref="CompleteReceive"/> から別タスクで実行される(rere #C2-001)。</summary>
+    private void VerifyAndFinalizeReceive(ReceiveState state)
+    {
+        try
+        {
+            // SHA-256 検証（1回のハッシュ計算で検証と ACK 送信の両方に使用）
+            var sha256Bytes = FileChunker.ComputeSha256(state.SavePath);
+            var actualHash = Convert.ToHexString(sha256Bytes).ToLowerInvariant();
+            var hashMatch = string.Equals(actualHash, state.ExpectedSha256, StringComparison.OrdinalIgnoreCase);
+
+            if (hashMatch)
+            {
+                Util.Logger.Log($"SHA-256 検証成功: {state.FileName}");
+                state.Item.State = TransferState.Completed;
+                state.Item.TransferredBytes = state.FileSize;
+                state.Item.SavedFilePath = state.SavePath;
+            }
+            else
+            {
+                Util.Logger.Log($"SHA-256 検証失敗: 期待={state.ExpectedSha256[..16]}…, 実際={actualHash[..16]}…", Util.LogLevel.Error);
+                state.Item.State = TransferState.Error;
+                state.Item.ErrorMessage = "ファイルの整合性検証に失敗しました（SHA-256 不一致）";
+            }
+
+            // ACK を送信（送信側に結果を通知）— fire-and-forget でブロッキングを回避
+            SendFireAndForget(FileChunker.CreateAckMessage(hashMatch, sha256Bytes), "ACK");
+
+            if (hashMatch)
+            {
+                FileReceived?.Invoke(this, state.Item);
+                MaybePlayReceiveNotification(state.Item.PeerId);
+            }
+            else
+            {
+                TransferError?.Invoke(this, state.Item);
+                // 不正なファイルを削除
+                try { File.Delete(state.SavePath); }
+                catch { /* 削除失敗は無視 */ }
+            }
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.LogException("受信完了処理エラー", ex);
+            state.Item.State = TransferState.Error;
+            state.Item.ErrorMessage = ex.Message;
+            TransferError?.Invoke(this, state.Item);
+        }
     }
 
     /// <summary>
@@ -1201,6 +1239,8 @@ public sealed class TransferService : ITransferService, IDisposable
 
     private void HandleResumeRequest(byte[] data)
     {
+        // [type(1)][TransferId(16)][lastChunkIndex(4)] = 21byte 未満は破棄（短いメッセージでのパース例外を防ぐ）
+        if (data.Length < 21) return;
         var (transferId, lastChunkIndex) = FileChunker.ParseResumeRequest(data);
         Util.Logger.Log($"レジュームリクエスト受信: transferId={transferId}, lastChunk={lastChunkIndex}");
 
@@ -1210,6 +1250,8 @@ public sealed class TransferService : ITransferService, IDisposable
 
     private void HandleResumeResponse(byte[] data)
     {
+        // [type(1)][TransferId(16)][accepted(1)][lastChunkIndex(4)] = 22byte 未満は破棄
+        if (data.Length < 22) return;
         var (transferId, accepted, lastChunkIndex) = FileChunker.ParseResumeResponse(data);
         Util.Logger.Log($"レジューム応答受信: transferId={transferId}, accepted={accepted}, lastChunk={lastChunkIndex}");
     }

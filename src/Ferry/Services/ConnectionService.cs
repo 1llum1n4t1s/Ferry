@@ -30,6 +30,18 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// <summary>UDP ホールパンチのタイムアウト（秒）。</summary>
     private const int UdpHolePunchTimeoutSeconds = 8;
 
+    /// <summary>UDP ホールパンチ: Offer 側が Answer の外部エンドポイントを待つ時間（秒）。
+    /// ⚠ 必ず <see cref="OfferV2PollSeconds"/> より長くすること。Answer 側は ExternalIp 付き offer-v2 を
+    /// 最大 OfferV2PollSeconds 読み直してから自分の endpoint を publish するため、
+    /// 待ち(10s) ＜ ポーリング(8s) になると endpoint 到着前に Offer 側が諦め、cross-NAT で必ず
+    /// リレー転落する（CLAUDE.md 記載の構造バグ class）。rere #B2-002: 直書きを定数化し依存を明文化。</summary>
+    private const int OfferEndpointWaitSeconds = 10;
+    /// <summary>UDP ホールパンチ: Answer 側が ExternalIp 付き offer-v2 を読み直すポーリング時間（秒）。
+    /// 必ず <see cref="OfferEndpointWaitSeconds"/> より短く保つこと（上記参照）。</summary>
+    private const int OfferV2PollSeconds = 8;
+    /// <summary>接続確認応答（補助情報）の打ち切り時間（秒）。endpoint 待ちとは別意味だが現状同値。</summary>
+    private const int AnswerConfirmWaitSeconds = 10;
+
     /// <summary>Answer 側が TCP 成功を通知する route 値。</summary>
     private const string RouteDirect = "direct";
 
@@ -600,7 +612,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 // Answer ポーリングも完了を待つ（確認応答）。WaitForSdpAsync は内部例外を握りつぶして
                 // 無限ポーリングするため、受信側の answer 書き込みが失敗すると TCP 確立済みなのに
                 // ここで永久待機する。確認応答は補助情報なので 10 秒で打ち切って接続成立を優先する
-                answerCts.CancelAfter(TimeSpan.FromSeconds(10));
+                answerCts.CancelAfter(TimeSpan.FromSeconds(AnswerConfirmWaitSeconds));
                 try
                 {
                     await answerTask;
@@ -724,7 +736,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         catch (Exception ex)
         {
             DisposeOrphanTransports();
-            Util.Logger.Log($"接続エラー: {ex.Message}", Util.LogLevel.Error);
+            // rere #F-003: ex.Message だけだと SocketException 等の汎用文言でどの段の失敗か追えない。
+            // LogException で型・stack trace・InnerException・相関 ID(pairId) を残す。
+            Util.Logger.LogException("接続エラー", ex);
             SetState(PeerState.Error);
             throw;
         }
@@ -1017,7 +1031,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
             // Answer 側の外部エンドポイントをポーリング（最大 10 秒待機）
             using var epCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            epCts.CancelAfter(TimeSpan.FromSeconds(10));
+            epCts.CancelAfter(TimeSpan.FromSeconds(OfferEndpointWaitSeconds));
 
             string endpointStr;
             try
@@ -1086,7 +1100,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             return initialOffer;
 
         using var pollCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        pollCts.CancelAfter(TimeSpan.FromSeconds(8));
+        pollCts.CancelAfter(TimeSpan.FromSeconds(OfferV2PollSeconds));
         try
         {
             while (!pollCts.IsCancellationRequested)
