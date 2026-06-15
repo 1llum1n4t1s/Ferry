@@ -209,6 +209,32 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         }
     }
 
+    /// <summary>rere #B1-001: サービスが保持する受信 TransferItem (state.Item) は受信ループ
+    /// (背景スレッド) から TransferredBytes / State を直接書き換える。これを UI バインドコレクションに
+    /// そのまま入れると bound プロパティをスレッド跨ぎで変更してしまう (Avalonia は UI スレッド外の
+    /// 変更通知で不正動作しうる)。そこで VM は常にこの VM 所有コピーを bind し、サービスの instance は
+    /// unbound のままにする。以後の値反映は OnProgressChanged 等が UI スレッドで TransferId 照合して
+    /// このコピーへ行う (相関は TransferId ベースなのでインスタンス共有は不要)。サービス側は無変更。</summary>
+    private static TransferItem CreateDisplayCopy(TransferItem src) => new()
+    {
+        TransferId = src.TransferId,
+        PeerId = src.PeerId,
+        PeerName = src.PeerName,
+        RelativePath = src.RelativePath,
+        FileName = src.FileName,
+        FileSize = src.FileSize,
+        TransferredBytes = src.TransferredBytes,
+        TotalChunks = src.TotalChunks,
+        Direction = src.Direction,
+        State = src.State,
+        ErrorMessage = src.ErrorMessage,
+        Note = src.Note,
+        Sha256Hash = src.Sha256Hash,
+        SourceFilePath = src.SourceFilePath,
+        SavedFilePath = src.SavedFilePath,
+        CompletedAt = src.CompletedAt,
+    };
+
     /// <summary>TransferId → 該当 TransferItem 群の索引 (rere #C1-001)。
     /// 進捗/状態イベント毎に走っていた Transfers の全線形走査 (O(n)) を O(1) 引きに置き換える。
     /// membership は AddTransfer / RemoveTransfer の 2 箇所でのみ変化し Transfers.Add/Remove と 1:1。
@@ -741,7 +767,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 e.PeerId = peerId;
                 e.PeerName = peerName;
                 e.CompletedAt = DateTime.UtcNow;
-                AddTransfer(e);
+                AddTransfer(CreateDisplayCopy(e));  // rere #B1-001: サービス instance を bind しない
             }
 
             RecomputeIsTransferring();
@@ -789,7 +815,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 var (peerId, peerName) = ResolveReceivePeer();
                 if (string.IsNullOrEmpty(e.PeerId)) e.PeerId = peerId;
                 if (string.IsNullOrEmpty(e.PeerName)) e.PeerName = peerName;
-                AddTransfer(e);
+                AddTransfer(CreateDisplayCopy(e));  // rere #B1-001: サービス instance を bind しない
             }
 
             RecomputeIsTransferring();
@@ -814,13 +840,13 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             {
                 Util.Logger.Log($"AutoAccept: 即承認: {e.FileName}");
                 e.State = TransferState.InProgress;
-                AddTransfer(e);
+                AddTransfer(CreateDisplayCopy(e));  // rere #B1-001: サービス instance を bind しない
                 _transferService.ApproveTransfer(e.TransferId.ToString());
                 RecomputeIsTransferring();
                 return;
             }
 
-            PendingApprovals.Add(e);
+            PendingApprovals.Add(CreateDisplayCopy(e));  // rere #B1-001: サービス instance を bind しない
             HasPendingApproval = PendingApprovals.Count > 0;
         });
     }
