@@ -317,7 +317,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 string offerJson;
                 try
                 {
-                    offerJson = await pollingSignaling.WaitForSdpAsync(pairId, "offer", minCreatedAt: minCreatedAt, ct: offerCts.Token);
+                    offerJson = await pollingSignaling.WaitForOfferAsync(pairId, peerId, minCreatedAt, offerCts.Token);
                 }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                 {
@@ -379,7 +379,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     From = _deviceId,  // rere #D-001: answer にも送信元 deviceId を載せ offer と対称化 (MITM 検証用)
                 };
                 var answerJson = SerializeConnectionInfo(answerInfo);
-                await sig.SendSdpAnswerAsync(pairId, answerJson, ct);
+                await sig.SendSdpAnswerAsync(pairId, _deviceId, answerJson, ct);
 
                 // ② TCP 失敗時: UDP ホールパンチを試行
                 // offer-v1 には STUN 情報が無い（Offer 側は answer=needRelay を受信した後に STUN し、
@@ -570,12 +570,12 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             {
                 using var peekSig = new FirebaseSignaling(_databaseUrl);
                 long? createdAt = null;
-                try { createdAt = await peekSig.TryReadCreatedAtAsync(pairId, linked); } catch { }
+                try { createdAt = await peekSig.TryReadOfferCreatedAtAsync(pairId, peerId, linked); } catch { }
                 var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 if (createdAt.HasValue && nowMs - createdAt.Value < RoleDeferFreshnessMs)
                 {
                     string? peekJson = null;
-                    try { peekJson = await peekSig.TryReadSdpOnceAsync(pairId, "offer", linked); } catch { }
+                    try { peekJson = await peekSig.TryReadOfferOnceAsync(pairId, peerId, linked); } catch { }
                     var peekOffer = peekJson == null ? null : DeserializeConnectionInfo(peekJson);
                     if (peekOffer != null && peekOffer.From == peerId)
                     {
@@ -622,7 +622,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             };
             var offerJson = SerializeConnectionInfo(offerInfo);
             Util.Logger.Log($"接続情報送信: ips=[{string.Join(", ", localIps.Select(Util.Logger.MaskIp))}], port={port}");
-            await _signaling.SendSdpOfferAsync(pairId, offerJson, linked);
+            await _signaling.SendSdpOfferAsync(pairId, _deviceId, offerJson, linked);
 
             // ② TCP accept + Answer ポーリングを同時待機
             StatusMessageChanged?.Invoke(this, "Status.Phase.TcpConnecting");
@@ -630,7 +630,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             //    answer ポーリングは専用 CTS で持ち、TCP 成功時に確認応答待ちを打ち切れるようにする
             using var answerCts = CancellationTokenSource.CreateLinkedTokenSource(linked);
             var tcpAcceptTask = tcpTransport.AcceptAsync(linked);
-            var answerTask = _signaling.WaitForSdpAsync(pairId, "answer", ct: answerCts.Token);
+            var answerTask = _signaling.WaitForAnswerAsync(pairId, peerId, answerCts.Token);
 
             // どちらか先に完了した方で判断
             var completedTask = await Task.WhenAny(tcpAcceptTask, answerTask);
@@ -714,7 +714,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                         RelayUrl = RelayUrl,
                         From = _deviceId,  // v1.0.38 review fix v2
                     };
-                    await _signaling.SendSdpOfferAsync(pairId, SerializeConnectionInfo(updatedOffer), linked);
+                    await _signaling.SendSdpOfferAsync(pairId, _deviceId, SerializeConnectionInfo(updatedOffer), linked);
 
                     StatusMessageChanged?.Invoke(this, "Status.Phase.UdpHolePunch");
                     connected = await TryUdpHolePunchOfferAsync(udpTransport, pairId, peerId, linked);
@@ -1073,7 +1073,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             try
             {
                 // rere #D-001: ペア相手 (peerId) 由来の endpoint だけ採用する (偽 endpoint による UDP 誘導を防ぐ)
-                endpointStr = await _signaling!.WaitForEndpointAsync(pairId, "answer", peerId, epCts.Token);
+                endpointStr = await _signaling!.WaitForEndpointAsync(pairId, peerId, epCts.Token);
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
@@ -1142,7 +1142,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         {
             while (!pollCts.IsCancellationRequested)
             {
-                var json = await sig.TryReadSdpOnceAsync(pairId, "offer", pollCts.Token);
+                var json = await sig.TryReadOfferOnceAsync(pairId, peerId, pollCts.Token);
                 var updated = json == null ? null : DeserializeConnectionInfo(json);
                 if (updated != null
                     && updated.From == peerId   // 再読み込みにも MITM 防御を適用（偽 offer すり替え対策）
@@ -1187,7 +1187,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
             // 自身の外部エンドポイントを Firebase に書き込み（Offer 側が読む）。
             // rere #D-001: 送信元 deviceId を埋め込み、Offer 側が MITM 検証できるようにする。
-            await _signaling!.SendEndpointAsync(pairId, "answer", $"{stunResult.Value.ip}:{stunResult.Value.port}", _deviceId, ct);
+            await _signaling!.SendEndpointAsync(pairId, _deviceId, $"{stunResult.Value.ip}:{stunResult.Value.port}", ct);
 
             // Offer 側の外部エンドポイントに向けてホールパンチ実行
             using var punchCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
