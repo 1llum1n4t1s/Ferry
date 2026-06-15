@@ -43,6 +43,12 @@ public sealed class UdpHolePunchTransport : ITransport
     // 切断イベントが無い) の検知線。再送は RetransmitIntervalMs で回り続けるため、健全な相手なら
     // 30 秒あれば必ず ACK が返る
     private const int SendDeadlineMs = 30_000;
+    // rere #C2-003: 未完成のまま放置された受信中メッセージ (_receivingMessages) を掃除する TTL。
+    // 一部フラグメントが恒久ロストし、送信側も SendDeadlineMs で諦めた message は永久に完成せず
+    // 滞留する (最大 ~19MB/message。切断まで回収されない)。最終フラグメント到着からこの時間
+    // 無進捗なら破棄する。SendDeadlineMs の 2 倍に取り、送信側が再送を続けている間 (届くたびに
+    // LastFragmentTick が更新される) は決して落とさない = 健全な転送を誤って壊さない。
+    private const int PartialMessageTtlMs = 60_000;
 
     // === ソケット ===
     private readonly UdpClient _udp;
@@ -372,6 +378,23 @@ public sealed class UdpHolePunchTransport : ITransport
                         }
                     }
                 }
+
+                // rere #C2-003: 未完成のまま放置された受信中メッセージを掃除する。
+                // 送信側が SendDeadlineMs で諦めて再送が止まった partial message は永久に
+                // 完成せず _receivingMessages に滞留する。最終フラグメント到着から
+                // PartialMessageTtlMs 無進捗のものだけ破棄する (再送中は LastFragmentTick が
+                // 更新され続けるので健全な転送は落ちない)。
+                foreach (var kvp in _receivingMessages)
+                {
+                    if (now - kvp.Value.LastFragmentTick > PartialMessageTtlMs
+                        && _receivingMessages.TryRemove(kvp.Key, out _))
+                    {
+                        Util.Logger.Log(
+                            $"未完成の受信メッセージを TTL 掃除: msgId={kvp.Key}, " +
+                            $"{kvp.Value.ReceivedCount}/{kvp.Value.TotalFragments} frag",
+                            Util.LogLevel.Debug);
+                    }
+                }
             }
         }
         catch (OperationCanceledException) { }
@@ -438,6 +461,7 @@ public sealed class UdpHolePunchTransport : ITransport
             msg.Fragments[fragIdx] = fragData;
             msg.Received[fragIdx] = true;
             msg.ReceivedCount++;
+            msg.LastFragmentTick = Environment.TickCount64;  // rere #C2-003: TTL 掃除の基準を更新
 
             if (msg.ReceivedCount != msg.TotalFragments) return;
         }
@@ -602,12 +626,15 @@ public sealed class UdpHolePunchTransport : ITransport
         public readonly byte[][] Fragments;
         public readonly bool[] Received;
         public int ReceivedCount;
+        /// <summary>最後にフラグメントを受信した tick(ms)。rere #C2-003 の TTL 掃除に使う。</summary>
+        public long LastFragmentTick;
 
         public ReceivingMessage(int totalFragments)
         {
             TotalFragments = totalFragments;
             Fragments = new byte[totalFragments][];
             Received = new bool[totalFragments];
+            LastFragmentTick = Environment.TickCount64;
         }
     }
 }
