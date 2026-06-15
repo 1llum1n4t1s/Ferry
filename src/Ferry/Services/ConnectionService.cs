@@ -42,6 +42,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// <summary>接続確認応答（補助情報）の打ち切り時間（秒）。endpoint 待ちとは別意味だが現状同値。</summary>
     private const int AnswerConfirmWaitSeconds = 10;
 
+    /// <summary>rere #D-003: role調停の deferral 判定で「ペア相手の offer が新しい」とみなす上限(ms)。
+    /// この時間内に作られた offer なら相手は今まさに接続を試みていると判断して譲歩する。
+    /// 過去に放置された古い offer (cleanup 漏れ/Firebase 6h cleanup 待ち) で誤って譲歩しないための鮮度ゲート。</summary>
+    private const int RoleDeferFreshnessMs = 60_000;
+
     /// <summary>Answer 側が TCP 成功を通知する route 値。</summary>
     private const string RouteDirect = "direct";
 
@@ -371,6 +376,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     Port = 0,
                     Connected = connected,
                     Route = connected ? RouteDirect : RouteNeedRelay,
+                    From = _deviceId,  // rere #D-001: answer にも送信元 deviceId を載せ offer と対称化 (MITM 検証用)
                 };
                 var answerJson = SerializeConnectionInfo(answerInfo);
                 await sig.SendSdpAnswerAsync(pairId, answerJson, ct);
@@ -551,6 +557,37 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             var linked = _connectCts.Token;
 
             Util.Logger.Log($"オンデマンド接続開始: peer={peerId}, deviceId={_deviceId}");
+
+            var pairId = GeneratePairId(_deviceId, peerId);
+
+            // rere #D-003: role調停。deviceId 序列で「主 offerer(小) / 譲歩側(大)」を決める。
+            // 譲歩側は、ペア相手由来の *新しい* offer が既に出ていれば自分の offer を送らず、着信監視
+            // (answerer 経路) に処理を委ねて即 return する。これで双方が同時に接続した際の offer 相互上書き
+            // (両者 offerer になり相手の answer を待ち続けてデッドロック → 失敗/不要リレー) を緩和する。
+            // schema 不変・既存 answerer 経路の再利用・最悪でも現状維持(回帰なし)。鮮度ゲートで過去の
+            // 放置 offer による誤譲歩を防ぐ。完全な同時ウィンドウ解消は per-role offer node 化が必要(設計課題)。
+            if (string.CompareOrdinal(_deviceId, peerId) > 0)
+            {
+                using var peekSig = new FirebaseSignaling(_databaseUrl);
+                long? createdAt = null;
+                try { createdAt = await peekSig.TryReadCreatedAtAsync(pairId, linked); } catch { }
+                var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                if (createdAt.HasValue && nowMs - createdAt.Value < RoleDeferFreshnessMs)
+                {
+                    string? peekJson = null;
+                    try { peekJson = await peekSig.TryReadSdpOnceAsync(pairId, "offer", linked); } catch { }
+                    var peekOffer = peekJson == null ? null : DeserializeConnectionInfo(peekJson);
+                    if (peekOffer != null && peekOffer.From == peerId)
+                    {
+                        Util.Logger.Log(
+                            $"role調停: ペア相手 ({Util.Logger.MaskDeviceId(peerId)}) が既に offer 済み → " +
+                            $"answerer に委譲し offer 送信を見送る (pairId={pairId})");
+                        StartListeningForConnection(peerId);  // listener が peer の offer を answer し State=Connected へ
+                        return;  // finally で gate 解放
+                    }
+                }
+            }
+
             _connectingByListener = false;  // Connecting の所有権をオンデマンド接続側へ移す
             SetState(PeerState.Connecting);
 
@@ -564,7 +601,6 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             _transport?.Dispose();
             _transport = null;
 
-            var pairId = GeneratePairId(_deviceId, peerId);
             _currentPairId = pairId;
             Util.Logger.Log($"pairId 生成: {pairId}");
 
@@ -681,7 +717,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     await _signaling.SendSdpOfferAsync(pairId, SerializeConnectionInfo(updatedOffer), linked);
 
                     StatusMessageChanged?.Invoke(this, "Status.Phase.UdpHolePunch");
-                    connected = await TryUdpHolePunchOfferAsync(udpTransport, pairId, linked);
+                    connected = await TryUdpHolePunchOfferAsync(udpTransport, pairId, peerId, linked);
                 }
                 else
                 {
@@ -1023,7 +1059,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// UDP ホールパンチを試行する（Offer 側）。
     /// Answer 側の外部エンドポイントを Firebase からポーリングし、取得後にホールパンチを実行する。
     /// </summary>
-    private async Task<bool> TryUdpHolePunchOfferAsync(UdpHolePunchTransport udpTransport, string pairId, CancellationToken ct)
+    private async Task<bool> TryUdpHolePunchOfferAsync(UdpHolePunchTransport udpTransport, string pairId, string peerId, CancellationToken ct)
     {
         try
         {
@@ -1036,7 +1072,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             string endpointStr;
             try
             {
-                endpointStr = await _signaling!.WaitForEndpointAsync(pairId, "answer", epCts.Token);
+                // rere #D-001: ペア相手 (peerId) 由来の endpoint だけ採用する (偽 endpoint による UDP 誘導を防ぐ)
+                endpointStr = await _signaling!.WaitForEndpointAsync(pairId, "answer", peerId, epCts.Token);
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
@@ -1148,8 +1185,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
             Util.Logger.Log($"STUN 外部エンドポイント取得: {Util.Logger.MaskIp(stunResult.Value.ip)}:{stunResult.Value.port}");
 
-            // 自身の外部エンドポイントを Firebase に書き込み（Offer 側が読む）
-            await _signaling!.SendEndpointAsync(pairId, "answer", $"{stunResult.Value.ip}:{stunResult.Value.port}", ct);
+            // 自身の外部エンドポイントを Firebase に書き込み（Offer 側が読む）。
+            // rere #D-001: 送信元 deviceId を埋め込み、Offer 側が MITM 検証できるようにする。
+            await _signaling!.SendEndpointAsync(pairId, "answer", $"{stunResult.Value.ip}:{stunResult.Value.port}", _deviceId, ct);
 
             // Offer 側の外部エンドポイントに向けてホールパンチ実行
             using var punchCts = CancellationTokenSource.CreateLinkedTokenSource(ct);

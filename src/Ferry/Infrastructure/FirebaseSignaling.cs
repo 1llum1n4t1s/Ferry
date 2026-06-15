@@ -360,6 +360,24 @@ public sealed class FirebaseSignaling : IDisposable
     }
 
     /// <summary>
+    /// signaling/{pairId}/createdAt を 1 回だけ読む（rere #D-003 の offer 鮮度判定用）。
+    /// 未存在 / 一時エラーは null。ポーリングはしない単発読み取り。
+    /// </summary>
+    public async Task<long?> TryReadCreatedAtAsync(string pairId, CancellationToken ct = default)
+    {
+        try
+        {
+            return await _client
+                .Child("signaling")
+                .Child(pairId)
+                .Child("createdAt")
+                .OnceSingleAsync<long?>();
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { return null; }
+    }
+
+    /// <summary>
     /// SDP Answer を Firebase に書き込む。
     /// </summary>
     public async Task SendSdpAnswerAsync(string pairId, string sdp, CancellationToken ct = default)
@@ -378,9 +396,13 @@ public sealed class FirebaseSignaling : IDisposable
     /// <param name="pairId">ペアリング ID。</param>
     /// <param name="role">"offer" または "answer"。</param>
     /// <param name="endpoint">"ip:port" 形式の文字列。</param>
-    public async Task SendEndpointAsync(string pairId, string role, string endpoint, CancellationToken ct = default)
+    /// <param name="from">送信元 deviceId。rere #D-001: 読み手が MITM 検証に使う。</param>
+    public async Task SendEndpointAsync(string pairId, string role, string endpoint, string from, CancellationToken ct = default)
     {
-        var encoded = EncodeBase64(endpoint);
+        // rere #D-001: endpoint 値に送信元 deviceId を "from|ip:port" 形式で埋め込む。
+        // pairId を知る第三者が偽 endpoint を書いて UDP パンチを攻撃者 IP へ誘導する MITM を、
+        // 読み手 (offerer) 側の From 一致検証で弾けるようにする (offer/answer の From 検証と対称化)。
+        var encoded = EncodeBase64($"{from}|{endpoint}");
         await _client
             .Child("signaling")
             .Child(pairId)
@@ -391,8 +413,11 @@ public sealed class FirebaseSignaling : IDisposable
 
     /// <summary>
     /// UDP ホールパンチ用の外部エンドポイントをポーリングで待機して取得する。
+    /// rere #D-001: 埋め込まれた送信元 deviceId が <paramref name="expectedFrom"/> と一致するものだけ採用する。
+    /// 区切り無し (形式不正) や From 不一致は偽 endpoint とみなしてスキップし、正規の相手の endpoint が
+    /// 来るまでポーリングを継続する。
     /// </summary>
-    public async Task<string> WaitForEndpointAsync(string pairId, string role, CancellationToken ct = default)
+    public async Task<string> WaitForEndpointAsync(string pairId, string role, string expectedFrom, CancellationToken ct = default)
     {
         Util.Logger.Log($"外部エンドポイント待機開始 ({role}): pairId={pairId}");
 
@@ -409,8 +434,24 @@ public sealed class FirebaseSignaling : IDisposable
                 if (value?.Data != null)
                 {
                     var decoded = DecodeBase64(value.Data);
-                    Util.Logger.Log($"外部エンドポイント受信 ({role}): {Util.Logger.MaskIp(decoded)}");
-                    return decoded;
+                    var sep = decoded.IndexOf('|');
+                    if (sep > 0)
+                    {
+                        var from = decoded.Substring(0, sep);
+                        var endpoint = decoded.Substring(sep + 1);
+                        if (from == expectedFrom)
+                        {
+                            Util.Logger.Log($"外部エンドポイント受信 ({role}): {Util.Logger.MaskIp(endpoint)}");
+                            return endpoint;
+                        }
+                        Util.Logger.Log(
+                            $"ペア相手以外の endpoint を破棄 ({role}): from={Util.Logger.MaskDeviceId(from)}",
+                            Util.LogLevel.Warning);
+                    }
+                    else
+                    {
+                        Util.Logger.Log($"endpoint 形式不正を破棄 ({role})", Util.LogLevel.Warning);
+                    }
                 }
             }
             catch (OperationCanceledException) { throw; }
