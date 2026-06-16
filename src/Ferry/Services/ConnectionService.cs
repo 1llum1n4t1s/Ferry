@@ -47,6 +47,12 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// 過去に放置された古い offer (cleanup 漏れ/Firebase 6h cleanup 待ち) で誤って譲歩しないための鮮度ゲート。</summary>
     private const int RoleDeferFreshnessMs = 60_000;
 
+    /// <summary>rere PR#8 #F2: role調停で listener に委譲した後、listener が実際に接続を確立 (State=Connected)
+    /// するまで待つ上限(秒)。委譲先が answerer 経路で TCP(5s)→UDP(8s)→relay を試す全体時間をカバーする値
+    /// (<see cref="ProbeOverallTimeoutSeconds"/> と同等)。時間内に確立できなければ通常 offerer 経路へ
+    /// フォールバックする (per-sender ノード #D-003 で同時 offer は安全なので回帰しない)。</summary>
+    private const int RoleDeferListenTimeoutSeconds = 15;
+
     /// <summary>Answer 側が TCP 成功を通知する route 値。</summary>
     private const string RouteDirect = "direct";
 
@@ -60,6 +66,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     private ITransport? _transport;
     private string? _currentPairId;
     private CancellationTokenSource? _listeningCts;
+    /// <summary>rere PR#8 #F2: 着信監視タスクの参照。role調停フォールバック時に Cancel 後 *完了まで* await して
+    /// listener と本体のテアダウン競合 (確立直後の _transport をサイレント破壊) を防ぐために保持する。</summary>
+    private Task? _listeningTask;
 
     /// <summary>
     /// オンデマンド接続 (ConnectToPeerAsync) の所有 CTS と直列化ゲート。
@@ -235,7 +244,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         _listeningCts = new CancellationTokenSource();
         _currentListeningPeerId = peerId;  // v1.0.38 review fix: 監視中のピア ID を保持
         Util.Logger.Log($"着信接続監視開始: peer={peerId}");
-        _ = ListenForIncomingConnectionAsync(peerId, _listeningCts.Token);
+        // rere PR#8 #F2: タスクを保持して role調停フォールバック時に Cancel 後の完了 await を可能にする。
+        _listeningTask = ListenForIncomingConnectionAsync(peerId, _listeningCts.Token);
     }
 
     public void StopListeningForConnection()
@@ -570,12 +580,19 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             {
                 using var peekSig = new FirebaseSignaling(_databaseUrl);
                 long? createdAt = null;
-                try { createdAt = await peekSig.TryReadOfferCreatedAtAsync(pairId, peerId, linked); } catch { }
+                // rere PR#8 #F6: OperationCanceledException は握り潰さず伝播させる (cancel 要求中は offer を
+                // 送らず即中断するため)。それ以外の peek 失敗は「相手 offer 不明」として通常 offerer 経路へ。
+                try { createdAt = await peekSig.TryReadOfferCreatedAtAsync(pairId, peerId, linked); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { }
                 var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                if (createdAt.HasValue && nowMs - createdAt.Value < RoleDeferFreshnessMs)
+                // rere PR#8 #F7: 未来日付 offer (ageMs<0) を「新鮮」と誤判定して譲歩しないよう、
+                // 0 <= ageMs < RoleDeferFreshnessMs の正当な鮮度窓のみ譲歩対象とする (時計ずれ/細工対策)。
+                var ageMs = createdAt.HasValue ? nowMs - createdAt.Value : long.MinValue;
+                if (createdAt.HasValue && ageMs >= 0 && ageMs < RoleDeferFreshnessMs)
                 {
                     string? peekJson = null;
-                    try { peekJson = await peekSig.TryReadOfferOnceAsync(pairId, peerId, linked); } catch { }
+                    try { peekJson = await peekSig.TryReadOfferOnceAsync(pairId, peerId, linked); }
+                    catch (Exception ex) when (ex is not OperationCanceledException) { }
                     var peekOffer = peekJson == null ? null : DeserializeConnectionInfo(peekJson);
                     if (peekOffer != null && peekOffer.From == peerId)
                     {
@@ -583,7 +600,32 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                             $"role調停: ペア相手 ({Util.Logger.MaskDeviceId(peerId)}) が既に offer 済み → " +
                             $"answerer に委譲し offer 送信を見送る (pairId={pairId})");
                         StartListeningForConnection(peerId);  // listener が peer の offer を answer し State=Connected へ
-                        return;  // finally で gate 解放
+                        // rere PR#8 #F2: 通常経路は SetState(Connected) 後にのみ return するのに対し、旧コードは
+                        // listener 起動直後に return していた。listener が確立に失敗すると呼び出し側は「成功」と誤認し、
+                        // State が Connected にならないまま例外も出ず *サイレント未接続* になる。listener が実際に
+                        // Connected を確立するまで待ち、確立すれば委譲成功で return。時間内に確立できなければ
+                        // 下の通常 offerer 経路へフォールバックして自分でも接続を試みる (#D-003 で同時 offer は安全)。
+                        if (await WaitForListenerConnectedAsync(RoleDeferListenTimeoutSeconds * 1000, linked))
+                            return;  // 委譲成功。finally で gate 解放
+                        // rere PR#8 #F2 verify: timeout フォールバック前に listener を *完了まで* 畳む。
+                        // StopListeningForConnection は Cancel するだけでタスク完了を待たない (listener はループ型で
+                        // 失敗時も再ポーリングを続ける) ため、待たずに下流の _transport?.Dispose() へ進むと、listener が
+                        // ちょうど確立した transport をサイレント破壊する競合窓が残る。Cancel → タスク完了 await →
+                        // 最終 State 確認 の順で窓を塞ぐ (listener は _connectGate を取らないので await で deadlock しない)。
+                        var listenerTask = _listeningTask;
+                        StopListeningForConnection();
+                        if (listenerTask != null)
+                        {
+                            try { await listenerTask.WaitAsync(TimeSpan.FromSeconds(6)); }
+                            catch { /* listener の faulted/timeout は無視。最終 State で接続成否を判断する */ }
+                        }
+                        // listener が止まる直前に接続を確立していたら尊重し、確立済み transport を壊さない。
+                        if (State == PeerState.Connected)
+                            return;
+                        Util.Logger.Log(
+                            $"role調停: 委譲先 listener が {RoleDeferListenTimeoutSeconds}s 以内に接続確立せず → " +
+                            $"通常 offerer 経路へフォールバック (pairId={pairId})", Util.LogLevel.Warning);
+                        // listener は上で停止・完了済み。以降の処理が offerer として再試行する。
                     }
                 }
             }
@@ -782,6 +824,33 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         {
             _connectGate.Release();
         }
+    }
+
+    /// <summary>
+    /// rere PR#8 #F2: role調停で listener に委譲した後、listener が実際に接続を確立 (State=Connected)
+    /// するまで最大 <paramref name="timeoutMs"/> 待つ。Connected になれば true、listener が一度 Connecting
+    /// へ進んだ後に失敗 (Disconnected/Error) すれば false を返して即フォールバックさせる。timeout でも false。
+    /// listener ループは <see cref="_connectGate"/> を取らず背景で独立に State を進めるため、gate を保持した
+    /// まま待っても deadlock しない。ct (新規接続要求/Disconnect) 発火時は OCE を伝播させ上位の後始末に委ねる。
+    /// </summary>
+    private async Task<bool> WaitForListenerConnectedAsync(int timeoutMs, CancellationToken ct)
+    {
+        const int PollMs = 200;
+        var waited = 0;
+        var sawConnecting = false;
+        while (waited < timeoutMs)
+        {
+            ct.ThrowIfCancellationRequested();
+            var s = State;
+            if (s == PeerState.Connected) return true;
+            if (s == PeerState.Connecting) sawConnecting = true;
+            // 一度 Connecting を観測した後で Disconnected/Error に落ちたら listener 失敗 → 即フォールバック。
+            // 起動直後の Disconnected (listener が offer 未読の起動窓) は失敗扱いしない。
+            else if (sawConnecting && s is PeerState.Disconnected or PeerState.Error) return false;
+            await Task.Delay(PollMs, ct);
+            waited += PollMs;
+        }
+        return State == PeerState.Connected;
     }
 
     /// <summary>

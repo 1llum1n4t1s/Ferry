@@ -359,15 +359,17 @@ public static class FileChunker
         var totalChunks = BinaryPrimitives.ReadInt32BigEndian(message.Slice(18, 4));
         if (totalChunks < 0) return null;
 
-        // 整数オーバーフロー / 過大メモリ確保の防止 (crypto/protocol レビュー #D-005):
+        // 整数オーバーフロー / 過大メモリ確保の防止 (crypto/protocol レビュー #D-005, PR#8 #F10):
         // 細工された totalChunks≈int.MaxValue は (totalChunks+7)/8 を int 加算オーバーフローさせて
         // 負の bitmapLen を作り、下の長さガードをすり抜けて new bool[巨大] / 負 Slice で例外死させ得る
         // (「形式不正は null」契約違反 → 配線後はペア済み peer の 1 通で受信ループを落とす DoS)。
-        // 宣言 totalChunks に対し bitmap が物理的に足りない値は (totalChunks+7)/8 の前に long 比較で弾く。
-        if ((long)totalChunks > (long)(message.Length - 22) * 8) return null;
+        // bitmap 必要バイト数を long で算出し payload と比較する。(totalChunks + 7) を int 域で評価しない
+        // ことでオーバーフローを構造的に排除し、int キャストは payload 内に収まると検証できた後に限定する。
+        var payloadBytes = message.Length - 22;
+        var requiredBitmapBytes = ((long)totalChunks + 7L) / 8L;
+        if (requiredBitmapBytes > payloadBytes) return null;
 
-        var bitmapLen = (totalChunks + 7) / 8;
-        if (message.Length < 22 + bitmapLen) return null;
+        var bitmapLen = (int)requiredBitmapBytes;
 
         var bitmap = message.Slice(22, bitmapLen);
         var received = new bool[totalChunks];

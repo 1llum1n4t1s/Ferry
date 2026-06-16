@@ -167,6 +167,8 @@ public partial class App : Application
             };
 
             var connectionVm = new ConnectionViewModel(connectionService, qrCodeService, settingsService, peerRegistry);
+            // rere PR#8 #F4: プレゼンス監視は実 Firebase I/O を伴うため ctor ではなく本番起動時にここで開始する。
+            connectionVm.StartPresenceMonitoring();
             var transferVm = new TransferViewModel(connectionService, transferService, connectionVm, settingsService);
             var settingsVm = new SettingsViewModel(settingsService, transferService);
 

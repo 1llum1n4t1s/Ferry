@@ -193,9 +193,10 @@ public sealed class FirebaseSignaling : IDisposable
                         .Child(fromDeviceId)
                         .OnceSingleAsync<TimedSignalingValue>();
                 }
-                catch (Exception ex) when (!IsQuotaOrServerError(ex))
+                catch (Exception ex) when (!ShouldBackoffOnReadError(ex))
                 {
-                    // ノード未存在 → entry = null として扱う (402/429/503 は外側 catch へ)
+                    // ノード未着/非 HTTP 瞬断 → entry = null として高速ポーリング継続。
+                    // 具体的な HTTP ステータス (401/403/404/4xx/5xx/枠超過) は外側 catch へ投げて backoff (#F11)。
                 }
 
                 if (entry != null && !string.IsNullOrEmpty(entry.Data)
@@ -214,13 +215,15 @@ public sealed class FirebaseSignaling : IDisposable
             catch (Exception ex)
             {
                 var statusInfo = DescribeHttpStatus(ex);
-                var likelyQuota = statusInfo is " status=402" or " status=429" or " status=503";
-                if (likelyQuota || pollCount - lastErrorLog >= 30)
+                var isQuota = statusInfo is " status=402" or " status=429" or " status=503";
+                // rere PR#8 #F11: 認証(401/403)・サーバ(5xx)・枠超過 等の具体 HTTP ステータスは即 Error で surface。
+                var isSevere = ShouldBackoffOnReadError(ex);
+                if (isSevere || pollCount - lastErrorLog >= 30)
                 {
                     Util.Logger.Log(
                         $"SDP ポーリングエラー (offer): {ex.Message}{statusInfo}" +
-                        (likelyQuota ? " (Firebase 枠超過/サービス停止の可能性)" : string.Empty),
-                        likelyQuota ? Util.LogLevel.Error : Util.LogLevel.Warning);
+                        (isQuota ? " (Firebase 枠超過/サービス停止の可能性)" : string.Empty),
+                        isSevere ? Util.LogLevel.Error : Util.LogLevel.Warning);
                     lastErrorLog = pollCount;
                 }
                 consecutiveErrors++;
@@ -270,9 +273,10 @@ public sealed class FirebaseSignaling : IDisposable
                         .Child(fromDeviceId)
                         .OnceSingleAsync<SignalingValue>();
                 }
-                catch (Exception ex) when (!IsQuotaOrServerError(ex))
+                catch (Exception ex) when (!ShouldBackoffOnReadError(ex))
                 {
-                    // ノード未存在 → value = null
+                    // ノード未着/非 HTTP 瞬断 → value = null として高速ポーリング継続。
+                    // 具体的な HTTP ステータス (401/403/404/4xx/5xx/枠超過) は外側 catch へ投げて backoff (#F11)。
                 }
 
                 if (value != null && !string.IsNullOrEmpty(value.Data))
@@ -290,13 +294,15 @@ public sealed class FirebaseSignaling : IDisposable
             catch (Exception ex)
             {
                 var statusInfo = DescribeHttpStatus(ex);
-                var likelyQuota = statusInfo is " status=402" or " status=429" or " status=503";
-                if (likelyQuota || pollCount - lastErrorLog >= 30)
+                var isQuota = statusInfo is " status=402" or " status=429" or " status=503";
+                // rere PR#8 #F11: 認証(401/403)・サーバ(5xx)・枠超過 等の具体 HTTP ステータスは即 Error で surface。
+                var isSevere = ShouldBackoffOnReadError(ex);
+                if (isSevere || pollCount - lastErrorLog >= 30)
                 {
                     Util.Logger.Log(
                         $"SDP ポーリングエラー (answer): {ex.Message}{statusInfo}" +
-                        (likelyQuota ? " (Firebase 枠超過/サービス停止の可能性)" : string.Empty),
-                        likelyQuota ? Util.LogLevel.Error : Util.LogLevel.Warning);
+                        (isQuota ? " (Firebase 枠超過/サービス停止の可能性)" : string.Empty),
+                        isSevere ? Util.LogLevel.Error : Util.LogLevel.Warning);
                     lastErrorLog = pollCount;
                 }
                 consecutiveErrors++;
@@ -318,11 +324,19 @@ public sealed class FirebaseSignaling : IDisposable
     /// 取得できなければ空文字。FirebaseException は ResponseData/InnerException に HTTP 情報を持つ。
     /// </summary>
     /// <summary>
-    /// PR#5 Codex 指摘対応: 枠超過/サービス停止系 (402/429/503) かどうかを判定する。
-    /// ポーリングの内側 catch (ノード未存在の握り潰し) がこれらを誤って吸収しないためのフィルタ。
+    /// rere PR#8 #F11: ポーリングの内側 catch が握り潰してよいエラーかを判定する。
+    /// 具体的な HTTP ステータス (4xx/5xx — 401/403/404/500/502/504、枠超過 402/429/503 を含む) を持つ
+    /// エラーは backoff 対象 (true) として外側 catch に投げ、exponential backoff + Error ログにする。
+    /// status を持たない瞬断/非 HTTP 要因 ("" / " status=firebase-error") は従来どおり握り潰し、
+    /// offer/answer 未着の常態として高速ポーリングを継続する (待機を遅くしないため)。
+    /// 旧 IsQuotaOrServerError は 402/429/503 のみ対象で、401/403/500 を内側 catch が吸収し
+    /// 認証/サーバ障害中も 400ms 高速ポーリングを続ける暴走があった (本修正で是正)。
     /// </summary>
-    private static bool IsQuotaOrServerError(Exception ex)
-        => DescribeHttpStatus(ex) is " status=402" or " status=429" or " status=503";
+    private static bool ShouldBackoffOnReadError(Exception ex)
+    {
+        var status = DescribeHttpStatus(ex);
+        return status.Length > 0 && status != " status=firebase-error";
+    }
 
     private static string DescribeHttpStatus(Exception ex)
     {
@@ -698,6 +712,10 @@ public sealed class FirebaseSignaling : IDisposable
     /// </summary>
     public async Task UpdatePresenceAsync(string deviceId, string displayName, CancellationToken ct = default)
     {
+        // rere PR#8 #F4: FirebaseDatabase.net の PutAsync は CancellationToken を受け取れないため、
+        // 入口で cancel を弾き、await を WaitAsync(ct) で監視して dispose/停止時に待機を即解く
+        // (進行中の PUT 自体は best-effort で継続しうるが、呼び出し側 HeartbeatLoop は即座に解放される)。
+        ct.ThrowIfCancellationRequested();
         await _client
             .Child("presence")
             .Child(deviceId)
@@ -705,7 +723,8 @@ public sealed class FirebaseSignaling : IDisposable
             {
                 LastSeen = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 DisplayName = displayName,
-            });
+            })
+            .WaitAsync(ct);
     }
 
     /// <summary>

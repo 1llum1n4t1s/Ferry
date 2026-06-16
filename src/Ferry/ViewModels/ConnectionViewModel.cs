@@ -127,8 +127,10 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         }
         UpdateHasPairedPeers();
 
-        // プレゼンス監視を開始（heartbeat 送信 + ピアのオンライン状態ポーリング）
-        StartPresenceMonitoring();
+        // rere PR#8 #F4: プレゼンス監視 (heartbeat + ポーリング) は実 Firebase への書き込み I/O を伴う。
+        // ctor で起動すると、テストが VM を直接 new しただけで本番 Firebase に presence を書き込む汚染が
+        // 起きる (#D-004 で URL が AppConstants 固定化され空ガードが効かなくなったため顕在化)。
+        // 本番は App.axaml.cs が構築直後に StartPresenceMonitoring() を明示呼び出しする。
     }
 
     /// <summary>
@@ -598,7 +600,12 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
 
     // === プレゼンス監視 ===
 
-    private void StartPresenceMonitoring()
+    /// <summary>
+    /// プレゼンス監視 (heartbeat 送信 + ピアのオンライン状態ポーリング) を開始する。
+    /// rere PR#8 #F4: 実 Firebase I/O を伴うため ctor では呼ばず、本番は App.axaml.cs が
+    /// VM 構築直後に明示呼び出しする (テストは呼ばないので本番 Firebase を汚染しない)。冪等。
+    /// </summary>
+    public void StartPresenceMonitoring()
     {
         // rere #D-004: Firebase DB URL は AppConstants 固定（常に非空なので空ガードは不要）。
         _presenceCts?.Cancel();

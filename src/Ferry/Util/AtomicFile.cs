@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Threading.Tasks;
 
@@ -16,16 +17,43 @@ public static class AtomicFile
     /// <summary>一時ファイルへ書いてからリネームで置換する（同期）。</summary>
     public static void Write(string path, byte[] data)
     {
-        var tmp = path + ".tmp";
-        File.WriteAllBytes(tmp, data);
-        File.Move(tmp, path, overwrite: true);
+        // rere PR#8 #F1: tmp 名を path+".tmp" 固定にすると、同一 path への並行 Write や
+        // 前回クラッシュの残骸 tmp と衝突して取り違え・部分書き残骸が起こりうる。
+        // 衝突しない GUID 付き一時名を使い、Move 失敗時も finally で残骸を掃除する。
+        var tmp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllBytes(tmp, data);
+            File.Move(tmp, path, overwrite: true);
+        }
+        finally
+        {
+            TryCleanup(tmp);
+        }
     }
 
     /// <summary>一時ファイルへ書いてからリネームで置換する（非同期）。</summary>
     public static async Task WriteAsync(string path, byte[] data)
     {
-        var tmp = path + ".tmp";
-        await File.WriteAllBytesAsync(tmp, data);
-        File.Move(tmp, path, overwrite: true);
+        var tmp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await File.WriteAllBytesAsync(tmp, data);
+            File.Move(tmp, path, overwrite: true);
+        }
+        finally
+        {
+            TryCleanup(tmp);
+        }
+    }
+
+    /// <summary>Move 成功後は tmp が消えているので no-op、Move 失敗時のみ残骸を掃除する（best-effort）。</summary>
+    private static void TryCleanup(string tmp)
+    {
+        try
+        {
+            if (File.Exists(tmp)) File.Delete(tmp);
+        }
+        catch { /* 掃除失敗は無視（次回は別の GUID 名なので衝突しない） */ }
     }
 }
