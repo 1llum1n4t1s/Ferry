@@ -42,6 +42,21 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// <summary>接続確認応答（補助情報）の打ち切り時間（秒）。endpoint 待ちとは別意味だが現状同値。</summary>
     private const int AnswerConfirmWaitSeconds = 10;
 
+    /// <summary>Offer 側が「TCP accept または answer のどちらか」を待つ全体タイムアウト（秒）。
+    /// 旧コードは answerCts に CancelAfter を設定せず WhenAny に渡していたため、相手が無応答
+    /// (オフライン / 旧バージョン非互換 / シグナリング不成立) かつ TCP も来ない場合に WhenAny が
+    /// 永久待機し、UI が「待機中」のまま固着していた (実機ログ 2026-06-17 で確認)。answer は通常 ~6s で
+    /// 届く (相手の TCP 5s + offer-v2 ポーリング + Firebase write を含む) ので、余裕を持たせて 20s。
+    /// 超過時は answerTask が cancel されて WhenAny を抜け、answerJson==null 経路で明示エラーに落とす
+    /// (相手不在なのでリレーも来ず、即エラーの方が体感が良い。answer が来た上での UDP 失敗は別途リレーへ)。</summary>
+    private const int OfferAnswerWaitSeconds = 20;
+
+    /// <summary>WebSocket リレーで「相手が同じ部屋に来る」のを待つ上限（秒）。双方が UDP タイムアウト(8s)後に
+    /// ほぼ同時にリレーへ来るため十数秒で足りる。旧 30s は、片側だけ UDP が非対称成功して相手がリレーに来ない
+    /// ケースで 30s 丸ごと空振りし、その後の接続リトライ (NAT が温まり UDP が即成功) までの体感待ちを 50s 超に
+    /// していた (実機ログ 2026-06-17)。15s に短縮して空振り時の浪費を半減する (正規のリレー合流は数秒で済む)。</summary>
+    private const int RelayPeerWaitSeconds = 15;
+
     /// <summary>rere #D-003: role調停の deferral 判定で「ペア相手の offer が新しい」とみなす上限(ms)。
     /// この時間内に作られた offer なら相手は今まさに接続を試みていると判断して譲歩する。
     /// 過去に放置された古い offer (cleanup 漏れ/Firebase 6h cleanup 待ち) で誤って譲歩しないための鮮度ゲート。</summary>
@@ -671,6 +686,14 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             //    Answer が TCP 結果を通知してくるので、固定タイムアウト不要。
             //    answer ポーリングは専用 CTS で持ち、TCP 成功時に確認応答待ちを打ち切れるようにする
             using var answerCts = CancellationTokenSource.CreateLinkedTokenSource(linked);
+            // answer 待ちに全体タイムアウトを設定する。これが無いと相手が無応答 (オフライン / 旧バージョン
+            // 非互換 / シグナリング不成立) かつ TCP も来ない場合に下の WhenAny が永久待機し、UI が「待機中」の
+            // まま固着する。タイムアウト発火時は answerTask が cancel されて WhenAny を抜け、下の
+            // answerJson==null 経路でエラーに落ちる。TCP 成功時は下のブロックで AnswerConfirmWaitSeconds に
+            // 再スケジュールするので正常系には影響しない (LAN の TCP accept は通常 1s 未満で先に完了する)。
+            // answer 先着 (else 分岐) では answerCts.Token の唯一の consumer (answerTask) が完了済みのため、
+            // 後続 STUN/UDP/relay (いずれも linked トークン使用) の最中に 20s が発火しても下流に無影響。
+            answerCts.CancelAfter(TimeSpan.FromSeconds(OfferAnswerWaitSeconds));
             var tcpAcceptTask = tcpTransport.AcceptAsync(linked);
             var answerTask = _signaling.WaitForAnswerAsync(pairId, peerId, answerCts.Token);
 
@@ -705,16 +728,27 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             {
                 // Answer が先に到着 → route を確認
                 string? answerJson = null;
+                var answerTimedOut = false;
                 try
                 {
                     answerJson = await answerTask;
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (linked.IsCancellationRequested)
                 {
                     // ユーザーの転送キャンセル / 新しい接続要求 / 切断によるキャンセル。ここで握りつぶすと
                     // answerJson=null のまま下の Connected 遷移へ素通りし、transport 不在の State=Connected が
                     // 残留して以後の送信が全て「接続されていません」で恒久失敗する (2026-06-10 実機ログで発生)。
                     throw;
+                }
+                catch (OperationCanceledException)
+                {
+                    // linked 未発火の OCE = answerCts の全体タイムアウト (OfferAnswerWaitSeconds)。相手から
+                    // answer が来ず TCP も来なかった = シグナリング不成立。旧コードはこの分岐が無く (answerCts に
+                    // CancelAfter 未設定だったため) WhenAny が永久待機し「待機中」固着していた。answerJson は
+                    // null のままにし、下の null 分岐で明示エラーに落とす (相手不在なのでリレーも来ず即エラーが妥当)。
+                    answerTimedOut = true;
+                    Util.Logger.Log(
+                        $"Answer 待機タイムアウト ({OfferAnswerWaitSeconds}s, 相手未応答)", Util.LogLevel.Warning);
                 }
                 catch (Exception ex)
                 {
@@ -731,9 +765,13 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 }
 
                 // Answer 不達 = シグナリング不成立。失敗を確定させずに先へ進むと transport が無いまま
-                // Connected になるため、ここで接続失敗として throw する (外側 catch が State=Error にする)
+                // Connected になるため、ここで接続失敗として throw する (外側 catch が State=Error にする)。
+                // answerTimedOut なら相手不在が原因と分かるメッセージにして UI に出す (無限「待機中」を断つ)。
                 if (answerJson == null)
-                    throw new InvalidOperationException("Answer を受信できませんでした");
+                    throw new InvalidOperationException(
+                        answerTimedOut
+                            ? "相手から応答がありません（オフライン / 旧バージョン / 接続不可の可能性）"
+                            : "Answer を受信できませんでした");
 
                 Util.Logger.Log("Answer が TCP 失敗報告 → STUN/UDP ホールパンチ試行");
                 StatusMessageChanged?.Invoke(this, "Status.Phase.StunQuery");
@@ -1310,7 +1348,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             relayTransport = new WebSocketRelayTransport(RelayUrl, pairId, role);
 
             using var relayCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            relayCts.CancelAfter(TimeSpan.FromSeconds(30));
+            relayCts.CancelAfter(TimeSpan.FromSeconds(RelayPeerWaitSeconds));
 
             await relayTransport.ConnectAsync(relayCts.Token);
 

@@ -25,6 +25,14 @@ public sealed class WebSocketRelayTransport : ITransport
     private readonly string _pairId;
     private readonly string _role; // "offer" or "answer"
 
+    /// <summary>リレールームで相手の参加 ("ready") を待つ絶対上限（秒）= 防御的バックストップ。
+    /// 実際の「相手待ち」ポリシー値は呼び出し側 <see cref="Ferry.Services.ConnectionService"/> の
+    /// RelayPeerWaitSeconds(15s) が握り、その ct が CreateLinkedTokenSource 連鎖で WaitForReadyAsync に
+    /// 伝播する。よって実効待ち = min(この値, 呼び出し側 ct)。この定数は呼び出し側が ct を bound し忘れた
+    /// 場合に無限待機へ退行させないための上限なので、ポリシー値より大きい 30s を維持する（裸の 30 で
+    /// 「リレー待ち=15s」の意図と齟齬を起こさないよう、関係を明記して名前付き定数化した）。</summary>
+    private const int ReadyWaitTimeoutSeconds = 30;
+
     public bool IsConnected { get; private set; }
     public ConnectionRoute Route => ConnectionRoute.Relay;
 
@@ -143,7 +151,9 @@ public sealed class WebSocketRelayTransport : ITransport
 
         var buffer = new byte[1024];
         using var readyCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        readyCts.CancelAfter(TimeSpan.FromSeconds(30));
+        // 実効待ちは呼び出し側 ct (ConnectionService.RelayPeerWaitSeconds=15s) が先に握る。この CancelAfter は
+        // ct が無 bound の場合に無限待機へ退行させないための絶対バックストップ (詳細は定数の doc 参照)。
+        readyCts.CancelAfter(TimeSpan.FromSeconds(ReadyWaitTimeoutSeconds));
 
         while (!readyCts.IsCancellationRequested)
         {
