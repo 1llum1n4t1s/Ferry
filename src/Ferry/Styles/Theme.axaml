@@ -46,6 +46,9 @@
                     <SolidColorBrush x:Key="TahoeTextPrimaryBrush" Color="#E8F8FF" />
                     <SolidColorBrush x:Key="TahoeTextSecondaryBrush" Color="#7AA0C8" />
                     <SolidColorBrush x:Key="TahoeTextTertiaryBrush" Color="#4A6485" />
+                    <!-- 進捗バー / 転送レート / Note 等のアクセント。Dark は暗背景で映えるネオンシアン。
+                         (旧: 未定義のまま参照され DynamicResource が解決失敗 → 文字色がテーマ追従しなかった) -->
+                    <SolidColorBrush x:Key="TahoeAccentBrush" Color="#00F0FF" />
                 </ResourceDictionary>
 
                 <!-- ===== LIGHT — ROG ネオン Light (明るい背景 + 暗いテキスト) =====
@@ -77,6 +80,8 @@
                     <SolidColorBrush x:Key="TahoeTextPrimaryBrush" Color="#0A1424" />
                     <SolidColorBrush x:Key="TahoeTextSecondaryBrush" Color="#566B88" />
                     <SolidColorBrush x:Key="TahoeTextTertiaryBrush" Color="#8A9AB4" />
+                    <!-- Light は白〜淡青の背景で視認できる深いシアン (#00F0FF は明背景で薄すぎる)。 -->
+                    <SolidColorBrush x:Key="TahoeAccentBrush" Color="#0099CC" />
                 </ResourceDictionary>
 
             </ResourceDictionary.ThemeDictionaries>
@@ -180,14 +185,20 @@
             <DropShadowEffect Color="#FF2D8A" BlurRadius="12" Opacity="0.55" OffsetX="0" OffsetY="0" />
         </Setter>
     </Style>
-    <Style Selector="Button /template/ ContentPresenter">
+    <!-- ⚠ :not(...) で透過系バリアント (.icon / .sidebar / .sidebarMenuItem / .danger) を除外する。
+         これらは ContentPresenter の Foreground を上書きせず、Button.Foreground (テーマ依存の文字色) を
+         FluentTheme テンプレートの Foreground="{TemplateBinding Foreground}" 経由で継承させたい。
+         除外しないと、この Foreground=#FFFFFF が全 Button の ContentPresenter に乗り、Light テーマで
+         「設定」「ペアリング先追加」等のサイドバー文字が白くなって読めなくなる
+         (Dark は背景が暗いため白文字でも見えていて露見しなかった)。 -->
+    <Style Selector="Button:not(.icon):not(.sidebar):not(.sidebarMenuItem):not(.danger) /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
         <Setter Property="Foreground" Value="#FFFFFF" />
         <Setter Property="BorderBrush" Value="#88FFFFFF" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="6" />
     </Style>
-    <Style Selector="Button:pointerover /template/ ContentPresenter">
+    <Style Selector="Button:pointerover:not(.icon):not(.sidebar):not(.sidebarMenuItem):not(.danger) /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource AccentHoverBrush}" />
         <Setter Property="Foreground" Value="#FFFFFF" />
         <Setter Property="BorderBrush" Value="#FFFFFF" />
@@ -198,7 +209,7 @@
             <DropShadowEffect Color="#FF2D8A" BlurRadius="20" Opacity="0.8" OffsetX="0" OffsetY="0" />
         </Setter>
     </Style>
-    <Style Selector="Button:pressed /template/ ContentPresenter">
+    <Style Selector="Button:pressed:not(.icon):not(.sidebar):not(.sidebarMenuItem):not(.danger) /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource AccentHoverBrush}" />
         <Setter Property="Foreground" Value="#FFFFFF" />
     </Style>

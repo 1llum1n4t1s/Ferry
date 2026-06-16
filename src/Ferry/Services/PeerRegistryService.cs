@@ -97,10 +97,8 @@ public sealed class PeerRegistryService : IPeerRegistryService
         try
         {
             var json = JsonSerializer.SerializeToUtf8Bytes(_peers, PeerRegistryJsonContext.Default.ListPairedPeer);
-            // 一時ファイルに書いてからリネームで置換し、書き込み中断による破損を防ぐ
-            var tmp = _filePath + ".tmp";
-            await File.WriteAllBytesAsync(tmp, json);
-            File.Move(tmp, _filePath, overwrite: true);
+            // rere #B2-001: アトミック保存(tmp→Move)を共通ヘルパーへ集約
+            await Util.AtomicFile.WriteAsync(_filePath, json);
         }
         catch (Exception ex)
         {

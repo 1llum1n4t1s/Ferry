@@ -440,6 +440,22 @@ public sealed class TransferService : ITransferService, IDisposable
 
         var messageType = FileChunker.GetMessageType(data);
 
+        // 細工された短い/壊れたメッセージで個別ハンドラのパースが例外を投げても、受信ループまで
+        // 遡って ChannelClosed→ConnectionLost で進行中転送を切断させない（ペア済み peer から 1 通で
+        // 発火しうるリモート DoS の防止）。当該メッセージのみ破棄して Warning に留める。
+        // SafePath の NUL 制御文字対策と同じ「細工 1 通で受信ループを殺せない」不変条件をプロトコル全体へ拡張。
+        try
+        {
+            DispatchMessage(messageType, data);
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"受信メッセージ処理エラー (type=0x{messageType:X2}, len={data.Length}): {ex.Message}", Util.LogLevel.Warning);
+        }
+    }
+
+    private void DispatchMessage(byte messageType, byte[] data)
+    {
         switch (messageType)
         {
             case TransferProtocol.FileMeta:
@@ -894,6 +910,9 @@ public sealed class TransferService : ITransferService, IDisposable
         if (offset + chunkLength > state.FileSize)
         {
             Util.Logger.Log($"チャンクが申告サイズを超過: {state.FileName}", Util.LogLevel.Warning);
+            // rere #C2-001 review: 終端確定権を atomic に取り、勝者だけが TransferError を発火する
+            // (CancelTransfer / OnConnectionLost / VerifyAndFinalize と二重終端イベントにしない。他 4 経路と揃える)。
+            if (!_receiveStates.TryRemove(state.TransferId, out _)) return;
             state.Item.State = TransferState.Error;
             state.Item.ErrorMessage = "受信データが申告サイズを超過しました";
             TransferError?.Invoke(this, state.Item);
@@ -943,6 +962,9 @@ public sealed class TransferService : ITransferService, IDisposable
         catch (Exception ex)
         {
             Util.Logger.Log($"チャンク書き込みエラー: {ex.Message}", Util.LogLevel.Error);
+            // rere #C2-001 review: 同上。終端確定権を atomic に取り、勝者だけが終端イベントを発火する
+            // (CancelTransfer が FileStream を dispose して書き込みが例外化したケースの二重終端を防ぐ)。
+            if (!_receiveStates.TryRemove(state.TransferId, out _)) return;
             state.Item.State = TransferState.Error;
             state.Item.ErrorMessage = ex.Message;
             TransferError?.Invoke(this, state.Item);
@@ -955,52 +977,131 @@ public sealed class TransferService : ITransferService, IDisposable
     /// </summary>
     private void CompleteReceive(ReceiveState state)
     {
-        state.FileStream?.Flush();
-        state.FileStream?.Dispose();
-        state.FileStream = null;
+        // TryCompleteReceiveIfReady は chunk 経路と FileHash 経路の両方から呼ばれ得る。検証開始の権利を
+        // atomic に 1 度だけ取り、二重起動(二重 ACK/二重イベント)を防ぐ。
+        // rere #C2-001 review (codex P2 #3416006457): 旧実装は _receiveStates から即削除して claim にしていたが、
+        // 検証(SHA-256 全再読込、大容量で数秒)中に CancelTransfer / HasActiveTransfer がこの転送を見失い、
+        // (a) 検証中のキャンセルが何もできない (b) 自動更新ガードが「転送なし」と誤判定して DownloadAndApply →
+        // 再起動が finalize に割り込みうる。claim を Interlocked フラグに移し、_receiveStates には検証完了まで
+        // 残して可視性を保つ。終端確定は VerifyAndFinalizeReceive 側の _receiveStates.TryRemove に一本化する。
+        if (Interlocked.Exchange(ref state.Finalizing, 1) != 0)
+            return;
 
-        Util.Logger.Log($"全チャンク受信完了: {state.FileName}, 検証中…");
-
-        // SHA-256 検証（1回のハッシュ計算で検証と ACK 送信の両方に使用）
-        var sha256Bytes = FileChunker.ComputeSha256(state.SavePath);
-        var actualHash = Convert.ToHexString(sha256Bytes).ToLowerInvariant();
-        var hashMatch = string.Equals(actualHash, state.ExpectedSha256, StringComparison.OrdinalIgnoreCase);
-
-        if (hashMatch)
+        // rere #C2-001: SHA-256 の全ファイル再読み込み(大容量で数秒〜十数秒)を受信ループスレッド上で
+        // 同期実行すると、その間 他の並列転送のチャンク/ACK/FlowAck 処理まで止まる(UDP は ACK 停止で
+        // 再送誤発火、リレーは 32MB 窓 stall で切断リスク)。重い検証・ACK・イベント発火を別タスクへ逃がし、
+        // 受信ループは即座に次メッセージへ戻す。
+        // rere #C2-001 review (race verify): FileStream の所有権を Interlocked.Exchange で原子的に取得し、
+        // 取った側だけが flush/dispose する。CancelTransfer→CleanupReceiveState(UI スレッド) が同一
+        // FileStream を並行 dispose して ObjectDisposedException / flush 漏れ(→稀に SHA 不一致) を起こすのを防ぐ。
+        // null 化は同期実行なので finalize 後に来た stray chunk は HandleFileChunk の FileStream==null ゲートで弾かれる。
+        // claim 後はこのメソッドが絶対に throw して抜けないようにする(claim 済みなのに Task.Run へ到達しないと
+        // state が _receiveStates に永久残留 → HasActiveTransfer 固着 → auto-update 無期限スキップ + UI が
+        // 「検証中…」で固着する)。flush だけでなく Dispose も握る(Dispose は内部で同じバッファを再 flush する
+        // ため、ディスク満杯/ドライブ切断では Flush 失敗後に Dispose も同じ IOException を投げる)。万一 fs 処理外
+        // (Log/Task.Run 起動)で throw しても、外側 catch で終端確定(_receiveStates.TryRemove + Error 発火)して固着を防ぐ。
+        try
         {
-            Util.Logger.Log($"SHA-256 検証成功: {state.FileName}");
-            state.Item.State = TransferState.Completed;
-            state.Item.TransferredBytes = state.FileSize;
-            state.Item.SavedFilePath = state.SavePath;
+            var fs = Interlocked.Exchange(ref state.FileStream, null);
+            if (fs != null)
+            {
+                try { fs.Flush(); } catch { /* flush 失敗は無視（検証は SavePath を再読込するので実害なし） */ }
+                try { fs.Dispose(); } catch { /* dispose の最終 flush 失敗も無視（同上。ハンドルは解放される） */ }
+            }
+
+            Util.Logger.Log($"全チャンク受信完了: {state.FileName}, 検証中…");
+            _ = Task.Run(() => VerifyAndFinalizeReceive(state));
         }
-        else
+        catch (Exception ex)
         {
-            Util.Logger.Log($"SHA-256 検証失敗: 期待={state.ExpectedSha256[..16]}…, 実際={actualHash[..16]}…", Util.LogLevel.Error);
-            state.Item.State = TransferState.Error;
-            state.Item.ErrorMessage = "ファイルの整合性検証に失敗しました（SHA-256 不一致）";
+            // claim 後・Task.Run 起動前に throw した場合の最終防衛線。state を確実に終端させ、
+            // _receiveStates 永久残留(HasActiveTransfer 固着) と UI の「検証中…」固着を防ぐ。
+            Util.Logger.LogException("受信完了処理の起動に失敗", ex);
+            if (_receiveStates.TryRemove(state.TransferId, out _))
+            {
+                if (_receiveStates.IsEmpty) _folderMappings.Clear();
+                state.Item.State = TransferState.Error;
+                state.Item.ErrorMessage = ex.Message;
+                try { TransferError?.Invoke(this, state.Item); } catch { /* 購読側例外は無視 */ }
+            }
         }
+    }
 
-        // ACK を送信（送信側に結果を通知）— fire-and-forget でブロッキングを回避
-        SendFireAndForget(FileChunker.CreateAckMessage(hashMatch, sha256Bytes), "ACK");
-
-        if (hashMatch)
+    /// <summary>受信完了の重い処理(SHA-256 全再読み込み検証・ACK 送信・イベント発火)。受信ループを
+    /// ブロックしないよう <see cref="CompleteReceive"/> から別タスクで実行される(rere #C2-001)。
+    /// 検証中も状態は _receiveStates に残り、終端確定の権利は _receiveStates.TryRemove で
+    /// CancelTransfer と奪い合う(codex P2 #3416006457: 検証中の可視性確保 + 二重終端イベント防止)。</summary>
+    private void VerifyAndFinalizeReceive(ReceiveState state)
+    {
+        byte[]? sha256Bytes = null;
+        var hashMatch = false;
+        string? errorMessage = null;
+        try
         {
-            FileReceived?.Invoke(this, state.Item);
-            MaybePlayReceiveNotification(state.Item.PeerId);
+            // SHA-256 検証（1回のハッシュ計算で検証と ACK 送信の両方に使用）
+            sha256Bytes = FileChunker.ComputeSha256(state.SavePath);
+            var actualHash = Convert.ToHexString(sha256Bytes).ToLowerInvariant();
+            hashMatch = string.Equals(actualHash, state.ExpectedSha256, StringComparison.OrdinalIgnoreCase);
+            if (!hashMatch)
+                Util.Logger.Log($"SHA-256 検証失敗: 期待={state.ExpectedSha256[..16]}…, 実際={actualHash[..16]}…", Util.LogLevel.Error);
         }
-        else
+        catch (Exception ex)
         {
-            TransferError?.Invoke(this, state.Item);
-            // 不正なファイルを削除
-            try { File.Delete(state.SavePath); }
-            catch { /* 削除失敗は無視 */ }
+            Util.Logger.LogException("受信完了処理エラー", ex);
+            errorMessage = ex.Message;
         }
 
-        _receiveStates.TryRemove(state.TransferId, out _);
+        // 終端確定 + イベント発火。本メソッドは Task.Run(fire-and-forget) 上で動くため、終端処理の
+        // 例外を必ず吸収する（購読側ハンドラや通知音再生が throw しても UnobservedTaskException 化させない。
+        // SendFireAndForget と同じ「fire-and-forget は例外を必ず握る」不変条件に揃える。rere #C2-001 review）。
+        try
+        {
+            // 終端確定の権利を atomic に取る。検証中に CancelTransfer がこの状態を横取り(TryRemove 成功)して
+            // いたら、ここでは何もせず二重終端イベントを防ぐ。キャンセルが消せなかった可能性のある
+            // 受信ファイル(検証が掴んでいて File.Delete が失敗した等)だけ後始末する。
+            if (!_receiveStates.TryRemove(state.TransferId, out _))
+            {
+                try { if (File.Exists(state.SavePath)) File.Delete(state.SavePath); } catch { }
+                return;
+            }
+            // 全受信完了時にフォルダマッピングキャッシュをクリア
+            if (_receiveStates.IsEmpty)
+                _folderMappings.Clear();
 
-        // 全受信完了時にフォルダマッピングキャッシュをクリア
-        if (_receiveStates.IsEmpty)
-            _folderMappings.Clear();
+            if (errorMessage == null && hashMatch)
+            {
+                Util.Logger.Log($"SHA-256 検証成功: {state.FileName}");
+                state.Item.State = TransferState.Completed;
+                state.Item.TransferredBytes = state.FileSize;
+                state.Item.SavedFilePath = state.SavePath;
+                // ACK を送信（送信側に結果を通知）— fire-and-forget でブロッキングを回避
+                SendFireAndForget(FileChunker.CreateAckMessage(true, sha256Bytes!), "ACK");
+                FileReceived?.Invoke(this, state.Item);
+                MaybePlayReceiveNotification(state.Item.PeerId);
+            }
+            else if (errorMessage == null)
+            {
+                // SHA-256 不一致（検証は完了したが内容が壊れている）
+                state.Item.State = TransferState.Error;
+                state.Item.ErrorMessage = "ファイルの整合性検証に失敗しました（SHA-256 不一致）";
+                SendFireAndForget(FileChunker.CreateAckMessage(false, sha256Bytes!), "ACK");
+                TransferError?.Invoke(this, state.Item);
+                // 不正なファイルを削除
+                try { File.Delete(state.SavePath); }
+                catch { /* 削除失敗は無視 */ }
+            }
+            else
+            {
+                // 検証自体が例外で失敗。ACK は送れず、ファイルは保全する（原実装踏襲）
+                state.Item.State = TransferState.Error;
+                state.Item.ErrorMessage = errorMessage;
+                TransferError?.Invoke(this, state.Item);
+            }
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"受信終端処理で例外: {ex.Message}", Util.LogLevel.Warning);
+        }
     }
 
     /// <summary>
@@ -1201,6 +1302,8 @@ public sealed class TransferService : ITransferService, IDisposable
 
     private void HandleResumeRequest(byte[] data)
     {
+        // [type(1)][TransferId(16)][lastChunkIndex(4)] = 21byte 未満は破棄（短いメッセージでのパース例外を防ぐ）
+        if (data.Length < 21) return;
         var (transferId, lastChunkIndex) = FileChunker.ParseResumeRequest(data);
         Util.Logger.Log($"レジュームリクエスト受信: transferId={transferId}, lastChunk={lastChunkIndex}");
 
@@ -1210,6 +1313,8 @@ public sealed class TransferService : ITransferService, IDisposable
 
     private void HandleResumeResponse(byte[] data)
     {
+        // [type(1)][TransferId(16)][accepted(1)][lastChunkIndex(4)] = 22byte 未満は破棄
+        if (data.Length < 22) return;
         var (transferId, accepted, lastChunkIndex) = FileChunker.ParseResumeResponse(data);
         Util.Logger.Log($"レジューム応答受信: transferId={transferId}, accepted={accepted}, lastChunk={lastChunkIndex}");
     }
@@ -1400,8 +1505,10 @@ public sealed class TransferService : ITransferService, IDisposable
 
     private void CleanupReceiveState(ReceiveState state)
     {
-        state.FileStream?.Dispose();
-        state.FileStream = null;
+        // rere #C2-001 review (race verify): CompleteReceive(受信ループ) と並行しても同一 FileStream を
+        // 二重 dispose しないよう Interlocked.Exchange で所有権を取った側だけが dispose する。
+        var fs = Interlocked.Exchange(ref state.FileStream, null);
+        fs?.Dispose();
         _receiveStates.TryRemove(state.TransferId, out _);
 
         // 不完全な受信ファイルを削除
@@ -1431,8 +1538,14 @@ public sealed class TransferService : ITransferService, IDisposable
         public string ExpectedSha256 { get; set; } = string.Empty;
         public string SavePath { get; set; } = string.Empty;
         public int ReceivedChunks { get; set; }
-        public FileStream? FileStream { get; set; }
+        /// <summary>書き込み中の受信ファイルストリーム。rere #C2-001 review: 受信ループ(CompleteReceive)と
+        /// UI スレッド(CancelTransfer→CleanupReceiveState)が並行 dispose しうるため、所有権の取得は
+        /// Interlocked.Exchange で原子化する。そのため auto-property ではなく ref 可能な field にする。</summary>
+        public FileStream? FileStream;
         public TransferItem Item { get; set; } = new();
+        /// <summary>検証(finalize)開始の atomic claim。0=未開始 / 1=開始済み。
+        /// rere #C2-001 review (codex P2): chunk 経路と FileHash 経路の二重起動を防ぐ。Interlocked で操作する。</summary>
+        public int Finalizing;
         /// <summary>受信済みチャンクの追跡ビットマップ（承認時に確保）。重複除外・完了判定に使用。</summary>
         public bool[]? ReceivedChunkSet { get; set; }
         /// <summary>実書き込みバイト数（Seek 書き込みのため Position と別管理）。</summary>

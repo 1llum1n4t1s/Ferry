@@ -46,6 +46,14 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool MinimizeToTray { get; set; }
 
+    /// <summary>
+    /// トレイ最小化の設定行を表示するか。macOS は「最小化 = Dock 格納」が OS 慣習で
+    /// MinimizeToTray は no-op（MainWindow の WindowState 監視が <c>!IsMacOS()</c> で除外済み）。
+    /// そのため mac では行ごと隠し、mac で通じない「タスクトレイ」表現の露出を避ける。
+    /// OS は実行中に変わらないので通知不要のプレーンプロパティ（AOT トリム安全）。
+    /// </summary>
+    public bool IsTrayMinimizeSupported => !OperatingSystem.IsMacOS();
+
     // --- 通知設定 ---
 
     /// <summary>受信サウンドを再生するか。</summary>

@@ -17,13 +17,15 @@ namespace Ferry.Infrastructure;
 /// Firebase Realtime Database を使用したシグナリング実装。
 /// セッション登録、ペアリング監視、SDP/ICE 候補の交換を行う。
 ///
-/// Firebase 構造:
-///   sessions/{sessionId} = { displayName, createdAt }
-///   pairings/{pairingId} = { sidA, sidB, nameA, nameB }
-///   signaling/{pairId}/offer  = SDP 文字列
-///   signaling/{pairId}/answer = SDP 文字列
-///   signaling/{pairId}/candidatesA/{key} = ICE candidate 文字列
-///   signaling/{pairId}/candidatesB/{key} = ICE candidate 文字列
+/// Firebase 構造 (rere #D-003 で signaling を per-sender ノード化):
+///   sessions/{sessionId} = { DisplayName, CreatedAt }
+///   pairings/{pairingId} = { SidA, SidB, NameA, NameB, CreatedAt }
+///   signaling/{pairId}/offers/{senderDeviceId}    = TimedSignalingValue { Data(SDP base64), CreatedAt }
+///   signaling/{pairId}/answers/{answererDeviceId} = SignalingValue { Data(SDP base64) }
+///   signaling/{pairId}/endpoints/{senderDeviceId} = SignalingValue { Data("from|ip:port" base64) }
+///   signaling/{pairId}/createdAt                  = タイムスタンプ (firebase-cleanup.yml の stale 掃除用に維持)
+///   signaling/{pairId}/probeOffers/{nonce} / probeAnswers/{nonce} = TimedSignalingValue (経路 probe)
+/// 書き手は自分の deviceId キー、読み手はペア相手の deviceId キーを読む (SignalingPaths 参照)。
 /// </summary>
 public sealed class FirebaseSignaling : IDisposable
 {
@@ -95,7 +97,8 @@ public sealed class FirebaseSignaling : IDisposable
                 NameB = string.IsNullOrEmpty(nameB) ? "PC-B" : nameB,
                 CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             });
-        Util.Logger.Log($"ペアリング書き込み: {pairingId}, A={Util.Logger.MaskIp(sidA)}, B={Util.Logger.MaskIp(sidB)}");
+        // sidA/sidB は deviceId(32hex)。MaskIp は IPv4(4オクテット)以外を素通しするため deviceId 用の MaskDeviceId を使う
+        Util.Logger.Log($"ペアリング書き込み: {pairingId}, A={Util.Logger.MaskDeviceId(sidA)}, B={Util.Logger.MaskDeviceId(sidB)}");
     }
 
     /// <summary>
@@ -154,116 +157,75 @@ public sealed class FirebaseSignaling : IDisposable
     }
 
     /// <summary>
-    /// SDP Offer/Answer をポーリングで待機して取得する。
-    /// AsObservable は子ノードを監視するため単一値の SDP には不向き。
-    /// OnceSingleAsync で定期的にチェックする。
+    /// rere #D-003: ペア相手 (fromDeviceId) の offer を per-sender ノード
+    /// signaling/{pairId}/offers/{fromDeviceId} からポーリングで待機して取得する。
+    /// offer は TimedSignalingValue{Data, CreatedAt} で atomic に書かれるため、鮮度 (CreatedAt) と
+    /// ペイロード (Data) を 1 リクエストで取得する (旧 createdAt 別ノード先読みの 2 リクエストを 1 に削減)。
     /// </summary>
     /// <param name="pairId">ペアリング ID。</param>
-    /// <param name="watchField">"offer" または "answer"。</param>
-    /// <param name="minCreatedAt">この値より新しい createdAt を持つデータのみ受け入れる（0 なら無制限）。</param>
+    /// <param name="fromDeviceId">読み取り対象の送信元 deviceId (=ペア相手)。</param>
+    /// <param name="minCreatedAt">この値より新しい CreatedAt を持つ offer のみ受け入れる (0 なら無制限)。</param>
     /// <param name="ct">キャンセルトークン。</param>
     /// <returns>デコード済み SDP 文字列。</returns>
-    public async Task<string> WaitForSdpAsync(string pairId, string watchField, long minCreatedAt = 0, CancellationToken ct = default)
+    public async Task<string> WaitForOfferAsync(string pairId, string fromDeviceId, long minCreatedAt = 0, CancellationToken ct = default)
     {
-        // 着信監視ループが約5秒毎に呼ぶため、INFO だとログの大半を埋める。Debug に落とす
-        // (Release は Info 以上なので抑制。監視開始自体は呼出元の「着信接続ポーリング開始」INFO で追える)。
-        Util.Logger.Log($"SDP ポーリング開始 ({watchField}): pairId={pairId}, minCreatedAt={minCreatedAt}", Util.LogLevel.Debug);
-        // v1.0.47: offer/answer の検出遅延を縮めるためポーリング間隔を 1000ms → 400ms に短縮する。
-        // 送信開始から受信側が動き出すまでの「待ち」を体感で短くするのが目的（Firebase の read は極小サイズなので
-        // Spark 無料枠の帯域にもほぼ影響しない）。エラー時は下の exponential backoff 側で別途間引く。
+        // 着信監視ループが約5秒毎に呼ぶため、INFO だとログの大半を埋める。Debug に落とす。
+        Util.Logger.Log($"SDP ポーリング開始 (offer): pairId={pairId}, from={Util.Logger.MaskDeviceId(fromDeviceId)}, minCreatedAt={minCreatedAt}", Util.LogLevel.Debug);
         const int PollDelayMs = 400;
         var pollCount = 0;
         var lastErrorLog = 0; // エラーログ抑制用カウンタ
         var consecutiveErrors = 0; // rere #F-012: exponential backoff 用カウンタ
-        // opop P-2: createdAt は offer 書き込み時に 1 回セットされる不変値なので、鮮度チェックを
-        // 一度通過したら以降のループでは再取得しない (毎ループ 2 リクエスト → 1 に半減。
-        // 400ms ポーリング × 接続待ち時間ぶんの Firebase read 削減 = Spark 帯域に直結)
-        var freshnessPassed = false;
 
         while (!ct.IsCancellationRequested)
         {
             pollCount++;
             try
             {
-                // minCreatedAt が設定されている場合、createdAt タイムスタンプで鮮度を検証する
-                if (minCreatedAt > 0 && !freshnessPassed)
-                {
-                    // Firebase ライブラリはノード未存在時に例外を投げることがあるため個別に捕捉
-                    long? createdAt = null;
-                    try
-                    {
-                        createdAt = await _client
-                            .Child("signaling")
-                            .Child(pairId)
-                            .Child("createdAt")
-                            .OnceSingleAsync<long?>();
-                    }
-                    catch (Exception ex) when (!IsQuotaOrServerError(ex))
-                    {
-                        // ノード未存在 or null レスポンス → createdAt = null として扱う。
-                        // PR#5 Codex 指摘: 402/429/503 (枠超過/サービス停止系) はここで握らず
-                        // 外側 catch のステータス分類ログ + backoff に到達させる
-                    }
-
-                    if (createdAt == null || createdAt.Value < minCreatedAt)
-                    {
-                        if (pollCount % 30 == 1)
-                        {
-                            Util.Logger.Log($"SDP 待機中 ({watchField}): createdAt={createdAt?.ToString() ?? "null"}, 待機回数={pollCount}", Util.LogLevel.Debug);
-                        }
-                        await Task.Delay(PollDelayMs, ct);
-                        continue;
-                    }
-
-                    Util.Logger.Log($"SDP 鮮度チェック通過 ({watchField}): createdAt={createdAt.Value}");
-                    freshnessPassed = true;
-                }
-
-                // SDP データの取得（未存在時は null を返す場合と例外を投げる場合がある）
-                SignalingValue? value = null;
+                // offers/{fromDeviceId} を 1 回読み、Data と CreatedAt を同時に取得する。
+                // 未存在 / null レスポンスは entry=null として扱う (枠超過系は外側 catch へ)。
+                TimedSignalingValue? entry = null;
                 try
                 {
-                    value = await _client
+                    entry = await _client
                         .Child("signaling")
                         .Child(pairId)
-                        .Child(watchField)
-                        .OnceSingleAsync<SignalingValue>();
+                        .Child(SignalingPaths.OffersNode)
+                        .Child(fromDeviceId)
+                        .OnceSingleAsync<TimedSignalingValue>();
                 }
-                catch (Exception ex) when (!IsQuotaOrServerError(ex))
+                catch (Exception ex) when (!ShouldBackoffOnReadError(ex))
                 {
-                    // ノード未存在 → value = null として扱う (枠超過系は外側 catch へ、上記と同様)
+                    // ノード未着/非 HTTP 瞬断 → entry = null として高速ポーリング継続。
+                    // 具体的な HTTP ステータス (401/403/404/4xx/5xx/枠超過) は外側 catch へ投げて backoff (#F11)。
                 }
 
-                if (value != null && !string.IsNullOrEmpty(value.Data))
+                if (entry != null && !string.IsNullOrEmpty(entry.Data)
+                    && (minCreatedAt <= 0 || entry.CreatedAt >= minCreatedAt))
                 {
-                    Util.Logger.Log($"SDP 受信 ({watchField}): pairId={pairId}, ポーリング回数={pollCount}");
-                    return DecodeBase64(value.Data);
+                    Util.Logger.Log($"SDP 受信 (offer): pairId={pairId}, ポーリング回数={pollCount}");
+                    return DecodeBase64(entry.Data);
                 }
 
                 if (pollCount % 30 == 1)
                 {
-                    Util.Logger.Log($"SDP 待機中 ({watchField}): データ未着, 待機回数={pollCount}", Util.LogLevel.Debug);
+                    Util.Logger.Log($"SDP 待機中 (offer): createdAt={entry?.CreatedAt.ToString() ?? "null"}, 待機回数={pollCount}", Util.LogLevel.Debug);
                 }
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
-                // rere #F-003: HTTP ステータスを分類してログに併記する。Spark 無料枠超過 (402/429/503 系で
-                // 全ペア一斉失敗) と個別ネットワーク不調を事後ログで切り分けられるようにする。
-                // 枠超過の可能性が高いステータスは間引き対象外で即 Error 出力する
                 var statusInfo = DescribeHttpStatus(ex);
-                var likelyQuota = statusInfo is " status=402" or " status=429" or " status=503";
-                if (likelyQuota || pollCount - lastErrorLog >= 30)
+                var isQuota = statusInfo is " status=402" or " status=429" or " status=503";
+                // rere PR#8 #F11: 認証(401/403)・サーバ(5xx)・枠超過 等の具体 HTTP ステータスは即 Error で surface。
+                var isSevere = ShouldBackoffOnReadError(ex);
+                if (isSevere || pollCount - lastErrorLog >= 30)
                 {
                     Util.Logger.Log(
-                        $"SDP ポーリングエラー ({watchField}): {ex.Message}{statusInfo}" +
-                        (likelyQuota ? " (Firebase 枠超過/サービス停止の可能性)" : string.Empty),
-                        likelyQuota ? Util.LogLevel.Error : Util.LogLevel.Warning);
+                        $"SDP ポーリングエラー (offer): {ex.Message}{statusInfo}" +
+                        (isQuota ? " (Firebase 枠超過/サービス停止の可能性)" : string.Empty),
+                        isSevere ? Util.LogLevel.Error : Util.LogLevel.Warning);
                     lastErrorLog = pollCount;
                 }
-                // rere レビュー #F-012: 例外発生時は exponential backoff + jitter で
-                // Firebase rate limit (429) や一時的なネットワーク不調時に hammer しない。
-                // 連続成功で backoff はリセットされる
                 consecutiveErrors++;
                 var backoffMs = Math.Min(1000 * (1 << Math.Min(consecutiveErrors - 1, 5)), 30_000);
                 var jitter = Random.Shared.Next(0, 500);
@@ -271,7 +233,85 @@ public sealed class FirebaseSignaling : IDisposable
                 continue;
             }
 
-            // 正常 path 完了 (受信成功 or 待機継続)
+            consecutiveErrors = 0;
+            await Task.Delay(PollDelayMs, ct);
+        }
+
+        throw new OperationCanceledException(ct);
+    }
+
+    /// <summary>
+    /// rere #D-003: ペア相手 (fromDeviceId=answerer) の answer を per-sender ノード
+    /// signaling/{pairId}/answers/{fromDeviceId} からポーリングで待機して取得する。
+    /// answer は鮮度 (createdAt) を持たない (offerer が自分の offer 直後に待つ 1:1 応答であり、
+    /// 旧 WaitForSdpAsync("answer") も minCreatedAt=0 で運用していた踏襲)。
+    /// </summary>
+    /// <param name="pairId">ペアリング ID。</param>
+    /// <param name="fromDeviceId">読み取り対象の answerer deviceId (=ペア相手)。</param>
+    /// <param name="ct">キャンセルトークン。</param>
+    /// <returns>デコード済み SDP 文字列。</returns>
+    public async Task<string> WaitForAnswerAsync(string pairId, string fromDeviceId, CancellationToken ct = default)
+    {
+        Util.Logger.Log($"SDP ポーリング開始 (answer): pairId={pairId}, from={Util.Logger.MaskDeviceId(fromDeviceId)}", Util.LogLevel.Debug);
+        const int PollDelayMs = 400;
+        var pollCount = 0;
+        var lastErrorLog = 0;
+        var consecutiveErrors = 0;
+
+        while (!ct.IsCancellationRequested)
+        {
+            pollCount++;
+            try
+            {
+                SignalingValue? value = null;
+                try
+                {
+                    value = await _client
+                        .Child("signaling")
+                        .Child(pairId)
+                        .Child(SignalingPaths.AnswersNode)
+                        .Child(fromDeviceId)
+                        .OnceSingleAsync<SignalingValue>();
+                }
+                catch (Exception ex) when (!ShouldBackoffOnReadError(ex))
+                {
+                    // ノード未着/非 HTTP 瞬断 → value = null として高速ポーリング継続。
+                    // 具体的な HTTP ステータス (401/403/404/4xx/5xx/枠超過) は外側 catch へ投げて backoff (#F11)。
+                }
+
+                if (value != null && !string.IsNullOrEmpty(value.Data))
+                {
+                    Util.Logger.Log($"SDP 受信 (answer): pairId={pairId}, ポーリング回数={pollCount}");
+                    return DecodeBase64(value.Data);
+                }
+
+                if (pollCount % 30 == 1)
+                {
+                    Util.Logger.Log($"SDP 待機中 (answer): データ未着, 待機回数={pollCount}", Util.LogLevel.Debug);
+                }
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                var statusInfo = DescribeHttpStatus(ex);
+                var isQuota = statusInfo is " status=402" or " status=429" or " status=503";
+                // rere PR#8 #F11: 認証(401/403)・サーバ(5xx)・枠超過 等の具体 HTTP ステータスは即 Error で surface。
+                var isSevere = ShouldBackoffOnReadError(ex);
+                if (isSevere || pollCount - lastErrorLog >= 30)
+                {
+                    Util.Logger.Log(
+                        $"SDP ポーリングエラー (answer): {ex.Message}{statusInfo}" +
+                        (isQuota ? " (Firebase 枠超過/サービス停止の可能性)" : string.Empty),
+                        isSevere ? Util.LogLevel.Error : Util.LogLevel.Warning);
+                    lastErrorLog = pollCount;
+                }
+                consecutiveErrors++;
+                var backoffMs = Math.Min(1000 * (1 << Math.Min(consecutiveErrors - 1, 5)), 30_000);
+                var jitter = Random.Shared.Next(0, 500);
+                await Task.Delay(backoffMs + jitter, ct);
+                continue;
+            }
+
             consecutiveErrors = 0;
             await Task.Delay(PollDelayMs, ct);
         }
@@ -284,11 +324,19 @@ public sealed class FirebaseSignaling : IDisposable
     /// 取得できなければ空文字。FirebaseException は ResponseData/InnerException に HTTP 情報を持つ。
     /// </summary>
     /// <summary>
-    /// PR#5 Codex 指摘対応: 枠超過/サービス停止系 (402/429/503) かどうかを判定する。
-    /// ポーリングの内側 catch (ノード未存在の握り潰し) がこれらを誤って吸収しないためのフィルタ。
+    /// rere PR#8 #F11: ポーリングの内側 catch が握り潰してよいエラーかを判定する。
+    /// 具体的な HTTP ステータス (4xx/5xx — 401/403/404/500/502/504、枠超過 402/429/503 を含む) を持つ
+    /// エラーは backoff 対象 (true) として外側 catch に投げ、exponential backoff + Error ログにする。
+    /// status を持たない瞬断/非 HTTP 要因 ("" / " status=firebase-error") は従来どおり握り潰し、
+    /// offer/answer 未着の常態として高速ポーリングを継続する (待機を遅くしないため)。
+    /// 旧 IsQuotaOrServerError は 402/429/503 のみ対象で、401/403/500 を内側 catch が吸収し
+    /// 認証/サーバ障害中も 400ms 高速ポーリングを続ける暴走があった (本修正で是正)。
     /// </summary>
-    private static bool IsQuotaOrServerError(Exception ex)
-        => DescribeHttpStatus(ex) is " status=402" or " status=429" or " status=503";
+    private static bool ShouldBackoffOnReadError(Exception ex)
+    {
+        var status = DescribeHttpStatus(ex);
+        return status.Length > 0 && status != " status=firebase-error";
+    }
 
     private static string DescribeHttpStatus(Exception ex)
     {
@@ -316,42 +364,50 @@ public sealed class FirebaseSignaling : IDisposable
     /// <summary>
     /// SDP Offer を Firebase に書き込む。
     /// </summary>
-    public async Task SendSdpOfferAsync(string pairId, string sdp, CancellationToken ct = default)
+    public async Task SendSdpOfferAsync(string pairId, string senderDeviceId, string sdp, CancellationToken ct = default)
     {
-        // シグナリング開始時にタイムスタンプを記録（クリーンアップ用）
+        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        // rere #D-003: top-level createdAt は GitHub Actions の firebase-cleanup.yml が
+        // signaling/{pairId} サブツリーの stale 掃除に使う (各 pairId の .createdAt を見て削除判定)。
+        // per-sender 化で offer 鮮度判定自体は offers/{sender}.CreatedAt に移ったが、cleanup 互換のため
+        // top-level createdAt の書き込みは維持する (撤去すると stale signaling が永久に残る)。
         await _client
             .Child("signaling")
             .Child(pairId)
             .Child("createdAt")
-            .PutAsync(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            .PutAsync(nowMs);
 
-        // Firebase REST API は JSON 値しか受け付けないため、
-        // Base64 エンコードした文字列をオブジェクトに包んで送る
+        // rere #D-003: offer を送信元 deviceId でキー化した per-sender ノード offers/{senderDeviceId} に書く。
+        // Data と CreatedAt を TimedSignalingValue で atomic に書くので、読み手は 1 リクエストで鮮度+本体を取得できる
+        // (probe の per-nonce key と同じパターン)。同一 sender の offer-v2 再送は同じキーを上書きする (正しい挙動)。
         var encoded = EncodeBase64(sdp);
         await _client
             .Child("signaling")
             .Child(pairId)
-            .Child("offer")
-            .PutAsync(new SignalingValue { Data = encoded });
+            .Child(SignalingPaths.OffersNode)
+            .Child(senderDeviceId)
+            .PutAsync(new TimedSignalingValue { Data = encoded, CreatedAt = nowMs });
     }
 
     /// <summary>
-    /// signaling/{pairId}/{field} を 1 回だけ読み取り、デコード済み文字列を返す（未存在・一時エラーは null）。
-    /// Offer 側は TCP 失敗報告（answer=needRelay）を受けてから STUN し、ExternalIp 付きの offer を
-    /// 同じノードに上書き再送する。Answer 側がその offer-v2 を読み直して UDP ホールパンチへ進むための単発読み取り。
+    /// rere #D-003: offers/{fromDeviceId} を 1 回だけ読み取り、デコード済み offer 文字列を返す（未存在・一時エラーは null）。
+    /// Offer 側は TCP 失敗報告（answer=needRelay）を受けてから STUN し、ExternalIp 付きの offer-v2 を
+    /// 同じ per-sender キーに上書き再送する。Answer 側がその offer-v2 を読み直して UDP ホールパンチへ進むための単発読み取り。
     /// （ポーリングは呼出側が担当するため、ここでは 1 回読んで即返す）
     /// </summary>
-    public async Task<string?> TryReadSdpOnceAsync(string pairId, string field, CancellationToken ct = default)
+    public async Task<string?> TryReadOfferOnceAsync(string pairId, string fromDeviceId, CancellationToken ct = default)
     {
         try
         {
-            var value = await _client
+            var entry = await _client
                 .Child("signaling")
                 .Child(pairId)
-                .Child(field)
-                .OnceSingleAsync<SignalingValue>();
-            if (value != null && !string.IsNullOrEmpty(value.Data))
-                return DecodeBase64(value.Data);
+                .Child(SignalingPaths.OffersNode)
+                .Child(fromDeviceId)
+                .OnceSingleAsync<TimedSignalingValue>();
+            if (entry != null && !string.IsNullOrEmpty(entry.Data))
+                return DecodeBase64(entry.Data);
         }
         catch (OperationCanceledException) { throw; }
         catch { /* ノード未存在 / 一時的な読み取りエラーは null（呼出側が次のポーリングでリトライ） */ }
@@ -359,41 +415,76 @@ public sealed class FirebaseSignaling : IDisposable
     }
 
     /// <summary>
+    /// rere #D-003: offers/{fromDeviceId} の CreatedAt を 1 回だけ読む（role 調停 deferral の鮮度判定用）。
+    /// per-sender 化により「ペア相手が *新しい* offer を出しているか」を相手キー直読みで正確に判定できる
+    /// (旧 top-level createdAt は自分の過去 offer でも更新され得て曖昧だった)。未存在 / 一時エラーは null。
+    /// </summary>
+    public async Task<long?> TryReadOfferCreatedAtAsync(string pairId, string fromDeviceId, CancellationToken ct = default)
+    {
+        try
+        {
+            var entry = await _client
+                .Child("signaling")
+                .Child(pairId)
+                .Child(SignalingPaths.OffersNode)
+                .Child(fromDeviceId)
+                .OnceSingleAsync<TimedSignalingValue>();
+            return entry?.CreatedAt;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { return null; }
+    }
+
+    /// <summary>
     /// SDP Answer を Firebase に書き込む。
     /// </summary>
-    public async Task SendSdpAnswerAsync(string pairId, string sdp, CancellationToken ct = default)
+    public async Task SendSdpAnswerAsync(string pairId, string answererDeviceId, string sdp, CancellationToken ct = default)
     {
+        // rere #D-003: answer を answerer の deviceId でキー化した per-sender ノード answers/{answererDeviceId} に書く。
         var encoded = EncodeBase64(sdp);
         await _client
             .Child("signaling")
             .Child(pairId)
-            .Child("answer")
+            .Child(SignalingPaths.AnswersNode)
+            .Child(answererDeviceId)
             .PutAsync(new SignalingValue { Data = encoded });
     }
 
     /// <summary>
-    /// UDP ホールパンチ用の外部エンドポイントを Firebase に書き込む。
+    /// UDP ホールパンチ用の外部エンドポイントを per-sender ノード endpoints/{senderDeviceId} に書き込む。
     /// </summary>
     /// <param name="pairId">ペアリング ID。</param>
-    /// <param name="role">"offer" または "answer"。</param>
+    /// <param name="senderDeviceId">送信元 deviceId。endpoints/{senderDeviceId} のキー兼 payload の From 値。</param>
     /// <param name="endpoint">"ip:port" 形式の文字列。</param>
-    public async Task SendEndpointAsync(string pairId, string role, string endpoint, CancellationToken ct = default)
+    public async Task SendEndpointAsync(string pairId, string senderDeviceId, string endpoint, CancellationToken ct = default)
     {
-        var encoded = EncodeBase64(endpoint);
+        // rere #D-003: endpoint を送信元 deviceId でキー化 (endpoints/{senderDeviceId})。読み手はペア相手の
+        // キーをピンポイントで読むので、ペア相手以外の endpoint は構造的に届かない (MITM 一次防御)。
+        // rere #D-001: payload にも "from|ip:port" 形式で送信元 deviceId を維持し、読み手の From 一致検証を
+        // 二重防護として残す (from は senderDeviceId と同値だが、検証ロジック互換のため payload は据置)。
+        var encoded = EncodeBase64($"{senderDeviceId}|{endpoint}");
         await _client
             .Child("signaling")
             .Child(pairId)
-            .Child($"{role}Endpoint")
+            .Child(SignalingPaths.EndpointsNode)
+            .Child(senderDeviceId)
             .PutAsync(new SignalingValue { Data = encoded });
-        Util.Logger.Log($"外部エンドポイント送信 ({role}): {Util.Logger.MaskIp(endpoint)}");
+        Util.Logger.Log($"外部エンドポイント送信: {Util.Logger.MaskIp(endpoint)}");
     }
 
     /// <summary>
-    /// UDP ホールパンチ用の外部エンドポイントをポーリングで待機して取得する。
+    /// rere #D-003: UDP ホールパンチ用の外部エンドポイントを per-sender ノード endpoints/{fromDeviceId} から
+    /// ポーリングで待機して取得する。キー自体がペア相手の deviceId なので、ペア相手以外の endpoint は構造的に届かない。
+    /// rere #D-001: payload に埋め込まれた送信元 deviceId が <paramref name="fromDeviceId"/> と一致するものだけ採用する
+    /// 二重防護も残す。区切り無し (形式不正) や From 不一致は偽 endpoint とみなしてスキップし、正規の相手の
+    /// endpoint が来るまでポーリングを継続する。
     /// </summary>
-    public async Task<string> WaitForEndpointAsync(string pairId, string role, CancellationToken ct = default)
+    /// <param name="pairId">ペアリング ID。</param>
+    /// <param name="fromDeviceId">読み取り対象の送信元 deviceId (=ペア相手)。</param>
+    /// <param name="ct">キャンセルトークン。</param>
+    public async Task<string> WaitForEndpointAsync(string pairId, string fromDeviceId, CancellationToken ct = default)
     {
-        Util.Logger.Log($"外部エンドポイント待機開始 ({role}): pairId={pairId}");
+        Util.Logger.Log($"外部エンドポイント待機開始: pairId={pairId}, from={Util.Logger.MaskDeviceId(fromDeviceId)}");
 
         while (!ct.IsCancellationRequested)
         {
@@ -402,14 +493,31 @@ public sealed class FirebaseSignaling : IDisposable
                 var value = await _client
                     .Child("signaling")
                     .Child(pairId)
-                    .Child($"{role}Endpoint")
+                    .Child(SignalingPaths.EndpointsNode)
+                    .Child(fromDeviceId)
                     .OnceSingleAsync<SignalingValue>();
 
                 if (value?.Data != null)
                 {
                     var decoded = DecodeBase64(value.Data);
-                    Util.Logger.Log($"外部エンドポイント受信 ({role}): {Util.Logger.MaskIp(decoded)}");
-                    return decoded;
+                    var sep = decoded.IndexOf('|');
+                    if (sep > 0)
+                    {
+                        var from = decoded.Substring(0, sep);
+                        var endpoint = decoded.Substring(sep + 1);
+                        if (from == fromDeviceId)
+                        {
+                            Util.Logger.Log($"外部エンドポイント受信: {Util.Logger.MaskIp(endpoint)}");
+                            return endpoint;
+                        }
+                        Util.Logger.Log(
+                            $"ペア相手以外の endpoint を破棄: from={Util.Logger.MaskDeviceId(from)}",
+                            Util.LogLevel.Warning);
+                    }
+                    else
+                    {
+                        Util.Logger.Log("endpoint 形式不正を破棄", Util.LogLevel.Warning);
+                    }
                 }
             }
             catch (OperationCanceledException) { throw; }
@@ -604,6 +712,10 @@ public sealed class FirebaseSignaling : IDisposable
     /// </summary>
     public async Task UpdatePresenceAsync(string deviceId, string displayName, CancellationToken ct = default)
     {
+        // rere PR#8 #F4: FirebaseDatabase.net の PutAsync は CancellationToken を受け取れないため、
+        // 入口で cancel を弾き、await を WaitAsync(ct) で監視して dispose/停止時に待機を即解く
+        // (進行中の PUT 自体は best-effort で継続しうるが、呼び出し側 HeartbeatLoop は即座に解放される)。
+        ct.ThrowIfCancellationRequested();
         await _client
             .Child("presence")
             .Child(deviceId)
@@ -611,7 +723,8 @@ public sealed class FirebaseSignaling : IDisposable
             {
                 LastSeen = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 DisplayName = displayName,
-            });
+            })
+            .WaitAsync(ct);
     }
 
     /// <summary>

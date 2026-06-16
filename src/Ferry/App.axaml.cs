@@ -35,11 +35,8 @@ public partial class App : Application
     /// <summary>自動更新の配信元 URL（Cloudflare R2 ferry-updates 経由）。</summary>
     private const string UpdateBaseUrl = "https://ferry.nephilim.jp";
 
-    /// <summary>
-    /// WebSocket リレーサーバーの URL（NAT 越え用、Cloudflare Workers + Durable Objects 経由）。
-    /// 攻撃面削減のため settings.json から書き換え不可。UpdateBaseUrl と同方針のハードコード。
-    /// </summary>
-    private const string RelayUrl = "wss://relay.ferry.nephilim.jp/ferry-relay";
+    // rere #D-004: Firebase DB / Bridge / Relay の各 URL は Ferry.AppConstants に一本化し、
+    // settings.json からの書き換えを廃止した（改ざん面の対称化。UpdateBaseUrl と同方針）。
 
     /// <summary>サポートされているロケール一覧。</summary>
     public static readonly string[] SupportedLocales =
@@ -120,18 +117,8 @@ public partial class App : Application
             _settingsService = new SettingsService();
             var settingsService = (SettingsService)_settingsService;
             var settings = settingsService.Settings;
-            // 各接続先 URL が未設定の場合はデフォルト値を設定して保存
+            // 接続先 URL は AppConstants に固定（settings からは撤去）。保存先のみ空なら既定値を補う。
             var needsSave = false;
-            if (string.IsNullOrEmpty(settings.FirebaseDatabaseUrl))
-            {
-                settings.FirebaseDatabaseUrl = "https://ferry-edf09-default-rtdb.firebaseio.com";
-                needsSave = true;
-            }
-            if (string.IsNullOrEmpty(settings.BridgePageUrl))
-            {
-                settings.BridgePageUrl = "https://ferry-edf09.web.app";
-                needsSave = true;
-            }
             if (string.IsNullOrEmpty(settings.SaveDirectory))
             {
                 settings.SaveDirectory = System.IO.Path.Combine(
@@ -158,9 +145,9 @@ public partial class App : Application
             if (settings.AutoStartWithWindows)
                 settingsService.SetAutoStart(true);
 
-            var connectionService = new ConnectionService(settings.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName)
+            var connectionService = new ConnectionService(AppConstants.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName)
             {
-                RelayUrl = RelayUrl,
+                RelayUrl = AppConstants.RelayUrl,
             };
             var transferService = new TransferService(connectionService, settingsService);
             TransferService = transferService;
@@ -180,6 +167,8 @@ public partial class App : Application
             };
 
             var connectionVm = new ConnectionViewModel(connectionService, qrCodeService, settingsService, peerRegistry);
+            // rere PR#8 #F4: プレゼンス監視は実 Firebase I/O を伴うため ctor ではなく本番起動時にここで開始する。
+            connectionVm.StartPresenceMonitoring();
             var transferVm = new TransferViewModel(connectionService, transferService, connectionVm, settingsService);
             var settingsVm = new SettingsViewModel(settingsService, transferService);
 

@@ -96,20 +96,12 @@ public sealed class SettingsService : ISettingsService
         }
     }
 
-    /// <summary>一時ファイルに書いてからリネームで置換し、書き込み中断による破損を防ぐ。</summary>
-    private void WriteAtomic(byte[] json)
-    {
-        var tmp = _filePath + ".tmp";
-        File.WriteAllBytes(tmp, json);
-        File.Move(tmp, _filePath, overwrite: true);
-    }
-
     private void Save()
     {
         try
         {
             var json = JsonSerializer.SerializeToUtf8Bytes(Settings, AppSettingsJsonContext.Default.AppSettings);
-            WriteAtomic(json);
+            Util.AtomicFile.Write(_filePath, json);  // rere #B2-001: アトミック保存を共通ヘルパーへ集約
         }
         catch (Exception ex)
         {
@@ -128,9 +120,7 @@ public sealed class SettingsService : ISettingsService
         try
         {
             var json = JsonSerializer.SerializeToUtf8Bytes(Settings, AppSettingsJsonContext.Default.AppSettings);
-            var tmp = _filePath + ".tmp";
-            await File.WriteAllBytesAsync(tmp, json);
-            File.Move(tmp, _filePath, overwrite: true);
+            await Util.AtomicFile.WriteAsync(_filePath, json);  // rere #B2-001
         }
         catch (Exception ex)
         {

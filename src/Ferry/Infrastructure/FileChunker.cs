@@ -321,6 +321,79 @@ public static class FileChunker
     }
 
     /// <summary>
+    /// rere #D-005: レジューム応答 V2。受信済みチャンクを packed bitmap で返す（順不同・穴あき受信に対応）。
+    /// 旧 <see cref="CreateResumeResponseMessage"/> は「連続最終 index」しか返せず、UDP 順不同で穴あき受信する
+    /// Ferry の実態（HandleFileChunk が chunkIndex×ChunkSize へ Seek 書き込み）に合わなかった。
+    /// 形式: [種別(1)][TransferId(16)][accepted(1)][totalChunks(4 BigEndian)][packed bitmap((totalChunks+7)/8)]。
+    /// bit i（byte i/8 の i%8 ビット, LSB 先頭）= チャンク i 受信済み。種別バイトは旧 V1 と同じ 0x21 だが、
+    /// V2 は呼び出し側が明示的に使い分ける（混在しない）。
+    /// </summary>
+    public static byte[] CreateResumeResponseMessageV2(Guid transferId, bool accepted, int totalChunks, ReadOnlySpan<bool> receivedSet)
+    {
+        if (totalChunks < 0) totalChunks = 0;
+        var bitmapLen = (totalChunks + 7) / 8;
+        var message = new byte[1 + 16 + 1 + 4 + bitmapLen];
+        message[0] = TransferProtocol.ResumeResponse;
+        transferId.TryWriteBytes(message.AsSpan(1, 16));
+        message[17] = accepted ? (byte)1 : (byte)0;
+        BinaryPrimitives.WriteInt32BigEndian(message.AsSpan(18, 4), totalChunks);
+
+        var bitmap = message.AsSpan(22, bitmapLen);
+        var n = Math.Min(totalChunks, receivedSet.Length);
+        for (var i = 0; i < n; i++)
+        {
+            if (receivedSet[i])
+                bitmap[i >> 3] |= (byte)(1 << (i & 7));
+        }
+        return message;
+    }
+
+    /// <summary>
+    /// rere #D-005: レジューム応答 V2 を解析する。形式不正（22 byte 未満・totalChunks 負・bitmap 長不足）は null を返す。
+    /// </summary>
+    public static (Guid TransferId, bool Accepted, int TotalChunks, bool[] ReceivedSet)? ParseResumeResponseV2(ReadOnlySpan<byte> message)
+    {
+        if (message.Length < 22) return null;
+        var transferId = new Guid(message.Slice(1, 16));
+        var accepted = message[17] == 1;
+        var totalChunks = BinaryPrimitives.ReadInt32BigEndian(message.Slice(18, 4));
+        if (totalChunks < 0) return null;
+
+        // 整数オーバーフロー / 過大メモリ確保の防止 (crypto/protocol レビュー #D-005, PR#8 #F10):
+        // 細工された totalChunks≈int.MaxValue は (totalChunks+7)/8 を int 加算オーバーフローさせて
+        // 負の bitmapLen を作り、下の長さガードをすり抜けて new bool[巨大] / 負 Slice で例外死させ得る
+        // (「形式不正は null」契約違反 → 配線後はペア済み peer の 1 通で受信ループを落とす DoS)。
+        // bitmap 必要バイト数を long で算出し payload と比較する。(totalChunks + 7) を int 域で評価しない
+        // ことでオーバーフローを構造的に排除し、int キャストは payload 内に収まると検証できた後に限定する。
+        var payloadBytes = message.Length - 22;
+        var requiredBitmapBytes = ((long)totalChunks + 7L) / 8L;
+        if (requiredBitmapBytes > payloadBytes) return null;
+
+        var bitmapLen = (int)requiredBitmapBytes;
+
+        var bitmap = message.Slice(22, bitmapLen);
+        var received = new bool[totalChunks];
+        for (var i = 0; i < totalChunks; i++)
+            received[i] = (bitmap[i >> 3] & (1 << (i & 7))) != 0;
+        return (transferId, accepted, totalChunks, received);
+    }
+
+    /// <summary>
+    /// rere #D-005: 受信側の received ビットマップから、送信側 SendChunksAsync 用の skipSet を作る純関数。
+    /// skipSet[i]==true は「チャンク i は受信済みなので送らない（スキップ）」を表す。
+    /// 防御的に <paramref name="totalChunks"/> 長へ正規化する（received が短ければ不足分は未受信=送る、
+    /// 長ければ切り詰める）。これで bitmap 長と totalChunks の不整合があっても index 範囲外を起こさない。
+    /// </summary>
+    public static bool[] BuildResumeSkipSet(ReadOnlySpan<bool> received, int totalChunks)
+    {
+        var skip = new bool[Math.Max(totalChunks, 0)];
+        var n = Math.Min(received.Length, skip.Length);
+        for (var i = 0; i < n; i++)
+            skip[i] = received[i];
+        return skip;
+    }
+
+    /// <summary>
     /// ファイルメタデータメッセージを解析する。
     /// </summary>
     public static FileMeta? ParseFileMeta(ReadOnlySpan<byte> message)

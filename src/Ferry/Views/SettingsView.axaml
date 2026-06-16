@@ -147,8 +147,9 @@
                         <ToggleSwitch Grid.Column="1" IsChecked="{Binding StartMinimized, Mode=TwoWay}" />
                     </Grid>
 
-                    <!-- トレイ最小化 -->
-                    <Grid ColumnDefinitions="*,Auto">
+                    <!-- トレイ最小化 (macOS は最小化=Dock 格納が OS 慣習で no-op のため行ごと非表示。
+                         「タスクトレイ」表現が mac で通じない問題もこれで回避する。) -->
+                    <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsTrayMinimizeSupported}">
                         <StackPanel>
                             <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.MinimizeToTray}" />
                             <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.MinimizeToTray.Desc}" />

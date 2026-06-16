@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
@@ -91,6 +92,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         _selectedPeerId = _connectionViewModel.SelectedPeer?.PeerId ?? string.Empty;
 
         VisibleTransfers.CollectionChanged += (_, _) => HasTransfers = VisibleTransfers.Count > 0;
+        Transfers.CollectionChanged += OnTransfersCollectionChanged;  // rere #C1-001: O(1) 引き索引を自動維持
 
         // 転送中の毎秒レート表示。DI 組み立ては UI スレッドなのでここで生成・開始してよい。
         _rateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -151,7 +153,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     /// <summary>マスターと、選択中なら表示ビューにアイテムを追加する。</summary>
     private void AddTransfer(TransferItem item)
     {
-        Transfers.Add(item);
+        Transfers.Add(item);  // _transferIndex は Transfers.CollectionChanged で自動更新 (rere #C1-001)
         if (BelongsToSelectedPeer(item))
             VisibleTransfers.Add(item);
     }
@@ -159,18 +161,100 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     /// <summary>マスター・表示ビューからアイテムを除去する。</summary>
     private void RemoveTransfer(TransferItem item)
     {
-        Transfers.Remove(item);
+        Transfers.Remove(item);  // _transferIndex は Transfers.CollectionChanged で自動更新 (rere #C1-001)
         VisibleTransfers.Remove(item);
     }
+
+    // rere #C1-001: _transferIndex を Transfers の真の projection として CollectionChanged で自動維持する。
+    // AddTransfer 経由でも直接 Transfers.Add でも (テスト/将来コード) 索引が常に一致する。
+    private void OnTransfersCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        switch (e.Action)
+        {
+            case NotifyCollectionChangedAction.Add:
+                if (e.NewItems != null)
+                    foreach (TransferItem it in e.NewItems) IndexAdd(it);
+                break;
+            case NotifyCollectionChangedAction.Remove:
+                if (e.OldItems != null)
+                    foreach (TransferItem it in e.OldItems) IndexRemove(it);
+                break;
+            case NotifyCollectionChangedAction.Replace:
+                if (e.OldItems != null)
+                    foreach (TransferItem it in e.OldItems) IndexRemove(it);
+                if (e.NewItems != null)
+                    foreach (TransferItem it in e.NewItems) IndexAdd(it);
+                break;
+            case NotifyCollectionChangedAction.Reset:
+                _transferIndex.Clear();
+                foreach (var it in Transfers) IndexAdd(it);
+                break;
+            // Move: 並び順のみ変化。索引は不変
+        }
+    }
+
+    private void IndexAdd(TransferItem item)
+    {
+        if (!_transferIndex.TryGetValue(item.TransferId, out var list))
+            _transferIndex[item.TransferId] = list = new List<TransferItem>(1);
+        list.Add(item);
+    }
+
+    private void IndexRemove(TransferItem item)
+    {
+        if (_transferIndex.TryGetValue(item.TransferId, out var list))
+        {
+            list.Remove(item);
+            if (list.Count == 0) _transferIndex.Remove(item.TransferId);
+        }
+    }
+
+    /// <summary>rere #B1-001: サービスが保持する受信 TransferItem (state.Item) は受信ループ
+    /// (背景スレッド) から TransferredBytes / State を直接書き換える。これを UI バインドコレクションに
+    /// そのまま入れると bound プロパティをスレッド跨ぎで変更してしまう (Avalonia は UI スレッド外の
+    /// 変更通知で不正動作しうる)。そこで VM は常にこの VM 所有コピーを bind し、サービスの instance は
+    /// unbound のままにする。以後の値反映は OnProgressChanged 等が UI スレッドで TransferId 照合して
+    /// このコピーへ行う (相関は TransferId ベースなのでインスタンス共有は不要)。サービス側は無変更。</summary>
+    private static TransferItem CreateDisplayCopy(TransferItem src) => new()
+    {
+        TransferId = src.TransferId,
+        PeerId = src.PeerId,
+        PeerName = src.PeerName,
+        RelativePath = src.RelativePath,
+        FileName = src.FileName,
+        FileSize = src.FileSize,
+        TransferredBytes = src.TransferredBytes,
+        TotalChunks = src.TotalChunks,
+        Direction = src.Direction,
+        State = src.State,
+        ErrorMessage = src.ErrorMessage,
+        Note = src.Note,
+        Sha256Hash = src.Sha256Hash,
+        SourceFilePath = src.SourceFilePath,
+        SavedFilePath = src.SavedFilePath,
+        CompletedAt = src.CompletedAt,
+    };
+
+    /// <summary>TransferId → 該当 TransferItem 群の索引 (rere #C1-001)。
+    /// 進捗/状態イベント毎に走っていた Transfers の全線形走査 (O(n)) を O(1) 引きに置き換える。
+    /// membership は AddTransfer / RemoveTransfer の 2 箇所でのみ変化し Transfers.Add/Remove と 1:1。
+    /// 同一 TransferId に複数行が並ぶ (接続断→retry の履歴) ため値は List とし、下記 FindTransfer の
+    /// 「非 terminal 優先」意味論は query 時に小リスト上で適用する (索引化しても挙動は不変)。
+    /// アクセスは全て UI スレッド (進捗/状態イベントは UI スレッドへ marshal 済み) なので追加ロック不要。</summary>
+    private readonly Dictionary<Guid, List<TransferItem>> _transferIndex = new();
 
     /// <summary>TransferId からアイテムを引く。同じ TransferId の行が複数あれば「非 terminal 行」を優先する。
     /// 接続断 → 自動 retry のシナリオで、受信側にも前 attempt の Cancelled / Error 行が履歴として残ったまま
     /// 新 attempt の FileMeta が来ると同 TransferId の行が並ぶ。素朴な FirstOrDefault は古い terminal 行を
     /// 返してしまい、新 attempt の進捗が古い行を更新する/新行に反映されない不整合になる。
-    /// 非 terminal 行を優先することで進行中行が確実に拾われ、履歴側の terminal 行はそのまま残る（履歴粒度は維持）。</summary>
-    private TransferItem? FindTransfer(Guid transferId) =>
-        Transfers.FirstOrDefault(t => t.TransferId == transferId && !t.IsTerminal)
-        ?? Transfers.FirstOrDefault(t => t.TransferId == transferId);
+    /// 非 terminal 行を優先することで進行中行が確実に拾われ、履歴側の terminal 行はそのまま残る（履歴粒度は維持）。
+    /// rere #C1-001: 全走査をやめ _transferIndex の per-id リスト (通常 1〜2 要素) 上で同じ優先順位を適用する。</summary>
+    private TransferItem? FindTransfer(Guid transferId)
+    {
+        if (!_transferIndex.TryGetValue(transferId, out var list) || list.Count == 0)
+            return null;
+        return list.FirstOrDefault(t => !t.IsTerminal) ?? list[0];
+    }
 
     private void RecomputeIsTransferring() =>
         IsTransferring = Transfers.Any(t => t.State == TransferState.InProgress);
@@ -683,7 +767,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 e.PeerId = peerId;
                 e.PeerName = peerName;
                 e.CompletedAt = DateTime.UtcNow;
-                AddTransfer(e);
+                AddTransfer(CreateDisplayCopy(e));  // rere #B1-001: サービス instance を bind しない
             }
 
             RecomputeIsTransferring();
@@ -731,7 +815,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 var (peerId, peerName) = ResolveReceivePeer();
                 if (string.IsNullOrEmpty(e.PeerId)) e.PeerId = peerId;
                 if (string.IsNullOrEmpty(e.PeerName)) e.PeerName = peerName;
-                AddTransfer(e);
+                AddTransfer(CreateDisplayCopy(e));  // rere #B1-001: サービス instance を bind しない
             }
 
             RecomputeIsTransferring();
@@ -756,13 +840,13 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             {
                 Util.Logger.Log($"AutoAccept: 即承認: {e.FileName}");
                 e.State = TransferState.InProgress;
-                AddTransfer(e);
+                AddTransfer(CreateDisplayCopy(e));  // rere #B1-001: サービス instance を bind しない
                 _transferService.ApproveTransfer(e.TransferId.ToString());
                 RecomputeIsTransferring();
                 return;
             }
 
-            PendingApprovals.Add(e);
+            PendingApprovals.Add(CreateDisplayCopy(e));  // rere #B1-001: サービス instance を bind しない
             HasPendingApproval = PendingApprovals.Count > 0;
         });
     }

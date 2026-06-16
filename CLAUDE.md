@@ -60,9 +60,9 @@ Infrastructure/         → FirebaseSignaling, TcpDirectTransport, UdpHolePunchT
 2. **Answer 側**: offer 受信 → TCP 接続試行 → 結果を answer に `route` フィールドで通知
    - TCP 成功 → `route = "direct"` → 両側 TCP で接続完了
    - TCP 失敗 → `route = "needRelay"` → 双方が次ステップ（UDP）へ
-3. **TCP 失敗時（UDP ホールパンチ）**: ここが非対称で**順序が肝**。`signaling/{pairId}/{role}Endpoint` 経由で双方の外部エンドポイントを交換する。
-   - **Offer 側**: answer(needRelay) 受信 → STUN クエリ → **ExternalIp を載せた offer-v2 を同じ offer ノードに上書き再送**（`SendSdpOfferAsync`）→ Answer の外部エンドポイントを最大 10 秒待つ（`WaitForEndpointAsync`）→ 取得後ホールパンチ
-   - **Answer 側**: 最初に読んだ offer-v1 には ExternalIp が無い。**`WaitForOfferExternalIpAsync` で offer-v2（ExternalIp 付き）を最大 8 秒ポーリングして読み直してから**（`TryReadSdpOnceAsync`）STUN → 自分の外部エンドポイントを publish（`SendEndpointAsync`）→ ホールパンチ。MITM 防御（`offer.From == ペア相手`）は再読み分にも適用
+3. **TCP 失敗時（UDP ホールパンチ）**: ここが非対称で**順序が肝**。外部エンドポイントの交換は更に非対称で、**Offer 側の endpoint は offer-v2 ペイロード（`ConnectionInfo.ExternalIp/ExternalPort`）で運ばれ、Answer 側の endpoint だけが `signaling/{pairId}/endpoints/{answererDeviceId}` 経由**で渡る（rere #D-003 で per-sender 化。書き手は自分の deviceId キー、読み手はペア相手の deviceId キー）。
+   - **Offer 側**: answer(needRelay) 受信 → STUN クエリ → **ExternalIp を載せた offer-v2 を自分の offer ノード（`offers/{_deviceId}`）に上書き再送**（`SendSdpOfferAsync(pairId, _deviceId, …)`）→ Answer の外部エンドポイント（`endpoints/{peerId}`）を最大 10 秒待つ（`WaitForEndpointAsync(pairId, peerId)`）→ 取得後ホールパンチ
+   - **Answer 側**: 最初に読んだ offer-v1 には ExternalIp が無い。**`WaitForOfferExternalIpAsync` で offer-v2（ExternalIp 付き）を最大 8 秒ポーリングして読み直してから**（`TryReadOfferOnceAsync(pairId, peerId)`）STUN → 自分の外部エンドポイントを publish（`SendEndpointAsync(pairId, _deviceId, …)`）→ ホールパンチ。MITM 防御（`offer.From == ペア相手` ＋ per-sender キー一致）は再読み分にも適用
    - ⚠️ **Answer 側を「最初に読んだ offer の ExternalIp 有無」でゲートしてはいけない**。offer-v1 は常に ExternalIp が空なので、ゲートすると UDP を一切起動せず自分の endpoint も publish しない → Offer 側が endpoint 待ちでタイムアウト → **cross-NAT（別回線・別 NAT）で必ずリレーへ落ちる構造バグ**になる（実際に過去発生・修正済み）
 4. **UDP 失敗時**: WebSocket リレーにフォールバック（`wss://relay.ferry.nephilim.jp/ferry-relay`、Cloudflare Workers + Durable Objects、Hibernation 対応）
 
@@ -84,10 +84,10 @@ STUN は **Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google S
 sessions/{sessionId}                                = { DisplayName, CreatedAt }
 pairings/{pairingId}                                = { SidA, SidB, NameA, NameB, CreatedAt }
 presence/{deviceId}                                 = { LastSeen, DisplayName }   # オンライン検出
-signaling/{pairId}/offer                            = ConnectionInfo JSON (ips, port, externalIp, externalPort, relayUrl, route, probe, from, nonce)
-signaling/{pairId}/answer                           = ConnectionInfo JSON
-signaling/{pairId}/{role}Endpoint                   = "ip:port"（UDP ホールパンチ用外部エンドポイント）
-signaling/{pairId}/createdAt                        = タイムスタンプ
+signaling/{pairId}/offers/{senderDeviceId}          = TimedSignalingValue { Data(ConnectionInfo JSON base64), CreatedAt }  # rere #D-003: 送信元 deviceId で per-sender 分離。Data に ips, port, externalIp, externalPort, relayUrl, route, probe, from, nonce を含む
+signaling/{pairId}/answers/{answererDeviceId}       = SignalingValue { Data(ConnectionInfo JSON base64) }  # rere #D-003: answerer の deviceId で per-sender 分離（鮮度なし）
+signaling/{pairId}/endpoints/{senderDeviceId}       = SignalingValue { Data("from|ip:port" base64) }  # rere #D-003: 送信元 deviceId で per-sender 分離（UDP ホールパンチ用）
+signaling/{pairId}/createdAt                        = タイムスタンプ  # cleanup 用に維持（firebase-cleanup.yml が pairId サブツリーの stale 掃除に使う）。offer 鮮度判定自体は offers/{sender}.CreatedAt へ移行
 signaling/{pairId}/probeOffers/{nonce}              = TimedSignalingValue { Data, CreatedAt }  # 経路 Probe v14: per-nonce key
 signaling/{pairId}/probeAnswers/{nonce}             = TimedSignalingValue { Data, CreatedAt }  # 同上
 ```
@@ -252,9 +252,10 @@ xUnit v3 + NSubstitute。テスト内の非同期メソッドには `TestContext
 
 ## 既知の制限と注意事項
 
-1. **同時接続の競合**: 2台の PC が同時にファイル送信を試みると、両方が offer 側になり接続失敗する可能性がある。接続確立後にファイル送信すること（role 調停は未実装の設計課題）。
+1. **同時接続の競合**: rere #D-003 で offer を per-sender ノード（`offers/{senderDeviceId}`）化したため、2台が同時に接続を試みても **offer の相互上書きは構造的に起きない**。さらに deviceId 序列の **deferral（`CompareOrdinal` で大きい側が answerer に委譲）** で「双方が offerer になり相互の answer を待ち続けるデッドロック」を収束させる。ただし deferral 判定の瞬間に相手がまだ offer を書いていない**同時ウィンドウ**は残る（完全収束は今後の課題）。基本は接続確立後にファイル送信するのが安全。
 2. **Native AOT 制約**: JSON の動的シリアライズは使用不可。モデル追加時は `*JsonContext` も追加。
-3. **信頼モデルは設計途上**: 現状 Firebase シグナリングは匿名アクセス（セキュリティルール要確認）、トランスポートのピア認証なし、転送ペイロードは平文（リレー経由時は中継サーバが内容を読める）。E2E 暗号・ペア相互認証・Firebase ルールは未実装の設計事項。改修方針は `memory-bank` の Ferry プロジェクト `design-proposals.md` を参照。
+3. **信頼モデルは設計途上**: 現状 Firebase シグナリングは匿名アクセス（セキュリティルール要確認）、トランスポートのピア認証なし、**転送ペイロードは平文**（リレー経由時は中継サーバが内容を読める）。E2E 暗号・ペア相互認証・Firebase ルールは未実装の設計事項。改修方針は `memory-bank` の Ferry プロジェクト `design-proposals.md` を参照。
+   - ⚠️ rere #D-001b で **E2E 暗号コア（`PairCrypto`/`SecureSession`/`PairingHandshake`）は実装・テスト済みだが live コードから未呼出（inert）**。`PairCryptoTests` が通っても**転送はまだ平文**。実際の暗号化は配線（QR pk 交換 / HMAC ゲート / AES-GCM 封筒を `ConnectionService` に結線, Phase1/2 + Bridge deploy + 2台実機検証）が入って初めて働く。本「平文」の記述はそれまで削除しないこと。
 
 > 設定（`settings.json` / `peers.json`）は一時ファイル→リネームでアトミックに保存し、読み込み失敗時は `.corrupt-<時刻>` に退避する。`DeviceId` は pairId / presence の基盤なので、破損で再生成されるとペアが消える点に注意。
 

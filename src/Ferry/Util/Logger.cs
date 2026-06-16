@@ -324,8 +324,13 @@ public static class Logger
     /// <param name="exception">例外オブジェクト</param>
     public static void LogException(string message, Exception exception)
     {
+        if (_logger == null) return;
+        // rere #F-002: Log() と同様に相関 ID Scope を付与する。例外ログこそ並行イベント
+        // (どの pairId/transferId か) の追跡対象なので、Log() を経由しないことで欠落させない。
+        var scope = _currentScope.Value;
+        var msg = scope != null ? $"{message} [{scope}]" : message;
         // log4net 互換の引数順は (message, exception)。NLog の (exception, message) とは順序が逆
-        _logger?.Error(message, exception);
+        _logger.Error(msg, exception);
     }
 
     /// <summary>
