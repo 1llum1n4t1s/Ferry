@@ -484,6 +484,145 @@ public class FileChunkerTests : IDisposable
         Assert.Equal(0x7F000001, readBack);
     }
 
+    // ==================== ResumeResponse V2（rere #D-005 差分レジューム）====================
+
+    private static bool[] Bits(int total, params int[] receivedIndices)
+    {
+        var b = new bool[total];
+        foreach (var i in receivedIndices) b[i] = true;
+        return b;
+    }
+
+    [Fact]
+    public void ResumeResponseV2_穴あきビットマップが往復すること()
+    {
+        var transferId = Guid.NewGuid();
+        var received = Bits(10, 0, 2, 5, 9); // 順不同・穴あき
+        var msg = FileChunker.CreateResumeResponseMessageV2(transferId, accepted: true, totalChunks: 10, received);
+        Assert.Equal(TransferProtocol.ResumeResponse, msg[0]);
+
+        var parsed = FileChunker.ParseResumeResponseV2(msg);
+        Assert.NotNull(parsed);
+        Assert.Equal(transferId, parsed!.Value.TransferId);
+        Assert.True(parsed.Value.Accepted);
+        Assert.Equal(10, parsed.Value.TotalChunks);
+        Assert.Equal(received, parsed.Value.ReceivedSet);
+    }
+
+    [Fact]
+    public void ResumeResponseV2_空集合と全集合が往復すること()
+    {
+        var id = Guid.NewGuid();
+        var empty = FileChunker.ParseResumeResponseV2(
+            FileChunker.CreateResumeResponseMessageV2(id, true, 17, new bool[17]));
+        Assert.NotNull(empty);
+        Assert.All(empty!.Value.ReceivedSet, b => Assert.False(b));
+
+        var allSet = new bool[17];
+        Array.Fill(allSet, true);
+        var full = FileChunker.ParseResumeResponseV2(
+            FileChunker.CreateResumeResponseMessageV2(id, true, 17, allSet));
+        Assert.NotNull(full);
+        Assert.All(full!.Value.ReceivedSet, b => Assert.True(b));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [InlineData(9)]
+    [InlineData(16)]
+    [InlineData(100)]
+    public void ResumeResponseV2_totalChunks端数でもbitが正確に往復すること(int total)
+    {
+        var id = Guid.NewGuid();
+        // 偶数 index のみ受信
+        var received = new bool[total];
+        for (var i = 0; i < total; i += 2) received[i] = true;
+        var parsed = FileChunker.ParseResumeResponseV2(
+            FileChunker.CreateResumeResponseMessageV2(id, true, total, received));
+        Assert.NotNull(parsed);
+        Assert.Equal(received, parsed!.Value.ReceivedSet);
+        // bitmap 長は (total+7)/8
+        var msg = FileChunker.CreateResumeResponseMessageV2(id, true, total, received);
+        Assert.Equal(22 + (total + 7) / 8, msg.Length);
+    }
+
+    [Fact]
+    public void ResumeResponseV2_totalChunksゼロを扱えること()
+    {
+        var id = Guid.NewGuid();
+        var msg = FileChunker.CreateResumeResponseMessageV2(id, false, 0, System.ReadOnlySpan<bool>.Empty);
+        Assert.Equal(22, msg.Length);
+        var parsed = FileChunker.ParseResumeResponseV2(msg);
+        Assert.NotNull(parsed);
+        Assert.False(parsed!.Value.Accepted);
+        Assert.Equal(0, parsed.Value.TotalChunks);
+        Assert.Empty(parsed.Value.ReceivedSet);
+    }
+
+    [Fact]
+    public void ResumeResponseV2_短すぎるメッセージはnullを返すこと()
+    {
+        Assert.Null(FileChunker.ParseResumeResponseV2(new byte[21])); // ヘッダ未満
+    }
+
+    [Fact]
+    public void ResumeResponseV2_bitmap長不足のメッセージはnullを返すこと()
+    {
+        // totalChunks=64（bitmap 8byte 必要）と宣言しつつ bitmap を欠く 22byte のみ
+        var msg = new byte[22];
+        msg[0] = TransferProtocol.ResumeResponse;
+        BinaryPrimitives.WriteInt32BigEndian(msg.AsSpan(18, 4), 64);
+        Assert.Null(FileChunker.ParseResumeResponseV2(msg));
+    }
+
+    [Fact]
+    public void ResumeResponseV2_巨大totalChunksの細工メッセージで例外でなくnullを返すこと()
+    {
+        // レビュー #D-005: totalChunks≈int.MaxValue で (totalChunks+7)/8 が int オーバーフローし
+        // 負の bitmapLen → 長さガードすり抜け → new bool[巨大]/負 Slice で例外死する DoS を防ぐ回帰。
+        var msg = new byte[22];
+        msg[0] = TransferProtocol.ResumeResponse;
+        BinaryPrimitives.WriteInt32BigEndian(msg.AsSpan(18, 4), int.MaxValue);
+        Assert.Null(FileChunker.ParseResumeResponseV2(msg)); // throw せず null
+    }
+
+    // ==================== BuildResumeSkipSet（受信bitmap→送信skip集合）====================
+
+    [Fact]
+    public void BuildResumeSkipSet_受信済みをそのままskip対象にすること()
+    {
+        var received = Bits(6, 1, 3);
+        var skip = FileChunker.BuildResumeSkipSet(received, 6);
+        Assert.Equal(received, skip);
+    }
+
+    [Fact]
+    public void BuildResumeSkipSet_受信bitmapが短い場合は不足分を未受信扱いにすること()
+    {
+        // received は 3 要素しかないが totalChunks=6 → 残り 3 個は false（=送る）
+        var skip = FileChunker.BuildResumeSkipSet(Bits(3, 0, 2), 6);
+        Assert.Equal(6, skip.Length);
+        Assert.True(skip[0]);
+        Assert.False(skip[1]);
+        Assert.True(skip[2]);
+        Assert.False(skip[3]);
+        Assert.False(skip[4]);
+        Assert.False(skip[5]);
+    }
+
+    [Fact]
+    public void BuildResumeSkipSet_受信bitmapが長い場合はtotalChunksで切り詰めること()
+    {
+        var skip = FileChunker.BuildResumeSkipSet(Bits(10, 0, 1, 2, 9), 4);
+        Assert.Equal(4, skip.Length);
+        Assert.True(skip[0]);
+        Assert.True(skip[1]);
+        Assert.True(skip[2]);
+        Assert.False(skip[3]);
+    }
+
     // ==================== ParseFileMeta ====================
 
     [Fact]

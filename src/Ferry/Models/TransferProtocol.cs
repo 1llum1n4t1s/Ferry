@@ -47,7 +47,9 @@ public static class TransferProtocol
     /// <summary>転送レジュームリクエスト [TransferId (16byte)] [LastChunkIndex (4byte)]。</summary>
     public const byte ResumeRequest = 0x20;
 
-    /// <summary>転送レジューム応答 [TransferId (16byte)] [Status (1byte)] [LastChunkIndex (4byte)]。</summary>
+    /// <summary>転送レジューム応答。V1: [TransferId(16)][Status(1)][LastChunkIndex(4)]。
+    /// rere #D-005 V2: [TransferId(16)][Status(1)][totalChunks(4 BigEndian)][packed bitmap((totalChunks+7)/8)]
+    /// で受信済みチャンクを bitmap 返却（順不同・穴あき対応、FileChunker.CreateResumeResponseMessageV2）。種別は共通 0x21。</summary>
     public const byte ResumeResponse = 0x21;
 
     /// <summary>チャンクサイズ (64KB)。
