@@ -17,13 +17,15 @@ namespace Ferry.Infrastructure;
 /// Firebase Realtime Database を使用したシグナリング実装。
 /// セッション登録、ペアリング監視、SDP/ICE 候補の交換を行う。
 ///
-/// Firebase 構造:
-///   sessions/{sessionId} = { displayName, createdAt }
-///   pairings/{pairingId} = { sidA, sidB, nameA, nameB }
-///   signaling/{pairId}/offer  = SDP 文字列
-///   signaling/{pairId}/answer = SDP 文字列
-///   signaling/{pairId}/candidatesA/{key} = ICE candidate 文字列
-///   signaling/{pairId}/candidatesB/{key} = ICE candidate 文字列
+/// Firebase 構造 (rere #D-003 で signaling を per-sender ノード化):
+///   sessions/{sessionId} = { DisplayName, CreatedAt }
+///   pairings/{pairingId} = { SidA, SidB, NameA, NameB, CreatedAt }
+///   signaling/{pairId}/offers/{senderDeviceId}    = TimedSignalingValue { Data(SDP base64), CreatedAt }
+///   signaling/{pairId}/answers/{answererDeviceId} = SignalingValue { Data(SDP base64) }
+///   signaling/{pairId}/endpoints/{senderDeviceId} = SignalingValue { Data("from|ip:port" base64) }
+///   signaling/{pairId}/createdAt                  = タイムスタンプ (firebase-cleanup.yml の stale 掃除用に維持)
+///   signaling/{pairId}/probeOffers/{nonce} / probeAnswers/{nonce} = TimedSignalingValue (経路 probe)
+/// 書き手は自分の deviceId キー、読み手はペア相手の deviceId キーを読む (SignalingPaths 参照)。
 /// </summary>
 public sealed class FirebaseSignaling : IDisposable
 {

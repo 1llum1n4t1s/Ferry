@@ -254,7 +254,8 @@ xUnit v3 + NSubstitute。テスト内の非同期メソッドには `TestContext
 
 1. **同時接続の競合**: rere #D-003 で offer を per-sender ノード（`offers/{senderDeviceId}`）化したため、2台が同時に接続を試みても **offer の相互上書きは構造的に起きない**。さらに deviceId 序列の **deferral（`CompareOrdinal` で大きい側が answerer に委譲）** で「双方が offerer になり相互の answer を待ち続けるデッドロック」を収束させる。ただし deferral 判定の瞬間に相手がまだ offer を書いていない**同時ウィンドウ**は残る（完全収束は今後の課題）。基本は接続確立後にファイル送信するのが安全。
 2. **Native AOT 制約**: JSON の動的シリアライズは使用不可。モデル追加時は `*JsonContext` も追加。
-3. **信頼モデルは設計途上**: 現状 Firebase シグナリングは匿名アクセス（セキュリティルール要確認）、トランスポートのピア認証なし、転送ペイロードは平文（リレー経由時は中継サーバが内容を読める）。E2E 暗号・ペア相互認証・Firebase ルールは未実装の設計事項。改修方針は `memory-bank` の Ferry プロジェクト `design-proposals.md` を参照。
+3. **信頼モデルは設計途上**: 現状 Firebase シグナリングは匿名アクセス（セキュリティルール要確認）、トランスポートのピア認証なし、**転送ペイロードは平文**（リレー経由時は中継サーバが内容を読める）。E2E 暗号・ペア相互認証・Firebase ルールは未実装の設計事項。改修方針は `memory-bank` の Ferry プロジェクト `design-proposals.md` を参照。
+   - ⚠️ rere #D-001b で **E2E 暗号コア（`PairCrypto`/`SecureSession`/`PairingHandshake`）は実装・テスト済みだが live コードから未呼出（inert）**。`PairCryptoTests` が通っても**転送はまだ平文**。実際の暗号化は配線（QR pk 交換 / HMAC ゲート / AES-GCM 封筒を `ConnectionService` に結線, Phase1/2 + Bridge deploy + 2台実機検証）が入って初めて働く。本「平文」の記述はそれまで削除しないこと。
 
 > 設定（`settings.json` / `peers.json`）は一時ファイル→リネームでアトミックに保存し、読み込み失敗時は `.corrupt-<時刻>` に退避する。`DeviceId` は pairId / presence の基盤なので、破損で再生成されるとペアが消える点に注意。
 

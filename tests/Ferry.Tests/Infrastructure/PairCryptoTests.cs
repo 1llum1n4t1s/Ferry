@@ -8,6 +8,11 @@ namespace Ferry.Tests.Infrastructure;
 /// 純関数なので I/O 非依存でテストできる。ConnectionService/transport の結線は実機検証に委ね、
 /// 暗号の正しさ（鍵導出の決定性・送受鍵分離・AEAD 改竄検出・nonce 一意性・リプレイ拒否・HMAC 相互認証）を
 /// ここで網羅的に固定する。
+///
+/// ⚠️ 重要: これらのクラスは現在 **live コードから未呼出（inert）** であり、本テストが通っても
+/// **転送は今も平文**（暗号は未有効）。実際の保護は #D-001b の配線（QR pk 交換 / HMAC ゲート /
+/// AES-GCM 封筒を ConnectionService に結線, Phase1/2）が入って初めて働く。この事実に基づき、
+/// CLAUDE.md §既知の制限「転送ペイロードは平文」の記述を本テスト合格を理由に削除しないこと。
 /// </summary>
 public class PairCryptoTests
 {
