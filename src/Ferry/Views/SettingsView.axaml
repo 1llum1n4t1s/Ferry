@@ -68,7 +68,7 @@
                                      VerticalAlignment="Center"
                                      Text="{Binding SaveDirectory}"
                                      ToolTip.Tip="{Binding SaveDirectory}" />
-                            <Button Grid.Column="1" Margin="6,0,0,0"
+                            <Button Grid.Column="1" Classes="pink" Margin="6,0,0,0"
                                     Content="{DynamicResource Text.Settings.SaveDirectory.Browse}"
                                     Command="{Binding BrowseSaveDirectoryCommand}" />
                         </Grid>
@@ -198,7 +198,7 @@
                                    Foreground="{DynamicResource TextSecondaryBrush}"
                                    VerticalAlignment="Center"
                                    TextWrapping="Wrap" />
-                        <Button Grid.Column="1" Margin="8,0,0,0"
+                        <Button Grid.Column="1" Classes="pink" Margin="8,0,0,0"
                                 Content="{DynamicResource Text.Settings.Version.ClearSkippedVersion}"
                                 Command="{Binding ClearIgnoredUpdateTagCommand}"
                                 FontSize="12" />

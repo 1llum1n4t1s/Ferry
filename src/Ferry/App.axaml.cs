@@ -346,14 +346,22 @@ public partial class App : Application
         return match ?? "en_US";
     }
 
-    /// <summary>メインウィンドウを表示・復帰する。</summary>
+    /// <summary>メインウィンドウを表示・復帰し、最前面 + アクティブにする（トレイからの復帰 / 2 個目起動シグナル）。</summary>
     private void ShowMainWindow()
     {
         if (_mainWindow == null) return;
         _mainWindow.ShowInTaskbar = true;
-        _mainWindow.WindowState = WindowState.Normal;
+        // トレイ格納時は WindowState=Minimized のまま Hide されている。Minimized のときだけ Normal に戻す
+        // （Maximized 表示中に 2 個目が起動したケースで最大化状態を壊さないよう、無条件 Normal 化はしない）。
+        if (_mainWindow.WindowState == WindowState.Minimized)
+            _mainWindow.WindowState = WindowState.Normal;
         _mainWindow.Show();
         _mainWindow.Activate();
+        // Windows のフォアグラウンド奪取制限の回避: シグナルを送った 2 個目プロセスが直前まで前面だったため、
+        // Activate() だけでは前面に出ず「非アクティブで起動した」ように見える（実機で確認）。Topmost を一瞬
+        // 立ててすぐ戻すと確実に最前面 + フォーカスを取れる（全 OS で無害。MainWindow は通常 Topmost=false）。
+        _mainWindow.Topmost = true;
+        _mainWindow.Topmost = false;
     }
 
     /// <summary>トレイアイコンの右クリックメニューを作成する。</summary>

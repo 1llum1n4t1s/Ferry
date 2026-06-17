@@ -168,48 +168,55 @@
     danger は意味的区別 (赤=危険) を残すため、角丸 6 のみ揃えて色は維持する。
     -->
 
-    <!-- === デフォルト Button (class 指定なし) — accent と同等のピンクスタイル ===
-         「変更」「キャンセル」「OK」のような汎用ボタンはこちらでピンクに統一される。
-         Avalonia FluentTheme の Button デフォルトの灰色を打ち消す。 -->
+    <!-- === 全ボタン共通の「形」だけ (RTT 流: 色は塗らない) ===
+         旧実装は class なし Button に Background=AccentBrush(ピンク)+glow を塗っていたため、Avalonia 組み込みの
+         キャプションボタン (最小化/最大化/閉じる) にまでピンクが波及していた。ピンクの本体は下の
+         `/template/ ContentPresenter` の Background で、キャプションボタンの ContentPresenter は Button テンプレートの
+         2 段ネスト下にあり二重 /template/ では打ち消せない構造のため、name セレクタでの個別リセットも効かなかった。
+         RealTimeTranslator (C:\Users\IMT\dev\RealTimeTranslator の App.axaml) と同様、class なし Button は
+         CornerRadius/Padding/Font だけにして色は一切塗らず、ピンクは下の .pink クラスで opt-in する。
+         これでキャプションボタンはテーマ既定の素の chrome (透過 + 既定ホバー、閉じるは赤) に戻る。 -->
     <Style Selector="Button">
-        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
-        <Setter Property="Foreground" Value="#FFFFFF" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="FontSize" Value="12" />
         <Setter Property="CornerRadius" Value="6" />
         <Setter Property="Padding" Value="14,6" />
         <Setter Property="Cursor" Value="Hand" />
+    </Style>
+
+    <!-- === .pink (旧 class なしデフォルトのピンクスタイルを opt-in クラス化したもの) ===
+         「変更」「保存先を開く」「拒否」「キャンセル」やピア行の ⋯ メニュー等の汎用アクション用。
+         見た目は従来の class なしデフォルトと同一。opt-in にすることでキャプションボタンへ波及しない。
+         ⚠ ContentPresenter の Foreground=#FFFFFF は .pink を付けたボタンにしか乗らないので、
+         .icon / .sidebar 等の透過ボタンの文字色 (Light テーマ可読性) には影響しない。 -->
+    <Style Selector="Button.pink">
+        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="Foreground" Value="#FFFFFF" />
         <Setter Property="BorderBrush" Value="#88FFFFFF" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Effect">
             <DropShadowEffect Color="#FF2D8A" BlurRadius="12" Opacity="0.55" OffsetX="0" OffsetY="0" />
         </Setter>
     </Style>
-    <!-- ⚠ :not(...) で透過系バリアント (.icon / .sidebar / .sidebarMenuItem / .danger) を除外する。
-         これらは ContentPresenter の Foreground を上書きせず、Button.Foreground (テーマ依存の文字色) を
-         FluentTheme テンプレートの Foreground="{TemplateBinding Foreground}" 経由で継承させたい。
-         除外しないと、この Foreground=#FFFFFF が全 Button の ContentPresenter に乗り、Light テーマで
-         「設定」「ペアリング先追加」等のサイドバー文字が白くなって読めなくなる
-         (Dark は背景が暗いため白文字でも見えていて露見しなかった)。 -->
-    <Style Selector="Button:not(.icon):not(.sidebar):not(.sidebarMenuItem):not(.danger) /template/ ContentPresenter">
+    <Style Selector="Button.pink /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
         <Setter Property="Foreground" Value="#FFFFFF" />
         <Setter Property="BorderBrush" Value="#88FFFFFF" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="6" />
     </Style>
-    <Style Selector="Button:pointerover:not(.icon):not(.sidebar):not(.sidebarMenuItem):not(.danger) /template/ ContentPresenter">
+    <Style Selector="Button.pink:pointerover /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource AccentHoverBrush}" />
         <Setter Property="Foreground" Value="#FFFFFF" />
         <Setter Property="BorderBrush" Value="#FFFFFF" />
     </Style>
-    <Style Selector="Button:pointerover">
+    <Style Selector="Button.pink:pointerover">
         <Setter Property="BorderBrush" Value="#FFFFFF" />
         <Setter Property="Effect">
             <DropShadowEffect Color="#FF2D8A" BlurRadius="20" Opacity="0.8" OffsetX="0" OffsetY="0" />
         </Setter>
     </Style>
-    <Style Selector="Button:pressed:not(.icon):not(.sidebar):not(.sidebarMenuItem):not(.danger) /template/ ContentPresenter">
+    <Style Selector="Button.pink:pressed /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource AccentHoverBrush}" />
         <Setter Property="Foreground" Value="#FFFFFF" />
     </Style>

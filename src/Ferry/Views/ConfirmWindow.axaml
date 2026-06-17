@@ -28,6 +28,7 @@
                     Classes="tahoe-primary"
                     MinWidth="100" Height="32" />
             <Button x:Name="BtnNo" Click="OnNo"
+                    Classes="pink"
                     MinWidth="100" Height="32" />
         </StackPanel>
     </Grid>

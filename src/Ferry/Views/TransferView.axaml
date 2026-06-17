@@ -46,7 +46,7 @@
                         IsVisible="{Binding HasTransfers}"
                         Command="{Binding ClearHistoryCommand}" />
                 <!-- 受信ファイルの保存先を OS ファイラで開く。保存先パス自体の表示・変更は設定画面側。 -->
-                <Button Grid.Column="2" Margin="0,0,8,0"
+                <Button Grid.Column="2" Classes="pink" Margin="0,0,8,0"
                         Content="{DynamicResource Text.SaveBar.Open}"
                         ToolTip.Tip="{DynamicResource Text.SaveBar.Tooltip}"
                         Click="OnOpenSaveDirClick" />
@@ -219,7 +219,7 @@
                                         Command="{Binding ((vm:TransferViewModel)DataContext).ApproveTransferCommand,
                                                           RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding TransferId}" />
-                                <Button Grid.Column="2"
+                                <Button Grid.Column="2" Classes="pink"
                                         Content="{DynamicResource Text.Transfer.Reject}"
                                         Command="{Binding ((vm:TransferViewModel)DataContext).RejectTransferCommand,
                                                           RelativeSource={RelativeSource AncestorType=UserControl}}"
