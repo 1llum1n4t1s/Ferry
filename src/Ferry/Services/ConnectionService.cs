@@ -768,10 +768,14 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 // Connected になるため、ここで接続失敗として throw する (外側 catch が State=Error にする)。
                 // answerTimedOut なら相手不在が原因と分かるメッセージにして UI に出す (無限「待機中」を断つ)。
                 if (answerJson == null)
-                    throw new InvalidOperationException(
-                        answerTimedOut
-                            ? "相手から応答がありません（オフライン / 旧バージョン / 接続不可の可能性）"
-                            : "Answer を受信できませんでした");
+                {
+                    // answerTimedOut = 相手が answer を一切返さなかった = オフライン/未起動/到達不可。
+                    // 専用型で投げて送信側のリトライループに「これは即終了（20s 空打ちを繰り返さない）」と伝える。
+                    if (answerTimedOut)
+                        throw new PeerUnreachableException(
+                            "相手から応答がありません（オフライン / 旧バージョン / 接続不可の可能性）");
+                    throw new InvalidOperationException("Answer を受信できませんでした");
+                }
 
                 Util.Logger.Log("Answer が TCP 失敗報告 → STUN/UDP ホールパンチ試行");
                 StatusMessageChanged?.Invoke(this, "Status.Phase.StunQuery");

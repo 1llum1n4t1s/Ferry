@@ -111,19 +111,23 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             if (!item.IsInProgress || item.State == TransferState.Paused)
             {
                 item.RateText = null;     // 完了/停止/一時停止はレート非表示
-                item.LastSampleTick = 0;  // 再開時は初回サンプル扱いに戻す
+                item.RateStartTick = 0;   // 再開時は開始基準を取り直す（停止区間を平均に含めない）
                 continue;
             }
 
-            if (item.LastSampleTick != 0)
+            if (item.RateStartTick == 0)
             {
-                var dt = (now - item.LastSampleTick) / 1000.0;
-                var dBytes = item.TransferredBytes - item.LastSampledBytes;
-                if (dt > 0)
-                    item.RateText = Util.Formatting.FormatBitrate(dBytes * 8 / dt);
+                // 転送開始（または再開）直後の基準点を確定。経過 0 のうちはレート未確定。
+                item.RateStartTick = now;
+                item.RateStartBytes = item.TransferredBytes;
+                continue;
             }
-            item.LastSampledBytes = item.TransferredBytes;
-            item.LastSampleTick = now;
+
+            // 開始からの累積平均（総転送バイト ÷ 経過秒）。瞬間差分と違いチャンクのバーストで乱高下しない。
+            var elapsed = (now - item.RateStartTick) / 1000.0;
+            var dBytes = item.TransferredBytes - item.RateStartBytes;
+            if (elapsed > 0 && dBytes > 0)
+                item.RateText = Util.Formatting.FormatBitrate(dBytes * 8 / elapsed);
         }
     }
 
@@ -459,6 +463,16 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                         item.State = TransferState.Cancelled;
                         item.ErrorMessage = ex.Message;
                     }
+                    item.Note = null;
+                    break;
+                }
+                catch (PeerUnreachableException ex)
+                {
+                    // 相手が無応答（オフライン/未起動/到達不可）。リトライしても 20s 待ちを空打ちするだけなので
+                    // 即終了して明確な理由を出す。相手が戻ったら手動「再送」で送り直せる。
+                    Util.Logger.Log($"送信中断 ({displayName}): 相手無応答のためリトライせず終了: {ex.Message}", Util.LogLevel.Warning);
+                    item.State = TransferState.Error;
+                    item.ErrorMessage = ex.Message;
                     item.Note = null;
                     break;
                 }

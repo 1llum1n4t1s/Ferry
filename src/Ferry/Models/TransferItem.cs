@@ -43,11 +43,13 @@ public sealed partial class TransferItem : ObservableObject
     /// プロパティではなくフィールドにしているのは ref (Volatile.Read/Write) に渡すため。</summary>
     public int FlowAckedChunks;
 
-    /// <summary>レート計算用: 前回サンプル時の TransferredBytes。v1.0.47 で追加（UI バインド非対象の素フィールド）。</summary>
-    public long LastSampledBytes;
+    /// <summary>レート計算用: 転送開始（または一時停止からの再開）時点の TransferredBytes 基準。
+    /// 累積平均レートの分子 (TransferredBytes - RateStartBytes) に使う（UI バインド非対象の素フィールド）。</summary>
+    public long RateStartBytes;
 
-    /// <summary>レート計算用: 前回サンプル時刻 (Environment.TickCount64)。0 は未サンプル。</summary>
-    public long LastSampleTick;
+    /// <summary>レート計算用: 転送開始（または再開）時刻 (Environment.TickCount64)。0 は未開始。
+    /// 累積平均レートの分母（経過秒）の起点。一時停止/完了でリセットして停止区間を平均に含めない。</summary>
+    public long RateStartTick;
 
     /// <summary>チャンク総数。</summary>
     public int TotalChunks { get; set; }
@@ -84,8 +86,8 @@ public sealed partial class TransferItem : ObservableObject
     [ObservableProperty]
     public partial string? Note { get; set; }
 
-    /// <summary>転送中の毎秒レート表示テキスト（例「12.3 Mbps」）。v1.0.47 で追加。
-    /// TransferViewModel の 1 秒タイマーが InProgress 項目について更新し、停止/完了でクリアする。</summary>
+    /// <summary>転送中の平均レート表示テキスト（例「12.3 Mbps」）。v1.0.47 で追加。
+    /// TransferViewModel の 1 秒タイマーが InProgress 項目について「転送開始からの累積平均」を更新し、停止/完了でクリアする。</summary>
     [ObservableProperty]
     public partial string? RateText { get; set; }
 

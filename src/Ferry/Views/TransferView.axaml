@@ -92,23 +92,27 @@
                                                    Margin="8,0,0,0" />
                                     </Grid>
 
-                                    <!-- サイズ・進捗・状態・補足(リトライ等) -->
+                                    <!-- サイズ・進捗・状態・補足(リトライ等)。状態/レートはサイズ表示と同じ色・サイズ・縦位置に揃える。 -->
                                     <StackPanel Grid.Column="1" Grid.Row="1"
                                                 Orientation="Horizontal" Spacing="8">
                                         <TextBlock Text="{Binding DisplayInfo}"
                                                    FontSize="12"
+                                                   VerticalAlignment="Center"
                                                    Foreground="{DynamicResource TextSecondaryBrush}" />
                                         <TextBlock Text="{Binding StateText}"
                                                    FontSize="12"
-                                                   Foreground="{DynamicResource TextTertiaryBrush}" />
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}" />
                                         <TextBlock Text="{Binding Note}"
                                                    FontSize="12"
+                                                   VerticalAlignment="Center"
                                                    Foreground="{DynamicResource TahoeAccentBrush}"
                                                    IsVisible="{Binding Note, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                                        <!-- 転送中の毎秒レート(bps)。InProgress 時のみ非空。 -->
+                                        <!-- 転送中の平均レート(bps)。InProgress 時のみ非空。サイズ表示と同じ色・サイズ。 -->
                                         <TextBlock Text="{Binding RateText}"
                                                    FontSize="12"
-                                                   Foreground="{DynamicResource TahoeAccentBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextSecondaryBrush}"
                                                    IsVisible="{Binding RateText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                                     </StackPanel>
 
