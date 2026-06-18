@@ -29,6 +29,18 @@ public static class AutoStartManager
     /// </summary>
     public static void Apply(bool enable)
     {
+        // 開発ビルド（dotnet の bin/Debug・bin/Release 配下から直接起動）では self-heal による
+        // 自動起動の「登録」(enable=true) をスキップする。これをしないと起動時の冪等再登録が
+        // ログイン時の自動起動を開発ビルドの実行ファイルパスで上書きし、以降ログインのたびに
+        // 開発ビルドが立ち上がって本番アプリの自動更新が永久に届かなくなる（実際に発生・修正済み）。
+        // 一方、明示的な「解除」(enable=false) は本番エントリを消す安全側の操作なので、
+        // 開発ビルドからでも実行してユーザーの OFF 操作を取りこぼさない。
+        if (enable && !IsProductionInstallPath(Environment.ProcessPath))
+        {
+            Logger.Log("自動起動の登録をスキップ（開発ビルドからの起動のため本番エントリを汚染しない）");
+            return;
+        }
+
         try
         {
             if (OperatingSystem.IsWindows())
@@ -199,5 +211,24 @@ Hidden=false
         return Environment.ProcessPath
             ?? Process.GetCurrentProcess().MainModule?.FileName
             ?? string.Empty;
+    }
+
+    /// <summary>
+    /// 与えられた実行ファイルパスが本番インストール版（Velopack / AppImage / .deb / .rpm / .app）の
+    /// ものかを判定する純関数。dotnet のビルド出力（<c>bin/Debug</c>・<c>bin/Release</c> 配下）から
+    /// 直接起動された開発ビルドのみ false を返す。配布形態の検出を「本番のポジティブ判定」に頼ると
+    /// 形態（Velopack/AppImage/deb/rpm/app）ごとにパスが異なり漏れるため、開発ビルドだけを
+    /// ネガティブ判定する。パス区切りは OS 差を吸収するため正規化してから判定する。
+    /// パス不明（null/空）のときは安全側で本番扱い（true）にする
+    /// （登録経路には別途空パスガードがあるため誤登録は起きない）。
+    /// </summary>
+    public static bool IsProductionInstallPath(string? processPath)
+    {
+        if (string.IsNullOrEmpty(processPath))
+            return true;
+
+        var normalized = processPath.Replace('\\', '/');
+        return normalized.IndexOf("/bin/Debug/", StringComparison.OrdinalIgnoreCase) < 0
+            && normalized.IndexOf("/bin/Release/", StringComparison.OrdinalIgnoreCase) < 0;
     }
 }
