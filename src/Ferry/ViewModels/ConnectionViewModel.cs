@@ -26,6 +26,9 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     private readonly IQrCodeService _qrCodeService;
     private readonly ISettingsService _settingsService;
     private readonly IPeerRegistryService _peerRegistry;
+    // #D-001a Phase B §6.3: Firebase pairs/{pairId} DELETE 失敗時の再試行キュー。
+    // 注入経由（null 許容）= テストや過渡期で未配線でも動く。
+    private readonly PendingPairDeleteQueue? _pendingPairDeletes;
     // rere #B1-001: presence は Infrastructure を直接 new せず、Services 抽象のファクトリ経由で生成する。
     private readonly IPresenceServiceFactory _presenceFactory;
 
@@ -110,13 +113,15 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         IQrCodeService qrCodeService,
         ISettingsService settingsService,
         IPeerRegistryService peerRegistry,
-        IPresenceServiceFactory presenceFactory)
+        IPresenceServiceFactory presenceFactory,
+        PendingPairDeleteQueue? pendingPairDeletes = null)
     {
         _connectionService = connectionService;
         _qrCodeService = qrCodeService;
         _settingsService = settingsService;
         _peerRegistry = peerRegistry;
         _presenceFactory = presenceFactory;
+        _pendingPairDeletes = pendingPairDeletes;
 
         _connectionService.StateChanged += OnStateChanged;
         _connectionService.RouteChanged += OnRouteChanged;
@@ -151,11 +156,12 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             var settings = _settingsService.Settings;
             SessionId = await _connectionService.StartPairingSessionAsync();
 
-            // Bridge ページ URL に sessionId / PC 名 / 公開鍵(rere #D-001(b)) を付与して QR コード生成。
-            // pk は base64url なので URL 安全。空のときは &pk= となり Bridge 側は単に無視する。
+            // Bridge ページ URL に sessionId / PC 名 / 公開鍵(rere #D-001(b)) / 認証 nonce(#D-001a Phase B) を付与して QR コード生成。
+            // pk は base64url・nonce は 32hex なので URL 安全。空のときは &pk= となり Bridge 側は単に無視する。
             var displayName = Uri.EscapeDataString(settings.DisplayName);
             var pk = _connectionService.PublicKeyForQr;
-            var bridgeUrl = $"{AppConstants.BridgePageUrl}?sid={SessionId}&name={displayName}&pk={pk}";
+            var nonce = _connectionService.LastPairingNonce;
+            var bridgeUrl = $"{AppConstants.BridgePageUrl}?sid={SessionId}&name={displayName}&pk={pk}&nonce={nonce}";
             PairingUrl = bridgeUrl;
             QrCodeImage = _qrCodeService.GenerateQrBitmap(bridgeUrl);
 
@@ -181,6 +187,21 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     private async Task RemovePeerAsync(string peerId)
     {
         var peer = PairedPeers.FirstOrDefault(p => p.PeerId == peerId);
+
+        // #D-001a Phase B §6.3: Firebase pairs/{pairId} を SSoT として削除する。
+        // 失敗（オフライン等）したら PendingPairDeleteQueue に積んで起動時 retry に委ねる。
+        try
+        {
+            await _connectionService.DeletePairFromFirebaseAsync(peerId);
+        }
+        catch (Exception ex)
+        {
+            var pairId = _connectionService.GeneratePairIdFor(peerId);
+            Util.Logger.Log($"pairs/{pairId} 即時 DELETE 失敗 → PendingPairDeleteQueue へ: {ex.Message}", Util.LogLevel.Warning);
+            if (_pendingPairDeletes != null)
+                await _pendingPairDeletes.EnqueueAsync(pairId);
+        }
+
         await _peerRegistry.RemovePeerAsync(peerId);
         if (peer != null)
         {

@@ -28,6 +28,95 @@ public class DeviceIdentityTests : IDisposable
 
     private string KeyPath(string name) => Path.Combine(_dir, name + ".key");
 
+    // ---- Sign / Verify (#D-001a Phase B) ----
+
+    [Fact]
+    public void Sign_IEEE_P1363_raw64byteを返す()
+    {
+        using var id = new DeviceIdentity(KeyPath("sign-format"));
+        var data = System.Text.Encoding.UTF8.GetBytes("ferry-auth-v1|abc|def|1234567890");
+        var sig = id.Sign(data);
+        // P-256 の IEEE P1363 raw 形式 = 32 byte r + 32 byte s 連結 = 64 byte 固定。
+        // DER だと典型 70-72 byte 可変なのでここで形式違いを検出できる（Web Crypto 互換性の核心）。
+        Assert.Equal(64, sig.Length);
+    }
+
+    [Fact]
+    public void SignVerifyラウンドトリップが同一インスタンスの公開鍵で成功する()
+    {
+        using var id = new DeviceIdentity(KeyPath("rt-same"));
+        var data = System.Text.Encoding.UTF8.GetBytes("hello-ferry-auth");
+        var sig = id.Sign(data);
+        Assert.True(DeviceIdentity.Verify(id.PublicKeySpki, data, sig));
+    }
+
+    [Fact]
+    public void Verifyは別鍵の署名を拒否する()
+    {
+        using var id1 = new DeviceIdentity(KeyPath("rt-other-1"));
+        using var id2 = new DeviceIdentity(KeyPath("rt-other-2"));
+        var data = System.Text.Encoding.UTF8.GetBytes("ferry");
+        var sig1 = id1.Sign(data);
+        // id1 の署名を id2 の公開鍵で検証 → 必ず失敗（鍵すり替え攻撃の防御確認）
+        Assert.False(DeviceIdentity.Verify(id2.PublicKeySpki, data, sig1));
+    }
+
+    [Fact]
+    public void Verifyはメッセージ改竄を拒否する()
+    {
+        using var id = new DeviceIdentity(KeyPath("rt-tampered"));
+        var data = System.Text.Encoding.UTF8.GetBytes("ferry-auth-v1|original");
+        var tampered = System.Text.Encoding.UTF8.GetBytes("ferry-auth-v1|tampered");
+        var sig = id.Sign(data);
+        Assert.True(DeviceIdentity.Verify(id.PublicKeySpki, data, sig));
+        Assert.False(DeviceIdentity.Verify(id.PublicKeySpki, tampered, sig));
+    }
+
+    [Fact]
+    public void Signは決定論的ではなく毎回異なる署名を返す()
+    {
+        // ECDSA は仕様で nonce ランダム → 同じデータでも異なる signature。両方とも verify は通る。
+        using var id = new DeviceIdentity(KeyPath("non-det"));
+        var data = System.Text.Encoding.UTF8.GetBytes("same-data");
+        var sig1 = id.Sign(data);
+        var sig2 = id.Sign(data);
+        Assert.NotEqual(sig1, sig2);
+        Assert.True(DeviceIdentity.Verify(id.PublicKeySpki, data, sig1));
+        Assert.True(DeviceIdentity.Verify(id.PublicKeySpki, data, sig2));
+    }
+
+    [Fact]
+    public void RegenerateAndSaveは旧鍵を破棄し新鍵を生成する()
+    {
+        var path = KeyPath("regen");
+        byte[] oldSpki;
+        using (var oldId = new DeviceIdentity(path))
+        {
+            oldSpki = oldId.PublicKeySpki;
+        }
+        // ファイル存在を確認してから regenerate
+        Assert.True(File.Exists(path));
+        using var newId = DeviceIdentity.RegenerateAndSave(path);
+        Assert.True(File.Exists(path));  // 新しい鍵で再生成されている
+        Assert.NotEqual(oldSpki, newId.PublicKeySpki);  // 鍵が変わったこと
+        // 旧鍵の署名は新鍵の公開鍵では verify されない
+        // （Q2 clean slate の挙動を固定：DEVICE_PUBKEY_MISMATCH 状態をユニットで再現可能）
+        using var anotherSign = new DeviceIdentity(KeyPath("regen-other"));
+        var data = System.Text.Encoding.UTF8.GetBytes("clean-slate");
+        var sigFromOther = anotherSign.Sign(data);
+        Assert.False(DeviceIdentity.Verify(newId.PublicKeySpki, data, sigFromOther));
+    }
+
+    [Fact]
+    public void RegenerateAndSaveはファイルが存在しなくても新規生成する()
+    {
+        var path = KeyPath("regen-fresh");
+        Assert.False(File.Exists(path));
+        using var id = DeviceIdentity.RegenerateAndSave(path);
+        Assert.True(File.Exists(path));
+        Assert.Equal(91, id.PublicKeySpki.Length); // P-256 SPKI は 91 byte 固定
+    }
+
     // ---- base64url ----
 
     [Fact]

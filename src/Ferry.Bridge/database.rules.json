@@ -3,40 +3,68 @@
     ".read": false,
     ".write": false,
 
-    "_comment_DO_NOT_DEPLOY_YET": "⚠️ このルールは Phase B (Anonymous Auth 移行 + pairings restructure + Bridge auth 設計) が完了するまで Firebase に deploy してはいけない。現状の Bridge (src/Ferry.Bridge/bridge.js) と .NET (src/Ferry/Infrastructure/FirebaseSignaling.cs) は Firebase Auth を呼ばずに匿名で書き込みしているため、auth.uid を要求するルールを deploy すると permission_denied で全ペアリング・転送が停止する (Codex P1 指摘)。加えて、`pairings` の parent-collection read が rules で deny されるため StartWatchingPairing がそもそも購読できない (Codex P2 #3318454466)。段階移行: 1) Anonymous Auth 実装 + pairings per-device path 化 + Bridge JS の mirror write + リリース 2) ユーザー浸透待ち 3) 手動 firebase deploy --only database で適用。",
-    "_comment": "rere レビュー #A1-001 / #A1-003 / #A1-004 / #A1-006 / #A2-006 同一 root cause 緩和。匿名 R/W を遮断し、自身の deviceId 配下のみ書き込み可能にする。Anonymous Auth (auth.uid = deviceId) の導入後に適用すること。",
+    "_comment_v2_2026-06-19": "rere #D-001(a) Phase B 完成。Bridge も Custom Token 化済 (`/pair/token` 経由・signInAnonymously 撤去) で anonymous 攻撃面ゼロ。pairings は per-device path に restructure。pairs/{pairId} と signaling/{pairId} は当事者のみ R/W (32hex_32hex format + beginsWith/endsWith auth.uid)。signaling の per-sender ノード (offers/answers/endpoints) は sender なりすまし防止のため `auth.uid == $senderDeviceId` を必須化。presence に Version フィールド追加 (Step 8 直前 v1.0.62 機械検証用)。設計詳細は docs/design/firebase-auth-pair-ssot.md。",
 
     "sessions": {
       "$sid": {
         ".read": "auth != null",
-        ".write": "auth != null && auth.uid == $sid && (!data.exists() || newData.child('CreatedAt').val() > data.child('CreatedAt').val() - 60000)",
+        ".write": "auth != null && auth.uid == $sid && newData.child('CreatedAt').val() > now - 60000 && newData.child('CreatedAt').val() < now + 60000",
         "DisplayName": { ".validate": "newData.isString() && newData.val().length <= 64" },
         "CreatedAt": { ".validate": "newData.isNumber()" },
         "PublicKey": { ".validate": "newData.isString() && newData.val().length <= 256" },
+        "PairingNonce": { ".validate": "newData.isString() && newData.val().matches(/^[a-f0-9]{32}$/)" },
         "$other": { ".validate": false }
       }
     },
 
-    "_comment_phase_b_pairings_blocker_codex_3318454466": "⚠️ Phase B blocker: 現 pairings ルールは `$pid` 配下の child-level read しか許可していないが、Realtime DB rules は parent collection read を子の `.read` で filter できないため、`FirebaseSignaling.StartWatchingPairing()` の `pairings/` parent 購読が deny されて pairing が一切検出されなくなる。Phase B では (a) `pairings/$deviceId/$pid` の per-device path 構造に restructure (各 client は自分の sessionId 配下のみ購読、Bridge は SidA / SidB 両方へ mirror write) または (b) `pairing_notifications/$deviceId/$pid` という separate inbox path を導入し、それを購読 → 検出時に `pairings/$pid` を ID 指定で取得、のいずれかを採用する。Bridge 側の auth 設計 (匿名 Auth で Bridge も login するか / 別経路にするか) と連動するため、本 PR では現構造のまま Phase B の design call まで残す。",
     "pairings": {
-      "$pid": {
-        ".read": "auth != null && (data.child('SidA').val() == auth.uid || data.child('SidB').val() == auth.uid || newData.child('SidA').val() == auth.uid || newData.child('SidB').val() == auth.uid)",
-        ".write": "auth != null && (newData.child('SidA').val() == auth.uid || newData.child('SidB').val() == auth.uid)",
-        "SidA": { ".validate": "newData.isString() && newData.val().matches(/^[a-f0-9]{32}$/)" },
-        "SidB": { ".validate": "newData.isString() && newData.val().matches(/^[a-f0-9]{32}$/)" },
+      "$deviceId": {
+        ".read": "auth != null && auth.uid == $deviceId",
+        "$pid": {
+          ".write": "auth != null && auth.uid == $deviceId",
+          "SidA": { ".validate": "newData.isString() && newData.val().matches(/^[a-f0-9]{32}$/)" },
+          "SidB": { ".validate": "newData.isString() && newData.val().matches(/^[a-f0-9]{32}$/)" },
+          "NameA": { ".validate": "newData.isString() && newData.val().length <= 64" },
+          "NameB": { ".validate": "newData.isString() && newData.val().length <= 64" },
+          "CreatedAt": { ".validate": "newData.isNumber()" },
+          "PkA": { ".validate": "newData.isString() && newData.val().length <= 256" },
+          "PkB": { ".validate": "newData.isString() && newData.val().length <= 256" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+
+    "pairs": {
+      "$pairId": {
+        ".read": "auth != null && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))",
+        ".write": "auth != null && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))",
+        "PairId": { ".validate": "newData.isString() && newData.val().length <= 80" },
         "NameA": { ".validate": "newData.isString() && newData.val().length <= 64" },
         "NameB": { ".validate": "newData.isString() && newData.val().length <= 64" },
         "CreatedAt": { ".validate": "newData.isNumber()" },
-        "PkA": { ".validate": "newData.isString() && newData.val().length <= 256" },
-        "PkB": { ".validate": "newData.isString() && newData.val().length <= 256" },
         "$other": { ".validate": false }
       }
     },
 
     "signaling": {
       "$pairId": {
-        ".read": "auth != null && $pairId.contains(auth.uid)",
-        ".write": "auth != null && $pairId.contains(auth.uid)"
+        ".read": "auth != null && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))",
+        ".write": "auth != null && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))",
+        "offers": {
+          "$senderDeviceId": {
+            ".write": "auth != null && auth.uid == $senderDeviceId"
+          }
+        },
+        "answers": {
+          "$answererDeviceId": {
+            ".write": "auth != null && auth.uid == $answererDeviceId"
+          }
+        },
+        "endpoints": {
+          "$senderDeviceId": {
+            ".write": "auth != null && auth.uid == $senderDeviceId"
+          }
+        }
       }
     },
 
@@ -44,8 +72,9 @@
       "$deviceId": {
         ".read": "auth != null",
         ".write": "auth != null && auth.uid == $deviceId",
-        "LastSeen": { ".validate": "newData.isNumber()" },
+        "LastSeen": { ".validate": "newData.isNumber() && newData.val() > now - 60000 && newData.val() < now + 60000" },
         "DisplayName": { ".validate": "newData.isString() && newData.val().length <= 64" },
+        "Version": { ".validate": "newData.isString() && newData.val().length <= 16" },
         "$other": { ".validate": false }
       }
     }

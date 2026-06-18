@@ -89,6 +89,12 @@ public interface IConnectionService
     /// <summary>rere #D-001(b): QR に載せる自分の長期公開鍵(base64url SPKI)。未対応実装は空文字。</summary>
     string PublicKeyForQr => string.Empty;
 
+    /// <summary>
+    /// rere #D-001(a) Phase B: QR に載せる PairingNonce（32hex）。Bridge が <c>/pair/token</c> を叩く時に
+    /// <c>sessions/{sid}/PairingNonce</c> との一致を確認するための短命トークン。未対応実装は空文字。
+    /// </summary>
+    string LastPairingNonce => string.Empty;
+
     // === オンデマンド接続（送信側が呼ぶ） ===
 
     /// <summary>
@@ -127,4 +133,12 @@ public interface IConnectionService
     /// 接続を切断し、リソースを解放する。
     /// </summary>
     Task DisconnectAsync(CancellationToken ct = default);
+
+    // === #D-001a Phase B: pairs/{pairId} SSoT 連携 ===
+
+    /// <summary>外部から pairId を導出するための公開ヘルパー（既定実装は空文字＝旧テストの互換維持）。</summary>
+    string GeneratePairIdFor(string peerId) => string.Empty;
+
+    /// <summary>Firebase pairs/{pairId} を SSoT として削除する（既定実装は no-op＝旧テストの互換維持）。</summary>
+    Task DeletePairFromFirebaseAsync(string peerId, CancellationToken ct = default) => Task.CompletedTask;
 }

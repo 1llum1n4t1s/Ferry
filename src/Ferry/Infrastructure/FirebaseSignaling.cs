@@ -33,8 +33,10 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
 {
     private readonly FirebaseClient _client;
     private readonly string _databaseUrl;
+    private readonly FirebaseAuthClient? _authClient;
     private string _sessionId = string.Empty;
     private IDisposable? _pairingSubscription;
+    private EventHandler? _idTokenRefreshedHandler;
     /// <summary>ペアリング相手が見つかったときに発火するイベント。</summary>
     public event EventHandler<PairingInfo>? PairingDetected;
 
@@ -50,10 +52,38 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
     /// 30s × ピア数で同一エラーが氾濫しないよう、60s に 1 度だけ Warning を出す。</summary>
     private long _presenceErrorLogTick;
 
-    public FirebaseSignaling(string databaseUrl)
+    /// <summary>
+    /// rere #D-001(a) Phase B: authClient 省略は AUth 未配線テスト・旧経路フォールバック用。
+    /// プロダクション経路では authClient を必ず渡す（rules 厳格化後は auth 必須）。
+    /// </summary>
+    public FirebaseSignaling(string databaseUrl, FirebaseAuthClient? authClient = null)
     {
-        _client = new FirebaseClient(databaseUrl);
+        _authClient = authClient;
+        _client = authClient != null
+            ? new FirebaseClient(databaseUrl, new FirebaseOptions
+            {
+                // FirebaseDatabase.net は AuthTokenAsyncFactory で returns した token を ?auth= に付与する。
+                // AsAccessToken=false で `?auth=<idToken>` フォーマット（Realtime DB REST の auth クエリ）。
+                AuthTokenAsyncFactory = () => authClient.GetIdTokenAsync(),
+                AsAccessToken = false,
+            })
+            : new FirebaseClient(databaseUrl);
         _databaseUrl = databaseUrl.TrimEnd('/');
+
+        if (authClient != null)
+        {
+            // IdTokenRefreshed で AsObservable 購読を Dispose → 再 Subscribe する（SSE long-stream が
+            // 1h で expire → permission_denied で切断するため。Workflow #1 high 反映）
+            _idTokenRefreshedHandler = (_, _) =>
+            {
+                if (!string.IsNullOrEmpty(_sessionId))
+                {
+                    Util.Logger.Log("idToken refresh 検知 → pairings 購読を再構築", Util.LogLevel.Debug);
+                    StartWatchingPairing();
+                }
+            };
+            authClient.IdTokenRefreshed += _idTokenRefreshedHandler;
+        }
     }
 
     /// <summary>
@@ -67,6 +97,10 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
     {
         _sessionId = deviceId;
 
+        // #D-001a Phase B: Bridge が /pair/token で QR と紐付ける PairingNonce を生成
+        var pairingNonce = Guid.NewGuid().ToString("N");
+        _lastPairingNonce = pairingNonce;
+
         await _client
             .Child("sessions")
             .Child(_sessionId)
@@ -75,11 +109,20 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
                 DisplayName = displayName,
                 CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 PublicKey = publicKey,
+                PairingNonce = pairingNonce,
             });
 
         Util.Logger.Log($"セッション登録: {_sessionId}");
         return _sessionId;
     }
+
+    private string _lastPairingNonce = string.Empty;
+
+    /// <summary>
+    /// 直前の <see cref="RegisterSessionAsync"/> で生成された PairingNonce（QR コードに埋め込む用）。
+    /// Bridge が /pair/token を叩くときの紐付け nonce。
+    /// </summary>
+    public string LastPairingNonce => _lastPairingNonce;
 
     /// <summary>
     /// Bridge ページ等が行う `pairings/{pairingId}` の書き込みをアプリ側から直接実行する。
@@ -96,19 +139,21 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
     {
         // Bridge ページの ID 形式 (`${Date.now()}_${random(6)}`) に揃えた 20 文字 (13 + 1 + 6) で生成
         var pairingId = $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}_{Guid.NewGuid():N}"[..20];
-        await _client
-            .Child("pairings")
-            .Child(pairingId)
-            .PutAsync(new PairingData
-            {
-                SidA = sidA,
-                NameA = string.IsNullOrEmpty(nameA) ? "PC-A" : nameA,
-                SidB = sidB,
-                NameB = string.IsNullOrEmpty(nameB) ? "PC-B" : nameB,
-                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                PkA = pkA,
-                PkB = pkB,
-            });
+        var data = new PairingData
+        {
+            SidA = sidA,
+            NameA = string.IsNullOrEmpty(nameA) ? "PC-A" : nameA,
+            SidB = sidB,
+            NameB = string.IsNullOrEmpty(nameB) ? "PC-B" : nameB,
+            CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            PkA = pkA,
+            PkB = pkB,
+        };
+        // #D-001a Phase B: per-device path に restructure。pairings/{sidA}/{pid} と pairings/{sidB}/{pid} の
+        // 両方に書く（atomic multi-path update）。FirebaseDatabase.net には db.ref().update 相当の API が
+        // 直接無いため、2 回 PutAsync で代用（片側失敗時の影響は限定的＝相手側は普通に検知）。
+        await _client.Child("pairings").Child(sidA).Child(pairingId).PutAsync(data);
+        await _client.Child("pairings").Child(sidB).Child(pairingId).PutAsync(data);
         // sidA/sidB は deviceId(32hex)。MaskIp は IPv4(4オクテット)以外を素通しするため deviceId 用の MaskDeviceId を使う
         Util.Logger.Log($"ペアリング書き込み: {pairingId}, A={Util.Logger.MaskDeviceId(sidA)}, B={Util.Logger.MaskDeviceId(sidB)}");
     }
@@ -147,8 +192,11 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
     public void StartWatchingPairing()
     {
         _pairingSubscription?.Dispose();
+        // #D-001a Phase B: 自分の sessionId 配下のみ購読する（per-device path、Codex P2 解消）。
+        // rules `pairings/$deviceId/.read: auth.uid == $deviceId` で自分配下しか購読できないが、それで十分。
         _pairingSubscription = _client
             .Child("pairings")
+            .Child(_sessionId)
             .AsObservable<PairingData>()
             .Where(e => e.EventType == FirebaseEventType.InsertOrUpdate)
             .Where(e => e.Object != null &&
@@ -747,6 +795,7 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
             {
                 LastSeen = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 DisplayName = displayName,
+                Version = AppVersion.Value,  // #D-001a Phase B / Q5: 両 PC v1.0.62 機械検証用
             })
             .WaitAsync(ct);
     }
@@ -781,7 +830,10 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
     /// <returns>LastSeen(ms)。presence 未作成や取得失敗時は null。</returns>
     public async Task<long?> GetPresenceLastSeenAsync(string deviceId, CancellationToken ct = default)
     {
-        var url = $"{_databaseUrl}/presence/{Uri.EscapeDataString(deviceId)}/LastSeen.json";
+        // #D-001a Phase B: 独自 HttpClient 経路には FirebaseClient の AuthTokenAsyncFactory が効かないので、
+        // ?auth=<idToken> を URL に直接付与する（Realtime DB REST の標準 auth クエリ）。
+        var auth = await GetAuthQueryAsync();
+        var url = $"{_databaseUrl}/presence/{Uri.EscapeDataString(deviceId)}/LastSeen.json{auth}";
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         // ETag をレスポンスヘッダに乗せてもらうための Firebase REST 拡張ヘッダ。
         req.Headers.TryAddWithoutValidation("X-Firebase-ETag", "true");
@@ -850,6 +902,80 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
     /// 削除済みピアの stale エントリが Dispose まで残るのを防ぐ。</summary>
     public void ForgetPresence(string deviceId) => _presenceCache.TryRemove(deviceId, out _);
 
+    // === #D-001a Phase B: pairs/{pairId} SSoT ノードの CRUD ===
+
+    /// <summary>
+    /// pairs/{pairId} を書き込む（ペア成立時の責任者書込・fallback 書込・両方の入口）。
+    /// rules で `auth.uid` が pairId 当事者のときだけ書ける。
+    /// </summary>
+    public async Task PutPairAsync(string pairId, PairRecord record, CancellationToken ct = default)
+    {
+        await _client
+            .Child("pairs")
+            .Child(pairId)
+            .PutAsync(record)
+            .WaitAsync(ct);
+    }
+
+    /// <summary>
+    /// pairs/{pairId} を取得する（存在しなければ null）。書込セルフチェック + fallback 用。
+    /// </summary>
+    public async Task<PairRecord?> GetPairAsync(string pairId, CancellationToken ct = default)
+    {
+        try
+        {
+            return await _client
+                .Child("pairs")
+                .Child(pairId)
+                .OnceSingleAsync<PairRecord>();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// pairs/{pairId} を独自 HttpClient 経由で取得し、HTTP ステータスと body を返す。
+    /// PairSyncService の robustness 強化用（404/null/401/5xx を区別して削除判定する）。
+    /// </summary>
+    public async Task<(HttpStatusCode Status, string Body)> GetPairWithStatusAsync(string pairId, CancellationToken ct = default)
+    {
+        var auth = await GetAuthQueryAsync();
+        var url = $"{_databaseUrl}/pairs/{Uri.EscapeDataString(pairId)}.json{auth}";
+        using var resp = await _http.GetAsync(url, ct);
+        var body = (await resp.Content.ReadAsStringAsync(ct)).Trim();
+        return (resp.StatusCode, body);
+    }
+
+    /// <summary>
+    /// pairs/{pairId} を削除する（ペア解除の Firebase SSoT 反映）。
+    /// </summary>
+    public async Task DeletePairAsync(string pairId, CancellationToken ct = default)
+    {
+        await _client
+            .Child("pairs")
+            .Child(pairId)
+            .DeleteAsync()
+            .WaitAsync(ct);
+    }
+
+    /// <summary>独自 HttpClient 経路向けに `?auth=<idToken>` クエリ文字列を組み立てる。</summary>
+    private async Task<string> GetAuthQueryAsync()
+    {
+        if (_authClient == null) return string.Empty;
+        try
+        {
+            var token = await _authClient.GetIdTokenAsync();
+            if (string.IsNullOrEmpty(token)) return string.Empty;
+            return "?auth=" + Uri.EscapeDataString(token);
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
     /// <summary>
     /// 自分のプレゼンスを Firebase から削除する（アプリ終了時）。
     /// </summary>
@@ -875,6 +1001,11 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
     {
         StopWatching();
         _presenceCache.Clear(); // presence ETag キャッシュを解放（セッションを跨いで古い peerId を残さない）
+        if (_authClient != null && _idTokenRefreshedHandler != null)
+        {
+            _authClient.IdTokenRefreshed -= _idTokenRefreshedHandler;
+            _idTokenRefreshedHandler = null;
+        }
         _client.Dispose();
     }
 
@@ -907,6 +1038,13 @@ public sealed class SessionData
 {
     public string DisplayName { get; set; } = string.Empty;
     public long CreatedAt { get; set; }
+    /// <summary>
+    /// rere #D-001(a) Phase B: Bridge が `/pair/token` を叩くときに QR と紐付ける一意 nonce（32hex）。
+    /// PC 側 RegisterSessionAsync で生成し、QR コードに `?nonce=...` で埋め込む。Workers は
+    /// sessions/{sid}/PairingNonce との一致を確認してから short-lived Custom Token を返す。
+    /// 既存セッションには空文字で書き込まれる過渡期互換。
+    /// </summary>
+    public string PairingNonce { get; set; } = string.Empty;
 
     /// <summary>rere #D-001(b): このデバイスの長期公開鍵(base64url SPKI)。
     /// コード貼付ペアリング経路で相手が CheckSession 時に読み取り、PairSecret 導出に使う。
@@ -936,6 +1074,20 @@ public sealed class PairingData
 public sealed class SignalingValue
 {
     public string Data { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// rere #D-001(a) Phase B: pairs/{pairId} ノードの SSoT データ（永続・cleanup 対象外）。
+/// ペア成立時に責任者 PC が書き込み、両 PC が <see cref="FirebaseSignaling.GetPairAsync"/> で存在チェック、
+/// 削除時に <see cref="FirebaseSignaling.DeletePairAsync"/> で消す。1ヶ月オフラインから戻った PC も
+/// この存在/不在で「相手が削除したか」を判定する（PairSyncService）。
+/// </summary>
+public sealed class PairRecord
+{
+    public string PairId { get; set; } = string.Empty;
+    public string NameA { get; set; } = string.Empty;
+    public string NameB { get; set; } = string.Empty;
+    public long CreatedAt { get; set; }
 }
 
 /// <summary>v1.0.38 review fix v14: probe 専用、子要素 data + createdAt を 1 オブジェクトで持つ。

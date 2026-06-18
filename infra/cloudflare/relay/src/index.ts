@@ -22,6 +22,25 @@ export interface Env {
   RELAY: DurableObjectNamespace;
   /** pairId ハッシュ化用ソルト。`wrangler secret put SALT` で登録する。 */
   SALT: string;
+
+  // === #D-001a Phase B: Firebase Custom Token Auth (auth.ts) ===
+  /** deviceId ↔ pubKeySpki first-write-wins binding KV (wrangler kv namespace create で作成)。 */
+  DEVICE_KEY_BINDING: KVNamespace;
+  /** Firebase SA PKCS#8 PEM (改行込み)。`cat sa.pem | wrangler secret put FIREBASE_PRIVATE_KEY`。 */
+  FIREBASE_PRIVATE_KEY: string;
+  /** Firebase SA client_email。`wrangler secret put FIREBASE_CLIENT_EMAIL`。 */
+  FIREBASE_CLIENT_EMAIL: string;
+  /** Firebase Realtime DB URL (vars)。例: https://ferry-edf09-default-rtdb.firebaseio.com */
+  FIREBASE_DATABASE_URL: string;
+  /** Rate limit bindings (unsafe.bindings)。 */
+  RATELIMIT_IP?: RateLimit;
+  RATELIMIT_DEVICE?: RateLimit;
+  RATELIMIT_SESSION?: RateLimit;
+}
+
+/** Cloudflare Rate Limit binding の最小型（@cloudflare/workers-types の正式型と互換）。 */
+interface RateLimit {
+  limit(opts: { key: string }): Promise<{ success: boolean }>;
 }
 
 export default {
@@ -31,6 +50,16 @@ export default {
     // ヘルスチェック (curl https://relay.ferry.nephilim.jp/health で疎通確認)
     if (url.pathname === '/health') {
       return new Response('OK', { status: 200 });
+    }
+
+    // #D-001a Phase B: Firebase Custom Token Auth エンドポイント
+    if (url.pathname === '/auth/token' && req.method === 'POST') {
+      const { handleAuthToken } = await import('./auth');
+      return handleAuthToken(req, env);
+    }
+    if (url.pathname === '/pair/token' && req.method === 'POST') {
+      const { handlePairToken } = await import('./auth');
+      return handlePairToken(req, env);
     }
 
     // WebSocket 以外は拒否

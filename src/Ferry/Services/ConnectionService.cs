@@ -176,8 +176,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// <summary>ハンドシェイクタイムアウト用 CTS（確立/フォールバックで Cancel）。</summary>
     private CancellationTokenSource? _secureTimeoutCts;
 
+    private readonly FirebaseAuthClient? _authClient;
+
     public ConnectionService(string databaseUrl, string deviceId, string displayName,
-        DeviceIdentity? identity = null, IPeerRegistryService? peerRegistry = null, ISettingsService? settings = null)
+        DeviceIdentity? identity = null, IPeerRegistryService? peerRegistry = null, ISettingsService? settings = null,
+        FirebaseAuthClient? authClient = null)
     {
         _databaseUrl = databaseUrl;
         _deviceId = deviceId;
@@ -185,17 +188,24 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         _identity = identity;
         _peerRegistry = peerRegistry;
         _settings = settings;
+        _authClient = authClient;
     }
 
     /// <summary>rere #D-001(b): QR に載せる自分の長期公開鍵(base64url SPKI)。identity 未注入なら空。</summary>
     public string PublicKeyForQr => _identity?.PublicKeyBase64Url ?? string.Empty;
+
+    /// <summary>
+    /// rere #D-001(a) Phase B: 直近の <see cref="StartPairingSessionAsync"/> で生成された PairingNonce。
+    /// Bridge が <c>/pair/token</c> を叩くときに照合する 32hex 文字列。QR URL に <c>?nonce=...</c> で載せる。
+    /// </summary>
+    public string LastPairingNonce => _signaling?.LastPairingNonce ?? string.Empty;
 
     // === ペアリング ===
 
     public async Task<string> StartPairingSessionAsync(CancellationToken ct = default)
     {
         _signaling?.Dispose();
-        _signaling = new FirebaseSignaling(_databaseUrl);
+        _signaling = new FirebaseSignaling(_databaseUrl, _authClient);
         _seenPairingIds.Clear();
 
         // rere #D-001(b): 自分の公開鍵も session に載せる（コード貼付ペアリングで相手が読み取る）。
@@ -290,6 +300,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
             PairingCompleted?.Invoke(this, peer);
 
+            // #D-001a Phase B: pairs/{pairId} SSoT への書込（責任者書込 + 30s fallback）
+            // 詳細は docs/design/firebase-auth-pair-ssot.md §6.1 参照。
+            WritePairRecordWithFallback(sig, info.PeerId, info.PeerDisplayName);
+
             // pairings/{pairingId} は **削除しない** 。即削除すると、もう片方の PC が Firebase の
             // InsertOrUpdate イベントを受け取る前にエントリが消え、ペアリング検知漏れが起きる
             // (片方の画面に相手が表示されない症状)。CreatedAt ベースで GitHub Actions が
@@ -360,7 +374,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
         // ポーリング用 Firebase クライアントはループ全体で再利用する
         // （毎反復で new すると接続/TLS ハンドシェイクの churn が発生するため）
-        using var pollingSignaling = new FirebaseSignaling(_databaseUrl);
+        using var pollingSignaling = new FirebaseSignaling(_databaseUrl, _authClient);
 
         while (!ct.IsCancellationRequested)
         {
@@ -449,7 +463,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 StatusMessageChanged?.Invoke(this, "Status.Phase.TcpConnecting");
 
                 _signaling?.Dispose();
-                var sig = new FirebaseSignaling(_databaseUrl);
+                var sig = new FirebaseSignaling(_databaseUrl, _authClient);
                 _signaling = sig;
                 _currentPairId = pairId;
 
@@ -571,7 +585,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     private async Task HandleProbeOfferAsync(ConnectionInfo offer, string pairId, string nonce, CancellationToken ct)
     {
         Util.Logger.Log($"Probe offer 受信: pairId={pairId}, nonce={nonce}, TCP 試行のみで応答");
-        var probeSig = new FirebaseSignaling(_databaseUrl);
+        var probeSig = new FirebaseSignaling(_databaseUrl, _authClient);
         var connected = false;
         TcpDirectTransport? tcpTransport = null;
 
@@ -659,7 +673,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             // 放置 offer による誤譲歩を防ぐ。完全な同時ウィンドウ解消は per-role offer node 化が必要(設計課題)。
             if (string.CompareOrdinal(_deviceId, peerId) > 0)
             {
-                using var peekSig = new FirebaseSignaling(_databaseUrl);
+                using var peekSig = new FirebaseSignaling(_databaseUrl, _authClient);
                 long? createdAt = null;
                 // rere PR#8 #F6: OperationCanceledException は握り潰さず伝播させる (cancel 要求中は offer を
                 // 送らず即中断するため)。それ以外の peek 失敗は「相手 offer 不明」として通常 offerer 経路へ。
@@ -718,7 +732,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             StopListeningForConnection();
 
             _signaling?.Dispose();
-            _signaling = new FirebaseSignaling(_databaseUrl);
+            _signaling = new FirebaseSignaling(_databaseUrl, _authClient);
 
             DetachTransportEvents();
             _transport?.Dispose();
@@ -1008,7 +1022,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
         try
         {
-            probeSig = new FirebaseSignaling(_databaseUrl);
+            probeSig = new FirebaseSignaling(_databaseUrl, _authClient);
             // v1.0.38 review fix v12: probe では RegisterSessionAsync を呼ばない。
             // 旧実装は sessions/{deviceId} を書き込んでいたため、probe 中の peer に対して
             // 別デバイスが PairFromCodeAsync で deviceId を入力すると CheckSessionAsync が
@@ -1675,6 +1689,88 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         Util.Logger.Log($"状態遷移: {State} → {state}");
         State = state;
         StateChanged?.Invoke(this, state);
+    }
+
+    /// <summary>
+    /// #D-001a Phase B Q4: pairs/{pairId} の責任者書込 + 30s fallback による冗長化。
+    /// - 責任者 (deviceId Ordinal 小さい方): 即書込 + セルフチェック GET
+    /// - 非責任者: 30s 後に GET、未存在なら自分が書込（責任者クラッシュ救済）
+    /// 設計 §6.1 参照。fire-and-forget で実行（例外は内部で握る）。
+    /// </summary>
+    private void WritePairRecordWithFallback(FirebaseSignaling sig, string peerId, string peerDisplayName)
+    {
+        var pairId = GeneratePairId(_deviceId, peerId);
+        var isResponsible = string.Compare(_deviceId, peerId, StringComparison.Ordinal) < 0;
+        var nameA = isResponsible ? _displayName : peerDisplayName;
+        var nameB = isResponsible ? peerDisplayName : _displayName;
+        var record = new PairRecord
+        {
+            PairId = pairId,
+            NameA = nameA,
+            NameB = nameB,
+            CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        };
+        if (isResponsible)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await sig.PutPairAsync(pairId, record);
+                    var check = await sig.GetPairAsync(pairId);
+                    if (check == null)
+                        Util.Logger.Log($"pairs/{pairId} 書込セルフチェック失敗（fallback に委譲）", Util.LogLevel.Warning);
+                    else
+                        Util.Logger.Log($"pairs/{pairId} 書込成功（責任者）");
+                }
+                catch (Exception ex)
+                {
+                    Util.Logger.Log($"pairs/{pairId} 責任者書込失敗（fallback 待ち）: {ex.Message}", Util.LogLevel.Warning);
+                }
+            });
+        }
+        else
+        {
+            // 非責任者: 30s 後に存在確認 → 未存在なら自分が書く（責任者クラッシュ救済）
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(30));
+                    var existing = await sig.GetPairAsync(pairId);
+                    if (existing == null)
+                    {
+                        Util.Logger.Log($"pairs/{pairId} 未作成検知 → fallback 書込");
+                        await sig.PutPairAsync(pairId, record);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Util.Logger.Log($"pairs/{pairId} fallback 書込失敗: {ex.Message}", Util.LogLevel.Warning);
+                }
+            });
+        }
+    }
+
+    /// <summary>外部から pairId を導出するための公開ヘルパー（ConnectionViewModel.RemovePeerAsync で使う）。</summary>
+    public string GeneratePairIdFor(string peerId) => GeneratePairId(_deviceId, peerId);
+
+    /// <summary>
+    /// #D-001a Phase B §6.3: Firebase pairs/{pairId} を削除する（SSoT 反映）。
+    /// _signaling が接続中なら流用、未接続なら一時 FirebaseSignaling を作って DELETE する。
+    /// 例外は呼出側にスローして PendingPairDeleteQueue へキューイングさせる。
+    /// </summary>
+    public async Task DeletePairFromFirebaseAsync(string peerId, CancellationToken ct = default)
+    {
+        var pairId = GeneratePairId(_deviceId, peerId);
+        var sig = _signaling;
+        if (sig != null)
+        {
+            await sig.DeletePairAsync(pairId, ct);
+            return;
+        }
+        using var tempSig = new FirebaseSignaling(_databaseUrl, _authClient);
+        await tempSig.DeletePairAsync(pairId, ct);
     }
 
     private static string GeneratePairId(string a, string b)

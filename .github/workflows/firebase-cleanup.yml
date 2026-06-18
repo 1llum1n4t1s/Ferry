@@ -15,81 +15,178 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     steps:
+      - name: Firebase Admin SA から access_token 取得
+        # #D-001a Phase B / Workflow Blocker #19:
+        # 旧版は unauthenticated REST で叩いていたが、rules 厳格化 (auth.uid 必須) deploy 後は
+        # 全 REST が 401/403 を返すため、SA で OAuth access_token を取得して `?access_token=` で付与する。
+        env:
+          FIREBASE_SA_KEY_JSON: ${{ secrets.FIREBASE_SA_KEY_JSON }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${FIREBASE_SA_KEY_JSON}" ]; then
+            echo "ERROR: FIREBASE_SA_KEY_JSON secret が未設定です（Step 7.5 の前提）"
+            exit 1
+          fi
+          # JWT を SA で署名 → OAuth 2.0 JWT bearer grant でアクセストークン交換
+          HEADER=$(printf '%s' '{"alg":"RS256","typ":"JWT"}' | base64 -w0 | tr '+/' '-_' | tr -d '=')
+          IAT=$(date +%s)
+          EXP=$((IAT + 3600))
+          SA_EMAIL=$(echo "$FIREBASE_SA_KEY_JSON" | jq -r .client_email)
+          PAYLOAD=$(printf '{"iss":"%s","scope":"https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/userinfo.email","aud":"https://oauth2.googleapis.com/token","iat":%d,"exp":%d}' "$SA_EMAIL" "$IAT" "$EXP" | base64 -w0 | tr '+/' '-_' | tr -d '=')
+          UNSIGNED="$HEADER.$PAYLOAD"
+          echo "$FIREBASE_SA_KEY_JSON" | jq -r .private_key > /tmp/sa.pem
+          SIG=$(printf '%s' "$UNSIGNED" | openssl dgst -sha256 -sign /tmp/sa.pem -binary | base64 -w0 | tr '+/' '-_' | tr -d '=')
+          rm -f /tmp/sa.pem
+          JWT="$UNSIGNED.$SIG"
+          TOKEN_JSON=$(curl --fail-with-body -sS -X POST https://oauth2.googleapis.com/token \
+            -d grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer \
+            --data-urlencode "assertion=$JWT")
+          ACCESS_TOKEN=$(echo "$TOKEN_JSON" | jq -r .access_token)
+          if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
+            echo "ERROR: access_token 取得失敗: $TOKEN_JSON"
+            exit 1
+          fi
+          echo "::add-mask::$ACCESS_TOKEN"
+          echo "ACCESS_TOKEN=$ACCESS_TOKEN" >> "$GITHUB_ENV"
+          echo "access_token 取得成功 (length=${#ACCESS_TOKEN})"
+
       - name: 古い Firebase データを削除
         env:
           FIREBASE_DB_URL: ${{ secrets.FIREBASE_DB_URL }}
+          ACCESS_TOKEN: ${{ env.ACCESS_TOKEN }}
         shell: bash
         run: |
+          set -euo pipefail
+
           # 6時間前のタイムスタンプ（ミリ秒）
           THRESHOLD=$(( ($(date +%s) - 21600) * 1000 ))
           echo "削除閾値: $(date -d @$(( THRESHOLD / 1000 )) -u '+%Y-%m-%d %H:%M:%S UTC')"
 
+          # #D-001a Phase B: 全 curl を --fail-with-body + status code 取得型に統一。
+          # 旧 `curl -sf` は HTTP 401/403/5xx を fail silently で exit 0 にし、cleanup が無音で
+          # 完走したように見える致命的バグがあった。本版は status を見て明示的に fail させる。
+          firebase_get() {
+            local url="$1"
+            local out
+            local code
+            out=$(curl -sS -w '\n%{http_code}' "$url&access_token=${ACCESS_TOKEN}" || echo $'\nFAIL')
+            code=$(printf '%s' "$out" | tail -n1)
+            local body
+            body=$(printf '%s' "$out" | sed '$d')
+            if [ "$code" != "200" ]; then
+              echo "ERROR: GET $url -> HTTP $code body=$body" >&2
+              return 1
+            fi
+            printf '%s' "$body"
+          }
+          firebase_delete() {
+            local url="$1"
+            local code
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE "$url?access_token=${ACCESS_TOKEN}")
+            if [ "$code" != "200" ]; then
+              echo "WARN: DELETE $url -> HTTP $code" >&2
+              return 1
+            fi
+            return 0
+          }
+
+          # 旧フラット構造ノード (sessions/{sid}, pairings/{pid} 旧版・signaling/{pairId})
+          # pairings は Step 8 後は per-device 構造になるため、旧構造ノードが残っていればここで掃除し、
+          # 新構造は cleanup_pairings_per_device で別途処理する (両構造の dual run)。
           cleanup_node() {
             local node="$1"
             echo "--- ${node} をチェック中 ---"
-
-            # 全エントリを取得
             local data
-            data=$(curl -sf "${FIREBASE_DB_URL}/${node}.json")
-
+            if ! data=$(firebase_get "${FIREBASE_DB_URL}/${node}.json?shallow=false"); then
+              echo "  ${node}: GET 失敗（401/403/5xx 等）"
+              return 1
+            fi
             if [ "$data" = "null" ] || [ -z "$data" ]; then
               echo "  データなし、スキップ"
-              return
+              return 0
             fi
-
-            # 各キーの CreatedAt/createdAt を確認し、古ければ削除
             echo "$data" | jq -r 'to_entries[] | select(
               (.value.CreatedAt // .value.createdAt // 0) < '"$THRESHOLD"' and
               (.value.CreatedAt // .value.createdAt // 0) > 0
             ) | .key' | while read -r key; do
               echo "  削除: ${node}/${key}"
-              curl -sf -X DELETE "${FIREBASE_DB_URL}/${node}/${key}.json" > /dev/null
+              firebase_delete "${FIREBASE_DB_URL}/${node}/${key}.json" || true
             done
-
             echo "  完了"
           }
 
-          # Codex P2 (firebase-cleanup.yml:40-43): ProbeRouteAsync が finally に到達せず中断
-          # (process kill / network hang / crash) した場合、signaling/<pairId>/probeOffers/<nonce> と
-          # probeAnswers/<nonce> が残骸として残る。これらは top-level の signaling/<pairId>/createdAt
-          # を見ない probe-only セッションでは cleanup_node "signaling" の判定 (`>0` filter) で
-          # スキップされてしまい、ListenForIncomingConnectionAsync が再起動後に stale offer を
-          # 拾って TCP probe timeout 5s 分を空回しする原因になる。
-          # per-nonce の CreatedAt (TimedSignalingValue.CreatedAt) を見て個別に削除する。
+          # #D-001a Phase B: pairings/{deviceId}/{pid} per-device 構造の 2 段ループ
+          cleanup_pairings_per_device() {
+            echo "--- pairings (per-device 構造) をチェック中 ---"
+            local devices
+            if ! devices=$(firebase_get "${FIREBASE_DB_URL}/pairings.json?shallow=true"); then
+              echo "  pairings/ shallow GET 失敗"
+              return 1
+            fi
+            if [ "$devices" = "null" ] || [ -z "$devices" ]; then
+              echo "  pairings/ データなし、スキップ"
+              return 0
+            fi
+            echo "$devices" | jq -r 'keys[]' | while read -r device_id; do
+              local pids
+              if ! pids=$(firebase_get "${FIREBASE_DB_URL}/pairings/${device_id}.json?shallow=false"); then
+                echo "  pairings/${device_id} GET 失敗、スキップ" >&2
+                continue
+              fi
+              if [ "$pids" = "null" ] || [ -z "$pids" ]; then
+                continue
+              fi
+              echo "$pids" | jq -r 'to_entries[] | select(
+                (.value.CreatedAt // .value.createdAt // 0) < '"$THRESHOLD"' and
+                (.value.CreatedAt // .value.createdAt // 0) > 0
+              ) | .key' | while read -r pid; do
+                echo "  削除: pairings/${device_id}/${pid}"
+                firebase_delete "${FIREBASE_DB_URL}/pairings/${device_id}/${pid}.json" || true
+              done
+            done
+            echo "  完了"
+          }
+
+          # Codex P2 (firebase-cleanup.yml:40-43): probeOffers/<nonce> と probeAnswers/<nonce>
+          # の残骸を per-nonce CreatedAt で個別削除する（既存ロジックは継承・auth 化のみ）。
           cleanup_probe_subtree() {
             local subnode="$1"  # "probeOffers" または "probeAnswers"
             echo "--- signaling/*/${subnode} をチェック中 ---"
-
             local sig
-            sig=$(curl -sf "${FIREBASE_DB_URL}/signaling.json?shallow=true")
+            if ! sig=$(firebase_get "${FIREBASE_DB_URL}/signaling.json?shallow=true"); then
+              echo "  signaling/ shallow GET 失敗" >&2
+              return 1
+            fi
             if [ "$sig" = "null" ] || [ -z "$sig" ]; then
               echo "  signaling/ データなし、スキップ"
-              return
+              return 0
             fi
-
             echo "$sig" | jq -r 'keys[]' | while read -r pair_id; do
               local probe_data
-              probe_data=$(curl -sf "${FIREBASE_DB_URL}/signaling/${pair_id}/${subnode}.json")
+              if ! probe_data=$(firebase_get "${FIREBASE_DB_URL}/signaling/${pair_id}/${subnode}.json?shallow=false"); then
+                continue
+              fi
               if [ "$probe_data" = "null" ] || [ -z "$probe_data" ]; then
                 continue
               fi
-
               echo "$probe_data" | jq -r 'to_entries[] | select(
                 (.value.CreatedAt // 0) < '"$THRESHOLD"' and
                 (.value.CreatedAt // 0) > 0
               ) | .key' | while read -r nonce; do
                 echo "  削除: signaling/${pair_id}/${subnode}/${nonce}"
-                curl -sf -X DELETE "${FIREBASE_DB_URL}/signaling/${pair_id}/${subnode}/${nonce}.json" > /dev/null
+                firebase_delete "${FIREBASE_DB_URL}/signaling/${pair_id}/${subnode}/${nonce}.json" || true
               done
             done
-
             echo "  完了"
           }
 
+          # #D-001a Phase B: pairs/{pairId} は cleanup 対象外（SSoT・永続）。
+          # Step 8 deploy 後はここに pairs ノード掃除を加えない。
           cleanup_node "sessions"
-          cleanup_node "pairings"
           cleanup_node "signaling"
-          # nested probe nodes は cleanup_node の top-level CreatedAt 判定では取りこぼすため別途
+          cleanup_pairings_per_device
+          # nested probe nodes は別途
           cleanup_probe_subtree "probeOffers"
           cleanup_probe_subtree "probeAnswers"
 

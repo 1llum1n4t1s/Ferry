@@ -41,6 +41,53 @@ public sealed class DeviceIdentity : IDisposable
             "Ferry", "identity.key"));
 
     /// <summary>
+    /// rere #D-001(a) Phase B: 与えられたデータに対し ECDSA P-256 SHA-256 で署名する。
+    /// Workers の Web Crypto API と互換を取るため、署名形式は **IEEE P1363 raw 64 byte**
+    /// （32B r + 32B s 連結）で出力する（既定の DER は不採用：Web Crypto verify は IEEE P1363 を期待）。
+    ///
+    /// 既存の ECDH 鍵パラメータ（同一の P-256 鍵）を ECDSA に再エクスポートして署名する。
+    /// 同一鍵を ECDH と ECDSA で兼用するのは NIST 推奨外だが、実装簡素化と既存資産流用のため受容。
+    /// 設計詳細は docs/design/firebase-auth-pair-ssot.md §3a.3 / §4.1 参照。
+    /// </summary>
+    public byte[] Sign(byte[] data)
+    {
+        var ecParams = _ecdh.ExportParameters(includePrivateParameters: true);
+        using var ecdsa = ECDsa.Create();
+        ecdsa.ImportParameters(ecParams);
+        return ecdsa.SignData(data, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+    }
+
+    /// <summary>
+    /// 公開鍵だけで署名を検証する純関数（Workers 側 verify ロジックの C# 対応物・主にテスト用）。
+    /// signature は <see cref="Sign"/> と同じ IEEE P1363 raw 形式を受ける。
+    /// </summary>
+    public static bool Verify(byte[] publicKeySpki, byte[] data, byte[] signature)
+    {
+        using var ecdsa = ECDsa.Create();
+        ecdsa.ImportSubjectPublicKeyInfo(publicKeySpki, out _);
+        return ecdsa.VerifyData(data, signature, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+    }
+
+    /// <summary>
+    /// rere #D-001(a) Phase B / Q2 採用案: identity.key を破棄して新規鍵を生成する（clean slate）。
+    /// Workers `/auth/token` が 401 DEVICE_PUBKEY_MISMATCH を返したとき、ユーザー承認を経て呼ばれる。
+    /// 既存ペアは PairSecret/Firebase auth とも整合が取れなくなるため、呼び出し側で peers.json も
+    /// 同時に空配列で reset し、新規ペアリングからやり直す前提。
+    /// </summary>
+    public static DeviceIdentity RegenerateAndSave(string keyFilePath)
+    {
+        if (File.Exists(keyFilePath))
+        {
+            try { File.Delete(keyFilePath); }
+            catch (Exception ex)
+            {
+                Util.Logger.Log($"identity.key の削除に失敗（再生成は続行）: {ex.Message}", Util.LogLevel.Warning);
+            }
+        }
+        return new DeviceIdentity(keyFilePath);  // 不在なので CreateAndSave が走る
+    }
+
+    /// <summary>
     /// 相手の公開鍵(base64url SPKI)と pairId から PairSecret(32B) を導出する。
     /// 相手鍵が空/不正/復号不能なら null を返す（呼び出し側は平文フォールバック）。
     /// </summary>

@@ -256,7 +256,7 @@
         </div>
     </div>
 
-    <!-- Firebase SDK (v9 compat) — Auth 不要 -->
+    <!-- Firebase SDK (v9 compat) — #D-001a Phase B: Custom Token Auth 必須 -->
     <!-- rere #A2-002: CDN 改竄対策として SRI (integrity) を付与。バージョン更新時はハッシュ再計算が必要:
          curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A -->
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"
@@ -264,6 +264,10 @@
             crossorigin="anonymous"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"
             integrity="sha384-g5H2aNdtgRBYOBLsuOAuHvUXWnw4bswmU+tYjmGc1G3JfKxl79uWwV4sQarJsLwu"
+            crossorigin="anonymous"></script>
+    <!-- #D-001a Phase B: signInWithCustomToken のため Firebase Auth (compat) 必須 -->
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"
+            integrity="sha384-Mqd2DSdC/vK8B2HyKfNxhx2W9rL5IF7Vue1q5YEpv8/aLPYZNQ8GUq8u0pIb5KX2"
             crossorigin="anonymous"></script>
 
     <!-- html5-qrcode ライブラリ（ページ内カメラでペアリング先の QR を読み取る） -->

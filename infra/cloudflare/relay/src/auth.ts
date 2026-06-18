@@ -1,0 +1,269 @@
+/**
+ * Ferry Custom Token Auth (rere #D-001a Phase B)
+ *
+ * 2 つのエンドポイント:
+ *   POST /auth/token  - PC 用 (1h): ECDSA P-256 IEEE P1363 raw 署名チャレンジで deviceId 所有を証明
+ *   POST /pair/token  - Bridge 用 (5min): sessions/{sid}/PairingNonce 一致で QR と紐付け
+ *
+ * 設計詳細は docs/design/firebase-auth-pair-ssot.md §4。
+ *
+ * Firebase Custom Token JWT 仕様: https://firebase.google.com/docs/auth/admin/create-custom-tokens
+ *   - 必須 claims: iss, sub (= SA client_email), aud (Identity Toolkit), iat, exp, uid
+ *   - 署名: RS256 (SA private_key PKCS#8 PEM を Web Crypto API に import)
+ *   - firebase-admin は Cloudflare Workers 非対応 → 手書き JWT で実装
+ */
+
+import type { Env } from './index';
+
+// ---------- Public handlers ----------
+
+/** PC 用: 署名チャレンジ検証 + KV first-write-wins binding + 1h Custom Token */
+export async function handleAuthToken(req: Request, env: Env): Promise<Response> {
+  const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
+  if (env.RATELIMIT_IP) {
+    const { success } = await env.RATELIMIT_IP.limit({ key: ip });
+    if (!success) return jsonError(429, 'IP_RATE_LIMIT', 'IP rate limit exceeded');
+  }
+
+  const body = await readJsonBody(req);
+  if ('error' in body) return body.error;
+
+  const { deviceId, pubKeySpki, ts, sig } = body.value as Record<string, unknown>;
+  if (typeof deviceId !== 'string' || !/^[a-f0-9]{32}$/.test(deviceId)) {
+    return jsonError(400, 'INVALID_DEVICE_ID', 'deviceId must be 32 hex chars');
+  }
+  if (typeof pubKeySpki !== 'string' || pubKeySpki.length === 0 || pubKeySpki.length > 256) {
+    return jsonError(400, 'INVALID_PUBKEY', 'pubKeySpki must be non-empty base64url <= 256 chars');
+  }
+  if (typeof ts !== 'number' || !Number.isFinite(ts)) {
+    return jsonError(400, 'INVALID_TS', 'ts must be a unix-ms number');
+  }
+  const now = Date.now();
+  if (Math.abs(ts - now) > 60_000) {
+    return jsonError(400, 'CLOCK_SKEW', 'ts skew > 60s', { serverTime: now });
+  }
+  if (typeof sig !== 'string' || sig.length === 0 || sig.length > 200) {
+    return jsonError(400, 'INVALID_SIG', 'sig must be non-empty base64url');
+  }
+
+  if (env.RATELIMIT_DEVICE) {
+    const { success } = await env.RATELIMIT_DEVICE.limit({ key: deviceId });
+    if (!success) return jsonError(429, 'DEVICE_RATE_LIMIT', 'deviceId rate limit exceeded');
+  }
+
+  // ECDSA P-256 SHA-256 IEEE P1363 raw 署名検証
+  const message = `ferry-auth-v1|${deviceId}|${pubKeySpki}|${ts}`;
+  let verified = false;
+  try {
+    const pubKey = await crypto.subtle.importKey(
+      'spki',
+      base64UrlDecode(pubKeySpki),
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['verify'],
+    );
+    verified = await crypto.subtle.verify(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      pubKey,
+      base64UrlDecode(sig),
+      new TextEncoder().encode(message),
+    );
+  } catch {
+    return jsonError(400, 'INVALID_SIG_FORMAT', 'pubKey or signature could not be decoded/imported');
+  }
+  if (!verified) {
+    return jsonError(401, 'BAD_SIGNATURE', 'signature verification failed');
+  }
+
+  // KV first-write-wins binding (deviceId ↔ pubKeySpki)
+  const kvKey = `device-pubkey:${deviceId}`;
+  const existing = await env.DEVICE_KEY_BINDING.get(kvKey);
+  if (existing === null) {
+    await env.DEVICE_KEY_BINDING.put(kvKey, pubKeySpki);
+  } else if (existing !== pubKeySpki) {
+    // identity.key 紛失時のクライアントは clean slate UI を出してから別 deviceId で再認証する
+    return jsonError(401, 'DEVICE_PUBKEY_MISMATCH', 'deviceId is already bound to a different pubKey');
+  }
+
+  // Custom Token 発行 (uid = deviceId, exp = iat+3600)
+  const customToken = await mintCustomToken(deviceId, 3600, env);
+  return jsonOk({ customToken, expiresIn: 3600 });
+}
+
+/** Bridge 用: sessions/{sid}/PairingNonce 一致 → 5min Custom Token */
+export async function handlePairToken(req: Request, env: Env): Promise<Response> {
+  const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
+  if (env.RATELIMIT_IP) {
+    const { success } = await env.RATELIMIT_IP.limit({ key: ip });
+    if (!success) return jsonError(429, 'IP_RATE_LIMIT', 'IP rate limit exceeded');
+  }
+
+  const body = await readJsonBody(req);
+  if ('error' in body) return body.error;
+
+  const { sessionId, pairingNonce } = body.value as Record<string, unknown>;
+  if (typeof sessionId !== 'string' || !/^[a-f0-9]{32}$/.test(sessionId)) {
+    return jsonError(400, 'INVALID_SESSION_ID', 'sessionId must be 32 hex chars');
+  }
+  if (typeof pairingNonce !== 'string' || !/^[a-f0-9]{32}$/.test(pairingNonce)) {
+    return jsonError(400, 'INVALID_NONCE', 'pairingNonce must be 32 hex chars');
+  }
+
+  if (env.RATELIMIT_SESSION) {
+    const { success } = await env.RATELIMIT_SESSION.limit({ key: sessionId });
+    if (!success) return jsonError(429, 'SESSION_RATE_LIMIT', 'sessionId rate limit exceeded');
+  }
+
+  // Firebase REST から sessions/{sid} を SA access_token で取得
+  const accessToken = await getServiceAccountAccessToken(env);
+  const url = `${env.FIREBASE_DATABASE_URL}/sessions/${sessionId}.json?access_token=${encodeURIComponent(accessToken)}`;
+  const r = await fetch(url);
+  if (!r.ok) {
+    return jsonError(502, 'FIREBASE_ERROR', `Firebase GET sessions/${sessionId} -> ${r.status}`);
+  }
+  const session = (await r.json()) as { CreatedAt?: number; PairingNonce?: string } | null;
+  if (!session || typeof session.PairingNonce !== 'string') {
+    return jsonError(404, 'SESSION_NOT_FOUND', 'session or PairingNonce not present');
+  }
+  if (session.PairingNonce !== pairingNonce) {
+    return jsonError(401, 'INVALID_NONCE_MATCH', 'PairingNonce does not match');
+  }
+  if (typeof session.CreatedAt !== 'number' || Date.now() - session.CreatedAt > 3_600_000) {
+    return jsonError(401, 'EXPIRED_SESSION', 'session expired (>1h)');
+  }
+
+  // 5min Custom Token (uid = sessionId)
+  const customToken = await mintCustomToken(sessionId, 300, env);
+  return jsonOk({ customToken, expiresIn: 300 });
+}
+
+// ---------- Custom Token / OAuth ----------
+
+/**
+ * Firebase Custom Token JWT を SA 鍵で署名して発行する。
+ * 必須 claims (iss, sub, aud, iat, exp, uid) を満たさないと Identity Toolkit が 400 を返す。
+ */
+export async function mintCustomToken(uid: string, expiresInSec: number, env: Env): Promise<string> {
+  const iat = Math.floor(Date.now() / 1000);
+  const exp = iat + expiresInSec;
+  const header = { alg: 'RS256', typ: 'JWT' };
+  const payload = {
+    iss: env.FIREBASE_CLIENT_EMAIL,
+    sub: env.FIREBASE_CLIENT_EMAIL,
+    aud: 'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit',
+    iat,
+    exp,
+    uid,
+  };
+  return rs256Sign(header, payload, env.FIREBASE_PRIVATE_KEY);
+}
+
+/** SA を OAuth 2.0 JWT-bearer で交換して REST 用 access_token を取得 */
+export async function getServiceAccountAccessToken(env: Env): Promise<string> {
+  const iat = Math.floor(Date.now() / 1000);
+  const exp = iat + 3600;
+  const header = { alg: 'RS256', typ: 'JWT' };
+  const payload = {
+    iss: env.FIREBASE_CLIENT_EMAIL,
+    scope: 'https://www.googleapis.com/auth/firebase.database',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat,
+    exp,
+  };
+  const assertion = await rs256Sign(header, payload, env.FIREBASE_PRIVATE_KEY);
+  const body = new URLSearchParams({
+    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+    assertion,
+  });
+  const r = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  const j = (await r.json()) as { access_token?: string; error?: string };
+  if (!j.access_token) {
+    throw new Error('OAuth token exchange failed: ' + JSON.stringify(j));
+  }
+  return j.access_token;
+}
+
+/** RS256 JWT を SA PEM PKCS#8 で署名 */
+export async function rs256Sign(
+  header: object,
+  payload: object,
+  privateKeyPem: string,
+): Promise<string> {
+  const enc = new TextEncoder();
+  const headerB64 = base64UrlEncode(enc.encode(JSON.stringify(header)));
+  const payloadB64 = base64UrlEncode(enc.encode(JSON.stringify(payload)));
+  const unsigned = `${headerB64}.${payloadB64}`;
+  const der = pemPkcs8ToDer(privateKeyPem);
+  const key = await crypto.subtle.importKey(
+    'pkcs8',
+    der,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const sigBuf = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, enc.encode(unsigned));
+  return `${unsigned}.${base64UrlEncode(new Uint8Array(sigBuf))}`;
+}
+
+// ---------- Helpers ----------
+
+function pemPkcs8ToDer(pem: string): ArrayBuffer {
+  const body = pem
+    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
+    .replace(/-----END PRIVATE KEY-----/g, '')
+    .replace(/\s+/g, '');
+  return base64Decode(body);
+}
+
+export function base64UrlEncode(buf: Uint8Array): string {
+  let s = '';
+  for (const b of buf) s += String.fromCharCode(b);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+export function base64UrlDecode(s: string): Uint8Array {
+  const pad = s.length % 4 === 0 ? '' : '='.repeat(4 - (s.length % 4));
+  const std = s.replace(/-/g, '+').replace(/_/g, '/') + pad;
+  const bin = atob(std);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function base64Decode(s: string): ArrayBuffer {
+  const bin = atob(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out.buffer;
+}
+
+async function readJsonBody(req: Request): Promise<{ value: unknown } | { error: Response }> {
+  try {
+    const v = await req.json();
+    if (v === null || typeof v !== 'object') {
+      return { error: jsonError(400, 'INVALID_JSON', 'JSON body must be an object') };
+    }
+    return { value: v };
+  } catch {
+    return { error: jsonError(400, 'INVALID_JSON', 'JSON parse failed') };
+  }
+}
+
+function jsonOk(body: object): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+function jsonError(status: number, code: string, message: string, extra?: object): Response {
+  const body = { error: code, message, ...(extra ?? {}) };
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}

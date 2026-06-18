@@ -43,10 +43,14 @@ let db = null;
 let html5QrCode = null;
 // ペアリング処理の重複実行を防ぐフラグ（カメラ連続読取の二重実行を防ぐ）
 let pairingInProgress = false;
-// Bridge 起動時に確定する PC-A の sid / name / pk (カメラ読取コールバックから参照)
+// Bridge 起動時に確定する PC-A の sid / name / pk / nonce (カメラ読取コールバックから参照)
 let resolvedSidA = null;
 let resolvedNameA = null;
 let resolvedPkA = "";
+let resolvedNonceA = "";  // #D-001a Phase B: QR に埋め込まれた PC-A の PairingNonce
+
+// Workers /pair/token エンドポイント (Bridge 用 short-lived Custom Token 発行)
+const PAIR_TOKEN_URL = "https://relay.ferry.nephilim.jp/pair/token";
 
 /**
  * URL パラメータを取得する。
@@ -58,6 +62,8 @@ function getParams() {
         name: params.get("name") ? decodeURIComponent(params.get("name")) : null,
         // rere #D-001(b): 長期公開鍵(base64url)。Bridge は中身を解釈せず文字列のまま中継する。
         pk: params.get("pk") || "",
+        // #D-001a Phase B: Workers /pair/token に渡す PairingNonce (PC 側 sessions/{sid}/PairingNonce と一致する)
+        nonce: params.get("nonce") || "",
     };
 }
 
@@ -115,9 +121,10 @@ function parseQrUrl(text) {
             sid: params.get("sid"),
             name: params.get("name") ? decodeURIComponent(params.get("name")) : null,
             pk: params.get("pk") || "",
+            nonce: params.get("nonce") || "",  // #D-001a Phase B
         };
     } catch {
-        return { sid: null, name: null, pk: "" };
+        return { sid: null, name: null, pk: "", nonce: "" };
     }
 }
 
@@ -147,9 +154,10 @@ async function performPairing(sidA, nameA, sidB, nameB, pkA, pkB) {
             return;
         }
 
-        // pairings/ にペアリング情報を書き込み
+        // #D-001a Phase B: pairings/{deviceId}/{pid} per-device path に atomic multi-path update で書く。
+        // 1 回の update で両 deviceId 配下に同時書込（片側成功・片側失敗が構造的に起こらない）。
         const pairingId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        await db.ref(`pairings/${pairingId}`).set({
+        const data = {
             SidA: sidA,
             SidB: sidB,
             NameA: nameA || "PC-A",
@@ -158,13 +166,40 @@ async function performPairing(sidA, nameA, sidB, nameB, pkA, pkB) {
             // rere #D-001(b): 両 PC の公開鍵を中継。受信側が session 削除レースに依らず PairSecret を導出できる。
             PkA: pkA || "",
             PkB: pkB || (snapB.val().PublicKey || ""),
-        });
+        };
+        const updates = {};
+        updates[`pairings/${sidA}/${pairingId}`] = data;
+        updates[`pairings/${sidB}/${pairingId}`] = data;
+        await db.ref().update(updates);
 
         showPaired(nameA || "PC-A", nameB || snapB.val().DisplayName || "PC-B");
     } catch (err) {
         pairingInProgress = false;
         showError(`ペアリングエラー: ${err.message}`);
     }
+}
+
+/**
+ * #D-001a Phase B: Workers /pair/token で short-lived Custom Token を取得し
+ * Firebase Auth に signInWithCustomToken でログインする。
+ * 失敗時は例外を投げる（呼出側で showError）。
+ */
+async function ensureAuth(sessionId, pairingNonce) {
+    if (!pairingNonce) {
+        throw new Error("QR に PairingNonce が含まれていません（古い PC バージョンの可能性）");
+    }
+    const resp = await fetch(PAIR_TOKEN_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, pairingNonce }),
+    });
+    if (!resp.ok) {
+        const body = await resp.text().catch(() => "");
+        throw new Error(`Bridge 認証エラー: HTTP ${resp.status} ${body}`);
+    }
+    const { customToken } = await resp.json();
+    if (!customToken) throw new Error("Bridge 認証エラー: customToken が返ってきませんでした");
+    await firebase.auth().signInWithCustomToken(customToken);
 }
 
 /**
@@ -231,19 +266,28 @@ async function startCameraMode() {
  * メイン処理。
  */
 async function main() {
-    const { sid: sidA, name: nameA, pk: pkA } = getParams();
+    const { sid: sidA, name: nameA, pk: pkA, nonce: nonceA } = getParams();
 
     if (!sidA) {
         showError("セッション ID が見つかりません。QR コードを再スキャンしてください。");
+        return;
+    }
+    if (!nonceA) {
+        showError("ペアリング nonce が見つかりません（PC を v1.0.62 以上に更新してください）。");
         return;
     }
 
     statusText.textContent = "Firebase に接続中…";
 
     try {
-        // Firebase SDK 初期化（認証なし）
+        // Firebase SDK 初期化
         firebase.initializeApp(FIREBASE_CONFIG);
         db = firebase.database();
+
+        // #D-001a Phase B: anonymous 撤去 → Workers /pair/token で short-lived Custom Token を取得して Auth ログイン。
+        // 旧 signInAnonymously() は不採用（Ghost peer 強制注入を完全排除するため）。
+        statusText.textContent = "認証中…";
+        await ensureAuth(sidA, nonceA);
 
         // sessions/{sidA} の存在を確認
         statusText.textContent = "セッション情報を確認中…";
@@ -257,6 +301,7 @@ async function main() {
         resolvedSidA = sidA;
         resolvedNameA = nameA || snapA.val().DisplayName || "PC-A";
         resolvedPkA = pkA || "";
+        resolvedNonceA = nonceA;
         sessionAInfo.classList.remove("hidden");
         sessionAId.textContent = sidA;
         sessionAName.textContent = resolvedNameA;
