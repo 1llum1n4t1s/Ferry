@@ -440,6 +440,13 @@ public sealed class UdpHolePunchTransport : ITransport
 
     private void HandleData(byte[] packet)
     {
+        // 確立前（双方向開通確認の前）に届いた DATA は ACK も配送もせずドロップする。
+        // 非対称タイミング: 片側が PUNCH_ACK を先に受けて確立→送信開始する一方、もう片側は自分の
+        // PUNCH_ACK 到着まで HolePunchAsync に留まり、ConnectionService がまだ DataReceived を購読していない。
+        // ここで ACK を返すと送信側が再送を止め、確立前に届いた最初のアプリメッセージ（SecureHello/FileMeta）が
+        // ロストする。ドロップすれば送信側は ACK 不達で再送を続け、確立・購読が済んでから正しく受信できる。
+        if (!IsConnected) return;
+
         if (packet.Length < PacketHeaderSize + FragmentHeaderSize) return;
 
         // P-4: BinaryPrimitives.Read* を 1 度の AsSpan() からスライスして読む

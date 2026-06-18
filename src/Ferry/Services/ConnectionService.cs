@@ -1303,12 +1303,16 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             using var punchCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             punchCts.CancelAfter(TimeSpan.FromSeconds(UdpHolePunchTimeoutSeconds));
 
-            await udpTransport.HolePunchAsync(parts[0], remotePort, punchCts.Token);
-
+            // attach を HolePunchAsync の前に行う。確立(SetConnected)の瞬間に DataReceived を購読済みにして、
+            // SetConnected〜attach の窓(HolePunchAsync の Task.Delay 最大200ms)に届く最初のアプリデータ
+            // (FileMeta/SecureHello)を取りこぼさない。確立前に届く DATA は HandleData の !IsConnected ガードで
+            // ドロップされ送信側の再送に委ねられる。UDP 失敗時は attach 済み udpTransport が残るが、次経路
+            // (リレー)の DetachTransportEvents+Dispose で確実に掃除される。
             DetachTransportEvents();
             _transport?.Dispose();
             _transport = udpTransport;
             AttachTransportEvents();
+            await udpTransport.HolePunchAsync(parts[0], remotePort, punchCts.Token);
             return true;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -1402,12 +1406,13 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             using var punchCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             punchCts.CancelAfter(TimeSpan.FromSeconds(UdpHolePunchTimeoutSeconds));
 
-            await udpTransport.HolePunchAsync(offer.ExternalIp!, offer.ExternalPort, punchCts.Token);
-
+            // attach を HolePunchAsync の前に行う（理由は Offer 側と同じ。SetConnected〜attach の窓に届く
+            // 最初のアプリデータを取りこぼさない。確立前 DATA は HandleData の !IsConnected ガードでドロップ）。
             DetachTransportEvents();
             _transport?.Dispose();
             _transport = udpTransport;
             AttachTransportEvents();
+            await udpTransport.HolePunchAsync(offer.ExternalIp!, offer.ExternalPort, punchCts.Token);
             return true;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
