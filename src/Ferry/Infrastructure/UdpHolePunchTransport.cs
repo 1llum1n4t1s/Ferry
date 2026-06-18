@@ -535,13 +535,19 @@ public sealed class UdpHolePunchTransport : ITransport
                 var ep = _remoteEp;
                 if (IsConnected && ep != null)
                 {
-                    try { await _udp.SendAsync(punch, punch.Length, ep); }
+                    // ct を伝播してクローズ時に送信を即中断する（.NET 6+ の ReadOnlyMemory オーバーロード）。
+                    try { await _udp.SendAsync(punch, ep, ct); }
                     catch (SocketException) { /* 一過性は無視。次周期で再送 */ }
                 }
             }
         }
         catch (OperationCanceledException) { }
         catch (ObjectDisposedException) { }
+        catch (Exception ex)
+        {
+            // バックグラウンドタスクの未処理例外でアプリを巻き込まない（ReceiveLoop と同方針）。
+            Util.Logger.Log($"UDP KeepAlive ループで予期せぬエラー: {ex.Message}", Util.LogLevel.Warning);
+        }
     }
 
     private void SetConnected()
