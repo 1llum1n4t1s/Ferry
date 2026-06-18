@@ -8,7 +8,7 @@
  *
  * Firebase REST 呼出を含む handlePairToken は fetch mock の重さに見合わないため対象外。
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { generateKeyPair, exportKey, generateRsaPemFixture, generateEcdsaP256Fixture, signIeeeP1363 } from './fixtures';
 import {
     base64UrlEncode,
@@ -192,6 +192,38 @@ describe('handleAuthToken', () => {
         expect(res.status).toBe(401);
         const j = (await res.json()) as { error: string };
         expect(j.error).toBe('DEVICE_PUBKEY_MISMATCH');
+    });
+
+    it('Codex 第7弾 #4: DEVICE_PUBKEY_MISMATCH のとき RATELIMIT_DEVICE.limit を消費しない', async () => {
+        // attacker が他者 deviceId を主張して別 key で署名して repeat すると、 victim の device RL
+        // を消費させてしまう DoS の回帰防止テスト。 KV binding mismatch check を device RL の前に
+        // 置く設計を vitest で固定する。
+        const { env: baseEnv, kv } = await makeAuthEnv();
+        const deviceId = 'd'.repeat(32);
+        await kv.put(`device-pubkey:${deviceId}`, 'totally-different-key');
+        const limitSpy = vi.fn(async () => ({ success: true }));
+        const env = { ...baseEnv, RATELIMIT_DEVICE: { limit: limitSpy } } as unknown as Env;
+        const body = await buildSignedAuthBody(deviceId);
+        const res = await handleAuthToken(mkRequest(body), env);
+        expect(res.status).toBe(401);
+        const j = (await res.json()) as { error: string };
+        expect(j.error).toBe('DEVICE_PUBKEY_MISMATCH');
+        // 重要: mismatch では device RL を消費しない (victim deviceId の枠を attacker が奪わない)
+        expect(limitSpy).not.toHaveBeenCalled();
+    });
+
+    it('Codex 第7弾 #4: KV 一致時のみ RATELIMIT_DEVICE.limit を消費する', async () => {
+        // 設計の対称性を固定: binding 一致 (= 本物 client) なら RL を消費する。
+        const { env: baseEnv, kv } = await makeAuthEnv();
+        const deviceId = 'e'.repeat(32);
+        const body = await buildSignedAuthBody(deviceId);
+        await kv.put(`device-pubkey:${deviceId}`, body.pubKeySpki);
+        const limitSpy = vi.fn(async () => ({ success: true }));
+        const env = { ...baseEnv, RATELIMIT_DEVICE: { limit: limitSpy } } as unknown as Env;
+        const res = await handleAuthToken(mkRequest(body), env);
+        expect(res.status).toBe(200);
+        expect(limitSpy).toHaveBeenCalledOnce();
+        expect(limitSpy).toHaveBeenCalledWith({ key: deviceId });
     });
 
     it('既存 binding が同じ pubKey なら 200 を返す（再認証 OK）', async () => {

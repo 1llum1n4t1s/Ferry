@@ -13,7 +13,7 @@ namespace Ferry.Services;
 /// ペアリング済みピアの永続化サービス。
 /// %APPDATA%\Ferry\peers.json にペア情報を保存する。
 /// </summary>
-public sealed class PeerRegistryService : IPeerRegistryService
+public sealed class PeerRegistryService : IPeerRegistryService, IDisposable
 {
     private readonly string _filePath;
     private readonly List<PairedPeer> _peers = [];
@@ -23,6 +23,12 @@ public sealed class PeerRegistryService : IPeerRegistryService
     // InvalidOperationException が出て LoopAsync の outer catch で永久終了し、
     // 以降の remote unpair が反映されなくなる事故を防ぐ。
     private readonly object _peersLock = new();
+    // Codex 第7弾 #3 (P2): SaveAsync 自体を直列化して「snapshot 取得→Save」の順序を保つ。
+    // 旧実装は snapshot 取得後に lock 外で SaveAsync が並走するため、
+    // 新しい snapshot を取った後に古い snapshot の書込が後勝ちする race があり、
+    // 例: 新ペアリングの duplicate AddOrUpdate (PairsSsotObserved=false) と SSoT mark (true) が
+    // overlap して false で永続化 → unobserved guard で長期間削除遅延、などの事故になっていた。
+    private readonly System.Threading.SemaphoreSlim _saveLock = new(1, 1);
 
     public PeerRegistryService()
         : this(Path.Combine(
@@ -52,6 +58,7 @@ public sealed class PeerRegistryService : IPeerRegistryService
 
     public async Task AddOrUpdatePeerAsync(PairedPeer peer)
     {
+        byte[] payload;
         lock (_peersLock)
         {
             var existing = _peers.FirstOrDefault(p => p.PeerId == peer.PeerId);
@@ -68,9 +75,13 @@ public sealed class PeerRegistryService : IPeerRegistryService
             {
                 _peers.Add(peer);
             }
+            // Codex 第7弾 #3 (P2): snapshot の serialize を mutation lock 内で確定する。
+            // ここで確定した payload を SemaphoreSlim で順次 disk に書く (PersistAsync) ことで、
+            // 「snapshot 取得 → Save」の順序が保たれ、後続 mutation の payload が
+            // 古い snapshot を上書きできなくなる (= 旧実装の後勝ち race を解消)。
+            payload = JsonSerializer.SerializeToUtf8Bytes(_peers, PeerRegistryJsonContext.Default.ListPairedPeer);
         }
-        // SaveAsync は serialize+ファイル I/O なので lock 外で実行 (mutation は lock 内で完了済み)。
-        await SaveAsync();
+        await PersistAsync(payload);
     }
 
     /// <summary>Codex P2 fix: PairSyncService の remote unpair 検知から UI を即時更新するための通知。</summary>
@@ -79,11 +90,14 @@ public sealed class PeerRegistryService : IPeerRegistryService
     public async Task RemovePeerAsync(string peerId)
     {
         bool removed;
+        byte[] payload;
         lock (_peersLock)
         {
             removed = _peers.RemoveAll(p => p.PeerId == peerId) > 0;
+            // Codex 第7弾 #3 (P2): mutation lock 内で payload を確定する (AddOrUpdate と同じ理由)。
+            payload = JsonSerializer.SerializeToUtf8Bytes(_peers, PeerRegistryJsonContext.Default.ListPairedPeer);
         }
-        await SaveAsync();
+        await PersistAsync(payload);
         // PeerRemoved は lock 外で発火する (lock 内で event ハンドラが peer registry を再帰的に
         // 触ると deadlock するため)。
         if (removed) PeerRemoved?.Invoke(this, peerId);
@@ -121,22 +135,33 @@ public sealed class PeerRegistryService : IPeerRegistryService
         }
     }
 
-    private async Task SaveAsync()
+    // Codex 第7弾 #3 (P2): mutation lock 内で確定済みの payload を SemaphoreSlim で順次 disk に書く。
+    // SemaphoreSlim はファイル I/O のみを直列化し、mutation lock とは別オブジェクトなので
+    // deadlock リスクは無い (mutation lock を保持したまま SemaphoreSlim を待つ経路は無い)。
+    private async Task PersistAsync(byte[] payload)
     {
+        await _saveLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            // Codex 第6弾 #5 (P2): _peers を直接 serialize すると並行 mutation で例外になりうる。
-            // lock 内で snapshot を取ってから lock 外で I/O を実行する。
-            // (AOT JsonContext は List<PairedPeer> のみ登録済みのためそのまま使う。)
-            List<PairedPeer> snapshot;
-            lock (_peersLock) snapshot = [.. _peers];
-            var json = JsonSerializer.SerializeToUtf8Bytes(snapshot, PeerRegistryJsonContext.Default.ListPairedPeer);
             // rere #B2-001: アトミック保存(tmp→Move)を共通ヘルパーへ集約
-            await Util.AtomicFile.WriteAsync(_filePath, json);
+            await Util.AtomicFile.WriteAsync(_filePath, payload);
         }
         catch (Exception ex)
         {
             Util.Logger.Log($"peers.json の保存に失敗: {ex.Message}", Util.LogLevel.Error);
         }
+        finally
+        {
+            _saveLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Codex 第7弾 verify critical: SemaphoreSlim を Dispose してリソースリークを防ぐ。
+    /// アプリ寿命と同等の単一インスタンスだが、 テスト並列実行で複数生成される経路に備えて IDisposable 化。
+    /// </summary>
+    public void Dispose()
+    {
+        _saveLock.Dispose();
     }
 }

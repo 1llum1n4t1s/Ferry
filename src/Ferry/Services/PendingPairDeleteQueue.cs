@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using Ferry.Models;
 
@@ -16,10 +17,15 @@ namespace Ferry.Services;
 /// 起動時 + アプリ前面復帰時に <see cref="ProcessAsync"/> を呼んで queue の各アイテムを retry する。
 /// backoff: 1min, 5min, 30min, 2h, 12h。RetryCount >= 5 で打ち切り（Warning ログ + queue から除去）。
 /// </summary>
-public sealed class PendingPairDeleteQueue
+public sealed class PendingPairDeleteQueue : IDisposable
 {
     private readonly string _filePath;
     private readonly object _lock = new();
+    // Codex P2 fix (第7弾 #5): SaveAsync を lock 外で実行していたため、 ProcessAsync retry 失敗時 SaveAsync と
+    // 再ペアリングの RemoveAsync SaveAsync が並走すると古い non-empty snapshot が後勝ちして queue が resurrect し、
+    // 後の retry が新ペアを誤削除する race があった。 PeerRegistryService 同様 SemaphoreSlim で書込をシリアライズし、
+    // snapshot は lock 内で確定（payload 化）してから _saveLock 配下で書き出す。
+    private readonly SemaphoreSlim _saveLock = new(1, 1);
     private List<PendingPairDelete> _items = [];
 
     public PendingPairDeleteQueue()
@@ -41,6 +47,7 @@ public sealed class PendingPairDeleteQueue
     /// <summary>キューに新しい削除リトライアイテムを追加（または既存をリセット）。</summary>
     public async Task EnqueueAsync(string pairId)
     {
+        byte[] payload;
         lock (_lock)
         {
             var existing = _items.FirstOrDefault(i => i.PairId == pairId);
@@ -53,8 +60,9 @@ public sealed class PendingPairDeleteQueue
             {
                 _items.Add(new PendingPairDelete { PairId = pairId, LastRetryAtMs = 0, RetryCount = 0 });
             }
+            payload = JsonSerializer.SerializeToUtf8Bytes(_items, PendingDeleteJsonContext.Default.ListPendingPairDelete);
         }
-        await SaveAsync();
+        await PersistAsync(payload);
     }
 
     /// <summary>
@@ -65,11 +73,13 @@ public sealed class PendingPairDeleteQueue
     public async Task RemoveAsync(string pairId)
     {
         bool changed;
+        byte[] payload;
         lock (_lock)
         {
             changed = _items.RemoveAll(i => i.PairId == pairId) > 0;
+            payload = JsonSerializer.SerializeToUtf8Bytes(_items, PendingDeleteJsonContext.Default.ListPendingPairDelete);
         }
-        if (changed) await SaveAsync();
+        if (changed) await PersistAsync(payload);
     }
 
     /// <summary>キュー内の全アイテムを処理する。各アイテムについて delete callback を呼び、成功なら除去・失敗なら retry 情報を更新。</summary>
@@ -119,7 +129,15 @@ public sealed class PendingPairDeleteQueue
                 }
             }
         }
-        if (changed) await SaveAsync();
+        if (changed)
+        {
+            byte[] payload;
+            lock (_lock)
+            {
+                payload = JsonSerializer.SerializeToUtf8Bytes(_items, PendingDeleteJsonContext.Default.ListPendingPairDelete);
+            }
+            await PersistAsync(payload);
+        }
     }
 
     private static long BackoffMs(int retryCount) => retryCount switch
@@ -153,24 +171,38 @@ public sealed class PendingPairDeleteQueue
         }
     }
 
-    private async Task SaveAsync()
+    // Codex P2 fix (第7弾 #5): 呼び出し側で lock 内に payload (snapshot 済 JSON bytes) を確定してから渡す。
+    // _saveLock で書込をシリアライズし、同時に走った 2 つの永続化で「古い non-empty snapshot が後勝ち」する
+    // race を排除する。
+    private async Task PersistAsync(byte[] payload)
     {
+        await _saveLock.WaitAsync();
         try
         {
-            List<PendingPairDelete> snapshot;
-            lock (_lock) snapshot = [.. _items];
-            var json = JsonSerializer.SerializeToUtf8Bytes(snapshot, PendingDeleteJsonContext.Default.ListPendingPairDelete);
-            await Util.AtomicFile.WriteAsync(_filePath, json);
+            await Util.AtomicFile.WriteAsync(_filePath, payload);
         }
         catch (Exception ex)
         {
             Util.Logger.Log($"pending-pair-deletes.json の保存に失敗: {ex.Message}", Util.LogLevel.Warning);
+        }
+        finally
+        {
+            _saveLock.Release();
         }
     }
 
     public int Count
     {
         get { lock (_lock) return _items.Count; }
+    }
+
+    /// <summary>
+    /// Codex 第7弾 verify critical: SemaphoreSlim を Dispose してリソースリークを防ぐ。
+    /// アプリ寿命と同等の単一インスタンスだが、 テスト並列実行で複数生成される経路に備えて IDisposable 化。
+    /// </summary>
+    public void Dispose()
+    {
+        _saveLock.Dispose();
     }
 }
 

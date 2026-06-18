@@ -77,20 +77,31 @@ export async function handleAuthToken(req: Request, env: Env): Promise<Response>
     return jsonError(401, 'BAD_SIGNATURE', 'signature verification failed');
   }
 
-  // 署名検証成功後に device rate limit を消費 (正規 client のみカウント)
+  // Codex 第7弾 #4 fix (P2): device rate limit は **KV binding 一致確認後** に消費する。
+  // 旧実装は signature verify 直後に device RL を消費していたため、attacker が自分の鍵で
+  // 「victim deviceId を主張する」リクエストを作ると、 signature は自鍵で valid → device RL を
+  // victim 名義で消費 → 続いて KV check で DEVICE_PUBKEY_MISMATCH 401 を受ける、 という流れで
+  // victim の RATELIMIT_DEVICE 枠だけ枯渇させられた (本物 client が 429 で締め出される DoS)。
+  // 対策: KV existing と pubKeySpki が mismatch なら device RL を消費せず即 401 を返す。
+  // mismatch でない (= 既存 binding と一致 / 新規 bind) ときだけ device RL を消費する。
+  // signature verify 済かつ pubKey 一致前提なので、 RL 消費は正規 client のみに帰着する。
+  const kvKey = `device-pubkey:${deviceId}`;
+  const existing = await env.DEVICE_KEY_BINDING.get(kvKey);
+  if (existing !== null && existing !== pubKeySpki) {
+    // identity.key 紛失時のクライアントは clean slate UI を出してから別 deviceId で再認証する。
+    // device RL を消費せずに即 reject (attacker が victim の RL を消費する経路を閉じる)。
+    return jsonError(401, 'DEVICE_PUBKEY_MISMATCH', 'deviceId is already bound to a different pubKey');
+  }
+
+  // pubKey 一致確認後に device rate limit を消費 (mismatch では消費しない設計)
   if (env.RATELIMIT_DEVICE) {
     const { success } = await env.RATELIMIT_DEVICE.limit({ key: deviceId });
     if (!success) return jsonError(429, 'DEVICE_RATE_LIMIT', 'deviceId rate limit exceeded');
   }
 
-  // KV first-write-wins binding (deviceId ↔ pubKeySpki)
-  const kvKey = `device-pubkey:${deviceId}`;
-  const existing = await env.DEVICE_KEY_BINDING.get(kvKey);
+  // KV first-write-wins binding (deviceId ↔ pubKeySpki): 新規のみ put
   if (existing === null) {
     await env.DEVICE_KEY_BINDING.put(kvKey, pubKeySpki);
-  } else if (existing !== pubKeySpki) {
-    // identity.key 紛失時のクライアントは clean slate UI を出してから別 deviceId で再認証する
-    return jsonError(401, 'DEVICE_PUBKEY_MISMATCH', 'deviceId is already bound to a different pubKey');
   }
 
   // Custom Token 発行 (uid = deviceId, exp = iat+3600, src=pc)

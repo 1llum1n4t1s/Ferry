@@ -244,13 +244,17 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
             .Where(e => e.Object != null &&
                         (e.Object.SidA == _sessionId || e.Object.SidB == _sessionId) &&
                         // Codex P1 fix (第6弾): stale replay 防御。subscribe 開始より古い CreatedAt は無視する。
-                        // 同時刻 (==) は accept (clock skew で startMs > entry.CreatedAt の紙一重ケースを排除)。
+                        // Codex P2 fix (第7弾): rules の ±60s 鮮度ガードと同じ tolerance (60s) を持たせる。
+                        // Bridge phone / peer PC の時計が server から最大 -60s 後ろにある場合 (rules では accept される)
+                        // 正規 pairing が silent skip されて QR フローが詰まる事象への対策。
                         // PairingData.CreatedAt は Bridge / PC 双方が Unix ms (UTC) で書き込むため startedAt と直接比較可。
                         // rules (database.rules.json:34) で書込時に ±60s 鮮度ガード強制のため、ローカル時計が大きく
-                        // ズレた相手は publish 自体不可。clock skew で正規 entry が誤 reject されるリスクは server 側
-                        // ±60s に閉じる。CreatedAt 欠落 (long の default = 0) の旧 entries は startedAt (≈Unix ms) を
+                        // ズレた相手は publish 自体不可。stale replay 防御は「-60s tolerance を超えた古い entry を弾く」
+                        // ことで維持される (attacker は rules の ±60s ガード内でしか書込できない)。
+                        // CreatedAt 欠落 (long の default = 0) の旧 entries は startedAt - 60_000 (≈Unix ms) を
                         // 超えないため silent skip = 意図通り (Phase B 以前の data はもう新規 pairing として扱わない)。
-                        e.Object.CreatedAt >= _pairingWatchStartedAtMs)
+                        // より堅牢な代替 (server timestamp / per-session nonce) は Phase B-2 へ defer。
+                        e.Object.CreatedAt >= _pairingWatchStartedAtMs - 60_000)
             .Subscribe(e =>
             {
                 Util.Logger.Log($"ペアリング検知: {e.Key}");
