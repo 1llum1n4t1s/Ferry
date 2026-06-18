@@ -183,7 +183,17 @@ export async function handlePairToken(req: Request, env: Env): Promise<Response>
   }
 
   // 5min Custom Token (uid = sessionId, src=bridge → rules で pairing_nonces/sessions 書込不可)
-  const customToken = await mintCustomToken(sessionId, 300, env, 'bridge');
+  // Codex 第8弾 #2 fix (P1): 2-nonce verified (hasPeer=true) のときだけ `pairAuth: true` を claim に埋める。
+  // 1-QR の bridge token (sessions read のみで pairings には書かせない) には pairAuth を載せない。
+  // rules で `pairings/{$deviceId}/{$pid}.write` に `auth.token.pairAuth == true` を AND し、
+  // QR 1 枚だけで取った bridge token で他人 inbox に pairing 注入する経路を構造的に塞ぐ。
+  const customToken = await mintCustomToken(
+    sessionId,
+    300,
+    env,
+    'bridge',
+    hasPeer ? { pairAuth: true } : undefined,
+  );
   return jsonOk({ customToken, expiresIn: 300 });
 }
 
@@ -198,8 +208,20 @@ export async function handlePairToken(req: Request, env: Env): Promise<Response>
  * pairing_nonces を書けない / sessions を書けない 等を rules で禁じ、PC token (src="pc") のみが
  * セッション関連 state を作成・更新できるようにする (Bridge tab が tab 残存中に nonce rotation
  * で session を蘇生する穴を塞ぐ)。
+ *
+ * Codex 第8弾 #2 fix (P1): `extraClaims` で `pairAuth: true` を bridge token に埋める経路を追加。
+ * handlePairToken は **2-nonce verified** (= hasPeer=true) の path でだけ `pairAuth: true` を渡し、
+ * 1-QR path (sessions read only) では渡さない。rules 側で pairings 書込時に
+ * `auth.token.pairAuth == true` を必須化し、「QR 1 枚だけで取った bridge token で他人 inbox に
+ * pairing 注入」を構造的に防ぐ。
  */
-export async function mintCustomToken(uid: string, expiresInSec: number, env: Env, source: 'pc' | 'bridge' = 'pc'): Promise<string> {
+export async function mintCustomToken(
+  uid: string,
+  expiresInSec: number,
+  env: Env,
+  source: 'pc' | 'bridge' = 'pc',
+  extraClaims?: Record<string, unknown>,
+): Promise<string> {
   const iat = Math.floor(Date.now() / 1000);
   const exp = iat + expiresInSec;
   const header = { alg: 'RS256', typ: 'JWT' };
@@ -211,7 +233,8 @@ export async function mintCustomToken(uid: string, expiresInSec: number, env: En
     exp,
     uid,
     // Firebase Custom Token は `claims` 直下の任意フィールドを ID token の `auth.token.<key>` に伝搬する。
-    claims: { src: source },
+    // extraClaims が undefined のときは spread が no-op になるので 1-QR path では src のみが残る。
+    claims: { src: source, ...(extraClaims ?? {}) },
   };
   return rs256Sign(header, payload, env.FIREBASE_PRIVATE_KEY);
 }

@@ -65,6 +65,25 @@ describe('mintCustomToken', () => {
         expect(Math.abs(payload.iat - now)).toBeLessThanOrEqual(5);
     });
 
+    it('Codex 第8弾 #2: source=bridge + extraClaims={pairAuth:true} の payload に pairAuth=true が埋まる', async () => {
+        const { pem } = await generateRsaPemFixture();
+        const env = { FIREBASE_PRIVATE_KEY: pem, FIREBASE_CLIENT_EMAIL: 'sa@x' } as unknown as Env;
+        const token = await mintCustomToken('uid', 60, env, 'bridge', { pairAuth: true });
+        const [, payloadB64] = token.split('.');
+        const payload = JSON.parse(new TextDecoder().decode(base64UrlDecode(payloadB64)));
+        expect(payload.claims).toEqual({ src: 'bridge', pairAuth: true });
+    });
+
+    it('Codex 第8弾 #2: source=bridge かつ extraClaims なしなら pairAuth が含まれない (1-QR token)', async () => {
+        const { pem } = await generateRsaPemFixture();
+        const env = { FIREBASE_PRIVATE_KEY: pem, FIREBASE_CLIENT_EMAIL: 'sa@x' } as unknown as Env;
+        const token = await mintCustomToken('uid', 60, env, 'bridge');
+        const [, payloadB64] = token.split('.');
+        const payload = JSON.parse(new TextDecoder().decode(base64UrlDecode(payloadB64)));
+        expect(payload.claims).toEqual({ src: 'bridge' });
+        expect((payload.claims as Record<string, unknown>).pairAuth).toBeUndefined();
+    });
+
     it('JWT 署名が同じ SA 公開鍵で verify 通る', async () => {
         const { pem, publicKey } = await generateRsaPemFixture();
         const env = {
