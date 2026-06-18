@@ -57,6 +57,21 @@ public sealed class PendingPairDeleteQueue
         await SaveAsync();
     }
 
+    /// <summary>
+    /// Codex P2 fix (第4弾): 同じ pairId で再ペアリングが成立したときに queued delete を取り消す。
+    /// 残しておくと後で queue retry が新ペアの pairs ノードを誤削除し remote unpair を引き起こす。
+    /// pairs/{pairId} の PutPairAsync 成功時に呼ぶ。
+    /// </summary>
+    public async Task RemoveAsync(string pairId)
+    {
+        bool changed;
+        lock (_lock)
+        {
+            changed = _items.RemoveAll(i => i.PairId == pairId) > 0;
+        }
+        if (changed) await SaveAsync();
+    }
+
     /// <summary>キュー内の全アイテムを処理する。各アイテムについて delete callback を呼び、成功なら除去・失敗なら retry 情報を更新。</summary>
     public async Task ProcessAsync(Func<string, Task<bool>> deleteCallback)
     {

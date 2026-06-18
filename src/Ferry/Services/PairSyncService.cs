@@ -27,7 +27,7 @@ public sealed class PairSyncService : IDisposable
     private readonly IPeerRegistryService _peerRegistry;
     private readonly string _deviceId;
     private readonly ConcurrentDictionary<string, int> _consecutive404 = new();
-    /// <summary>Codex P1 fix: 旧 peers.json 由来の既存ペアは pairs/{pairId} が未作成なので、責任者側が初回 backfill を試みる。1 度だけ試行 (失敗時は通常 404 カウントに落ちる)。</summary>
+    /// <summary>Codex P1 fix: 旧 peers.json 由来の既存ペアは pairs/{pairId} が未作成なので、責任者側が初回 backfill を試みる。Codex P2 fix (第4弾): 成功時のみ marker を set する (失敗時はマーカーを残さず次サイクルで再試行)。</summary>
     private readonly ConcurrentDictionary<string, byte> _backfillAttempted = new();
     private const int Consecutive404Threshold = 3;
     private readonly DateTime _startedAtUtc = DateTime.UtcNow;
@@ -148,7 +148,7 @@ public sealed class PairSyncService : IDisposable
                     // 入るので、相手が削除した時の 404 を backfill で resurrect する誤りを防げる。
                     // backfill 成功なら以降の 404 は発生しない。失敗・非責任者・観察済みは従来通り 3 連続 404 で削除。
                     var isResponsible = string.Compare(_deviceId, peer.PeerId, StringComparison.Ordinal) < 0;
-                    if (isResponsible && !peer.PairsSsotObserved && _putPair != null && _backfillAttempted.TryAdd(peer.PeerId, 0))
+                    if (isResponsible && !peer.PairsSsotObserved && _putPair != null && !_backfillAttempted.ContainsKey(peer.PeerId))
                     {
                         try
                         {
@@ -159,6 +159,10 @@ public sealed class PairSyncService : IDisposable
                                 NameB = peer.DisplayName ?? string.Empty,
                                 CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                             }, ct);
+                            // Codex P2 fix (第4弾): 成功時のみ marker を set する。PUT 前に立てると transient 失敗で
+                            // セッション中 backfill が永久 skip され、削除 guard と相まって peer も SSoT もない宙ぶらりん
+                            // 状態になる。
+                            _backfillAttempted.TryAdd(peer.PeerId, 0);  // 成功時のみ marker
                             Util.Logger.Log($"pairs/{pairId} backfill 成功 (legacy peer)");
                             _consecutive404[peer.PeerId] = 0;
                             peer.PairsSsotObserved = true;
@@ -169,8 +173,8 @@ public sealed class PairSyncService : IDisposable
                         catch (OperationCanceledException) { throw; }  // CodeRabbit: shutdown キャンセルは即座にループへ伝播
                         catch (Exception ex)
                         {
-                            Util.Logger.Log($"pairs/{pairId} backfill 失敗 → 通常 404 カウントへ: {ex.Message}", Util.LogLevel.Debug);
-                            // fall through to counting
+                            Util.Logger.Log($"pairs/{pairId} backfill 失敗 → 次サイクルで再試行: {ex.Message}", Util.LogLevel.Debug);
+                            // fall through to counting (marker は立てないので次サイクルで再試行可能)
                         }
                     }
                     // Firebase は GET で「存在しない」を 200 + null body で返すケースがある

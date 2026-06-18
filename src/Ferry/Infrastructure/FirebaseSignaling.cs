@@ -772,23 +772,44 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
     /// 指定した pairId のシグナリングデータのみを Firebase から削除する。
     /// 再接続時に古い offer/answer/candidates が残っていると接続失敗するため。
     ///
-    /// Codex P2 fix (第3弾): rules で signaling/{pairId} の parent .write を削除した結果、
-    /// `_client.Child("signaling").Child(pairId).DeleteAsync()` (parent 一括 DELETE) は
-    /// permission_denied で reject されるようになった。child path (offers / answers / endpoints /
-    /// probeOffers / probeAnswers / createdAt) を個別に DELETE して回ることで、古い stale データの
-    /// 残留 (特に WaitForAnswerAsync が freshness 無しで即消費する answers) を確実に消す。
+    /// Codex P2 fix (第4弾): leaf path DELETE に書き換え。bucket parent DELETE は rules で deny される。
+    /// database.rules.json は `signaling/$pairId/offers/$senderDeviceId` 等の leaf にしか .write を許可
+    /// していないため、bucket parent (`signaling/{pairId}/offers` 等) を DELETE すると permission_denied
+    /// になり stale データ (特に `answers/{peerId}` が次回 `WaitForAnswerAsync` で即消費される) が残る。
+    /// pairId は `{deviceA}_{deviceB}` 形式なので Split('_') で両 deviceId を抽出し、
+    /// keyed children (offers / answers / endpoints) は `{child}/{deviceId}` の leaf を狙って DELETE する。
+    /// createdAt は単独 leaf なのでそのまま DELETE。probeOffers / probeAnswers は per-nonce で sender が
+    /// finally で即時 cleanup する (CleanupProbeAsync) ので本メソッドでは扱わない。
     /// </summary>
     public async Task CleanupSignalingDataAsync(string pairId, CancellationToken ct = default)
     {
         try
         {
-            // child path を直列で DELETE。1 つ失敗しても他の cleanup は続行する best-effort。
-            var children = new[] { "offers", "answers", "endpoints", "probeOffers", "probeAnswers", "createdAt" };
-            foreach (var child in children)
+            var ids = pairId.Split('_');
+            if (ids.Length != 2)
             {
-                try { await _client.Child("signaling").Child(pairId).Child(child).DeleteAsync(); }
-                catch (Exception ex) { Util.Logger.Log($"  signaling/{pairId}/{child} 削除失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }
+                Util.Logger.Log($"signaling cleanup: pairId 形式不正 (skip): {pairId}", Util.LogLevel.Warning);
+                return;
             }
+            // keyed children は leaf (`{child}/{deviceId}`) を直接 DELETE する。
+            // 1 つ失敗しても他の cleanup は続行する best-effort。
+            //
+            // 注: rules (`auth.uid == $senderDeviceId` / `$answererDeviceId`) により、自分の deviceId で
+            // 相手 leaf を DELETE する操作は permission_denied になり no-op になる。実害は無い
+            // (次回接続時に相手が同 leaf を PUT で上書きする last-write-wins で stale 残留は起きない) が、
+            // 両 deviceId を defensive に試行しておくのは将来 rules が緩和されたとき自動で全消去動作になる
+            // ようにするため。
+            var keyedChildren = new[] { "offers", "answers", "endpoints" };
+            foreach (var child in keyedChildren)
+            {
+                foreach (var devId in ids)
+                {
+                    try { await _client.Child("signaling").Child(pairId).Child(child).Child(devId).DeleteAsync(); }
+                    catch (Exception ex) { Util.Logger.Log($"  signaling/{pairId}/{child}/{devId[0..Math.Min(8, devId.Length)]}.. 削除失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }
+                }
+            }
+            try { await _client.Child("signaling").Child(pairId).Child("createdAt").DeleteAsync(); }
+            catch (Exception ex) { Util.Logger.Log($"  signaling/{pairId}/createdAt 削除失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }
             Util.Logger.Log($"シグナリングデータ削除: {pairId}");
         }
         catch (Exception ex)

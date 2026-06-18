@@ -243,7 +243,10 @@ public partial class App : Application
             });
             // peerRegistry / settingsService は暗号チャネルの PairSecret 引き当て・フラグ参照に使うため先に生成して注入する。
             // peerRegistry は上の IdentityLost ハンドラより前で宣言済み。
-            var connectionService = new ConnectionService(AppConstants.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName, deviceIdentity, peerRegistry, settingsService, firebaseAuthClient)
+            // #D-001a Phase B §6.3: Firebase pairs DELETE が失敗したときの再試行キュー（pending-pair-deletes.json）。
+            // Codex P2 fix (第4弾): ConnectionService に注入して pairs/{pairId} 書込成功時に queued delete を取り消す。
+            var pendingPairDeletes = new PendingPairDeleteQueue();
+            var connectionService = new ConnectionService(AppConstants.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName, deviceIdentity, peerRegistry, settingsService, firebaseAuthClient, pendingPairDeletes)
             {
                 RelayUrl = AppConstants.RelayUrl,
             };
@@ -266,8 +269,6 @@ public partial class App : Application
             // rere #B1-001: presence は Infrastructure を VM が直接 new せず、ファクトリ経由で生成する。
             // #D-001a Phase B: presence も auth 付き REST が必須（rules 厳格化で auth.uid==$deviceId 強制）。
             var presenceFactory = new FirebasePresenceServiceFactory(AppConstants.FirebaseDatabaseUrl, firebaseAuthClient);
-            // #D-001a Phase B §6.3: Firebase pairs DELETE が失敗したときの再試行キュー（pending-pair-deletes.json）。
-            var pendingPairDeletes = new PendingPairDeleteQueue();
             // #D-001a Phase B §6.2: pairs/{pairId} SSoT のローカル同期サービス（起動時即 + 5min + 1h）。
             // 専用の FirebaseSignaling インスタンスを持たせる（ConnectionService の _signaling と独立、
             // ライフサイクル分離）。Visibility gate は MainWindow から SetActive を呼ぶ。

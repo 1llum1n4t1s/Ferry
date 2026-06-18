@@ -178,9 +178,15 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     private readonly FirebaseAuthClient? _authClient;
 
+    /// <summary>
+    /// Codex P2 fix (第4弾): pairs/{pairId} の SSoT 書込成功時に、同一 pairId の queued delete を
+    /// 取り消すために参照する。null 許容（テストや旧経路は注入なしでも動く）。
+    /// </summary>
+    private readonly PendingPairDeleteQueue? _pendingPairDeleteQueue;
+
     public ConnectionService(string databaseUrl, string deviceId, string displayName,
         DeviceIdentity? identity = null, IPeerRegistryService? peerRegistry = null, ISettingsService? settings = null,
-        FirebaseAuthClient? authClient = null)
+        FirebaseAuthClient? authClient = null, PendingPairDeleteQueue? pendingPairDeleteQueue = null)
     {
         _databaseUrl = databaseUrl;
         _deviceId = deviceId;
@@ -189,6 +195,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         _peerRegistry = peerRegistry;
         _settings = settings;
         _authClient = authClient;
+        _pendingPairDeleteQueue = pendingPairDeleteQueue;
     }
 
     /// <summary>rere #D-001(b): QR に載せる自分の長期公開鍵(base64url SPKI)。identity 未注入なら空。</summary>
@@ -1742,11 +1749,21 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 {
                     using var tempSig = new FirebaseSignaling(_databaseUrl, _authClient);
                     await tempSig.PutPairAsync(pairId, record);
+                    // Codex P2 fix (第4弾 verify): PutPairAsync は rules 拒否で透過 ok 返却 / 401 ライブラリ吸収などの
+                    // 隠れ失敗があるため、queue clear の前に GetPairAsync で書込確認する。確認できなければ queue は
+                    // 残し、次サイクルの retry に委ねる（queue が残っても次の PutPair で再度 Remove を試みるので害なし）。
                     var check = await tempSig.GetPairAsync(pairId);
                     if (check == null)
-                        Util.Logger.Log($"pairs/{maskedPair} 書込セルフチェック失敗（fallback に委譲）", Util.LogLevel.Warning);
+                    {
+                        Util.Logger.Log($"pairs/{maskedPair} 書込セルフチェック失敗（fallback に委譲、queue は保持）", Util.LogLevel.Warning);
+                    }
                     else
+                    {
                         Util.Logger.Log($"pairs/{maskedPair} 書込成功（責任者）");
+                        // 再ペアリング成立で queued delete が残っていると、後で retry が走ったとき新ペアの
+                        // pairs ノードを誤削除して remote unpair になる。書込確認できた時点で取消す。
+                        await TryRemovePendingPairDeleteAsync(pairId, maskedPair);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -1768,6 +1785,19 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     {
                         Util.Logger.Log($"pairs/{maskedPair} 未作成検知 → fallback 書込");
                         await tempSig.PutPairAsync(pairId, record);
+                        // Codex P2 fix (第4弾 verify): fallback 書込経路でも GetPairAsync で書込確認してから
+                        // queue clear する（PutPair の隠れ失敗で queue だけ消えるのを防ぐ）。確認できなければ
+                        // queue は保持し次サイクルに委ねる。
+                        var verify = await tempSig.GetPairAsync(pairId);
+                        if (verify == null)
+                        {
+                            Util.Logger.Log($"pairs/{maskedPair} fallback 書込セルフチェック失敗（queue は保持）", Util.LogLevel.Warning);
+                        }
+                        else
+                        {
+                            Util.Logger.Log($"pairs/{maskedPair} fallback 書込成功");
+                            await TryRemovePendingPairDeleteAsync(pairId, maskedPair);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -1775,6 +1805,24 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     Util.Logger.Log($"pairs/{maskedPair} fallback 書込失敗: {ex.Message}", Util.LogLevel.Warning);
                 }
             });
+        }
+    }
+
+    /// <summary>
+    /// Codex P2 fix (第4弾): pairs/{pairId} の書込成功直後に PendingPairDeleteQueue から同 pairId を取り除く。
+    /// queue 注入なしや内部例外は静かに飲み込む（書込成功という主目的を阻害しない）。
+    /// </summary>
+    private async Task TryRemovePendingPairDeleteAsync(string pairId, string maskedPair)
+    {
+        var queue = _pendingPairDeleteQueue;
+        if (queue == null) return;
+        try
+        {
+            await queue.RemoveAsync(pairId);
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"pairs/{maskedPair} 書込成功後の PendingPairDeleteQueue.Remove 失敗（無視）: {ex.Message}", Util.LogLevel.Warning);
         }
     }
 
