@@ -82,6 +82,17 @@ public sealed class PendingPairDeleteQueue
         foreach (var item in snapshot)
         {
             if (item.LastRetryAtMs > 0 && now - item.LastRetryAtMs < BackoffMs(item.RetryCount)) continue;
+            // Codex P2 fix (第6弾 #3): snapshot 取得後 → destructive callback 実行までの間に RemoveAsync
+            // (= 再ペアリング成立時の TryRemovePendingPairDeleteAsync) が走って queue から item が消えていたら、
+            // ここで callback (Firebase pairs DELETE) を呼ぶと再ペアした新ペアの SSoT を破壊してしまう。
+            // lock 取得して _items にまだ該当 pairId が残っているか直前再 check し、無ければ skip する。
+            bool stillQueued;
+            lock (_lock) stillQueued = _items.Any(i => i.PairId == item.PairId);
+            if (!stillQueued)
+            {
+                Util.Logger.Log($"pending delete pairId={item.PairId} は再ペアリングで取消済み → retry skip", Util.LogLevel.Debug);
+                continue;
+            }
             bool ok;
             try { ok = await deleteCallback(item.PairId); }
             catch { ok = false; }

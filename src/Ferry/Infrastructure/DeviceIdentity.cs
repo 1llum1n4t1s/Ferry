@@ -141,8 +141,15 @@ public sealed class DeviceIdentity : IDisposable
         }
         catch (Exception ex)
         {
-            // 保存に失敗してもメモリ上の鍵で続行する（次回起動時に再生成 = 既存ペアは平文に落ちるだけ）。
-            Util.Logger.Log($"identity.key の保存に失敗（メモリ上の鍵で続行）: {ex.Message}", Util.LogLevel.Warning);
+            // Codex 第6弾 #6 (P2): identity.key 永続化失敗時は ephemeral key で続行せず例外を伝播する。
+            // 旧実装は silent in-memory continued で続行していたため、書込不可な profile (権限なし / ロック)
+            // で起動すると in-memory key が Workers に bind され、次起動で別 key が生成されて
+            // /auth/token が DEVICE_PUBKEY_MISMATCH を返し clean-slate UI が無条件発火していた。
+            // 生成した ec は呼出側で受けないため、ここで明示 Dispose してから throw する。
+            ec.Dispose();
+            Util.Logger.Log($"identity.key の永続化に失敗: {ex.Message}", Util.LogLevel.Error);
+            throw new InvalidOperationException(
+                $"identity.key の永続化に失敗しました ({path})。プロファイルの書込権限を確認してください。", ex);
         }
         return ec;
     }

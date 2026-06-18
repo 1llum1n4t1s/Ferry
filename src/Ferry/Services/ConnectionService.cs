@@ -130,8 +130,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// Firebase 購読時に既存子 (stale な pairings/ エントリ) が replay されても、
     /// 同じ pairing を二重に PairingCompleted へ流さないための重複排除。
     /// StartPairingSessionAsync 開始時にクリアする。
+    /// Codex 第6弾 verify minor: IdTokenRefreshed で StartWatchingPairing を再呼出する経路と
+    /// 通常の AsObservable 配信が並走しうるため、 ConcurrentDictionary で thread-safe 化する。
     /// </summary>
-    private readonly System.Collections.Generic.HashSet<string> _seenPairingIds = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _seenPairingIds = new();
 
     /// <summary>WebSocket リレーサーバーの URL。null の場合はリレーなし（TCP 直接のみ）。</summary>
     public string? RelayUrl { get; set; }
@@ -294,7 +296,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             // watch はここでは止めない。stale な pairings/ エントリ (過去に成立済みで Firebase に
             // 1 時間残るもの) を拾っても watcher を生かしておき、新規デバイスとのペアリングを
             // 検知し続けられるようにする。成立確定 (新規ピア) 時に VM が StopPairingWatch を呼ぶ。
-            if (!_seenPairingIds.Add(info.PairingId)) return;
+            if (!_seenPairingIds.TryAdd(info.PairingId, 0)) return;
 
             Util.Logger.Log($"ペアリング検知: peer={info.PeerDisplayName}");
 
@@ -328,6 +330,19 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     peer.PairSecret = Convert.ToBase64String(secret);
                     Util.Logger.Log($"PairSecret 確立: peer={Util.Logger.MaskDeviceId(info.PeerId)}");
                 }
+            }
+
+            // Codex P2 fix (第6弾 #4): PairingCompleted event は async void subscriber (ConnectionViewModel) で
+            // 受信されるため、subscriber が AddOrUpdatePeerAsync を呼ぶ前に直後の WritePairRecordWithFallback が
+            // 走って TryMarkPairsSsotObservedAsync が registry.FindPeer(peerId) で null を返し mark skip
+            // → 後で subscriber が PairsSsotObserved=false のまま AddOrUpdatePeerAsync → 相手 unpair 時に
+            // 未観察 guard で「3 連続 404 でも削除延期」が永久発火 → 永遠に未同期 (goblin peer) になる race があった。
+            // peer を「event 発火前に同期で永続化」しておく。subscriber 側の AddOrUpdatePeerAsync (重複) は
+            // idempotent (既存 peer の DisplayName 更新だけ) なので問題なし。
+            if (_peerRegistry != null)
+            {
+                try { await _peerRegistry.AddOrUpdatePeerAsync(peer); }
+                catch (Exception ex) { Util.Logger.Log($"OnPairingDetected 内 peer 永続化失敗（継続）: {ex.Message}", Util.LogLevel.Warning); }
             }
 
             PairingCompleted?.Invoke(this, peer);

@@ -46,10 +46,12 @@ export async function handleAuthToken(req: Request, env: Env): Promise<Response>
     return jsonError(400, 'INVALID_SIG', 'sig must be non-empty base64url');
   }
 
-  if (env.RATELIMIT_DEVICE) {
-    const { success } = await env.RATELIMIT_DEVICE.limit({ key: deviceId });
-    if (!success) return jsonError(429, 'DEVICE_RATE_LIMIT', 'deviceId rate limit exceeded');
-  }
+  // Codex 第6弾 #2 fix: device-scoped rate limit は **signature 検証後** に移動。
+  // 未検証段階で deviceId に課金すると、攻撃者が他人の deviceId で /auth/token を
+  // 無効署名で叩き続けて RATELIMIT_DEVICE を枯渇させ、本物 client の auth を 429 で
+  // 止める DoS が成立する (deviceId は QR 経由で peer に渡るため秘密ではない)。
+  // 検証前の保護は前段の RATELIMIT_IP (per-IP) が担当する。
+  // ECDSA verify 自体の CPU コストは数 ms で、IP rate limit が flood を抑える前提。
 
   // ECDSA P-256 SHA-256 IEEE P1363 raw 署名検証
   const message = `ferry-auth-v1|${deviceId}|${pubKeySpki}|${ts}`;
@@ -73,6 +75,12 @@ export async function handleAuthToken(req: Request, env: Env): Promise<Response>
   }
   if (!verified) {
     return jsonError(401, 'BAD_SIGNATURE', 'signature verification failed');
+  }
+
+  // 署名検証成功後に device rate limit を消費 (正規 client のみカウント)
+  if (env.RATELIMIT_DEVICE) {
+    const { success } = await env.RATELIMIT_DEVICE.limit({ key: deviceId });
+    if (!success) return jsonError(429, 'DEVICE_RATE_LIMIT', 'deviceId rate limit exceeded');
   }
 
   // KV first-write-wins binding (deviceId ↔ pubKeySpki)
@@ -126,10 +134,12 @@ export async function handlePairToken(req: Request, env: Env): Promise<Response>
     }
   }
 
-  if (env.RATELIMIT_SESSION) {
-    const { success } = await env.RATELIMIT_SESSION.limit({ key: sessionId });
-    if (!success) return jsonError(429, 'SESSION_RATE_LIMIT', 'sessionId rate limit exceeded');
-  }
+  // Codex 第6弾 #2 fix: session-scoped rate limit は **nonce 検証後** に移動。
+  // 未検証段階で sessionId に課金すると、攻撃者が他人の sessionId で /pair/token を
+  // 不正 nonce で叩き続けて RATELIMIT_SESSION を枯渇させ、本物 Bridge tab の token
+  // 発行を 429 で止める DoS が成立する。検証前の保護は前段の RATELIMIT_IP (per-IP)
+  // が担当する。なお Firebase REST に対する fetch のコストはあるが、IP rate limit
+  // (60req/60s) で flood は抑えられる前提。
 
   // Codex P1 fix: PairingNonce は sessions/ ではなく pairing_nonces/ (rules で .read=false の server-only ノード) に分離。
   // SA access_token で pairing_nonces/{sid} を読んで一致確認する。
@@ -153,6 +163,12 @@ export async function handlePairToken(req: Request, env: Env): Promise<Response>
   if (hasPeer) {
     const peerErr = await verifyNonce(peerSessionId as string, peerPairingNonce as string, 'peer');
     if (peerErr) return peerErr;
+  }
+
+  // nonce 検証成功後に session rate limit を消費 (正規 Bridge tab のみカウント)
+  if (env.RATELIMIT_SESSION) {
+    const { success } = await env.RATELIMIT_SESSION.limit({ key: sessionId });
+    if (!success) return jsonError(429, 'SESSION_RATE_LIMIT', 'sessionId rate limit exceeded');
   }
 
   // 5min Custom Token (uid = sessionId, src=bridge → rules で pairing_nonces/sessions 書込不可)

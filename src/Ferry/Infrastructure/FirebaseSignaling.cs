@@ -36,6 +36,14 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
     private readonly FirebaseAuthClient? _authClient;
     private string _sessionId = string.Empty;
     private IDisposable? _pairingSubscription;
+    /// <summary>Codex P1 fix (第6弾): <see cref="StartWatchingPairing"/> を呼んだ時点の Unix ms。
+    /// Firebase の InsertOrUpdate event は subscribe 時に既存子を replay するため、手動 / remote unpair
+    /// 後に "Add new peer" を開くと、firebase-cleanup.yml が掃除するまで残っている古い pairings entry が
+    /// PairingDetected を再発火し、OnPairingDetected の副作用 (peer 再追加 / WritePairRecordWithFallback /
+    /// Revoke 等) で削除済み peer を復活させる critical race があった。SidA/SidB == _sessionId だけの
+    /// gate では replay 防御として不十分だったので、subscribe 開始時刻以降の CreatedAt を持つ entry のみ
+    /// accept する per-session start time gate を追加する。</summary>
+    private long _pairingWatchStartedAtMs;
     private EventHandler? _idTokenRefreshedHandler;
     /// <summary>ペアリング相手が見つかったときに発火するイベント。</summary>
     public event EventHandler<PairingInfo>? PairingDetected;
@@ -223,6 +231,9 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
     public void StartWatchingPairing()
     {
         _pairingSubscription?.Dispose();
+        // Codex P1 fix (第6弾): subscribe 開始時刻を確定して replay フィルタの基準にする。
+        // 再 Start のシナリオ (同 session で複数回呼ぶケース) でも最新の時刻に更新されるよう defensive に代入。
+        _pairingWatchStartedAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         // #D-001a Phase B: 自分の sessionId 配下のみ購読する（per-device path、Codex P2 解消）。
         // rules `pairings/$deviceId/.read: auth.uid == $deviceId` で自分配下しか購読できないが、それで十分。
         _pairingSubscription = _client
@@ -231,7 +242,15 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
             .AsObservable<PairingData>()
             .Where(e => e.EventType == FirebaseEventType.InsertOrUpdate)
             .Where(e => e.Object != null &&
-                        (e.Object.SidA == _sessionId || e.Object.SidB == _sessionId))
+                        (e.Object.SidA == _sessionId || e.Object.SidB == _sessionId) &&
+                        // Codex P1 fix (第6弾): stale replay 防御。subscribe 開始より古い CreatedAt は無視する。
+                        // 同時刻 (==) は accept (clock skew で startMs > entry.CreatedAt の紙一重ケースを排除)。
+                        // PairingData.CreatedAt は Bridge / PC 双方が Unix ms (UTC) で書き込むため startedAt と直接比較可。
+                        // rules (database.rules.json:34) で書込時に ±60s 鮮度ガード強制のため、ローカル時計が大きく
+                        // ズレた相手は publish 自体不可。clock skew で正規 entry が誤 reject されるリスクは server 側
+                        // ±60s に閉じる。CreatedAt 欠落 (long の default = 0) の旧 entries は startedAt (≈Unix ms) を
+                        // 超えないため silent skip = 意図通り (Phase B 以前の data はもう新規 pairing として扱わない)。
+                        e.Object.CreatedAt >= _pairingWatchStartedAtMs)
             .Subscribe(e =>
             {
                 Util.Logger.Log($"ペアリング検知: {e.Key}");

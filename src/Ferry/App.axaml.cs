@@ -160,7 +160,23 @@ public partial class App : Application
                 settingsService.SetAutoStart(true);
 
             // rere #D-001(b): 長期 ECDH 鍵（%APPDATA%\Ferry\identity.key）。QR の公開鍵交換と PairSecret 導出に使う。
-            var deviceIdentity = Infrastructure.DeviceIdentity.CreateDefault();
+            // Codex 第6弾 #6 (P2): identity.key 永続化失敗時は ephemeral key で続行せず起動を中止する。
+            // 旧実装は silent in-memory continued で続行 → 次起動で別 key が生成されて Workers /auth/token が
+            // DEVICE_PUBKEY_MISMATCH を返し clean-slate が無条件発火していた。書込不可な profile (権限なし /
+            // ロック) ではユーザーに権限を直してもらうしかないので、ここで明示的に exit する。
+            Infrastructure.DeviceIdentity deviceIdentity;
+            try
+            {
+                deviceIdentity = Infrastructure.DeviceIdentity.CreateDefault();
+            }
+            catch (Exception ex)
+            {
+                Util.Logger.Log($"identity.key の永続化に失敗したため起動を中止します: {ex.Message}", Util.LogLevel.Error);
+                // Avalonia の lifetime はまだ Run していない (この後 desktop.MainWindow を設定して Start) ので、
+                // ダイアログ表示は過剰。ログを残してプロセスを exit code 1 で落とす。
+                Environment.Exit(1);
+                return;  // unreachable だが deviceIdentity の definite-assignment のため
+            }
             // #D-001a Phase B: Firebase Custom Token Auth クライアント。バックグラウンドで /auth/token に
             // 署名チャレンジ → idToken 取得 → 50min ごとに refresh。FirebaseSignaling のすべての REST に注入される。
             var firebaseAuthClient = new Infrastructure.FirebaseAuthClient(deviceIdentity, settings.DeviceId);

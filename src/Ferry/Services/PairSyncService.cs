@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Ferry.Infrastructure;
+using Ferry.Models;
 
 namespace Ferry.Services;
 
@@ -121,7 +123,19 @@ public sealed class PairSyncService : IDisposable
         var inGrace = applyGracePeriod && DateTime.UtcNow - _startedAtUtc < _gracePeriod;
         // 404 連続閾値到達時に RemovePeerAsync で peerRegistry を変更するため、列挙中の collection 改変を
         // 避けて snapshot を取る（InvalidOperationException 防止 / CodeRabbit 指摘）。
-        var peers = _peerRegistry.GetPairedPeers().ToList();
+        // Codex 第6弾 #5 (P2): snapshot 取得自体が UI/pairing 側 mutation と競合して例外を投げる可能性が
+        // あるため、try/catch で囲ってループを永久終了させない（次サイクルで再試行）。
+        // PeerRegistryService 側でも lock を入れているのでこの catch はフォールバック。
+        List<PairedPeer> peers;
+        try
+        {
+            peers = _peerRegistry.GetPairedPeers().ToList();
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"PairSyncService snapshot 取得失敗 (次サイクルで再試行): {ex.Message}", Util.LogLevel.Warning);
+            return;
+        }
         foreach (var peer in peers)
         {
             if (ct.IsCancellationRequested) return;
