@@ -86,6 +86,9 @@ public interface IConnectionService
     /// <summary>現在着信監視中のピア ID（未監視なら null）。</summary>
     string? CurrentListeningPeerId => null;
 
+    /// <summary>rere #D-001(b): QR に載せる自分の長期公開鍵(base64url SPKI)。未対応実装は空文字。</summary>
+    string PublicKeyForQr => string.Empty;
+
     // === オンデマンド接続（送信側が呼ぶ） ===
 
     /// <summary>

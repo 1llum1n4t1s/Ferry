@@ -5,8 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## ビルド・テストコマンド
 
 ```bash
-# デバッグビルド
+# デバッグビルド（単体プロジェクト / ソリューション全体 Ferry.slnx）
 dotnet build src/Ferry/Ferry.csproj
+dotnet build Ferry.slnx          # アプリ + テストを一括ビルド
 
 # リリース発行 (Native AOT、ランタイム指定が必須)
 # CI は win-x64 / win-arm64 / osx-arm64 / linux-x64 / linux-arm64 の 5 ランタイムを発行する
@@ -23,6 +24,8 @@ cd src/Ferry.Bridge && firebase deploy --only hosting
 ```
 
 > Windows 向けリリースは `pwsh scripts/release-local.ps1` でローカル実行する（コード署名のため）。macOS / Linux と Bridge ページは `release/**` ブランチへの push で CI が配信する（後述「自動更新と配信」）。
+>
+> PR（→ main）は `.github/workflows/dotnet-build.yml`（".NET Build"）が build + test で検証する。`release/**` トリガーの配信 CI（後述）とは別ワークフローなので、コード変更の正否はこの PR CI で確認する。
 
 ## アーキテクチャ
 
@@ -32,7 +35,8 @@ Ferry は QR コードでペアリングし、TCP 直接接続（LAN）/ UDP ホ
 
 - **`src/Ferry/`** — .NET 10 Avalonia UI デスクトップアプリ（Native AOT、クロスプラットフォーム: win-x64 / win-arm64 / osx-arm64 / linux-x64 / linux-arm64）
 - **`src/Ferry.Bridge/`** — Firebase Hosting にデプロイする Web ページ（スマホでQRスキャン→2台のPCをペアリング。`bridge.js` + `index.html`、ライブラリは CDN 直リンク）
-- **`infra/cloudflare/relay/`** — Cloudflare Workers + Durable Objects の WebSocket リレー実装 (TypeScript)。`wrangler deploy` で `wss://relay.ferry.nephilim.jp/ferry-relay` に配信
+- **`infra/cloudflare/relay/`** — Cloudflare Workers + Durable Objects の WebSocket リレー実装 (TypeScript)。`wrangler deploy` で `wss://relay.ferry.nephilim.jp/ferry-relay` に配信。死活監視は `relay-healthcheck.yml`（15 分ごとの cron）
+- **`web/`** — ダウンロード用ランディングページ（`index.html` + Cloudflare Worker `worker.js` + `wrangler.toml`）。`src/Ferry.Bridge/` の QR ペアリングページとは別物。`web/` 配下を main に push すると `deploy-landing.yml` が Cloudflare に配信
 - **`tests/Ferry.Tests/`** — xUnit v3 + NSubstitute によるユニットテスト
 
 ### Avalonia UI ネイティブ + MVVM サービス層

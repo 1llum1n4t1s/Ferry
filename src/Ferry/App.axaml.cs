@@ -145,14 +145,17 @@ public partial class App : Application
             if (settings.AutoStartWithWindows)
                 settingsService.SetAutoStart(true);
 
-            var connectionService = new ConnectionService(AppConstants.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName)
+            // rere #D-001(b): 長期 ECDH 鍵（%APPDATA%\Ferry\identity.key）。QR の公開鍵交換と PairSecret 導出に使う。
+            var deviceIdentity = Infrastructure.DeviceIdentity.CreateDefault();
+            // peerRegistry / settingsService は暗号チャネルの PairSecret 引き当て・フラグ参照に使うため先に生成して注入する。
+            var peerRegistry = new PeerRegistryService();
+            var connectionService = new ConnectionService(AppConstants.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName, deviceIdentity, peerRegistry, settingsService)
             {
                 RelayUrl = AppConstants.RelayUrl,
             };
             var transferService = new TransferService(connectionService, settingsService);
             TransferService = transferService;
             var qrCodeService = new QrCodeGenerator();
-            var peerRegistry = new PeerRegistryService();
 
             // ロケールを設定から復元（未設定ならシステムロケールを自動検出）
             var locale = string.IsNullOrEmpty(settings.Locale) ? DetectDefaultLocale() : settings.Locale;
@@ -166,7 +169,9 @@ public partial class App : Application
                 _ => ThemeVariant.Default, // "System" = OS 追従
             };
 
-            var connectionVm = new ConnectionViewModel(connectionService, qrCodeService, settingsService, peerRegistry);
+            // rere #B1-001: presence は Infrastructure を VM が直接 new せず、ファクトリ経由で生成する。
+            var presenceFactory = new FirebasePresenceServiceFactory(AppConstants.FirebaseDatabaseUrl);
+            var connectionVm = new ConnectionViewModel(connectionService, qrCodeService, settingsService, peerRegistry, presenceFactory);
             // rere PR#8 #F4: プレゼンス監視は実 Firebase I/O を伴うため ctor ではなく本番起動時にここで開始する。
             connectionVm.StartPresenceMonitoring();
             var transferVm = new TransferViewModel(connectionService, transferService, connectionVm, settingsService);
@@ -205,6 +210,8 @@ public partial class App : Application
                 DisposeQuietly(mainVm, nameof(MainWindowViewModel));
                 DisposeQuietly(transferService, nameof(TransferService));
                 DisposeQuietly(connectionService, nameof(ConnectionService));
+                // ConnectionService が参照を持つので、それを破棄した後に鍵を破棄する。
+                DisposeQuietly(deviceIdentity, nameof(Infrastructure.DeviceIdentity));
             };
 
             // トレイアイコン設定（MinimizeToTray 有効時にウィンドウ復帰用）

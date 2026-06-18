@@ -37,7 +37,9 @@ public class TransferViewModelTests : IDisposable
         _settingsService.Settings.Returns(new AppSettings { DisplayName = "TestPC" });
         var peerRegistry = Substitute.For<IPeerRegistryService>();
         peerRegistry.GetPairedPeers().Returns(new List<PairedPeer>());
-        _connectionViewModel = new ConnectionViewModel(_connectionService, qrCodeService, _settingsService, peerRegistry);
+        // rere #B1-001: presence ファクトリはスタブ。テストは StartPresenceMonitoring を呼ばないので Create は走らない。
+        var presenceFactory = Substitute.For<IPresenceServiceFactory>();
+        _connectionViewModel = new ConnectionViewModel(_connectionService, qrCodeService, _settingsService, peerRegistry, presenceFactory);
     }
 
     private TransferViewModel CreateViewModel(bool withSelectedPeer = false)

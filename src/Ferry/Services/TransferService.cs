@@ -20,8 +20,12 @@ namespace Ferry.Services;
 /// </summary>
 public sealed class TransferService : ITransferService, IDisposable
 {
-    /// <summary>承認待ち中にバッファできるチャンクの合計上限（OOM 防止）。</summary>
+    /// <summary>承認待ち中にバッファできるチャンクの合計上限（OOM 防止）。1 transfer あたり。</summary>
     private const long MaxApprovalBufferBytes = 64L * 1024 * 1024;
+
+    /// <summary>rere #C2-002: 全承認待ち transfer 合算のバッファ上限。per-transfer 上限(64MB)だけだと
+    /// 細工 peer が多数の承認待ち transfer を並行生成して N×64MB を積めるため、全体でも頭打ちにする。</summary>
+    private const long MaxTotalApprovalBufferBytes = 256L * 1024 * 1024;
 
     /// <summary>v1.0.38 review fix #2: 送信側が FileApprove を待つ最大秒数。
     /// このタイムアウトを超えたら送信を Cancelled に遷移させる (永久停止を防ぐ)。</summary>
@@ -337,6 +341,14 @@ public sealed class TransferService : ITransferService, IDisposable
         var startChunk = 0;
         Util.Logger.Log($"転送レジューム: {item.FileName}, 先頭から再送 (全 {item.TotalChunks} チャンク)");
 
+        // rere #B1-004: SendFileAsync と同様に _sendCts を登録し、レジューム送信中も
+        // CancelTransfer / 相手 reject / 接続断（_pausedSends）で送信ループを止められるようにする。
+        // 旧実装は未登録で、CancelTransfer / HandleFileReject の _sendCts.TryGetValue が空振りし、
+        // UI 上は Cancelled でも送信ループが全チャンク送りきっていた。
+        var sendCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _sendCts[transferId] = sendCts;
+        ct = sendCts.Token;
+
         // v1.0.38 review fix #3: 承認待ち TCS を準備
         var approvalTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pendingSendApprovals[transferId] = approvalTcs;
@@ -367,14 +379,22 @@ public sealed class TransferService : ITransferService, IDisposable
         catch (Exception ex)
         {
             Util.Logger.Log($"レジュームエラー: {ex.Message}", Util.LogLevel.Error);
-            item.State = TransferState.Error;
-            item.ErrorMessage = ex.Message;
-            TransferError?.Invoke(this, item);
+            // rere #B1-004: CancelTransfer / HandleFileReject が state を Cancelled に遷移済みなら
+            // 上書きしない（SendFileAsync L300 と同じガード）。キャンセルを Error に化けさせない。
+            if (item.State != TransferState.Cancelled)
+            {
+                item.State = TransferState.Error;
+                item.ErrorMessage = ex.Message;
+                TransferError?.Invoke(this, item);
+            }
             return false;
         }
         finally
         {
             _pendingSendApprovals.TryRemove(transferId, out _);
+            _pausedSends.TryRemove(transferId, out _);
+            if (_sendCts.TryRemove(transferId, out var cts))
+                cts.Dispose();
         }
     }
 
@@ -875,6 +895,15 @@ public sealed class TransferService : ITransferService, IDisposable
         ApprovalRequested?.Invoke(this, state.Item);
     }
 
+    /// <summary>rere #C2-002: 全承認待ち transfer のバッファ済みバイト合計。承認前バッファの異常パスでのみ呼ぶ。</summary>
+    private long TotalPendingApprovalBytes()
+    {
+        long sum = 0;
+        foreach (var p in _pendingApprovals.Values)
+            sum += p.BufferedBytes;
+        return sum;
+    }
+
     private void HandleFileChunk(byte[] data)
     {
         // [種別 1] [TransferId 16] [chunkIndex 4] [data]
@@ -890,7 +919,11 @@ public sealed class TransferService : ITransferService, IDisposable
             // 承認待ち中のチャンクは TransferId 単位でバッファリング（上限超過分は破棄して OOM 防止）
             if (_pendingApprovals.TryGetValue(transferId, out var pending))
             {
-                if (pending.BufferedBytes + chunkLength > MaxApprovalBufferBytes)
+                // rere #C2-002: per-transfer 上限に加え、全承認待ち合算の上限でも破棄する。
+                // 合算は承認前バッファ（正規経路ではほぼ発生しない異常パス）でのみ評価するので、
+                // 都度集計（O(承認待ち件数)）でも実コストは無視できる（カウンタの増減簿記による誤差を避ける）。
+                if (pending.BufferedBytes + chunkLength > MaxApprovalBufferBytes
+                    || TotalPendingApprovalBytes() + chunkLength > MaxTotalApprovalBufferBytes)
                 {
                     Util.Logger.Log($"承認待ちバッファ上限超過のためチャンクを破棄: {pending.FileName}", Util.LogLevel.Warning);
                     return;
@@ -1223,8 +1256,10 @@ public sealed class TransferService : ITransferService, IDisposable
             sendingItem.State = TransferState.Cancelled;
             sendingItem.ErrorMessage = $"相手が中断しました: {reason}";
             _pausedSends.TryRemove(transferId, out _);
+            // rere #B1-005: SendFileAsync の finally が同 CTS を TryRemove+Dispose する競合で
+            // ObjectDisposedException になりうる（OnConnectionLost と同じく握りつぶす）。
             if (_sendCts.TryGetValue(transferId, out var sc))
-                sc.Cancel();
+                try { sc.Cancel(); } catch (ObjectDisposedException) { /* finally で Dispose 済みの競合は無視 */ }
             TransferError?.Invoke(this, sendingItem);
             return;
         }
@@ -1451,8 +1486,9 @@ public sealed class TransferService : ITransferService, IDisposable
 
             // 送信ループ（SendChunksAsync）を停止。OperationCanceledException が SendFileAsync を抜けて
             // VM 側で Cancelled 反映される（state は上で Cancelled 済みなので catch は Error に書き換えない）
+            // rere #B1-005: finally の Dispose と競合した ObjectDisposedException は握りつぶす。
             if (_sendCts.TryGetValue(tid, out var cts))
-                cts.Cancel();
+                try { cts.Cancel(); } catch (ObjectDisposedException) { /* finally で Dispose 済みの競合は無視 */ }
 
             SendRejectFireAndForget(tid, "送信側がキャンセルしました");
         }

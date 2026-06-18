@@ -77,6 +77,11 @@ export class RelayDO {
   }
 
   async fetch(req: Request): Promise<Response> {
+    // rere #F-001: runbook / relay-healthcheck.yml が `wrangler tail` を復旧手順の柱に据えているため、
+    // 接続ライフサイクル (join / ready / 409 / close / error / 転送失敗) を tail で追えるようにログする。
+    // 生 pairId は出さず、ハッシュ化済み DO id の前方 8 桁 + role のみに留めて PII を増やさない。
+    const room = this.state.id.toString().slice(0, 8);
+
     // 既存 peer 数チェック (Ferry は 1 ペアにつき 2 peer まで)。
     // readyState で生存 (OPEN/CONNECTING) のみを数える。クライアントの再接続/張り直しで
     // 古いソケットが CLOSING/CLOSED のまま getWebSockets に残っていると、生きた接続が 1 本でも
@@ -85,11 +90,13 @@ export class RelayDO {
       .getWebSockets()
       .filter((ws) => ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING);
     if (live.length >= 2) {
+      console.log(`[relay] 409 pair-full room=${room} live=${live.length}`);
       return new Response('Pair already full', { status: 409 });
     }
 
     const url = new URL(req.url);
     const role = url.searchParams.get('__role') ?? 'unknown';
+    console.log(`[relay] join room=${room} role=${role} live=${live.length}`);
 
     const pair = new WebSocketPair();
     const client = pair[0];
@@ -103,6 +110,7 @@ export class RelayDO {
     // 2 peer 揃った瞬間に両方へ "ready" を送り、クライアントの WaitForReadyAsync を通過させる。
     const sockets = this.state.getWebSockets();
     if (sockets.length === 2) {
+      console.log(`[relay] ready room=${room} (2 peers paired)`);
       for (const ws of sockets) {
         try {
           ws.send('ready');
@@ -122,14 +130,19 @@ export class RelayDO {
   async webSocketMessage(ws: WebSocket, msg: ArrayBuffer | string): Promise<void> {
     if (typeof msg === 'string') {
       // クライアント側はバイナリしか送らない契約。テキストが来たら不正としてドロップ。
+      // rere #F-001: 不正テキストフレームの破棄は通常起きないのでログする（バイナリの正常リレーは
+      // チャンク毎になるためログしない）。
+      console.log(`[relay] drop text-frame room=${this.state.id.toString().slice(0, 8)}`);
       return;
     }
     for (const peer of this.state.getWebSockets()) {
       if (peer !== ws && peer.readyState === WebSocket.OPEN) {
         try {
           peer.send(msg);
-        } catch {
-          /* 受信側がフレーム処理中に詰まった場合は破棄。クライアント側の信頼性レイヤーで補償される */
+        } catch (e) {
+          // 受信側がフレーム処理中に詰まった場合は破棄。クライアント側の信頼性レイヤーで補償されるが、
+          // rere #F-001: 黙って捨てると切断原因の切り分けが不能になるためログする。
+          console.error(`[relay] relay-send failed room=${this.state.id.toString().slice(0, 8)}: ${e}`);
         }
       }
     }
@@ -137,6 +150,7 @@ export class RelayDO {
 
   /** 片側が切れたら相手側も同コードで close する (転送中の片側切断検知)。 */
   async webSocketClose(ws: WebSocket, _code: number, _reason: string, _wasClean: boolean): Promise<void> {
+    console.log(`[relay] close room=${this.state.id.toString().slice(0, 8)} code=${_code} clean=${_wasClean}`);
     for (const peer of this.state.getWebSockets()) {
       if (peer !== ws) {
         try {
@@ -149,6 +163,7 @@ export class RelayDO {
   }
 
   async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
+    console.error(`[relay] error room=${this.state.id.toString().slice(0, 8)}: ${_error}`);
     for (const peer of this.state.getWebSockets()) {
       if (peer !== ws) {
         try {

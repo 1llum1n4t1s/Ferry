@@ -41,7 +41,8 @@ public class ConnectionViewModelTests : IDisposable
     }
 
     private ConnectionViewModel CreateViewModel() =>
-        new(_connectionService, _qrCodeService, _settingsService, _peerRegistry);
+        // rere #B1-001: presence ファクトリはスタブ（テストは StartPresenceMonitoring を呼ばない）。
+        new(_connectionService, _qrCodeService, _settingsService, _peerRegistry, Substitute.For<IPresenceServiceFactory>());
 
     public void Dispose() { }
 

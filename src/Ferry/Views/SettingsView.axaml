@@ -83,6 +83,15 @@
                         <ToggleSwitch Grid.Column="1" IsChecked="{Binding AutoAcceptFileTransfer, Mode=TwoWay}" />
                     </Grid>
 
+                    <!-- rere #D-001(b): ペア間 E2E 暗号（実験的）。両端 ON + 再ペアリングで有効。OFF は従来どおり平文。 -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel>
+                            <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.SecureChannel}" />
+                            <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.SecureChannel.Desc}" />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding EnableSecureChannel, Mode=TwoWay}" />
+                    </Grid>
+
                     <!-- アップロード帯域制限 (KB/s)。0 で無制限。 -->
                     <Grid ColumnDefinitions="*,Auto">
                         <StackPanel>

@@ -49,7 +49,7 @@ Cloudflare R2 (`https://ferry.nephilim.jp`) から配信。**Setup インスト�
 ## 使い方
 
 1. **2 台の PC でそれぞれ Ferry を起動** し、「ペアリング追加」を選択
-2. **手元のスマートフォン** で PC-A の QR をスキャン → Bridge ページ (`https://ferry.nephilim.jp/bridge/`) が開く
+2. **手元のスマートフォン** で PC-A の QR をスキャン → Bridge ページ (`https://ferry-edf09.web.app`) が開く
 3. Bridge ページ内のカメラで **PC-B の QR** をスキャン → 両 PC にペアリング完了通知
 4. 以降、ピア一覧から相手を選んでファイル / フォルダをドラッグ & ドロップで送信
 5. PC 再起動後も保存済みペア一覧から再接続できます
@@ -146,6 +146,7 @@ TCP / WebSocket ストリーム上の長さプレフィクス付きバイナリ�
 | FileReject | `0x04` | 受信拒否 (TransferId プレフィクス付き) |
 | FileHash | `0x05` | SHA-256 ハッシュ後送り (送信側がチャンク送信後に送付) |
 | FileApprove | `0x06` | 受信承認通知 (受信側が承認時に送信、送信側はこれを待ってチャンク送信開始) |
+| FileFlowAck | `0x07` | フロー制御 ACK (受信側が書込み済みチャンク数を返す。リレー経路の中継バッファ溢れ防止) |
 | Ping/Pong | `0x10/0x11` | キープアライブ |
 | ResumeRequest | `0x20` | 転送再開リクエスト |
 | ResumeResponse | `0x21` | 転送再開応答 |

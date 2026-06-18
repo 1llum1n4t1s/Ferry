@@ -32,6 +32,14 @@ public sealed partial class PairedPeer : ObservableObject
     /// <summary>最終転送日時 (UTC)。</summary>
     public DateTime? LastTransferAt { get; set; }
 
+    /// <summary>
+    /// rere #D-001(b): ペア相互認証(HMAC) + AES-GCM 封筒のルート鍵(base64, 32B)。
+    /// QR で交換した相手の公開鍵 × 自分の秘密鍵の ECDH から導出して永続する。
+    /// null の旧ペア（pk 交換前にペア済み / コード貼付で pk 無し）は平文フォールバックする。
+    /// peers.json に平文保存するが、ローカルディスクへの読み取りは本アプリの信頼モデル外
+    /// （脅威はネットワーク MITM であり、ローカル権限を得た攻撃者は DeviceId 等も読める）。</summary>
+    public string? PairSecret { get; set; }
+
     /// <summary>現在の接続経路（接続時に更新、未接続時は Unknown）。ランタイム専用。
     /// 派生プロパティ群は [NotifyPropertyChangedFor] で宣言的に連動通知する (TransferItem と同パターン。
     /// 手書き OnRouteChanged 列挙だと派生プロパティ追加時に通知漏れが起きやすい)。</summary>

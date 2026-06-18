@@ -38,6 +38,15 @@ public static class TransferProtocol
     /// 先行しないよう待機することで中継バッファを一定量に抑える。</summary>
     public const byte FileFlowAck = 0x07;
 
+    /// <summary>rere #D-001(b): セッション暗号ハンドシェイクの Hello [sessionNonce(16)][challenge(16)]。
+    /// 接続確立直後に暗号対応の両端が送り合い、セッション鍵 nonce と相互認証チャレンジを交換する。
+    /// transport 上の認証ゲートで消費し、TransferService には渡さない（平文経路では無視）。</summary>
+    public const byte SecureHello = 0x30;
+
+    /// <summary>rere #D-001(b): セッション暗号ハンドシェイクの Confirm [HMAC response(32)]。
+    /// 相手の challenge への HMAC 応答。検証成功で暗号セッション確立、不一致なら即切断。</summary>
+    public const byte SecureConfirm = 0x31;
+
     /// <summary>キープアライブ送信。</summary>
     public const byte Ping = 0x10;
 

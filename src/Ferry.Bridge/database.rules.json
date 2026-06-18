@@ -12,6 +12,7 @@
         ".write": "auth != null && auth.uid == $sid && (!data.exists() || newData.child('CreatedAt').val() > data.child('CreatedAt').val() - 60000)",
         "DisplayName": { ".validate": "newData.isString() && newData.val().length <= 64" },
         "CreatedAt": { ".validate": "newData.isNumber()" },
+        "PublicKey": { ".validate": "newData.isString() && newData.val().length <= 256" },
         "$other": { ".validate": false }
       }
     },
@@ -26,6 +27,8 @@
         "NameA": { ".validate": "newData.isString() && newData.val().length <= 64" },
         "NameB": { ".validate": "newData.isString() && newData.val().length <= 64" },
         "CreatedAt": { ".validate": "newData.isNumber()" },
+        "PkA": { ".validate": "newData.isString() && newData.val().length <= 256" },
+        "PkB": { ".validate": "newData.isString() && newData.val().length <= 256" },
         "$other": { ".validate": false }
       }
     },

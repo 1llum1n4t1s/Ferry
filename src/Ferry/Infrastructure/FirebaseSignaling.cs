@@ -7,6 +7,8 @@ using System.Reactive.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Ferry.Models;
+using Ferry.Services;
 using Firebase.Database;
 using Firebase.Database.Query;
 using Firebase.Database.Streaming;
@@ -27,7 +29,7 @@ namespace Ferry.Infrastructure;
 ///   signaling/{pairId}/probeOffers/{nonce} / probeAnswers/{nonce} = TimedSignalingValue (経路 probe)
 /// 書き手は自分の deviceId キー、読み手はペア相手の deviceId キーを読む (SignalingPaths 参照)。
 /// </summary>
-public sealed class FirebaseSignaling : IDisposable
+public sealed class FirebaseSignaling : IDisposable, IPresenceService
 {
     private readonly FirebaseClient _client;
     private readonly string _databaseUrl;
@@ -44,6 +46,10 @@ public sealed class FirebaseSignaling : IDisposable
     /// 次回 GET で If-None-Match を付け、未変更なら 304（本文ゼロ）で返させて帯域を節約する。</summary>
     private readonly ConcurrentDictionary<string, (string ETag, long LastSeen)> _presenceCache = new();
 
+    /// <summary>rere #F-002: presence 取得失敗ログの氾濫防止スロットル（最後に記録した tick(ms)）。
+    /// 30s × ピア数で同一エラーが氾濫しないよう、60s に 1 度だけ Warning を出す。</summary>
+    private long _presenceErrorLogTick;
+
     public FirebaseSignaling(string databaseUrl)
     {
         _client = new FirebaseClient(databaseUrl);
@@ -55,8 +61,9 @@ public sealed class FirebaseSignaling : IDisposable
     /// </summary>
     /// <param name="deviceId">デバイスの安定した一意識別子。</param>
     /// <param name="displayName">表示名。</param>
+    /// <param name="publicKey">rere #D-001(b): 長期公開鍵(base64url SPKI)。空可（旧互換・平文経路）。</param>
     /// <returns>セッション ID（= deviceId）。</returns>
-    public async Task<string> RegisterSessionAsync(string deviceId, string displayName, CancellationToken ct = default)
+    public async Task<string> RegisterSessionAsync(string deviceId, string displayName, string publicKey = "", CancellationToken ct = default)
     {
         _sessionId = deviceId;
 
@@ -67,6 +74,7 @@ public sealed class FirebaseSignaling : IDisposable
             {
                 DisplayName = displayName,
                 CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                PublicKey = publicKey,
             });
 
         Util.Logger.Log($"セッション登録: {_sessionId}");
@@ -82,7 +90,9 @@ public sealed class FirebaseSignaling : IDisposable
     /// <param name="nameA">PC-A の表示名。</param>
     /// <param name="sidB">PC-B (招待先) の sessionId。</param>
     /// <param name="nameB">PC-B の表示名。</param>
-    public async Task SubmitPairingAsync(string sidA, string nameA, string sidB, string nameB, CancellationToken ct = default)
+    /// <param name="pkA">rere #D-001(b): PC-A の長期公開鍵(base64url SPKI)。空可。</param>
+    /// <param name="pkB">rere #D-001(b): PC-B の長期公開鍵(base64url SPKI)。空可。</param>
+    public async Task SubmitPairingAsync(string sidA, string nameA, string sidB, string nameB, string pkA = "", string pkB = "", CancellationToken ct = default)
     {
         // Bridge ページの ID 形式 (`${Date.now()}_${random(6)}`) に揃えた 20 文字 (13 + 1 + 6) で生成
         var pairingId = $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}_{Guid.NewGuid():N}"[..20];
@@ -96,6 +106,8 @@ public sealed class FirebaseSignaling : IDisposable
                 SidB = sidB,
                 NameB = string.IsNullOrEmpty(nameB) ? "PC-B" : nameB,
                 CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                PkA = pkA,
+                PkB = pkB,
             });
         // sidA/sidB は deviceId(32hex)。MaskIp は IPv4(4オクテット)以外を素通しするため deviceId 用の MaskDeviceId を使う
         Util.Logger.Log($"ペアリング書き込み: {pairingId}, A={Util.Logger.MaskDeviceId(sidA)}, B={Util.Logger.MaskDeviceId(sidB)}");
@@ -104,17 +116,17 @@ public sealed class FirebaseSignaling : IDisposable
     /// <summary>
     /// 指定 sessionId が存在するかを確認する (アプリ内 URL ペアリング前の事前チェック用)。
     /// </summary>
-    public async Task<(bool Exists, string? DisplayName)> CheckSessionAsync(string sessionId, CancellationToken ct = default)
+    public async Task<(bool Exists, string? DisplayName, string? PublicKey)> CheckSessionAsync(string sessionId, CancellationToken ct = default)
     {
         try
         {
             var data = await _client.Child("sessions").Child(sessionId).OnceSingleAsync<SessionData>();
-            if (data == null) return (false, null);
-            return (true, data.DisplayName);
+            if (data == null) return (false, null, null);
+            return (true, data.DisplayName, data.PublicKey);
         }
         catch
         {
-            return (false, null);
+            return (false, null, null);
         }
     }
 
@@ -152,6 +164,8 @@ public sealed class FirebaseSignaling : IDisposable
                     PeerId = isA ? data.SidB : data.SidA,
                     PeerDisplayName = isA ? data.NameB : data.NameA,
                     IsInitiator = isA,
+                    // 自分が A なら相手は B（その逆も）。rere #D-001(b): 相手 pk で PairSecret を導出する。
+                    PeerPublicKey = isA ? data.PkB : data.PkA,
                 });
             });
     }
@@ -202,8 +216,13 @@ public sealed class FirebaseSignaling : IDisposable
                 if (entry != null && !string.IsNullOrEmpty(entry.Data)
                     && (minCreatedAt <= 0 || entry.CreatedAt >= minCreatedAt))
                 {
-                    Util.Logger.Log($"SDP 受信 (offer): pairId={pairId}, ポーリング回数={pollCount}");
-                    return DecodeBase64(entry.Data);
+                    // rere #A2-001: 不正 base64 はスキップして高速ポーリングを継続（backoff ループに落とさない）。
+                    if (TryDecodeBase64(entry.Data, out var sdp))
+                    {
+                        Util.Logger.Log($"SDP 受信 (offer): pairId={pairId}, ポーリング回数={pollCount}");
+                        return sdp;
+                    }
+                    Util.Logger.Log($"不正な base64 offer を無視: pairId={pairId}", Util.LogLevel.Warning);
                 }
 
                 if (pollCount % 30 == 1)
@@ -281,8 +300,13 @@ public sealed class FirebaseSignaling : IDisposable
 
                 if (value != null && !string.IsNullOrEmpty(value.Data))
                 {
-                    Util.Logger.Log($"SDP 受信 (answer): pairId={pairId}, ポーリング回数={pollCount}");
-                    return DecodeBase64(value.Data);
+                    // rere #A2-001: 不正 base64 はスキップして高速ポーリングを継続（backoff ループに落とさない）。
+                    if (TryDecodeBase64(value.Data, out var sdp))
+                    {
+                        Util.Logger.Log($"SDP 受信 (answer): pairId={pairId}, ポーリング回数={pollCount}");
+                        return sdp;
+                    }
+                    Util.Logger.Log($"不正な base64 answer を無視: pairId={pairId}", Util.LogLevel.Warning);
                 }
 
                 if (pollCount % 30 == 1)
@@ -775,7 +799,14 @@ public sealed class FirebaseSignaling : IDisposable
                 return cacheHit ? cached.LastSeen : null;
 
             if (!resp.IsSuccessStatusCode)
+            {
+                // rere #F-002: 401/403(rules 誤更新)・5xx(枠超過/障害) を黙って null に倒すと、
+                // 全ピア offline 表示の原因がログに残らず切り分け不能になる。スロットル付きで surface する。
+                var code = (int)resp.StatusCode;
+                if (code is 401 or 403 || code >= 500)
+                    LogPresenceErrorThrottled($"HTTP {code}");
                 return null;
+            }
 
             var etag = resp.Headers.ETag?.Tag;
             var body = (await resp.Content.ReadAsStringAsync(ct)).Trim();
@@ -795,11 +826,29 @@ public sealed class FirebaseSignaling : IDisposable
         {
             throw;
         }
-        catch
+        catch (Exception ex)
         {
+            // rere #F-002: ネットワーク断等の継続失敗も痕跡を残す（スロットル付き）。
+            LogPresenceErrorThrottled(ex.Message);
             return null;
         }
     }
+
+    /// <summary>rere #F-002: presence 取得失敗を 60s に 1 度だけ Warning ログする（氾濫防止）。
+    /// rules 誤更新（read deny）やネットワーク断が「全員オフライン表示」として現れたとき、
+    /// 原因がログに残るようにするための診断用。</summary>
+    private void LogPresenceErrorThrottled(string detail)
+    {
+        var now = Environment.TickCount64;
+        var last = Interlocked.Read(ref _presenceErrorLogTick);
+        if (now - last < 60_000) return;
+        if (Interlocked.CompareExchange(ref _presenceErrorLogTick, now, last) != last) return;
+        Util.Logger.Log($"presence 取得失敗（rules 誤更新/ネットワーク断の疑い）: {detail}", Util.LogLevel.Warning);
+    }
+
+    /// <summary>rere #C2-001: ペア削除時に presence ETag キャッシュから該当 deviceId を除去し、
+    /// 削除済みピアの stale エントリが Dispose まで残るのを防ぐ。</summary>
+    public void ForgetPresence(string deviceId) => _presenceCache.TryRemove(deviceId, out _);
 
     /// <summary>
     /// 自分のプレゼンスを Firebase から削除する（アプリ終了時）。
@@ -834,6 +883,23 @@ public sealed class FirebaseSignaling : IDisposable
 
     private static string DecodeBase64(string encoded) =>
         Encoding.UTF8.GetString(Convert.FromBase64String(encoded));
+
+    /// <summary>rere #A2-001: 不正 base64 を例外でなく false で返す版。匿名書き込みで細工された
+    /// offer/answer ノードの不正 base64 が FormatException → 外側 catch の backoff ループに落ちて
+    /// 接続確立を ct タイムアウトまでスタックさせる DoS を防ぐ（probe 経路は元から try/catch 済み）。</summary>
+    private static bool TryDecodeBase64(string encoded, out string decoded)
+    {
+        try
+        {
+            decoded = Encoding.UTF8.GetString(Convert.FromBase64String(encoded));
+            return true;
+        }
+        catch (FormatException)
+        {
+            decoded = string.Empty;
+            return false;
+        }
+    }
 }
 
 /// <summary>Firebase に書き込むセッションデータ。</summary>
@@ -841,6 +907,11 @@ public sealed class SessionData
 {
     public string DisplayName { get; set; } = string.Empty;
     public long CreatedAt { get; set; }
+
+    /// <summary>rere #D-001(b): このデバイスの長期公開鍵(base64url SPKI)。
+    /// コード貼付ペアリング経路で相手が CheckSession 時に読み取り、PairSecret 導出に使う。
+    /// 旧クライアントは未設定(空) → 相手は PairSecret を導出できず平文フォールバック。</summary>
+    public string PublicKey { get; set; } = string.Empty;
 }
 
 /// <summary>Firebase に書き込むペアリングデータ。</summary>
@@ -851,6 +922,12 @@ public sealed class PairingData
     public string NameA { get; set; } = string.Empty;
     public string NameB { get; set; } = string.Empty;
     public long CreatedAt { get; set; }
+
+    /// <summary>rere #D-001(b): PC-A / PC-B の長期公開鍵(base64url SPKI)。
+    /// Bridge 経路は両 QR の pk を、コード貼付経路は自分の pk と session から読んだ相手 pk を載せる。
+    /// 各 PC は相手側の pk を読んで PairSecret を導出する。旧データは空 → 平文フォールバック。</summary>
+    public string PkA { get; set; } = string.Empty;
+    public string PkB { get; set; } = string.Empty;
 }
 
 /// <summary>Firebase に書き込むシグナリングデータのラッパー。
@@ -870,13 +947,6 @@ public sealed class TimedSignalingValue
     public long CreatedAt { get; set; }
 }
 
-/// <summary>Firebase に書き込むプレゼンスデータ。</summary>
-public sealed class PresenceData
-{
-    public long LastSeen { get; set; }
-    public string DisplayName { get; set; } = string.Empty;
-}
-
 /// <summary>ペアリング検知情報。</summary>
 public sealed class PairingInfo
 {
@@ -884,4 +954,7 @@ public sealed class PairingInfo
     public string PeerId { get; set; } = string.Empty;
     public string PeerDisplayName { get; set; } = string.Empty;
     public bool IsInitiator { get; set; }
+
+    /// <summary>rere #D-001(b): ペア相手の長期公開鍵(base64url SPKI)。空なら PairSecret 未確立(平文)。</summary>
+    public string PeerPublicKey { get; set; } = string.Empty;
 }

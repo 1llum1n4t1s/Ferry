@@ -51,6 +51,35 @@ public static class PairCrypto
     }
 
     /// <summary>
+    /// バイト列を base64url（パディング無し）で文字列化する。QR の URL クエリ（&pk=...）や
+    /// Firebase の文字列フィールドにそのまま載せられる URL 安全表現。
+    /// </summary>
+    public static string ToBase64Url(byte[] data)
+        => Convert.ToBase64String(data).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+    /// <summary>
+    /// <see cref="ToBase64Url"/> の逆変換。形式不正・null は null を返す（呼び出し側は平文フォールバック）。
+    /// </summary>
+    public static byte[]? FromBase64Url(string? s)
+    {
+        if (string.IsNullOrEmpty(s)) return null;
+        try
+        {
+            var b = s.Replace('-', '+').Replace('_', '/');
+            switch (b.Length % 4)
+            {
+                case 2: b += "=="; break;
+                case 3: b += "="; break;
+            }
+            return Convert.FromBase64String(b);
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// 自分の ECDH 鍵と相手の SPKI（SubjectPublicKeyInfo, DER）から ECDH raw 共有秘密を導出する。
     /// DeriveKeyFromHash(SHA256) は両端で同一値になる（ECDH の対称性）。
     /// </summary>

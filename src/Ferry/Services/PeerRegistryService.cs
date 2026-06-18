@@ -46,6 +46,10 @@ public sealed class PeerRegistryService : IPeerRegistryService
         {
             existing.DisplayName = peer.DisplayName;
             existing.LastTransferAt = peer.LastTransferAt;
+            // rere #D-001(b): 再ペアリングで新しい PairSecret を渡されたら更新する
+            // （DisplayName のみの更新で既存の鍵を消さないよう、非 null のときだけ上書き）。
+            if (!string.IsNullOrEmpty(peer.PairSecret))
+                existing.PairSecret = peer.PairSecret;
         }
         else
         {

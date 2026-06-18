@@ -77,6 +77,16 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     private readonly string _databaseUrl;
     private readonly string _deviceId;
     private readonly string _displayName;
+    /// <summary>rere #D-001(b): 長期 ECDH 鍵。QR の公開鍵 + ペア相手の公開鍵から PairSecret を導出する。
+    /// App が生成・所有しライフサイクル管理するため、本クラスでは Dispose しない（参照保持のみ）。</summary>
+    private readonly DeviceIdentity? _identity;
+
+    /// <summary>rere #D-001(b): EnableSecureChannel フラグの参照元（null なら暗号は常に無効＝平文）。</summary>
+    private readonly ISettingsService? _settings;
+
+    /// <summary>rere #D-001(b): 接続相手の PairSecret を引くための registry（null なら暗号は常に無効）。</summary>
+    private readonly IPeerRegistryService? _peerRegistry;
+
     private FirebaseSignaling? _signaling;
     private ITransport? _transport;
     private string? _currentPairId;
@@ -126,7 +136,16 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// <summary>WebSocket リレーサーバーの URL。null の場合はリレーなし（TCP 直接のみ）。</summary>
     public string? RelayUrl { get; set; }
 
-    public PeerState State { get; private set; } = PeerState.Disconnected;
+    // rere #B1-007: State は listener タスク / ConnectToPeerAsync / WaitForListenerConnectedAsync の
+    // spin-read が複数スレッドから読み書きする。_connectingByListener は volatile なのに State は plain
+    // auto-property で可視性保証がなく、弱いメモリモデルの ARM (osx/win/linux-arm64) で更新が遅延しうる。
+    // int バッキングを Volatile.Read/Write して可視性を担保する（PeerState は int 既定の enum）。
+    private int _state = (int)PeerState.Disconnected;
+    public PeerState State
+    {
+        get => (PeerState)Volatile.Read(ref _state);
+        private set => Volatile.Write(ref _state, (int)value);
+    }
     public PeerInfo? ConnectedPeer { get; private set; }
     public ConnectionRoute Route { get; private set; } = ConnectionRoute.Unknown;
 
@@ -137,12 +156,39 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     public event EventHandler? ConnectionLost;
     public event EventHandler<string>? StatusMessageChanged;
 
-    public ConnectionService(string databaseUrl, string deviceId, string displayName)
+    // === rere #D-001(b): セッション暗号（接続ごとに張り直す） ===
+
+    /// <summary>暗号ハンドシェイクの待ち時間（秒）。相手非対応/無応答ならこの後フォールバック/切断する。</summary>
+    private const int SecureHandshakeTimeoutSeconds = 8;
+
+    /// <summary>暗号チャネルの状態機械（OnFrame/Start/OnTimeout）を直列化するロック。
+    /// DataReceived（受信スレッド）/ Start（接続スレッド）/ OnTimeout（タイマー）が並行しうるため、
+    /// チャネル呼び出しと step 取り出しはこのロック内で行い、副作用処理はロック外で行う。</summary>
+    private readonly object _secureLock = new();
+
+    /// <summary>現在接続の暗号チャネル。null なら暗号無効＝平文（フラグ OFF / PairSecret 無しは生成しない）。</summary>
+    private SecureChannel? _secureChannel;
+
+    /// <summary>ハンドシェイク完了通知。true=暗号確立 / false=平文フォールバック / 例外=HMAC 失敗。
+    /// 送信側はこれを待ってから封筒化要否を判断する（確立前のアプリデータ平文漏れを防ぐゲート）。</summary>
+    private TaskCompletionSource<bool>? _secureReadyTcs;
+
+    /// <summary>ハンドシェイクタイムアウト用 CTS（確立/フォールバックで Cancel）。</summary>
+    private CancellationTokenSource? _secureTimeoutCts;
+
+    public ConnectionService(string databaseUrl, string deviceId, string displayName,
+        DeviceIdentity? identity = null, IPeerRegistryService? peerRegistry = null, ISettingsService? settings = null)
     {
         _databaseUrl = databaseUrl;
         _deviceId = deviceId;
         _displayName = displayName;
+        _identity = identity;
+        _peerRegistry = peerRegistry;
+        _settings = settings;
     }
+
+    /// <summary>rere #D-001(b): QR に載せる自分の長期公開鍵(base64url SPKI)。identity 未注入なら空。</summary>
+    public string PublicKeyForQr => _identity?.PublicKeyBase64Url ?? string.Empty;
 
     // === ペアリング ===
 
@@ -152,7 +198,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         _signaling = new FirebaseSignaling(_databaseUrl);
         _seenPairingIds.Clear();
 
-        var sessionId = await _signaling.RegisterSessionAsync(_deviceId, _displayName, ct);
+        // rere #D-001(b): 自分の公開鍵も session に載せる（コード貼付ペアリングで相手が読み取る）。
+        var sessionId = await _signaling.RegisterSessionAsync(_deviceId, _displayName, PublicKeyForQr, ct);
 
         _signaling.PairingDetected += OnPairingDetected;
         _signaling.StartWatchingPairing();
@@ -182,13 +229,13 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         if (sidB == _deviceId)
             return (false, "これは自分の PC のコードです。もう片方の PC のコードを貼り付けてください。");
 
-        // 相手セッションの存在確認
-        var (exists, displayName) = await _signaling.CheckSessionAsync(sidB, ct);
+        // 相手セッションの存在確認（rere #D-001(b): 相手の公開鍵も取得して PairSecret 導出に使う）
+        var (exists, displayName, peerPublicKey) = await _signaling.CheckSessionAsync(sidB, ct);
         if (!exists)
             return (false, "ペアリング先のセッションが見つかりません。相手の PC でアプリが起動していることを確認してください。");
 
         var resolvedNameB = displayName ?? "PC-B";
-        await _signaling.SubmitPairingAsync(_deviceId, _displayName, sidB, resolvedNameB, ct);
+        await _signaling.SubmitPairingAsync(_deviceId, _displayName, sidB, resolvedNameB, PublicKeyForQr, peerPublicKey ?? "", ct);
         return (true, $"「{_displayName}」と「{resolvedNameB}」をペアリングしました。");
     }
 
@@ -226,6 +273,21 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 PeerId = info.PeerId,
                 DisplayName = info.PeerDisplayName,
             };
+
+            // rere #D-001(b): 相手の公開鍵 × 自分の秘密鍵の ECDH から PairSecret を導出して永続する。
+            // pairId は GeneratePairId（接続時と同じ Ordinal 規則）で salt 分離。相手 pk が空/不正なら
+            // null のまま（平文フォールバック）。導出失敗で例外を出さず、ペアリング自体は成立させる。
+            if (_identity != null && !string.IsNullOrEmpty(info.PeerPublicKey))
+            {
+                var pairId = GeneratePairId(_deviceId, info.PeerId);
+                var secret = _identity.TryDerivePairSecret(info.PeerPublicKey, pairId);
+                if (secret != null)
+                {
+                    peer.PairSecret = Convert.ToBase64String(secret);
+                    Util.Logger.Log($"PairSecret 確立: peer={Util.Logger.MaskDeviceId(info.PeerId)}");
+                }
+            }
+
             PairingCompleted?.Invoke(this, peer);
 
             // pairings/{pairingId} は **削除しない** 。即削除すると、もう片方の PC が Firebase の
@@ -391,6 +453,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 _signaling = sig;
                 _currentPairId = pairId;
 
+                // rere #D-001(b): transport を attach する前に暗号チャネルを用意（先着 Hello の取りこぼし防止）。
+                CreateSecureChannel(peerId);
+
                 // ① TCP 直接接続を試行
                 var connected = await TryTcpConnectAsync(offer.Ips, offer.Port, ct);
 
@@ -445,6 +510,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     State = PeerState.Connected,
                 };
                 SetState(PeerState.Connected);
+                StartSecureHandshake(); // rere #D-001(b): 暗号有効時のみ Hello 送信してハンドシェイク開始
                 Util.Logger.Log($"着信接続完了！ 経路: {_transport?.Route}");
 
                 minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -658,6 +724,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             _transport?.Dispose();
             _transport = null;
 
+            // rere #D-001(b): transport を attach する前に暗号チャネルを用意（先着 Hello の取りこぼし防止）。
+            CreateSecureChannel(peerId);
+
             _currentPairId = pairId;
             Util.Logger.Log($"pairId 生成: {pairId}");
 
@@ -835,6 +904,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 State = PeerState.Connected,
             };
             SetState(PeerState.Connected);
+            StartSecureHandshake(); // rere #D-001(b): 暗号有効時のみ Hello 送信してハンドシェイク開始
             Util.Logger.Log($"オンデマンド接続完了！ 経路: {_transport?.Route}");
         }
         catch (OperationCanceledException)
@@ -1082,22 +1152,49 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     public async Task SendAsync(byte[] data, CancellationToken ct = default)
     {
-        if (_transport == null || !_transport.IsConnected)
+        var transport = _transport;
+        if (transport == null || !transport.IsConnected)
             throw new InvalidOperationException("接続されていません");
 
-        await _transport.SendAsync(data, ct);
+        // rere #D-001(b): 暗号有効時はハンドシェイク完了を待ってから封筒化する。
+        // channel==null（フラグ OFF / 非対応ペア）は下の平文パスへ直行＝現状と完全同一。
+        var channel = _secureChannel;
+        if (channel != null)
+        {
+            var ready = _secureReadyTcs;
+            if (ready != null) await ready.Task.WaitAsync(ct);
+            if (channel.IsSecure)
+            {
+                await transport.SendAsync(channel.Encrypt(data), ct);
+                return;
+            }
+        }
+        await transport.SendAsync(data, ct);
     }
 
     /// <summary>
     /// P-1: ArrayPool 借用バッファをコピーなしで transport の Memory 版に流す送信パス。
     /// 1GB 転送で約 1GB の Gen0 alloc 削減（チャンクメッセージごとの new byte[] 解消）。
+    /// 暗号有効時のみ封筒化のためコピーが入る（暗号化の本質的コスト）。
     /// </summary>
     public async Task SendAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default)
     {
-        if (_transport == null || !_transport.IsConnected)
+        var transport = _transport;
+        if (transport == null || !transport.IsConnected)
             throw new InvalidOperationException("接続されていません");
 
-        await _transport.SendAsync(data, ct);
+        var channel = _secureChannel;
+        if (channel != null)
+        {
+            var ready = _secureReadyTcs;
+            if (ready != null) await ready.Task.WaitAsync(ct);
+            if (channel.IsSecure)
+            {
+                await transport.SendAsync(channel.Encrypt(data.Span), ct);
+                return;
+            }
+        }
+        await transport.SendAsync(data, ct);
     }
 
     public async Task DisconnectAsync(CancellationToken ct = default)
@@ -1107,6 +1204,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         // (Disconnect→Connect の順で呼ばれる経路で自己デッドロックを避けるため、Cancel のみ)。
         _connectCts?.Cancel();
         StopListeningForConnection();
+        ResetSecureChannel(); // rere #D-001(b): 暗号チャネルを破棄して待機中送信を解放
         DetachTransportEvents();
         _transport?.Close();
         _transport?.Dispose();
@@ -1417,6 +1515,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     private void OnChannelClosed(object? sender, EventArgs e)
     {
         Util.Logger.Log($"データチャネル切断検知: currentState={State}", Util.LogLevel.Warning);
+        ResetSecureChannel(); // rere #D-001(b): 切断で宙吊りの暗号送信を解放
         if (State == PeerState.Connected)
         {
             ConnectionLost?.Invoke(this, EventArgs.Empty);
@@ -1426,7 +1525,144 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     private void OnDataReceived(object? sender, byte[] data)
     {
-        DataReceived?.Invoke(this, data);
+        // 暗号無効（フラグ OFF / 非対応ペア）なら従来どおり素通し＝現状と完全に同一パス。
+        SecureChannelStep? step = null;
+        lock (_secureLock)
+        {
+            var channel = _secureChannel;
+            if (channel != null)
+                step = channel.OnFrame(data);
+        }
+        if (step == null)
+        {
+            DataReceived?.Invoke(this, data); // 平文（現状パス）
+            return;
+        }
+        ApplySecureStep(step); // 副作用（送信/配送/遷移）はロック外で
+    }
+
+    // === rere #D-001(b): セッション暗号ハンドシェイクの駆動 ===
+
+    /// <summary>
+    /// 接続確立に先立って（transport を attach する前に）暗号チャネルを用意する。EnableSecureChannel が ON
+    /// かつ相手の PairSecret を保有しているときだけ <see cref="SecureChannel"/> を Init 状態で生成する。
+    /// この時点では Hello を送らず、DataReceived 購読より先にチャネルを立てておくことで、
+    /// 確立直後に先着する相手 Hello を Init バッファで取りこぼさない（attach レース対策）。
+    /// 非対応時は _secureChannel=null のまま → 送受信は平文の現状パス。
+    /// </summary>
+    private void CreateSecureChannel(string peerId)
+    {
+        ResetSecureChannel();
+
+        var secureEnabled = _settings?.Settings.EnableSecureChannel ?? false;
+        if (!secureEnabled || _peerRegistry == null)
+            return;
+
+        var b64 = _peerRegistry.FindPeer(peerId)?.PairSecret;
+        if (string.IsNullOrEmpty(b64))
+            return;
+
+        byte[] pairSecret;
+        try { pairSecret = Convert.FromBase64String(b64); }
+        catch (FormatException) { return; }
+
+        lock (_secureLock)
+        {
+            _secureReadyTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _secureChannel = new SecureChannel(_deviceId, peerId, pairSecret, secureEnabled: true);
+        }
+    }
+
+    /// <summary>
+    /// 接続確立直後（ConnectedPeer 設定後）に Hello を送ってハンドシェイクを開始する。
+    /// CreateSecureChannel でチャネルが立っていなければ何もしない（平文）。両接続経路から呼ぶ。
+    /// </summary>
+    private void StartSecureHandshake()
+    {
+        SecureChannelStep step;
+        lock (_secureLock)
+        {
+            var channel = _secureChannel;
+            if (channel == null) return;
+
+            var timeoutCts = new CancellationTokenSource();
+            _secureTimeoutCts = timeoutCts;
+            _ = SecureTimeoutAsync(channel, timeoutCts.Token);
+
+            step = channel.Start(); // Hello 生成 + 先着フレームのドレイン
+        }
+        ApplySecureStep(step); // 送信/配送/遷移はロック外で
+    }
+
+    /// <summary>状態機械の 1 ステップ（送るフレーム・配送平文・遷移）を実行する。</summary>
+    private void ApplySecureStep(SecureChannelStep step)
+    {
+        var transport = _transport;
+        foreach (var f in step.Send)
+        {
+            // ハンドシェイクフレーム(0x30/0x31)は SendAsync ゲートを通さず transport へ直送する。
+            if (transport != null)
+                _ = SafeSendRawAsync(transport, f);
+        }
+
+        foreach (var d in step.Deliver)
+            DataReceived?.Invoke(this, d);
+
+        switch (step.Outcome)
+        {
+            case SecureOutcome.Established:
+                Util.Logger.Log("暗号セッション確立（HMAC 相互認証成功）");
+                _secureTimeoutCts?.Cancel();
+                _secureReadyTcs?.TrySetResult(true);
+                break;
+            case SecureOutcome.FellBackToPlaintext:
+                Util.Logger.Log("暗号ハンドシェイク非成立 → 平文フォールバック", Util.LogLevel.Warning);
+                _secureTimeoutCts?.Cancel();
+                _secureReadyTcs?.TrySetResult(false);
+                break;
+            case SecureOutcome.Failed:
+                Util.Logger.Log("暗号ハンドシェイク失敗（HMAC 不一致）→ 切断", Util.LogLevel.Error);
+                _secureTimeoutCts?.Cancel();
+                _secureReadyTcs?.TrySetException(new InvalidOperationException("ペア相互認証に失敗しました（HMAC 不一致）"));
+                _ = DisconnectAsync();
+                break;
+        }
+    }
+
+    private static async Task SafeSendRawAsync(ITransport transport, byte[] frame)
+    {
+        try { await transport.SendAsync(frame); }
+        catch (Exception ex) { Util.Logger.Log($"ハンドシェイクフレーム送信失敗: {ex.Message}", Util.LogLevel.Warning); }
+    }
+
+    private async Task SecureTimeoutAsync(SecureChannel channel, CancellationToken ct)
+    {
+        try { await Task.Delay(TimeSpan.FromSeconds(SecureHandshakeTimeoutSeconds), ct); }
+        catch (OperationCanceledException) { return; }
+
+        SecureChannelStep? step = null;
+        lock (_secureLock)
+        {
+            // 別接続に張り替わっていたら無視（古いタイマーの暴発防止）。
+            if (ReferenceEquals(_secureChannel, channel))
+                step = channel.OnTimeout();
+        }
+        if (step != null) ApplySecureStep(step);
+    }
+
+    /// <summary>暗号チャネルを破棄し、待機中の送信を平文として解放する（切断/再接続時）。</summary>
+    private void ResetSecureChannel()
+    {
+        lock (_secureLock)
+        {
+            _secureTimeoutCts?.Cancel();
+            _secureTimeoutCts?.Dispose();
+            _secureTimeoutCts = null;
+            // 宙吊りの SendAsync を解放（切断後は次段の _transport 操作で自然に例外化する）。
+            _secureReadyTcs?.TrySetResult(false);
+            _secureReadyTcs = null;
+            _secureChannel = null;
+        }
     }
 
     private void SetState(PeerState state)

@@ -26,9 +26,11 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     private readonly IQrCodeService _qrCodeService;
     private readonly ISettingsService _settingsService;
     private readonly IPeerRegistryService _peerRegistry;
+    // rere #B1-001: presence は Infrastructure を直接 new せず、Services 抽象のファクトリ経由で生成する。
+    private readonly IPresenceServiceFactory _presenceFactory;
 
     // プレゼンス監視（オンライン/オフライン検知）
-    private FirebaseSignaling? _presenceSignaling;
+    private IPresenceService? _presenceSignaling;
     private CancellationTokenSource? _presenceCts;
     private const int HeartbeatIntervalMs = 30_000;  // 30秒ごとに heartbeat 送信
     private const int PollIntervalMs = 30_000;       // ③ ピア状態のポーリング間隔（旧 10s → 30s。heartbeat 30s / 閾値 60s に対し十分）
@@ -107,12 +109,14 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         IConnectionService connectionService,
         IQrCodeService qrCodeService,
         ISettingsService settingsService,
-        IPeerRegistryService peerRegistry)
+        IPeerRegistryService peerRegistry,
+        IPresenceServiceFactory presenceFactory)
     {
         _connectionService = connectionService;
         _qrCodeService = qrCodeService;
         _settingsService = settingsService;
         _peerRegistry = peerRegistry;
+        _presenceFactory = presenceFactory;
 
         _connectionService.StateChanged += OnStateChanged;
         _connectionService.RouteChanged += OnRouteChanged;
@@ -147,9 +151,11 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             var settings = _settingsService.Settings;
             SessionId = await _connectionService.StartPairingSessionAsync();
 
-            // Bridge ページ URL に sessionId と PC 名を付与して QR コード生成
+            // Bridge ページ URL に sessionId / PC 名 / 公開鍵(rere #D-001(b)) を付与して QR コード生成。
+            // pk は base64url なので URL 安全。空のときは &pk= となり Bridge 側は単に無視する。
             var displayName = Uri.EscapeDataString(settings.DisplayName);
-            var bridgeUrl = $"{AppConstants.BridgePageUrl}?sid={SessionId}&name={displayName}";
+            var pk = _connectionService.PublicKeyForQr;
+            var bridgeUrl = $"{AppConstants.BridgePageUrl}?sid={SessionId}&name={displayName}&pk={pk}";
             PairingUrl = bridgeUrl;
             QrCodeImage = _qrCodeService.GenerateQrBitmap(bridgeUrl);
 
@@ -181,6 +187,8 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             peer.WentOnline -= OnPeerWentOnline;
             PairedPeers.Remove(peer);
         }
+        // rere #C2-001: 削除済みピアの presence ETag キャッシュ stale エントリを除去する。
+        _presenceSignaling?.ForgetPresence(peerId);
         UpdateHasPairedPeers();
 
         if (SelectedPeer?.PeerId == peerId)
@@ -613,7 +621,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         _presenceCts = new CancellationTokenSource();
 
         _presenceSignaling?.Dispose();
-        _presenceSignaling = new FirebaseSignaling(AppConstants.FirebaseDatabaseUrl);
+        _presenceSignaling = _presenceFactory.Create();
 
         var deviceId = _settingsService.Settings.DeviceId;
         var displayName = _settingsService.Settings.DisplayName;

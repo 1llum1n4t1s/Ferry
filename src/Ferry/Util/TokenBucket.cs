@@ -36,7 +36,23 @@ public sealed class TokenBucket
     /// <param name="kbps">KB/s (1024 B/s 単位)。0 で無制限。</param>
     public void SetRate(int kbps)
     {
-        Volatile.Write(ref _ratePerSec, kbps <= 0 ? 0L : (long)kbps * 1024L);
+        var newRate = kbps <= 0 ? 0L : (long)kbps * 1024L;
+        var oldRate = Interlocked.Exchange(ref _ratePerSec, newRate);
+        if (oldRate == newRate) return; // 変化なしなら予約を巻き戻さない（無駄なバースト付与を防ぐ）
+
+        // rere #B1-008: レート変更を「次回 Wait から反映」(docstring) させる。ReserveAndComputeDelay が
+        // 並列累積のため _lastRefillTick を未来へ進めて予約するので、レートを下げた直後は旧レートの予約が
+        // 残って新レートが長時間効かない。バケットを再初期化して予約を巻き戻し、新レートで律速し直す。
+        _gate.Wait();
+        try
+        {
+            _lastRefillTick = 0; // 次回 Refill で再初期化（新レートの 1 秒バースト容量から開始）
+            _tokens = 0;
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     /// <summary>

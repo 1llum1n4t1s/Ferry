@@ -67,6 +67,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool AutoAcceptFileTransfer { get; set; } = true;
 
+    /// <summary>rere #D-001(b): ペア間 E2E 暗号（HMAC 相互認証 + AES-GCM 封筒）を有効にするか。
+    /// 既定 false。両端 ON + 公開鍵交換済み（再ペアリング）のときだけ有効化され、それ以外は平文。</summary>
+    [ObservableProperty]
+    public partial bool EnableSecureChannel { get; set; }
+
     /// <summary>アップロード帯域制限 (KB/s)。0 で無制限。NumericUpDown.Value (decimal?) とバインド。</summary>
     [ObservableProperty]
     public partial decimal UploadKBps { get; set; }
@@ -161,6 +166,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
             MinimizeToTray = s.MinimizeToTray;
             EnableNotificationSound = s.EnableNotificationSound;
             AutoAcceptFileTransfer = s.AutoAcceptFileTransfer;
+            EnableSecureChannel = s.EnableSecureChannel;
             UploadKBps = Math.Max(0, s.UploadKBps);
             DownloadKBps = Math.Max(0, s.DownloadKBps);
             ParallelTransferCount = s.ParallelTransferCount <= 0 ? 1 : Math.Clamp(s.ParallelTransferCount, 1, 8);
@@ -227,6 +233,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         s.MinimizeToTray = MinimizeToTray;
         s.EnableNotificationSound = EnableNotificationSound;
         s.AutoAcceptFileTransfer = AutoAcceptFileTransfer;
+        s.EnableSecureChannel = EnableSecureChannel;
         s.UploadKBps = (int)Math.Max(0m, UploadKBps);
         s.DownloadKBps = (int)Math.Max(0m, DownloadKBps);
         s.ParallelTransferCount = Math.Clamp(ParallelTransferCount, 1, 8);
@@ -274,6 +281,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     partial void OnSaveDirectoryChanged(string value) => SaveIfNotLoading();
     partial void OnEnableNotificationSoundChanged(bool value) => SaveIfNotLoading();
     partial void OnAutoAcceptFileTransferChanged(bool value) => SaveIfNotLoading();
+    partial void OnEnableSecureChannelChanged(bool value) => SaveIfNotLoading();
 
     partial void OnUploadKBpsChanged(decimal value)
     {

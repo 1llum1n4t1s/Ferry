@@ -43,9 +43,10 @@ let db = null;
 let html5QrCode = null;
 // ペアリング処理の重複実行を防ぐフラグ（カメラ連続読取の二重実行を防ぐ）
 let pairingInProgress = false;
-// Bridge 起動時に確定する PC-A の sid / name (カメラ読取コールバックから参照)
+// Bridge 起動時に確定する PC-A の sid / name / pk (カメラ読取コールバックから参照)
 let resolvedSidA = null;
 let resolvedNameA = null;
+let resolvedPkA = "";
 
 /**
  * URL パラメータを取得する。
@@ -55,6 +56,8 @@ function getParams() {
     return {
         sid: params.get("sid"),
         name: params.get("name") ? decodeURIComponent(params.get("name")) : null,
+        // rere #D-001(b): 長期公開鍵(base64url)。Bridge は中身を解釈せず文字列のまま中継する。
+        pk: params.get("pk") || "",
     };
 }
 
@@ -111,9 +114,10 @@ function parseQrUrl(text) {
         return {
             sid: params.get("sid"),
             name: params.get("name") ? decodeURIComponent(params.get("name")) : null,
+            pk: params.get("pk") || "",
         };
     } catch {
-        return { sid: null, name: null };
+        return { sid: null, name: null, pk: "" };
     }
 }
 
@@ -121,7 +125,7 @@ function parseQrUrl(text) {
  * sidA と sidB を Firebase pairings/ に書き込んでペアリングを成立させる。
  * カメラ経路 / URL 貼り付け経路の共通処理。
  */
-async function performPairing(sidA, nameA, sidB, nameB) {
+async function performPairing(sidA, nameA, sidB, nameB, pkA, pkB) {
     // 重複実行防止（同時にカメラ読取 + 貼り付け確定が起きた場合の保険）
     if (pairingInProgress) return;
     pairingInProgress = true;
@@ -151,6 +155,9 @@ async function performPairing(sidA, nameA, sidB, nameB) {
             NameA: nameA || "PC-A",
             NameB: nameB || snapB.val().DisplayName || "PC-B",
             CreatedAt: Date.now(),
+            // rere #D-001(b): 両 PC の公開鍵を中継。受信側が session 削除レースに依らず PairSecret を導出できる。
+            PkA: pkA || "",
+            PkB: pkB || (snapB.val().PublicKey || ""),
         });
 
         showPaired(nameA || "PC-A", nameB || snapB.val().DisplayName || "PC-B");
@@ -187,7 +194,7 @@ async function startCameraMode() {
             { fps: 10, qrbox: { width: 250, height: 250 } },
             async (decodedText) => {
                 // QR コード読み取り成功
-                const { sid: sidB, name: nameB } = parseQrUrl(decodedText);
+                const { sid: sidB, name: nameB, pk: pkB } = parseQrUrl(decodedText);
 
                 if (!sidB) {
                     // Ferry の QR コードではない
@@ -199,7 +206,7 @@ async function startCameraMode() {
                     return;
                 }
 
-                await performPairing(resolvedSidA, resolvedNameA, sidB, nameB);
+                await performPairing(resolvedSidA, resolvedNameA, sidB, nameB, resolvedPkA, pkB);
             },
             () => {
                 // QR コード未検出（スキャン中）
@@ -224,7 +231,7 @@ async function startCameraMode() {
  * メイン処理。
  */
 async function main() {
-    const { sid: sidA, name: nameA } = getParams();
+    const { sid: sidA, name: nameA, pk: pkA } = getParams();
 
     if (!sidA) {
         showError("セッション ID が見つかりません。QR コードを再スキャンしてください。");
@@ -249,6 +256,7 @@ async function main() {
         // 接続元の情報を表示 + グローバルに保持
         resolvedSidA = sidA;
         resolvedNameA = nameA || snapA.val().DisplayName || "PC-A";
+        resolvedPkA = pkA || "";
         sessionAInfo.classList.remove("hidden");
         sessionAId.textContent = sidA;
         sessionAName.textContent = resolvedNameA;
