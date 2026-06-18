@@ -3,12 +3,12 @@
     ".read": false,
     ".write": false,
 
-    "_comment_v2_2026-06-19": "rere #D-001(a) Phase B 完成。Bridge も Custom Token 化済 (`/pair/token` 経由・signInAnonymously 撤去) で anonymous 攻撃面ゼロ。pairings は per-device path に restructure し atomic multi-path update を許す (書手は auth.uid == $deviceId か、書込データの SidA/SidB のどちらかが auth.uid のときのみ書ける = Bridge ペアリング時に sidA で auth しつつ pairings/{sidB}/{pid} へも書けるが、第三者が他人 pairings に書くのは SidA/SidB に自身が居ないため不可)。CreatedAt の新鮮性 (±60s) でリプレイ防止。pairs/{pairId} と signaling/{pairId} は当事者のみ R/W (32hex_32hex format + beginsWith/endsWith auth.uid)。signaling の per-sender ノード (offers/answers/endpoints) は sender なりすまし防止のため `auth.uid == $senderDeviceId` を必須化。presence に Version フィールド追加 (Step 8 直前 v1.0.62 機械検証用)。設計詳細は docs/design/firebase-auth-pair-ssot.md。",
+    "_comment_v2_2026-06-19": "rere #D-001(a) Phase B 完成 + Codex 第3弾。Bridge と PC を Custom Token claim `auth.token.src` で区別 (PC=src=='pc', Bridge=src=='bridge')。Bridge は pairings の multi-path update のみ書ける = PC は全 state を書ける。これにより Bridge tab が token expire 前に pairing_nonces/sessions を rotate して session を蘇生する穴を塞ぐ。pairings 緩和ルール (auth.uid == $deviceId || newData.SidA/SidB == auth.uid) は Bridge にも PC にも共通だが、Workers /pair/token が両 nonce を verify してから Bridge token を発行するので「他人 sid を知っているだけで inbox 注入」は不可。CreatedAt ±60s 鮮度・pairs/signaling per-sender 制限は維持。設計詳細は docs/design/firebase-auth-pair-ssot.md。",
 
     "sessions": {
       "$sid": {
         ".read": "auth != null",
-        ".write": "auth != null && auth.uid == $sid && (!newData.exists() || (newData.child('CreatedAt').val() > now - 60000 && newData.child('CreatedAt').val() < now + 60000))",
+        ".write": "auth != null && auth.token.src == 'pc' && auth.uid == $sid && (!newData.exists() || (newData.child('CreatedAt').val() > now - 60000 && newData.child('CreatedAt').val() < now + 60000))",
         "DisplayName": { ".validate": "newData.isString() && newData.val().length <= 64" },
         "CreatedAt": { ".validate": "newData.isNumber()" },
         "PublicKey": { ".validate": "newData.isString() && newData.val().length <= 256" },
@@ -20,7 +20,7 @@
     "pairing_nonces": {
       "$sid": {
         ".read": false,
-        ".write": "auth != null && auth.uid == $sid && (!newData.exists() || (newData.child('Nonce').val().matches(/^[a-f0-9]{32}$/) && newData.child('CreatedAt').val() > now - 60000 && newData.child('CreatedAt').val() < now + 60000))",
+        ".write": "auth != null && auth.token.src == 'pc' && auth.uid == $sid && (!newData.exists() || (newData.child('Nonce').val().matches(/^[a-f0-9]{32}$/) && newData.child('CreatedAt').val() > now - 60000 && newData.child('CreatedAt').val() < now + 60000))",
         "Nonce": { ".validate": "newData.isString() && newData.val().matches(/^[a-f0-9]{32}$/)" },
         "CreatedAt": { ".validate": "newData.isNumber()" },
         "$other": { ".validate": false }
@@ -46,8 +46,8 @@
 
     "pairs": {
       "$pairId": {
-        ".read": "auth != null && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))",
-        ".write": "auth != null && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))",
+        ".read": "auth != null && auth.token.src == 'pc' && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))",
+        ".write": "auth != null && auth.token.src == 'pc' && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))",
         "PairId": { ".validate": "newData.isString() && newData.val().length <= 80" },
         "NameA": { ".validate": "newData.isString() && newData.val().length <= 64" },
         "NameB": { ".validate": "newData.isString() && newData.val().length <= 64" },
@@ -62,31 +62,31 @@
         ".read": "auth != null && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))",
         "offers": {
           "$senderDeviceId": {
-            ".write": "auth != null && auth.uid == $senderDeviceId && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
+            ".write": "auth != null && auth.token.src == 'pc' && auth.uid == $senderDeviceId && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
           }
         },
         "answers": {
           "$answererDeviceId": {
-            ".write": "auth != null && auth.uid == $answererDeviceId && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
+            ".write": "auth != null && auth.token.src == 'pc' && auth.uid == $answererDeviceId && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
           }
         },
         "endpoints": {
           "$senderDeviceId": {
-            ".write": "auth != null && auth.uid == $senderDeviceId && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
+            ".write": "auth != null && auth.token.src == 'pc' && auth.uid == $senderDeviceId && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
           }
         },
         "probeOffers": {
           "$nonce": {
-            ".write": "auth != null && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
+            ".write": "auth != null && auth.token.src == 'pc' && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
           }
         },
         "probeAnswers": {
           "$nonce": {
-            ".write": "auth != null && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
+            ".write": "auth != null && auth.token.src == 'pc' && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
           }
         },
         "createdAt": {
-          ".write": "auth != null && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
+          ".write": "auth != null && auth.token.src == 'pc' && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
         }
       }
     },
@@ -94,7 +94,7 @@
     "presence": {
       "$deviceId": {
         ".read": "auth != null",
-        ".write": "auth != null && auth.uid == $deviceId",
+        ".write": "auth != null && auth.token.src == 'pc' && auth.uid == $deviceId",
         "LastSeen": { ".validate": "newData.isNumber() && newData.val() > now - 60000 && newData.val() < now + 60000" },
         "DisplayName": { ".validate": "newData.isString() && newData.val().length <= 64" },
         "Version": { ".validate": "newData.isString() && newData.val().length <= 16" },

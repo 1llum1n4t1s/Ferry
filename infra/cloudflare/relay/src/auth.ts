@@ -85,8 +85,8 @@ export async function handleAuthToken(req: Request, env: Env): Promise<Response>
     return jsonError(401, 'DEVICE_PUBKEY_MISMATCH', 'deviceId is already bound to a different pubKey');
   }
 
-  // Custom Token 発行 (uid = deviceId, exp = iat+3600)
-  const customToken = await mintCustomToken(deviceId, 3600, env);
+  // Custom Token 発行 (uid = deviceId, exp = iat+3600, src=pc)
+  const customToken = await mintCustomToken(deviceId, 3600, env, 'pc');
   return jsonOk({ customToken, expiresIn: 3600 });
 }
 
@@ -155,8 +155,8 @@ export async function handlePairToken(req: Request, env: Env): Promise<Response>
     if (peerErr) return peerErr;
   }
 
-  // 5min Custom Token (uid = sessionId)
-  const customToken = await mintCustomToken(sessionId, 300, env);
+  // 5min Custom Token (uid = sessionId, src=bridge → rules で pairing_nonces/sessions 書込不可)
+  const customToken = await mintCustomToken(sessionId, 300, env, 'bridge');
   return jsonOk({ customToken, expiresIn: 300 });
 }
 
@@ -165,8 +165,14 @@ export async function handlePairToken(req: Request, env: Env): Promise<Response>
 /**
  * Firebase Custom Token JWT を SA 鍵で署名して発行する。
  * 必須 claims (iss, sub, aud, iat, exp, uid) を満たさないと Identity Toolkit が 400 を返す。
+ *
+ * Codex P1 fix (第3弾): `src` を Custom Token の追加 claims に埋め、Firebase rules 側で
+ * `auth.token.src` として PC/Bridge を区別できるようにする。Bridge token (src="bridge") は
+ * pairing_nonces を書けない / sessions を書けない 等を rules で禁じ、PC token (src="pc") のみが
+ * セッション関連 state を作成・更新できるようにする (Bridge tab が tab 残存中に nonce rotation
+ * で session を蘇生する穴を塞ぐ)。
  */
-export async function mintCustomToken(uid: string, expiresInSec: number, env: Env): Promise<string> {
+export async function mintCustomToken(uid: string, expiresInSec: number, env: Env, source: 'pc' | 'bridge' = 'pc'): Promise<string> {
   const iat = Math.floor(Date.now() / 1000);
   const exp = iat + expiresInSec;
   const header = { alg: 'RS256', typ: 'JWT' };
@@ -177,6 +183,8 @@ export async function mintCustomToken(uid: string, expiresInSec: number, env: En
     iat,
     exp,
     uid,
+    // Firebase Custom Token は `claims` 直下の任意フィールドを ID token の `auth.token.<key>` に伝搬する。
+    claims: { src: source },
   };
   return rs256Sign(header, payload, env.FIREBASE_PRIVATE_KEY);
 }
@@ -201,7 +209,10 @@ export async function getServiceAccountAccessToken(env: Env): Promise<string> {
   const header = { alg: 'RS256', typ: 'JWT' };
   const payload = {
     iss: env.FIREBASE_CLIENT_EMAIL,
-    scope: 'https://www.googleapis.com/auth/firebase.database',
+    // Codex P1 fix (第3弾): Firebase Realtime Database REST は firebase.database + userinfo.email の
+    // 両 scope を要求する (https://firebase.google.com/docs/database/rest/auth)。userinfo.email が欠落
+    // すると DB read が permission_denied になり Bridge token 発行が連鎖失敗する。cleanup workflow と揃える。
+    scope: 'https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/userinfo.email',
     aud: 'https://oauth2.googleapis.com/token',
     iat,
     exp,

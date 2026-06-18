@@ -771,12 +771,24 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
     /// <summary>
     /// 指定した pairId のシグナリングデータのみを Firebase から削除する。
     /// 再接続時に古い offer/answer/candidates が残っていると接続失敗するため。
+    ///
+    /// Codex P2 fix (第3弾): rules で signaling/{pairId} の parent .write を削除した結果、
+    /// `_client.Child("signaling").Child(pairId).DeleteAsync()` (parent 一括 DELETE) は
+    /// permission_denied で reject されるようになった。child path (offers / answers / endpoints /
+    /// probeOffers / probeAnswers / createdAt) を個別に DELETE して回ることで、古い stale データの
+    /// 残留 (特に WaitForAnswerAsync が freshness 無しで即消費する answers) を確実に消す。
     /// </summary>
     public async Task CleanupSignalingDataAsync(string pairId, CancellationToken ct = default)
     {
         try
         {
-            await _client.Child("signaling").Child(pairId).DeleteAsync();
+            // child path を直列で DELETE。1 つ失敗しても他の cleanup は続行する best-effort。
+            var children = new[] { "offers", "answers", "endpoints", "probeOffers", "probeAnswers", "createdAt" };
+            foreach (var child in children)
+            {
+                try { await _client.Child("signaling").Child(pairId).Child(child).DeleteAsync(); }
+                catch (Exception ex) { Util.Logger.Log($"  signaling/{pairId}/{child} 削除失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }
+            }
             Util.Logger.Log($"シグナリングデータ削除: {pairId}");
         }
         catch (Exception ex)
@@ -803,7 +815,9 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
             if (!string.IsNullOrEmpty(pairingId))
             {
                 await _client.Child("pairings").Child(pairingId).DeleteAsync();
-                await _client.Child("signaling").Child(pairingId).DeleteAsync();
+                // Codex P2 fix (第3弾): signaling/{pairId} の parent DELETE は rules で deny されるので
+                // CleanupSignalingDataAsync (child 個別 DELETE) を再利用する。
+                await CleanupSignalingDataAsync(pairingId);
             }
         }
         catch (Exception ex)

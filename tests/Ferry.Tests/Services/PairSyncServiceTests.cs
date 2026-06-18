@@ -171,13 +171,60 @@ public sealed class PairSyncServiceTests
         await registry.DidNotReceive().RemovePeerAsync(Arg.Any<string>());
     }
 
+    // === Codex P1 fix (第3弾): 未観察 peer の deferral ===
+
+    [Fact]
+    public async Task CheckOnceAsync_未観察peerは3回連続404でも削除しない()
+    {
+        // PairsSsotObserved=false (legacy peer) は責任者側 PC がまだ upgrade してないだけかもしれないので、
+        // 非責任者側で 3 連続 404 になっても削除しない。SSoT 観察 or 明示 DELETE まで永続化する。
+        var registry = Substitute.For<IPeerRegistryService>();
+        registry.GetPairedPeers().Returns(new List<PairedPeer>
+        {
+            new() { PeerId = PeerId, DisplayName = "Bob", PairsSsotObserved = false },
+        });
+        // 1 件目を OK 200 で先に観察済みにできない (putPair=null のテスト ctor)。
+        // 全て NotFound にして 5 回まで回しても、未観察フラグが立たない限り deferral される。
+        var svc = CreateServiceFromQueue(registry, [
+            (HttpStatusCode.NotFound, "null"),
+            (HttpStatusCode.NotFound, "null"),
+            (HttpStatusCode.NotFound, "null"),
+            (HttpStatusCode.NotFound, "null"),
+            (HttpStatusCode.NotFound, "null"),
+        ]);
+
+        for (int i = 0; i < 5; i++)
+            await svc.CheckOnceAsync(applyGracePeriod: false, TestContext.Current.CancellationToken);
+
+        await registry.DidNotReceive().RemovePeerAsync(Arg.Any<string>());
+    }
+
+    [Fact]
+    public async Task CheckOnceAsync_観察済peerは200で観察フラグを永続化する()
+    {
+        // OK 200 を返したら PairsSsotObserved=true を永続化する (AddOrUpdatePeerAsync 経由)。
+        var peer = new PairedPeer { PeerId = PeerId, DisplayName = "Bob", PairsSsotObserved = false };
+        var registry = Substitute.For<IPeerRegistryService>();
+        registry.GetPairedPeers().Returns(new List<PairedPeer> { peer });
+        var svc = CreateServiceFromQueue(registry, [(HttpStatusCode.OK, "{\"a\":1}")]);
+
+        await svc.CheckOnceAsync(applyGracePeriod: false, TestContext.Current.CancellationToken);
+
+        Assert.True(peer.PairsSsotObserved);
+        await registry.Received(1).AddOrUpdatePeerAsync(peer);
+    }
+
     // === ヘルパ ===
 
+    /// <summary>
+    /// Codex P1 fix (第3弾): 既定 peer は PairsSsotObserved=true（= SSoT を 1 度観察済み）にしておく。
+    /// 未観察 peer の挙動は <see cref="CheckOnceAsync_未観察peerは3回連続404でも削除しない"/> で別途検証。
+    /// </summary>
     private static IPeerRegistryService SubstituteRegistry(params PairedPeer[] peers)
     {
         var registry = Substitute.For<IPeerRegistryService>();
         registry.GetPairedPeers().Returns(peers.Length == 0
-            ? new List<PairedPeer> { new() { PeerId = PeerId, DisplayName = "Bob" } }
+            ? new List<PairedPeer> { new() { PeerId = PeerId, DisplayName = "Bob", PairsSsotObserved = true } }
             : new List<PairedPeer>(peers));
         return registry;
     }

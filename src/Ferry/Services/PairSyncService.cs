@@ -178,6 +178,15 @@ public sealed class PairSyncService : IDisposable
                     Util.Logger.Log($"pairs/{pairId} 不在検出 ({count}/{Consecutive404Threshold})", Util.LogLevel.Debug);
                     if (!inGrace && count >= Consecutive404Threshold)
                     {
+                        // Codex P1 fix (第3弾): 観察未済 (legacy peer) は責任者側 PC がまだ upgrade してないだけの
+                        // 可能性が高い。非責任者は backfill しない設計上、観察前に 3 連続 404 で消すと「片方だけ
+                        // upgrade で片方未 upgrade」のロールアウト期に正当ペアを失う。SSoT が 1 度でも観察できる
+                        // まで削除を延期する (= 責任者が upgrade して書くか、明示的に DELETE するまで残す)。
+                        if (!peer.PairsSsotObserved)
+                        {
+                            Util.Logger.Log($"pairs/{pairId} 連続 {count} 回不在だが未観察 (legacy peer) のため削除を延期");
+                            continue;
+                        }
                         Util.Logger.Log($"pairs/{pairId} が連続 {count} 回不在 → ローカル削除");
                         await _peerRegistry.RemovePeerAsync(peer.PeerId);
                         _consecutive404.TryRemove(peer.PeerId, out _);
