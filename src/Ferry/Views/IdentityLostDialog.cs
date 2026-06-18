@@ -128,6 +128,22 @@ public sealed class IdentityLostDialog : Window
 
         return owner != null && owner.IsVisible
             ? dialog.ShowDialog(owner)
-            : Task.Run(() => dialog.Show());
+            : ShowAndAwaitCloseAsync(dialog);
+    }
+
+    /// <summary>
+    /// CodeRabbit P0 fix: owner 不在で modeless 表示するときに <see cref="Window.Closed"/> までを await できる
+    /// 形にする。旧実装 <c>Task.Run(() =&gt; dialog.Show())</c> は (a) UI スレッド外で <c>Show()</c> を呼ぶため
+    /// Avalonia が InvalidOperationException を出す可能性があり、(b) <c>Show()</c> が void なので Task が
+    /// 即座に完了して呼出側 (<c>App.axaml.cs</c> の <c>TryShutdown(0)</c>) がダイアログを見せる前にプロセスを
+    /// 落としていた。呼出側はすでに UI スレッド (<c>Dispatcher.UIThread.InvokeAsync</c>) から呼んでいるので、
+    /// <c>Show()</c> を直接呼び TCS で Closed を待つだけで両方解決する。
+    /// </summary>
+    private static Task ShowAndAwaitCloseAsync(Window dialog)
+    {
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        dialog.Closed += (_, _) => tcs.TrySetResult(true);
+        dialog.Show();
+        return tcs.Task;
     }
 }
