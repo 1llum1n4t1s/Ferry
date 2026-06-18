@@ -1789,6 +1789,15 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             {
                 try
                 {
+                    // Codex P2 fix (第7弾 #1): 責任者経路は即時 PUT のため race window は狭いが、
+                    // PairingCompleted → ユーザー速攻 unpair の 1〜数 ms で local 状態が外れる可能性があるので
+                    // defensive に check する。非責任者経路 (30s fallback) と同じ防御で対称性を保つ。
+                    // 注: テスト用 ctor は _peerRegistry=null。null の時は check を skip（本番のみ防御）。
+                    if (_peerRegistry != null && _peerRegistry.FindPeer(peerId) == null)
+                    {
+                        Util.Logger.Log($"pairs/{maskedPair} 責任者書込中止: peer が local から外れたため (unpair 検知)", Util.LogLevel.Debug);
+                        return;
+                    }
                     using var tempSig = new FirebaseSignaling(_databaseUrl, _authClient);
                     await tempSig.PutPairAsync(pairId, record);
                     // Codex P2 fix (第5弾): self-check は GetPairAsync の transient null マッピング
@@ -1820,6 +1829,16 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 try
                 {
                     await Task.Delay(TimeSpan.FromSeconds(30));
+                    // Codex P2 fix (第7弾 #1): 30s wait 中にユーザーが unpair した場合、
+                    // fallback の PutPair が消した pairs/{pairId} を resurrect してしまい remote unpair が
+                    // 反映されない race を防ぐ。_peerRegistry.FindPeer(peerId) で local 状態を再確認し、
+                    // 既に外れていれば fallback abort。
+                    // 注: テスト用 ctor は _peerRegistry=null。null の時は check を skip（本番のみ防御）。
+                    if (_peerRegistry != null && _peerRegistry.FindPeer(peerId) == null)
+                    {
+                        Util.Logger.Log($"pairs/{maskedPair} fallback 中止: peer が local から外れたため (unpair 検知)", Util.LogLevel.Debug);
+                        return;
+                    }
                     using var tempSig = new FirebaseSignaling(_databaseUrl, _authClient);
                     var existing = await tempSig.GetPairAsync(pairId);
                     if (existing == null)
