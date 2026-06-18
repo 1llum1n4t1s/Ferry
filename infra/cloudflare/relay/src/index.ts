@@ -189,10 +189,20 @@ export class RelayDO {
     this.state.acceptWebSocket(server, [role]);
 
     // 2 peer 揃った瞬間に両方へ "ready" を送り、クライアントの WaitForReadyAsync を通過させる。
-    const sockets = this.state.getWebSockets();
-    if (sockets.length === 2) {
+    // Codex P2 fix (第10弾 #5): admission filter (OPEN/CONNECTING) と整合させる。
+    // 旧実装は unfiltered な getWebSockets() を `=== 2` で評価していたため、
+    // reconnect で CLOSING/CLOSED な古い socket が DO に残っていると以下の race が起きていた:
+    //   admission: live=1 (closed を除外) なので 2 人目を accept
+    //   ready check: sockets.length === 3 (closed 1 + live 2) なので ready 不送出
+    // 結果、両クライアントの WaitForReadyAsync が timeout する。
+    // ready check も live filter された sockets で評価することでこの race を解消する。
+    // 新規 accept 直後は readyState が CONNECTING の可能性があるので、改めて live を取り直す。
+    const liveAfterAccept = this.state
+      .getWebSockets()
+      .filter((ws) => ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING);
+    if (liveAfterAccept.length === 2) {
       console.log(`[relay] ready room=${room} (2 peers paired)`);
-      for (const ws of sockets) {
+      for (const ws of liveAfterAccept) {
         try {
           ws.send('ready');
         } catch {

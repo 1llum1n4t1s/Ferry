@@ -26,6 +26,11 @@ public sealed class PendingPairDeleteQueue : IDisposable
     // 後の retry が新ペアを誤削除する race があった。 PeerRegistryService 同様 SemaphoreSlim で書込をシリアライズし、
     // snapshot は lock 内で確定（payload 化）してから _saveLock 配下で書き出す。
     private readonly SemaphoreSlim _saveLock = new(1, 1);
+    // Codex P2 fix (第10弾 #2): in-flight cancel marker。 ProcessAsync の callback await 中に
+    // RemoveAsync(pairId) が呼ばれたとき、 reserve で既に _items に居ない item の cancellation を
+    // in-flight callback まで伝播させるための signal。 ProcessAsync は復帰時に _inFlight を check し、
+    // cancelled なら queue に戻さない (= stale Firebase DELETE 後の retry resurrect を防ぐ)。
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _inFlight = new();
     private List<PendingPairDelete> _items = [];
 
     public PendingPairDeleteQueue()
@@ -77,6 +82,14 @@ public sealed class PendingPairDeleteQueue : IDisposable
         lock (_lock)
         {
             changed = _items.RemoveAll(i => i.PairId == pairId) > 0;
+            // Codex P2 fix (第10弾 #2 + verify follow-up): in-flight callback にも cancellation signal を送る。
+            // ProcessAsync の TryRemove と本 assignment は **同一 _lock 配下** で実行するため atomic に
+            // インターリーブしない (= marker leak / cancellation lost が無い)。 ContainsKey で「in-flight 中の
+            // pairId のみ」true 化することで、 既に終わった pairId に新規 entry を leak させない。
+            if (_inFlight.ContainsKey(pairId))
+            {
+                _inFlight[pairId] = true;
+            }
             payload = JsonSerializer.SerializeToUtf8Bytes(_items, PendingDeleteJsonContext.Default.ListPendingPairDelete);
         }
         if (changed) await PersistAsync(payload);
@@ -108,14 +121,27 @@ public sealed class PendingPairDeleteQueue : IDisposable
                 }
                 reserved = _items[idx];
                 _items.RemoveAt(idx);
+                // Codex P2 fix (第10弾 #2): in-flight 登録。 callback await 中の RemoveAsync が
+                // 値 true (cancelled) に書き換えれば、 復帰時に queue 復活させない判断ができる。
+                _inFlight[reserved.PairId] = false;
                 changed = true;
             }
             bool ok;
             try { ok = await deleteCallback(reserved.PairId); }
             catch { ok = false; }
-            if (!ok)
+            // Codex P2 fix (第10弾 #2 + verify follow-up): in-flight 解除と cancelled marker の評価、
+            // および callback 失敗時の queue 戻しを **同一 _lock 配下で atomic に** 実行する。
+            // cancelled==true なら RemoveAsync が in-flight 中に走った = 再ペア成立。 callback の
+            // 成否に関わらず queue 復活させず結果無視 (= stale Firebase DELETE 後の retry resurrect を防ぐ)。
+            // 旧 verify minor: TryRemove と Add を別 lock に分けると「TryRemove → RemoveAsync の
+            // ContainsKey が false → cancellation lost → callback 失敗で re-add で resurrect」の race
+            // が残っていた。lock 内で cancelled 判定と Add を確定すれば、RemoveAsync の lock 取得と
+            // インターリーブできないので race window が消える。
+            bool cancelled;
+            lock (_lock)
             {
-                lock (_lock)
+                _inFlight.TryRemove(reserved.PairId, out cancelled);
+                if (!cancelled && !ok)
                 {
                     reserved.RetryCount++;
                     reserved.LastRetryAtMs = now;
