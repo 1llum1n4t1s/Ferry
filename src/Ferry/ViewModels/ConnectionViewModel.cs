@@ -135,6 +135,9 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             PairedPeers.Add(peer);
         }
         UpdateHasPairedPeers();
+        // Codex P2 fix: PairSyncService が remote unpair を検知して peerRegistry から削除した時、
+        // UI 側 PairedPeers を即時に追従させる（旧実装は再起動まで古い peer が UI に残っていた）。
+        _peerRegistry.PeerRemoved += OnPeerRemovedFromRegistry;
 
         // rere PR#8 #F4: プレゼンス監視 (heartbeat + ポーリング) は実 Firebase への書き込み I/O を伴う。
         // ctor で起動すると、テストが VM を直接 new しただけで本番 Firebase に presence を書き込む汚染が
@@ -627,6 +630,23 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
 
     private void UpdateHasPairedPeers() => HasPairedPeers = PairedPeers.Count > 0;
 
+    /// <summary>
+    /// Codex P2 fix: <see cref="IPeerRegistryService.PeerRemoved"/> ハンドラ。PairSyncService が remote unpair を
+    /// 検知して peerRegistry から peer を消したとき、UI 側 PairedPeers と presence 監視も同期的に外す。
+    /// </summary>
+    private void OnPeerRemovedFromRegistry(object? sender, string peerId)
+    {
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            var peer = PairedPeers.FirstOrDefault(p => p.PeerId == peerId);
+            if (peer == null) return;
+            peer.WentOnline -= OnPeerWentOnline;
+            PairedPeers.Remove(peer);
+            _presenceSignaling?.ForgetPresence(peerId);
+            UpdateHasPairedPeers();
+        });
+    }
+
     // === プレゼンス監視 ===
 
     /// <summary>
@@ -796,6 +816,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         _connectionService.RouteChanged -= OnRouteChanged;
         _connectionService.PairingCompleted -= OnPairingCompleted;
         _connectionService.StatusMessageChanged -= OnStatusMessageChanged;
+        _peerRegistry.PeerRemoved -= OnPeerRemovedFromRegistry;
         ClearQrCodeImage();
 
         // 全ピアの WentOnline 購読を解除

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Ferry.Models;
@@ -21,4 +22,11 @@ public interface IPeerRegistryService
 
     /// <summary>指定した ID のペアを検索する。</summary>
     PairedPeer? FindPeer(string peerId);
+
+    /// <summary>
+    /// Codex P2 fix: ペアが削除されたタイミングを通知する。PairSyncService が
+    /// remote unpair 検知で peerRegistry から消したときに発火し、ConnectionViewModel が
+    /// PairedPeers を更新する。引数は削除された peerId。
+    /// </summary>
+    event EventHandler<string>? PeerRemoved;
 }

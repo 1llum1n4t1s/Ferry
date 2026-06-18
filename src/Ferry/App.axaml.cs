@@ -32,6 +32,15 @@ public partial class App : Application
     /// <summary>TransferService のインスタンス（MainWindow からのアクセス用）。</summary>
     public ITransferService? TransferService { get; private set; }
 
+    /// <summary>
+    /// PairSyncService のインスタンス（MainWindow の visibility ハンドラから <see cref="PairSyncService.SetActive"/> を
+    /// 呼ぶための公開ハンドル）。CodeRabbit 指摘で SetActive 配線が抜けていたのを補う。
+    /// </summary>
+    public PairSyncService? PairSyncService { get; private set; }
+
+    /// <summary>PendingPairDelete 定期処理タスクの cancellation。終了時にキャンセルする。</summary>
+    private System.Threading.CancellationTokenSource? _pendingDeleteCts;
+
     /// <summary>自動更新の配信元 URL（Cloudflare R2 ferry-updates 経由）。</summary>
     private const string UpdateBaseUrl = "https://ferry.nephilim.jp";
 
@@ -163,9 +172,19 @@ public partial class App : Application
                         var dialog = new Views.IdentityLostDialog();
                         var owner = GetMainWindow();
                         if (owner != null && owner.IsVisible)
+                        {
                             await dialog.ShowDialog(owner);
+                        }
                         else
+                        {
+                            // owner 不在時の dialog.Show() は非ブロックなので、Closed まで TCS で待つ。
+                            // これが無いと ResetConfirmed が初期値 false のまま即座に評価され、
+                            // [やり直す] が選ばれても clean slate が実行されない (CodeRabbit 指摘)。
+                            var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
+                            dialog.Closed += (_, _) => tcs.TrySetResult(true);
                             dialog.Show();
+                            await tcs.Task;
+                        }
                         if (!dialog.ResetConfirmed)
                         {
                             Util.Logger.Log("identity 紛失: ユーザーが [後で] を選択（オフラインモードで継続）");
@@ -199,12 +218,22 @@ public partial class App : Application
             };
             // 初回 SignIn を fire-and-forget で開始。完了前の Firebase 操作は GetIdTokenAsync で例外になり、
             // 既存リトライ経路で吸収される（実装の段階性を保つ）。
+            // Codex P2 fix: 初回失敗時 (起動時 offline 等) は EnsureRefreshLoopStarted で refresh ループを
+            // 立ち上げてバックグラウンド再試行に委ねる（旧実装は失敗時に何もせず永遠 unauthenticated 状態が続いた）。
             _ = System.Threading.Tasks.Task.Run(async () =>
             {
-                try { await firebaseAuthClient.SignInAsync(); }
+                try
+                {
+                    await firebaseAuthClient.SignInAsync();
+                }
+                catch (Infrastructure.IdentityLostException)
+                {
+                    // IdentityLost イベント発火済み → clean slate UI が処理する
+                }
                 catch (Exception ex)
                 {
-                    Util.Logger.Log($"Firebase Auth 初回 SignIn 失敗（バックグラウンド再試行に委譲）: {ex.Message}", Util.LogLevel.Warning);
+                    Util.Logger.Log($"Firebase Auth 初回 SignIn 失敗（refresh ループに委譲して再試行）: {ex.Message}", Util.LogLevel.Warning);
+                    firebaseAuthClient.EnsureRefreshLoopStarted();
                 }
             });
             // peerRegistry / settingsService は暗号チャネルの PairSecret 引き当て・フラグ参照に使うため先に生成して注入する。
@@ -239,28 +268,38 @@ public partial class App : Application
             // ライフサイクル分離）。Visibility gate は MainWindow から SetActive を呼ぶ。
             var pairSyncSignaling = new Infrastructure.FirebaseSignaling(AppConstants.FirebaseDatabaseUrl, firebaseAuthClient);
             var pairSyncService = new PairSyncService(pairSyncSignaling, peerRegistry, settings.DeviceId);
+            PairSyncService = pairSyncService;  // MainWindow の visibility ハンドラから SetActive を呼ぶための公開
             pairSyncService.Start();
             var connectionVm = new ConnectionViewModel(connectionService, qrCodeService, settingsService, peerRegistry, presenceFactory, pendingPairDeletes);
-            // 起動時に未処理の DELETE retry を実行（オフライン中に削除した分の遅延反映）。
+            // 起動時 + 10min ごとに未処理の DELETE retry を実行（オフライン中に削除した分の遅延反映 + 起動後に
+            // enqueue された分の追従）。Codex P2 fix: 旧実装は起動時のみ呼出で、起動後に enqueue された分は
+            // 次再起動まで処理されなかった。バックグラウンドタイマで定期処理する。
+            _pendingDeleteCts = new System.Threading.CancellationTokenSource();
+            var pendingDeleteCtsToken = _pendingDeleteCts.Token;
             _ = System.Threading.Tasks.Task.Run(async () =>
             {
-                try
+                async Task<bool> DeleteOne(string pairId)
                 {
-                    await pendingPairDeletes.ProcessAsync(async pairId =>
+                    try
                     {
-                        try
-                        {
-                            using var sig = new Infrastructure.FirebaseSignaling(AppConstants.FirebaseDatabaseUrl, firebaseAuthClient);
-                            await sig.DeletePairAsync(pairId);
-                            Util.Logger.Log($"pairs/{pairId} retry DELETE 成功");
-                            return true;
-                        }
-                        catch { return false; }
-                    });
+                        using var sig = new Infrastructure.FirebaseSignaling(AppConstants.FirebaseDatabaseUrl, firebaseAuthClient);
+                        await sig.DeletePairAsync(pairId);
+                        Util.Logger.Log($"pairs/{pairId} retry DELETE 成功");
+                        return true;
+                    }
+                    catch { return false; }
                 }
-                catch (Exception ex)
+                // 起動直後 1 回
+                try { await pendingPairDeletes.ProcessAsync(DeleteOne); }
+                catch (Exception ex) { Util.Logger.Log($"PendingPairDelete 起動時処理エラー: {ex.Message}", Util.LogLevel.Warning); }
+                // 以降 10min ごと（ペア削除 enqueue の遅延上限）
+                while (!pendingDeleteCtsToken.IsCancellationRequested)
                 {
-                    Util.Logger.Log($"PendingPairDelete 起動時処理エラー: {ex.Message}", Util.LogLevel.Warning);
+                    try { await System.Threading.Tasks.Task.Delay(TimeSpan.FromMinutes(10), pendingDeleteCtsToken); }
+                    catch (OperationCanceledException) { return; }
+                    if (pendingPairDeletes.Count == 0) continue;
+                    try { await pendingPairDeletes.ProcessAsync(DeleteOne); }
+                    catch (Exception ex) { Util.Logger.Log($"PendingPairDelete 定期処理エラー: {ex.Message}", Util.LogLevel.Warning); }
                 }
             });
             // rere PR#8 #F4: プレゼンス監視は実 Firebase I/O を伴うため ctor ではなく本番起動時にここで開始する。

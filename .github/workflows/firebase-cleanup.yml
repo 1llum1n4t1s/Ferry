@@ -91,9 +91,10 @@ jobs:
             return 0
           }
 
-          # 旧フラット構造ノード (sessions/{sid}, pairings/{pid} 旧版・signaling/{pairId})
-          # pairings は Step 8 後は per-device 構造になるため、旧構造ノードが残っていればここで掃除し、
-          # 新構造は cleanup_pairings_per_device で別途処理する (両構造の dual run)。
+          # フラット構造ノード一般 (sessions/{sid}, signaling/{pairId}, pairing_nonces/{sid})
+          # pairings/{deviceId}/{pid} は per-device 構造のため別の cleanup_pairings_per_device で処理する。
+          # 旧 flat pairings/{pid} は #D-001a Phase B 配信前のスキーマ。Phase B 配信のタイミングでルートごと
+          # 削除する migration で空になるため、本 job では再走査しない (CodeRabbit 指摘: dual-run は不要)。
           cleanup_node() {
             local node="$1"
             echo "--- ${node} をチェック中 ---"
@@ -184,6 +185,8 @@ jobs:
           # #D-001a Phase B: pairs/{pairId} は cleanup 対象外（SSoT・永続）。
           # Step 8 deploy 後はここに pairs ノード掃除を加えない。
           cleanup_node "sessions"
+          # Codex P1 fix: PairingNonce を別ノード pairing_nonces/{sid} に分離したので 1h 鮮度で同様に掃除する。
+          cleanup_node "pairing_nonces"
           cleanup_node "signaling"
           cleanup_pairings_per_device
           # nested probe nodes は別途

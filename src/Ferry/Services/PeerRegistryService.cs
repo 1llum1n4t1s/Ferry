@@ -58,10 +58,14 @@ public sealed class PeerRegistryService : IPeerRegistryService
         await SaveAsync();
     }
 
+    /// <summary>Codex P2 fix: PairSyncService の remote unpair 検知から UI を即時更新するための通知。</summary>
+    public event EventHandler<string>? PeerRemoved;
+
     public async Task RemovePeerAsync(string peerId)
     {
-        _peers.RemoveAll(p => p.PeerId == peerId);
+        var removed = _peers.RemoveAll(p => p.PeerId == peerId) > 0;
         await SaveAsync();
+        if (removed) PeerRemoved?.Invoke(this, peerId);
     }
 
     public PairedPeer? FindPeer(string peerId)

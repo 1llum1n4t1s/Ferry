@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Ferry.Models;
 using Ferry.Services;
 using NSubstitute;
+using Xunit;
 
 namespace Ferry.Tests.Services;
 
@@ -36,7 +37,7 @@ public sealed class PairSyncServiceTests
         var registry = SubstituteRegistry();
         var svc = CreateServiceFromQueue(registry, [(HttpStatusCode.NotFound, "null")]);
 
-        await svc.CheckOnceAsync(applyGracePeriod: false, CancellationToken.None);
+        await svc.CheckOnceAsync(applyGracePeriod: false, TestContext.Current.CancellationToken);
 
         await registry.DidNotReceive().RemovePeerAsync(Arg.Any<string>());
     }
@@ -52,7 +53,7 @@ public sealed class PairSyncServiceTests
         ]);
 
         for (int i = 0; i < 3; i++)
-            await svc.CheckOnceAsync(applyGracePeriod: false, CancellationToken.None);
+            await svc.CheckOnceAsync(applyGracePeriod: false, TestContext.Current.CancellationToken);
 
         await registry.Received(1).RemovePeerAsync(PeerId);
     }
@@ -69,7 +70,7 @@ public sealed class PairSyncServiceTests
         ]);
 
         for (int i = 0; i < 3; i++)
-            await svc.CheckOnceAsync(applyGracePeriod: false, CancellationToken.None);
+            await svc.CheckOnceAsync(applyGracePeriod: false, TestContext.Current.CancellationToken);
 
         await registry.Received(1).RemovePeerAsync(PeerId);
     }
@@ -89,7 +90,7 @@ public sealed class PairSyncServiceTests
         ]);
 
         for (int i = 0; i < 5; i++)
-            await svc.CheckOnceAsync(applyGracePeriod: false, CancellationToken.None);
+            await svc.CheckOnceAsync(applyGracePeriod: false, TestContext.Current.CancellationToken);
 
         // 5 回中 2 連続 + リセット + 2 連続 = どれも閾値未達 → 削除されない
         await registry.DidNotReceive().RemovePeerAsync(Arg.Any<string>());
@@ -110,7 +111,7 @@ public sealed class PairSyncServiceTests
         ]);
 
         for (int i = 0; i < 5; i++)
-            await svc.CheckOnceAsync(applyGracePeriod: false, CancellationToken.None);
+            await svc.CheckOnceAsync(applyGracePeriod: false, TestContext.Current.CancellationToken);
 
         await registry.DidNotReceive().RemovePeerAsync(Arg.Any<string>());
     }
@@ -127,7 +128,7 @@ public sealed class PairSyncServiceTests
         ]);
 
         for (int i = 0; i < 4; i++)
-            await svc.CheckOnceAsync(applyGracePeriod: false, CancellationToken.None);
+            await svc.CheckOnceAsync(applyGracePeriod: false, TestContext.Current.CancellationToken);
 
         await registry.DidNotReceive().RemovePeerAsync(Arg.Any<string>());
     }
@@ -145,7 +146,7 @@ public sealed class PairSyncServiceTests
         ]);
 
         for (int i = 0; i < 4; i++)
-            await svc.CheckOnceAsync(applyGracePeriod: false, CancellationToken.None);
+            await svc.CheckOnceAsync(applyGracePeriod: false, TestContext.Current.CancellationToken);
 
         await registry.Received(1).RemovePeerAsync(PeerId);
     }
@@ -165,7 +166,7 @@ public sealed class PairSyncServiceTests
 
         // applyGracePeriod: true で 4 回連続 404 でも削除されない (起動直後 5min 内のため)
         for (int i = 0; i < 4; i++)
-            await svc.CheckOnceAsync(applyGracePeriod: true, CancellationToken.None);
+            await svc.CheckOnceAsync(applyGracePeriod: true, TestContext.Current.CancellationToken);
 
         await registry.DidNotReceive().RemovePeerAsync(Arg.Any<string>());
     }

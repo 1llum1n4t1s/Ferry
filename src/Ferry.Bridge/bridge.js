@@ -173,6 +173,8 @@ async function performPairing(sidA, nameA, sidB, nameB, pkA, pkB) {
         await db.ref().update(updates);
 
         showPaired(nameA || "PC-A", nameB || snapB.val().DisplayName || "PC-B");
+        // Codex P1 補足: ペアリング完了したら即 signOut。NONE persistence と併せて auth セッションを完全破棄。
+        firebase.auth().signOut().catch(() => { /* 失敗は無視 (タブを閉じれば消える) */ });
     } catch (err) {
         pairingInProgress = false;
         showError(`ペアリングエラー: ${err.message}`);
@@ -188,6 +190,10 @@ async function ensureAuth(sessionId, pairingNonce) {
     if (!pairingNonce) {
         throw new Error("QR に PairingNonce が含まれていません（古い PC バージョンの可能性）");
     }
+    // Codex P1 指摘: signInWithCustomToken のデフォルトは LOCAL persistence (refresh token を localStorage に保存)。
+    // ペアリング後もスマホ側に sidA として書ける長期 auth セッションが残るのは攻撃面（nonce/session 期限後でも
+    // 再度 pairings/{sidA}/... に書ける）。NONE に倒してタブを閉じれば auth が消えるようにする。
+    await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.NONE);
     const resp = await fetch(PAIR_TOKEN_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -301,6 +307,8 @@ async function main() {
         resolvedSidA = sidA;
         resolvedNameA = nameA || snapA.val().DisplayName || "PC-A";
         resolvedPkA = pkA || "";
+        // resolvedNonceA は現状追加の用途は無いが、将来 PC 側で nonce rotation を入れた時の再認証や
+        // デバッグ表示用に保持しておく (CodeRabbit nitpick への対応: 削除せず意図を明記)。
         resolvedNonceA = nonceA;
         sessionAInfo.classList.remove("hidden");
         sessionAId.textContent = sidA;

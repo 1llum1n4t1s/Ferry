@@ -8,11 +8,21 @@
     "sessions": {
       "$sid": {
         ".read": "auth != null",
-        ".write": "auth != null && auth.uid == $sid && newData.child('CreatedAt').val() > now - 60000 && newData.child('CreatedAt').val() < now + 60000",
+        ".write": "auth != null && auth.uid == $sid && (!newData.exists() || (newData.child('CreatedAt').val() > now - 60000 && newData.child('CreatedAt').val() < now + 60000))",
         "DisplayName": { ".validate": "newData.isString() && newData.val().length <= 64" },
         "CreatedAt": { ".validate": "newData.isNumber()" },
         "PublicKey": { ".validate": "newData.isString() && newData.val().length <= 256" },
-        "PairingNonce": { ".validate": "newData.isString() && newData.val().matches(/^[a-f0-9]{32}$/)" },
+        "$other": { ".validate": false }
+      }
+    },
+
+    "_comment_pairing_nonces": "Codex P1 fix: PairingNonce はかつて sessions/{sid} に同梱されていたが sessions の .read が `auth != null` (誰でも読める) のため ghost peer 攻撃面となっていた。別ノードに分離し .read: false で server (Workers SA) のみ読める。CreatedAt ±60s ガードで replay 防止。",
+    "pairing_nonces": {
+      "$sid": {
+        ".read": false,
+        ".write": "auth != null && auth.uid == $sid && newData.child('Nonce').val().matches(/^[a-f0-9]{32}$/) && newData.child('CreatedAt').val() > now - 60000 && newData.child('CreatedAt').val() < now + 60000",
+        "Nonce": { ".validate": "newData.isString() && newData.val().matches(/^[a-f0-9]{32}$/)" },
+        "CreatedAt": { ".validate": "newData.isNumber()" },
         "$other": { ".validate": false }
       }
     },
@@ -46,24 +56,37 @@
       }
     },
 
+    "_comment_signaling_no_parent_write": "Codex P1 fix: 親 `signaling/{pairId}.write` を削除した。Firebase は parent .write が子ルールにカスケードし、子で `auth.uid == $senderDeviceId` と狭めても親で許可されていればなりすまし可能。子ごとに必要十分な .write を持たせ、parent には .write を置かない (read は親で当事者制限したまま)。",
     "signaling": {
       "$pairId": {
         ".read": "auth != null && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))",
-        ".write": "auth != null && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))",
         "offers": {
           "$senderDeviceId": {
-            ".write": "auth != null && auth.uid == $senderDeviceId"
+            ".write": "auth != null && auth.uid == $senderDeviceId && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
           }
         },
         "answers": {
           "$answererDeviceId": {
-            ".write": "auth != null && auth.uid == $answererDeviceId"
+            ".write": "auth != null && auth.uid == $answererDeviceId && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
           }
         },
         "endpoints": {
           "$senderDeviceId": {
-            ".write": "auth != null && auth.uid == $senderDeviceId"
+            ".write": "auth != null && auth.uid == $senderDeviceId && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
           }
+        },
+        "probeOffers": {
+          "$nonce": {
+            ".write": "auth != null && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
+          }
+        },
+        "probeAnswers": {
+          "$nonce": {
+            ".write": "auth != null && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
+          }
+        },
+        "createdAt": {
+          ".write": "auth != null && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
         }
       }
     },

@@ -53,13 +53,22 @@ export default {
     }
 
     // #D-001a Phase B: Firebase Custom Token Auth エンドポイント
-    if (url.pathname === '/auth/token' && req.method === 'POST') {
-      const { handleAuthToken } = await import('./auth');
-      return handleAuthToken(req, env);
-    }
-    if (url.pathname === '/pair/token' && req.method === 'POST') {
-      const { handlePairToken } = await import('./auth');
-      return handlePairToken(req, env);
+    //
+    // Codex P1 指摘: Bridge は https://ferry-edf09.web.app から POST application/json を投げるため、
+    // ブラウザは事前に CORS preflight (OPTIONS) を送る。本 Worker が OPTIONS を扱わないと
+    // Access-Control-Allow-* が返らず Bridge から /pair/token が呼べない (本番 /auth/token も
+    // 直接ブラウザ呼出を想定するならガード必要)。Allowed origins は Firebase Hosting 由来のみ。
+    if (url.pathname === '/auth/token' || url.pathname === '/pair/token') {
+      if (req.method === 'OPTIONS') {
+        return corsPreflightResponse(req);
+      }
+      if (req.method === 'POST') {
+        const { handleAuthToken, handlePairToken } = await import('./auth');
+        const handler = url.pathname === '/auth/token' ? handleAuthToken : handlePairToken;
+        const resp = await handler(req, env);
+        return withCorsHeaders(resp, req);
+      }
+      return new Response('Method Not Allowed', { status: 405, headers: { 'allow': 'POST, OPTIONS' } });
     }
 
     // WebSocket 以外は拒否
@@ -84,6 +93,49 @@ export default {
     return stub.fetch(forwarded);
   },
 };
+
+/**
+ * CORS preflight / レスポンスへのヘッダ付与。
+ *
+ * Allowed origins: 開発の利便で Firebase Hosting の通常ドメイン (web.app / firebaseapp.com) を許可。
+ * 不一致なら ACAO を付けない (= ブラウザがブロック)。Credentials は使わないので Allow-Credentials は不要。
+ */
+const ALLOWED_ORIGIN_SUFFIXES = ['.web.app', '.firebaseapp.com'];
+
+function resolveAllowedOrigin(req: Request): string | null {
+  const origin = req.headers.get('Origin');
+  if (!origin) return null;
+  try {
+    const o = new URL(origin);
+    if (o.protocol !== 'https:') return null;
+    if (ALLOWED_ORIGIN_SUFFIXES.some((sfx) => o.hostname.endsWith(sfx))) return origin;
+  } catch {
+    // invalid URL → no CORS
+  }
+  return null;
+}
+
+function corsPreflightResponse(req: Request): Response {
+  const allowed = resolveAllowedOrigin(req);
+  const headers: Record<string, string> = {
+    'access-control-allow-methods': 'POST, OPTIONS',
+    'access-control-allow-headers': 'content-type',
+    'access-control-max-age': '600',
+    'vary': 'Origin',
+  };
+  if (allowed) headers['access-control-allow-origin'] = allowed;
+  return new Response(null, { status: 204, headers });
+}
+
+function withCorsHeaders(resp: Response, req: Request): Response {
+  const allowed = resolveAllowedOrigin(req);
+  if (!allowed) return resp;
+  // Response は immutable なので新規生成して header を足す
+  const headers = new Headers(resp.headers);
+  headers.set('access-control-allow-origin', allowed);
+  headers.set('vary', 'Origin');
+  return new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers });
+}
 
 async function hashPairId(pairId: string, salt: string): Promise<string> {
   const data = new TextEncoder().encode(pairId + '|' + salt);

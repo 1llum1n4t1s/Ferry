@@ -97,9 +97,14 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
     {
         _sessionId = deviceId;
 
-        // #D-001a Phase B: Bridge が /pair/token で QR と紐付ける PairingNonce を生成
+        // #D-001a Phase B: Bridge が /pair/token で QR と紐付ける PairingNonce を生成。
+        // Codex P1 指摘: sessions/{sid} は auth.uid 関係なく全認証ユーザが read 可なので、ここに Nonce を
+        // 載せると任意のログイン済デバイスが Nonce を盗んで /pair/token で sidA として認証され ghost peer
+        // 攻撃が復活する。Nonce は別ノード `pairing_nonces/{sid}` に分離し、rules で `.read: false` にして
+        // クライアントから一切読めないようにする。Workers は SA 経由で読む。
         var pairingNonce = Guid.NewGuid().ToString("N");
         _lastPairingNonce = pairingNonce;
+        var createdAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
         await _client
             .Child("sessions")
@@ -107,12 +112,19 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
             .PutAsync(new SessionData
             {
                 DisplayName = displayName,
-                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                CreatedAt = createdAt,
                 PublicKey = publicKey,
-                PairingNonce = pairingNonce,
+            });
+        await _client
+            .Child("pairing_nonces")
+            .Child(_sessionId)
+            .PutAsync(new PairingNonceRecord
+            {
+                Nonce = pairingNonce,
+                CreatedAt = createdAt,
             });
 
-        Util.Logger.Log($"セッション登録: {_sessionId}");
+        Util.Logger.Log($"セッション登録: {Util.Logger.MaskDeviceId(_sessionId)}");  // CodeRabbit: PII マスク
         return _sessionId;
     }
 
@@ -149,13 +161,32 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
             PkA = pkA,
             PkB = pkB,
         };
-        // #D-001a Phase B: per-device path に restructure。pairings/{sidA}/{pid} と pairings/{sidB}/{pid} の
-        // 両方に書く（atomic multi-path update）。FirebaseDatabase.net には db.ref().update 相当の API が
-        // 直接無いため、2 回 PutAsync で代用（片側失敗時の影響は限定的＝相手側は普通に検知）。
-        await _client.Child("pairings").Child(sidA).Child(pairingId).PutAsync(data);
-        await _client.Child("pairings").Child(sidB).Child(pairingId).PutAsync(data);
+        // #D-001a Phase B (PR #10 review fix): pairings/{sidA}/{pid} と pairings/{sidB}/{pid} を
+        // **atomic multi-path update** で同時に書く。Firebase REST の root PATCH (`{databaseUrl}/.json`) は
+        // body に "path/to/child": value のペアを並べると全パスを 1 トランザクションで適用する。片側 rules で
+        // 弾かれたら全体が失敗する＝片側だけ書き残るレースが構造的に起きない。FirebaseDatabase.net には
+        // この API が無いので独自 HttpClient で実装。
+        var multi = new System.Collections.Generic.Dictionary<string, PairingData>
+        {
+            [$"pairings/{sidA}/{pairingId}"] = data,
+            [$"pairings/{sidB}/{pairingId}"] = data,
+        };
+        var auth = await GetAuthQueryAsync();
+        var url = $"{_databaseUrl}/.json{auth}";
+        var json = System.Text.Json.JsonSerializer.Serialize(multi, MultiPathPairingsJsonContext.Default.DictionaryStringPairingData);
+        using var req = new HttpRequestMessage(new HttpMethod("PATCH"), url)
+        {
+            Content = new StringContent(json, System.Text.Encoding.UTF8),
+        };
+        req.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        using var resp = await _http.SendAsync(req, ct);
+        if (!resp.IsSuccessStatusCode)
+        {
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException($"pairings atomic PATCH 失敗: HTTP {(int)resp.StatusCode} {body}");
+        }
         // sidA/sidB は deviceId(32hex)。MaskIp は IPv4(4オクテット)以外を素通しするため deviceId 用の MaskDeviceId を使う
-        Util.Logger.Log($"ペアリング書き込み: {pairingId}, A={Util.Logger.MaskDeviceId(sidA)}, B={Util.Logger.MaskDeviceId(sidB)}");
+        Util.Logger.Log($"ペアリング書き込み(atomic): {pairingId}, A={Util.Logger.MaskDeviceId(sidA)}, B={Util.Logger.MaskDeviceId(sidB)}");
     }
 
     /// <summary>
@@ -1038,18 +1069,23 @@ public sealed class SessionData
 {
     public string DisplayName { get; set; } = string.Empty;
     public long CreatedAt { get; set; }
-    /// <summary>
-    /// rere #D-001(a) Phase B: Bridge が `/pair/token` を叩くときに QR と紐付ける一意 nonce（32hex）。
-    /// PC 側 RegisterSessionAsync で生成し、QR コードに `?nonce=...` で埋め込む。Workers は
-    /// sessions/{sid}/PairingNonce との一致を確認してから short-lived Custom Token を返す。
-    /// 既存セッションには空文字で書き込まれる過渡期互換。
-    /// </summary>
-    public string PairingNonce { get; set; } = string.Empty;
 
     /// <summary>rere #D-001(b): このデバイスの長期公開鍵(base64url SPKI)。
     /// コード貼付ペアリング経路で相手が CheckSession 時に読み取り、PairSecret 導出に使う。
     /// 旧クライアントは未設定(空) → 相手は PairSecret を導出できず平文フォールバック。</summary>
     public string PublicKey { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// rere #D-001(a) Phase B (Codex P1 fix): PairingNonce はかつて <see cref="SessionData"/> に同梱されていたが
+/// `sessions/{sid}` が任意の認証済みデバイスから read 可なため ghost peer 攻撃面となっていた。
+/// 別ノード `pairing_nonces/{sid}` に分離し、rules で `.read: false` (server only) として
+/// クライアントから一切読めないようにする。Workers /pair/token のみが SA 経由で読む。
+/// </summary>
+public sealed class PairingNonceRecord
+{
+    public string Nonce { get; set; } = string.Empty;
+    public long CreatedAt { get; set; }
 }
 
 /// <summary>Firebase に書き込むペアリングデータ。</summary>
@@ -1067,6 +1103,11 @@ public sealed class PairingData
     public string PkA { get; set; } = string.Empty;
     public string PkB { get; set; } = string.Empty;
 }
+
+// AOT: pairings の root PATCH atomic update body をシリアライズするための SourceGen context。
+[System.Text.Json.Serialization.JsonSerializable(typeof(System.Collections.Generic.Dictionary<string, PairingData>))]
+[System.Text.Json.Serialization.JsonSourceGenerationOptions(WriteIndented = false)]
+internal partial class MultiPathPairingsJsonContext : System.Text.Json.Serialization.JsonSerializerContext { }
 
 /// <summary>Firebase に書き込むシグナリングデータのラッパー。
 /// PutAsync/PostAsync に string を直接渡すと JSON としてシリアライズされず

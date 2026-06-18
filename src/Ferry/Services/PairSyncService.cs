@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -22,9 +23,12 @@ namespace Ferry.Services;
 public sealed class PairSyncService : IDisposable
 {
     private readonly Func<string, CancellationToken, Task<(HttpStatusCode Status, string Body)>> _fetchPair;
+    private readonly Func<string, PairRecord, CancellationToken, Task>? _putPair;
     private readonly IPeerRegistryService _peerRegistry;
     private readonly string _deviceId;
     private readonly ConcurrentDictionary<string, int> _consecutive404 = new();
+    /// <summary>Codex P1 fix: 旧 peers.json 由来の既存ペアは pairs/{pairId} が未作成なので、責任者側が初回 backfill を試みる。1 度だけ試行 (失敗時は通常 404 カウントに落ちる)。</summary>
+    private readonly ConcurrentDictionary<string, byte> _backfillAttempted = new();
     private const int Consecutive404Threshold = 3;
     private readonly DateTime _startedAtUtc = DateTime.UtcNow;
     private readonly TimeSpan _gracePeriod = TimeSpan.FromMinutes(5);
@@ -32,7 +36,11 @@ public sealed class PairSyncService : IDisposable
     private volatile bool _isActive = true;
 
     public PairSyncService(FirebaseSignaling signaling, IPeerRegistryService peerRegistry, string deviceId)
-        : this((pairId, ct) => signaling.GetPairWithStatusAsync(pairId, ct), peerRegistry, deviceId)
+        : this(
+            (pairId, ct) => signaling.GetPairWithStatusAsync(pairId, ct),
+            (pairId, record, ct) => signaling.PutPairAsync(pairId, record),
+            peerRegistry,
+            deviceId)
     {
     }
 
@@ -45,8 +53,18 @@ public sealed class PairSyncService : IDisposable
         Func<string, CancellationToken, Task<(HttpStatusCode Status, string Body)>> fetchPair,
         IPeerRegistryService peerRegistry,
         string deviceId)
+        : this(fetchPair, null, peerRegistry, deviceId)
+    {
+    }
+
+    private PairSyncService(
+        Func<string, CancellationToken, Task<(HttpStatusCode Status, string Body)>> fetchPair,
+        Func<string, PairRecord, CancellationToken, Task>? putPair,
+        IPeerRegistryService peerRegistry,
+        string deviceId)
     {
         _fetchPair = fetchPair;
+        _putPair = putPair;
         _peerRegistry = peerRegistry;
         _deviceId = deviceId;
     }
@@ -54,7 +72,10 @@ public sealed class PairSyncService : IDisposable
     /// <summary>同期ループを開始する。起動時に 1 回呼ぶ。</summary>
     public void Start()
     {
-        _cts?.Cancel();
+        // 再 Start 時は古い CTS をキャンセルしてから Dispose（リソースリーク防止 / CodeRabbit 指摘）
+        var old = _cts;
+        old?.Cancel();
+        old?.Dispose();
         _cts = new CancellationTokenSource();
         _ = Task.Run(() => LoopAsync(_cts.Token));
     }
@@ -78,10 +99,12 @@ public sealed class PairSyncService : IDisposable
             catch (OperationCanceledException) { return; }
             if (_isActive) await CheckOnceAsync(applyGracePeriod: true, ct);
 
-            // 以降 1h ごと（presence ETag 304 で帯域はほぼゼロ）
+            // 以降 15min ごと (Codex P2 fix: 旧 1h ポーリングだと 3 回連続必要 = 最悪 3h、PR の 1h 反映契約に違反した。
+            // 15min なら最悪 45min で 1h 以内に収まる。presence ETag は別経路で、これは pairs/{id} を読むだけなので
+            // 帯域は 1 ペアあたり ~100B/15min ≪ 無料枠)。
             while (!ct.IsCancellationRequested)
             {
-                try { await Task.Delay(TimeSpan.FromHours(1), ct); }
+                try { await Task.Delay(TimeSpan.FromMinutes(15), ct); }
                 catch (OperationCanceledException) { return; }
                 if (_isActive) await CheckOnceAsync(applyGracePeriod: true, ct);
             }
@@ -96,7 +119,10 @@ public sealed class PairSyncService : IDisposable
     internal async Task CheckOnceAsync(bool applyGracePeriod, CancellationToken ct)
     {
         var inGrace = applyGracePeriod && DateTime.UtcNow - _startedAtUtc < _gracePeriod;
-        foreach (var peer in _peerRegistry.GetPairedPeers())
+        // 404 連続閾値到達時に RemovePeerAsync で peerRegistry を変更するため、列挙中の collection 改変を
+        // 避けて snapshot を取る（InvalidOperationException 防止 / CodeRabbit 指摘）。
+        var peers = _peerRegistry.GetPairedPeers().ToList();
+        foreach (var peer in peers)
         {
             if (ct.IsCancellationRequested) return;
             var pairId = GeneratePairId(_deviceId, peer.PeerId);
@@ -109,6 +135,32 @@ public sealed class PairSyncService : IDisposable
                 }
                 else if (status == HttpStatusCode.NotFound || (status == HttpStatusCode.OK && body == "null"))
                 {
+                    // Codex P1 fix: 旧 peers.json から upgrade した既存ペアは pairs/{pairId} 未作成のため、
+                    // 自分が責任者なら 1 度だけ backfill を試みる (相手側が削除して不在の正規ケースと、初期未作成
+                    // の bootstrap ケースを区別する手段)。backfill 成功なら以降の 404 は発生しない。失敗・非責任者は
+                    // 従来通り 3 連続 404 で削除。
+                    var isResponsible = string.Compare(_deviceId, peer.PeerId, StringComparison.Ordinal) < 0;
+                    if (isResponsible && _putPair != null && _backfillAttempted.TryAdd(peer.PeerId, 0))
+                    {
+                        try
+                        {
+                            await _putPair(pairId, new PairRecord
+                            {
+                                PairId = pairId,
+                                NameA = string.Empty,  // 既存 peers.json から名前を引き戻すのは別 issue
+                                NameB = peer.DisplayName ?? string.Empty,
+                                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                            }, ct);
+                            Util.Logger.Log($"pairs/{pairId} backfill 成功 (legacy peer)");
+                            _consecutive404[peer.PeerId] = 0;
+                            continue;
+                        }
+                        catch (Exception ex)
+                        {
+                            Util.Logger.Log($"pairs/{pairId} backfill 失敗 → 通常 404 カウントへ: {ex.Message}", Util.LogLevel.Debug);
+                            // fall through to counting
+                        }
+                    }
                     // Firebase は GET で「存在しない」を 200 + null body で返すケースがある
                     var count = _consecutive404.AddOrUpdate(peer.PeerId, 1, (_, n) => n + 1);
                     Util.Logger.Log($"pairs/{pairId} 不在検出 ({count}/{Consecutive404Threshold})", Util.LogLevel.Debug);

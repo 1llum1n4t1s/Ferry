@@ -76,13 +76,13 @@ public sealed class DeviceIdentity : IDisposable
     /// </summary>
     public static DeviceIdentity RegenerateAndSave(string keyFilePath)
     {
+        // CodeRabbit 指摘: File.Delete が失敗したのに警告だけ出して続行すると、`new DeviceIdentity(path)` が
+        // 既存ファイルから古い鍵を読み込み「再生成された風で実は同じ鍵」状態になる。これは clean slate UI の
+        // 意図に反し、次回 /auth/token でまた DEVICE_PUBKEY_MISMATCH を引き起こす致命的バグ。削除失敗時は
+        // 例外を伝搬して clean slate UI 側に「失敗 → 後で再試行 / 手動で削除」と促す。
         if (File.Exists(keyFilePath))
         {
-            try { File.Delete(keyFilePath); }
-            catch (Exception ex)
-            {
-                Util.Logger.Log($"identity.key の削除に失敗（再生成は続行）: {ex.Message}", Util.LogLevel.Warning);
-            }
+            File.Delete(keyFilePath);
         }
         return new DeviceIdentity(keyFilePath);  // 不在なので CreateAndSave が走る
     }

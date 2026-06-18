@@ -265,10 +265,12 @@
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"
             integrity="sha384-g5H2aNdtgRBYOBLsuOAuHvUXWnw4bswmU+tYjmGc1G3JfKxl79uWwV4sQarJsLwu"
             crossorigin="anonymous"></script>
-    <!-- #D-001a Phase B: signInWithCustomToken のため Firebase Auth (compat) 必須 -->
-    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"
-            integrity="sha384-Mqd2DSdC/vK8B2HyKfNxhx2W9rL5IF7Vue1q5YEpv8/aLPYZNQ8GUq8u0pIb5KX2"
-            crossorigin="anonymous"></script>
+    <!-- #D-001a Phase B: signInWithCustomToken のため Firebase Auth (compat) 必須。
+         CodeRabbit 指摘: Firebase は gstatic.com の compat スクリプトに公式 SRI hash を公開していない。
+         手計算 hash は Firebase のリリース毎に再計算が必要で運用負荷が高く、ハッシュずれで script load 失敗
+         → 認証経路全断という致命的故障になる。SRI は付けず、ホスト信頼 (gstatic.com) と HTTPS+CSP で防御する。
+         (他の app-compat / database-compat は手元で動作確認済み hash が付いている過渡期のまま) -->
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 
     <!-- html5-qrcode ライブラリ（ページ内カメラでペアリング先の QR を読み取る） -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"

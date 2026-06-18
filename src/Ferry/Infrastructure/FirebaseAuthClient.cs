@@ -48,11 +48,26 @@ public sealed class FirebaseAuthClient : IDisposable
     /// </summary>
     public event EventHandler? IdentityLost;
 
+    /// <summary>
+    /// CodeRabbit 指摘: 外部から渡された HttpClient は呼出側が所有するので Dispose しない。
+    /// 内部で new した場合のみ <see cref="Dispose"/> で解放する。
+    /// </summary>
+    private readonly bool _ownsHttp;
+
     public FirebaseAuthClient(DeviceIdentity identity, string deviceId, HttpClient? http = null)
     {
         _identity = identity;
         _deviceId = deviceId;
-        _http = http ?? new HttpClient();
+        if (http != null)
+        {
+            _http = http;
+            _ownsHttp = false;
+        }
+        else
+        {
+            _http = new HttpClient();
+            _ownsHttp = true;
+        }
     }
 
     /// <summary>現在の idToken（未認証なら null）。FirebaseSignaling の AuthTokenAsyncFactory から呼ばれる。</summary>
@@ -155,8 +170,10 @@ public sealed class FirebaseAuthClient : IDisposable
         var attempt = 0;
         while (!ct.IsCancellationRequested)
         {
-            // 通常は 1h - 10min = 50min 待ってから refresh
-            var nextWait = TimeSpan.FromHours(1) - _refreshAhead;
+            // 通常は 1h - 10min = 50min 待ってから refresh。
+            // Codex P2 fix: 失敗後は backoff 完了次第すぐ次の SignInOnceAsync を試す（旧実装は failure 後も
+            // 律儀に 50min wait → backoff wait と続け、idToken expiry までに復旧できないリスクがあった）。
+            var nextWait = attempt == 0 ? TimeSpan.FromHours(1) - _refreshAhead : ComputeBackoff(attempt);
             try { await Task.Delay(nextWait, ct); }
             catch (OperationCanceledException) { return; }
 
@@ -172,11 +189,24 @@ public sealed class FirebaseAuthClient : IDisposable
             catch (Exception ex)
             {
                 attempt++;
-                var backoff = ComputeBackoff(attempt);
-                Util.Logger.Log($"Firebase Auth refresh 失敗 (attempt {attempt}, backoff {backoff.TotalSeconds:F0}s): {ex.Message}", Util.LogLevel.Warning);
-                try { await Task.Delay(backoff, ct); }
-                catch (OperationCanceledException) { return; }
+                Util.Logger.Log($"Firebase Auth refresh 失敗 (attempt {attempt}, 次の backoff {ComputeBackoff(attempt).TotalSeconds:F0}s): {ex.Message}", Util.LogLevel.Warning);
+                // 次イテレーション先頭の Task.Delay が backoff として効く（重複 wait しない）
             }
+        }
+    }
+
+    /// <summary>
+    /// Codex P2 fix: 初回 <see cref="SignInAsync"/> が失敗した場合でも refresh ループを立ち上げ、
+    /// バックグラウンドで再試行する。SignInAsync は正常パスでループを起動するが、起動時 offline で失敗すると
+    /// ループが立たないので呼出側 (App.axaml.cs) はこのメソッドを呼んで「失敗してもバックグラウンド再試行」を保証する。
+    /// 既に SignIn 済みなら no-op。
+    /// </summary>
+    public void EnsureRefreshLoopStarted()
+    {
+        lock (_lock)
+        {
+            if (_refreshCts != null && !_refreshCts.IsCancellationRequested) return;
+            StartRefreshLoop();
         }
     }
 
@@ -193,6 +223,7 @@ public sealed class FirebaseAuthClient : IDisposable
         _refreshCts?.Cancel();
         _refreshCts?.Dispose();
         _refreshCts = null;
+        if (_ownsHttp) _http.Dispose();  // CodeRabbit 指摘: 内部生成時のみ Dispose（外部所有者を尊重）
     }
 }
 

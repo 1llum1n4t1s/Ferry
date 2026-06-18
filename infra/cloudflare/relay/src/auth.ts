@@ -114,21 +114,22 @@ export async function handlePairToken(req: Request, env: Env): Promise<Response>
     if (!success) return jsonError(429, 'SESSION_RATE_LIMIT', 'sessionId rate limit exceeded');
   }
 
-  // Firebase REST から sessions/{sid} を SA access_token で取得
+  // Codex P1 fix: PairingNonce は sessions/ ではなく pairing_nonces/ (rules で .read=false の server-only ノード) に分離。
+  // SA access_token で pairing_nonces/{sid} を読んで一致確認する。
   const accessToken = await getServiceAccountAccessToken(env);
-  const url = `${env.FIREBASE_DATABASE_URL}/sessions/${sessionId}.json?access_token=${encodeURIComponent(accessToken)}`;
+  const url = `${env.FIREBASE_DATABASE_URL}/pairing_nonces/${sessionId}.json?access_token=${encodeURIComponent(accessToken)}`;
   const r = await fetch(url);
   if (!r.ok) {
-    return jsonError(502, 'FIREBASE_ERROR', `Firebase GET sessions/${sessionId} -> ${r.status}`);
+    return jsonError(502, 'FIREBASE_ERROR', `Firebase GET pairing_nonces/${sessionId} -> ${r.status}`);
   }
-  const session = (await r.json()) as { CreatedAt?: number; PairingNonce?: string } | null;
-  if (!session || typeof session.PairingNonce !== 'string') {
-    return jsonError(404, 'SESSION_NOT_FOUND', 'session or PairingNonce not present');
+  const record = (await r.json()) as { CreatedAt?: number; Nonce?: string } | null;
+  if (!record || typeof record.Nonce !== 'string') {
+    return jsonError(404, 'SESSION_NOT_FOUND', 'pairing_nonces not present');
   }
-  if (session.PairingNonce !== pairingNonce) {
+  if (record.Nonce !== pairingNonce) {
     return jsonError(401, 'INVALID_NONCE_MATCH', 'PairingNonce does not match');
   }
-  if (typeof session.CreatedAt !== 'number' || Date.now() - session.CreatedAt > 3_600_000) {
+  if (typeof record.CreatedAt !== 'number' || Date.now() - record.CreatedAt > 3_600_000) {
     return jsonError(401, 'EXPIRED_SESSION', 'session expired (>1h)');
   }
 

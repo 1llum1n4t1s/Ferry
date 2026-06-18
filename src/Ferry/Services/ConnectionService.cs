@@ -1710,22 +1710,29 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             NameB = nameB,
             CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         };
+        // CodeRabbit 指摘: 引数 sig は呼出側 (_signaling) の参照で、責任者側は即時に使う一方
+        // 非責任者は 30s Task.Delay 後に使う。その間に _signaling.Dispose() が走ると ObjectDisposedException
+        // で fallback 書込が消失する。fallback 用に dedicated FirebaseSignaling を作って sig 寿命と切り離す。
+        // 責任者側も async/await の継続後に sig が無効化されるレースを避けるため tempSig 化する (僅か数 ms の追加)。
+        // PII 防止: pairId は両 deviceId を含むのでログマスクする。
+        var maskedPair = MaskPairId(pairId);
         if (isResponsible)
         {
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    await sig.PutPairAsync(pairId, record);
-                    var check = await sig.GetPairAsync(pairId);
+                    using var tempSig = new FirebaseSignaling(_databaseUrl, _authClient);
+                    await tempSig.PutPairAsync(pairId, record);
+                    var check = await tempSig.GetPairAsync(pairId);
                     if (check == null)
-                        Util.Logger.Log($"pairs/{pairId} 書込セルフチェック失敗（fallback に委譲）", Util.LogLevel.Warning);
+                        Util.Logger.Log($"pairs/{maskedPair} 書込セルフチェック失敗（fallback に委譲）", Util.LogLevel.Warning);
                     else
-                        Util.Logger.Log($"pairs/{pairId} 書込成功（責任者）");
+                        Util.Logger.Log($"pairs/{maskedPair} 書込成功（責任者）");
                 }
                 catch (Exception ex)
                 {
-                    Util.Logger.Log($"pairs/{pairId} 責任者書込失敗（fallback 待ち）: {ex.Message}", Util.LogLevel.Warning);
+                    Util.Logger.Log($"pairs/{maskedPair} 責任者書込失敗（fallback 待ち）: {ex.Message}", Util.LogLevel.Warning);
                 }
             });
         }
@@ -1737,19 +1744,28 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 try
                 {
                     await Task.Delay(TimeSpan.FromSeconds(30));
-                    var existing = await sig.GetPairAsync(pairId);
+                    using var tempSig = new FirebaseSignaling(_databaseUrl, _authClient);
+                    var existing = await tempSig.GetPairAsync(pairId);
                     if (existing == null)
                     {
-                        Util.Logger.Log($"pairs/{pairId} 未作成検知 → fallback 書込");
-                        await sig.PutPairAsync(pairId, record);
+                        Util.Logger.Log($"pairs/{maskedPair} 未作成検知 → fallback 書込");
+                        await tempSig.PutPairAsync(pairId, record);
                     }
                 }
                 catch (Exception ex)
                 {
-                    Util.Logger.Log($"pairs/{pairId} fallback 書込失敗: {ex.Message}", Util.LogLevel.Warning);
+                    Util.Logger.Log($"pairs/{maskedPair} fallback 書込失敗: {ex.Message}", Util.LogLevel.Warning);
                 }
             });
         }
+    }
+
+    /// <summary>pairId (deviceId_deviceId) を両端だけマスクしてログ用に短くする。 </summary>
+    private static string MaskPairId(string pairId)
+    {
+        var underscoreIdx = pairId.IndexOf('_');
+        if (underscoreIdx < 0) return Util.Logger.MaskDeviceId(pairId);
+        return Util.Logger.MaskDeviceId(pairId[..underscoreIdx]) + "_" + Util.Logger.MaskDeviceId(pairId[(underscoreIdx + 1)..]);
     }
 
     /// <summary>外部から pairId を導出するための公開ヘルパー（ConnectionViewModel.RemovePeerAsync で使う）。</summary>
