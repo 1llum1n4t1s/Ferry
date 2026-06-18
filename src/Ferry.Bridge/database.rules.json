@@ -3,7 +3,7 @@
     ".read": false,
     ".write": false,
 
-    "_comment_v2_2026-06-19": "rere #D-001(a) Phase B 完成。Bridge も Custom Token 化済 (`/pair/token` 経由・signInAnonymously 撤去) で anonymous 攻撃面ゼロ。pairings は per-device path に restructure。pairs/{pairId} と signaling/{pairId} は当事者のみ R/W (32hex_32hex format + beginsWith/endsWith auth.uid)。signaling の per-sender ノード (offers/answers/endpoints) は sender なりすまし防止のため `auth.uid == $senderDeviceId` を必須化。presence に Version フィールド追加 (Step 8 直前 v1.0.62 機械検証用)。設計詳細は docs/design/firebase-auth-pair-ssot.md。",
+    "_comment_v2_2026-06-19": "rere #D-001(a) Phase B 完成。Bridge も Custom Token 化済 (`/pair/token` 経由・signInAnonymously 撤去) で anonymous 攻撃面ゼロ。pairings は per-device path に restructure し atomic multi-path update を許す (書手は auth.uid == $deviceId か、書込データの SidA/SidB のどちらかが auth.uid のときのみ書ける = Bridge ペアリング時に sidA で auth しつつ pairings/{sidB}/{pid} へも書けるが、第三者が他人 pairings に書くのは SidA/SidB に自身が居ないため不可)。CreatedAt の新鮮性 (±60s) でリプレイ防止。pairs/{pairId} と signaling/{pairId} は当事者のみ R/W (32hex_32hex format + beginsWith/endsWith auth.uid)。signaling の per-sender ノード (offers/answers/endpoints) は sender なりすまし防止のため `auth.uid == $senderDeviceId` を必須化。presence に Version フィールド追加 (Step 8 直前 v1.0.62 機械検証用)。設計詳細は docs/design/firebase-auth-pair-ssot.md。",
 
     "sessions": {
       "$sid": {
@@ -21,7 +21,7 @@
       "$deviceId": {
         ".read": "auth != null && auth.uid == $deviceId",
         "$pid": {
-          ".write": "auth != null && auth.uid == $deviceId",
+          ".write": "auth != null && auth.uid.length == 32 && (auth.uid == $deviceId || newData.child('SidA').val() == auth.uid || newData.child('SidB').val() == auth.uid) && newData.child('CreatedAt').val() > now - 60000 && newData.child('CreatedAt').val() < now + 60000",
           "SidA": { ".validate": "newData.isString() && newData.val().matches(/^[a-f0-9]{32}$/)" },
           "SidB": { ".validate": "newData.isString() && newData.val().matches(/^[a-f0-9]{32}$/)" },
           "NameA": { ".validate": "newData.isString() && newData.val().length <= 64" },

@@ -158,9 +158,22 @@ export async function mintCustomToken(uid: string, expiresInSec: number, env: En
   return rs256Sign(header, payload, env.FIREBASE_PRIVATE_KEY);
 }
 
-/** SA を OAuth 2.0 JWT-bearer で交換して REST 用 access_token を取得 */
+/**
+ * SA を OAuth 2.0 JWT-bearer で交換して REST 用 access_token を取得。
+ *
+ * モジュールレベルでトークンをキャッシュする（Cloudflare Workers の同一 isolate 内で再利用）。
+ * `expires_in` から 60s のマージンを引いた時刻まで再利用し、それ以降は新規取得する。
+ * 同一 isolate 内で /pair/token が連続呼出されるケースで Google OAuth 200-500ms RTT と
+ * QPS リミット消費を削減する目的（Gemini code review 指摘）。新 isolate では再取得が走る。
+ */
+let cachedAccessToken: { token: string; expiresAt: number } | null = null;
+
 export async function getServiceAccountAccessToken(env: Env): Promise<string> {
-  const iat = Math.floor(Date.now() / 1000);
+  const now = Date.now();
+  if (cachedAccessToken && cachedAccessToken.expiresAt > now) {
+    return cachedAccessToken.token;
+  }
+  const iat = Math.floor(now / 1000);
   const exp = iat + 3600;
   const header = { alg: 'RS256', typ: 'JWT' };
   const payload = {
@@ -180,11 +193,18 @@ export async function getServiceAccountAccessToken(env: Env): Promise<string> {
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body,
   });
-  const j = (await r.json()) as { access_token?: string; error?: string };
+  const j = (await r.json()) as { access_token?: string; expires_in?: number; error?: string };
   if (!j.access_token) {
     throw new Error('OAuth token exchange failed: ' + JSON.stringify(j));
   }
+  const lifetimeMs = (j.expires_in ?? 3600) * 1000;
+  cachedAccessToken = { token: j.access_token, expiresAt: now + lifetimeMs - 60_000 };
   return j.access_token;
+}
+
+/** テスト用: モジュールキャッシュを強制クリアする（本番経路では使わない）。 */
+export function _resetAccessTokenCacheForTests(): void {
+  cachedAccessToken = null;
 }
 
 /** RS256 JWT を SA PEM PKCS#8 で署名 */

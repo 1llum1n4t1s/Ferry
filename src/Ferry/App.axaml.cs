@@ -183,7 +183,13 @@ public partial class App : Application
                         // 3. peers.json を空にする（既存ペアは PairSecret も含めて全消去）
                         foreach (var p in peerRegistry.GetPairedPeers().ToList())
                             await peerRegistry.RemovePeerAsync(p.PeerId);
-                        Util.Logger.Log("identity 紛失リカバリー完了 - 再起動を推奨", Util.LogLevel.Warning);
+                        Util.Logger.Log("identity 紛失リカバリー完了 - アプリを終了します");
+                        // 4. in-memory の deviceIdentity / firebaseAuthClient は古い鍵を保持しているため、
+                        //    続行すると次回 /auth/token でまた DEVICE_PUBKEY_MISMATCH → ダイアログ無限ループに陥る。
+                        //    確認ダイアログを表示してからプロセスを終了し、次回起動で新鍵で再構築させる。
+                        await Views.IdentityLostDialog.ShowRestartRequiredAsync(GetMainWindow());
+                        if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+                            desktop.TryShutdown(0);
                     }
                     catch (Exception ex)
                     {

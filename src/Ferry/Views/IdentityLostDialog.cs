@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -81,5 +82,52 @@ public sealed class IdentityLostDialog : Window
 
         root.Children.Add(buttons);
         Content = root;
+    }
+
+    /// <summary>
+    /// clean slate 実行完了後に表示する確認ダイアログ。
+    ///
+    /// 既に in-memory の deviceIdentity / firebaseAuthClient は **古い鍵を保持している**ため、
+    /// 再起動せずに続行すると新しい identity.key と整合しなくなり、次回の `/auth/token` でまた
+    /// `DEVICE_PUBKEY_MISMATCH` → IdentityLostDialog ループに陥る。新しい鍵を採用するには
+    /// プロセスを終了させて次回起動で再構築する必要がある。
+    /// </summary>
+    public static Task ShowRestartRequiredAsync(Window? owner)
+    {
+        var dialog = new Window
+        {
+            Title = "Ferry - 再起動が必要",
+            Width = 460,
+            Height = 200,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = false,
+        };
+        var root = new StackPanel { Margin = new Thickness(24), Spacing = 14 };
+        root.Children.Add(new TextBlock
+        {
+            Text = "新しい鍵を生成しました",
+            FontSize = 18,
+            FontWeight = FontWeight.Bold,
+        });
+        root.Children.Add(new TextBlock
+        {
+            Text = "アプリを終了します。次回起動時に新しい鍵で再ペアリングしてください。",
+            TextWrapping = TextWrapping.Wrap,
+            LineHeight = 22,
+        });
+        var okBtn = new Button
+        {
+            Content = "終了",
+            Padding = new Thickness(16, 6),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            FontWeight = FontWeight.SemiBold,
+        };
+        okBtn.Click += (_, _) => dialog.Close();
+        root.Children.Add(okBtn);
+        dialog.Content = root;
+
+        return owner != null && owner.IsVisible
+            ? dialog.ShowDialog(owner)
+            : Task.Run(() => dialog.Show());
     }
 }
