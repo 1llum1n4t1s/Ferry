@@ -166,6 +166,7 @@ public sealed class PairSyncService : IDisposable
                             catch (Exception ex) { Util.Logger.Log($"PairsSsotObserved 永続化に失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }
                             continue;
                         }
+                        catch (OperationCanceledException) { throw; }  // CodeRabbit: shutdown キャンセルは即座にループへ伝播
                         catch (Exception ex)
                         {
                             Util.Logger.Log($"pairs/{pairId} backfill 失敗 → 通常 404 カウントへ: {ex.Message}", Util.LogLevel.Debug);

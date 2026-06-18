@@ -251,6 +251,7 @@ public sealed class FirebaseAuthClient : IDisposable
         _refreshCts?.Cancel();
         _refreshCts?.Dispose();
         _refreshCts = null;
+        _signInSemaphore.Dispose();  // CodeRabbit 指摘: SemaphoreSlim は IDisposable
         if (_ownsHttp) _http.Dispose();  // CodeRabbit 指摘: 内部生成時のみ Dispose（外部所有者を尊重）
     }
 }
