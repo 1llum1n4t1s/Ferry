@@ -3,7 +3,7 @@
     ".read": false,
     ".write": false,
 
-    "_comment_v2_2026-06-19": "rere #D-001(a) Phase B 完成 + Codex 第3弾 + CodeRabbit 第4弾。Bridge と PC を Custom Token claim `auth.token.src` で区別 (PC=src=='pc', Bridge=src=='bridge')。Bridge は pairings の multi-path update のみ書ける = PC は全 state を書ける。これにより Bridge tab が token expire 前に pairing_nonces/sessions を rotate して session を蘇生する穴を塞ぐ。pairings 緩和ルール (auth.uid == $deviceId || newData.SidA/SidB == auth.uid) は Bridge にも PC にも共通だが、Workers /pair/token が両 nonce を verify してから Bridge token を発行するので「他人 sid を知っているだけで inbox 注入」は不可。CreatedAt ±60s 鮮度・pairs/signaling per-sender 制限は維持。pairings の .write は `!newData.exists()` で delete (newData=null) も許可 (defense-in-depth、Phase B-2 で per-device DELETE 復旧時の前提条件)。設計詳細は docs/design/firebase-auth-pair-ssot.md。",
+    "_comment_v2_2026-06-19": "rere #D-001(a) Phase B 完成 + Codex 第3弾 + CodeRabbit 第4弾。Bridge と PC を Custom Token claim `auth.token.src` で区別 (PC=src=='pc', Bridge=src=='bridge')。Bridge は pairings の multi-path update のみ書ける = PC は全 state を書ける。これにより Bridge tab が token expire 前に pairing_nonces/sessions を rotate して session を蘇生する穴を塞ぐ。pairings 緩和ルール (auth.uid == $deviceId || newData.SidA/SidB == auth.uid) は Bridge にも PC にも共通だが、Workers /pair/token が両 nonce を verify してから Bridge token を発行するので「他人 sid を知っているだけで inbox 注入」は不可。CreatedAt ±60s 鮮度・pairs/signaling per-sender 制限は維持。pairings の .write は `!newData.exists()` で delete (newData=null) も許可 (defense-in-depth、Phase B-2 で per-device DELETE 復旧時の前提条件)。signaling read も src == 'pc' gate 追加 (Codex 第5弾 #3 fix)。設計詳細は docs/design/firebase-auth-pair-ssot.md。",
 
     "sessions": {
       "$sid": {
@@ -59,7 +59,7 @@
     "_comment_signaling_no_parent_write": "Codex P1 fix: 親 `signaling/{pairId}.write` を削除した。Firebase は parent .write が子ルールにカスケードし、子で `auth.uid == $senderDeviceId` と狭めても親で許可されていればなりすまし可能。子ごとに必要十分な .write を持たせ、parent には .write を置かない (read は親で当事者制限したまま)。",
     "signaling": {
       "$pairId": {
-        ".read": "auth != null && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))",
+        ".read": "auth != null && auth.token.src == 'pc' && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))",
         "offers": {
           "$senderDeviceId": {
             ".write": "auth != null && auth.token.src == 'pc' && auth.uid == $senderDeviceId && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"

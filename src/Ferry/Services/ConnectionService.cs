@@ -281,7 +281,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         SetState(PeerState.Disconnected);
     }
 
-    private void OnPairingDetected(object? sender, PairingInfo info)
+    private async void OnPairingDetected(object? sender, PairingInfo info)
     {
         // async void のため例外は捕捉しないとプロセスを巻き込む。全体を try-catch で保護する
         try
@@ -302,11 +302,18 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             {
                 PeerId = info.PeerId,
                 DisplayName = info.PeerDisplayName,
-                // Codex P1 fix (第2弾): 新規 PairingDetected で作る peer は直後に
-                // WritePairRecordWithFallback で pairs/{pairId} 書込を kick するので、SSoT 観察済み
-                // (PairSyncService が 404 で backfill 復活させない) として扱う。万一書込が完全失敗しても
-                // 30s fallback と 5min grace + 15min ポーリングで自然に削除に至るので保守的。
-                PairsSsotObserved = true,
+                // Codex P2 fix (第5弾): 新規 PairingDetected で作る peer は PairsSsotObserved=false で
+                // 入れ、WritePairRecordWithFallback の PUT 成功時に true に更新 + 永続化する形に変更。
+                // 旧実装は最初から true にしていたが、immediate + 30s fallback の両 PUT がともに transient
+                // 失敗するケースで、PairSync 後の polling が「観察済みなのに 404 → 削除」ロジックに乗って
+                // 勝手に unpair される race があった。false で入れておけば第3弾 #4 fix の「未観察 peer は 3
+                // 連続 404 でも削除延期」が効いて保護される。
+                // verify 指摘 (第5弾 minor): 両 PUT が transient 失敗かつ相手側責任者 PC も書き損ねた場合、
+                // この peer は PairsSsotObserved=false のまま peers.json に goblin peer として残り続ける
+                // (削除延期 + SSoT も無い)。次起動時 PairSync 初回 check で SSoT 見えれば true 化される
+                // (line 137-142) ので恒久 stuck ではないが、当該書込失敗は line 1784/1813 で Warning
+                // ログが出るため運用者は気付ける。将来は UI に "ペア同期失敗" 警告を出す案件 (Phase B-2)。
+                PairsSsotObserved = false,
             };
 
             // rere #D-001(b): 相手の公開鍵 × 自分の秘密鍵の ECDH から PairSecret を導出して永続する。
@@ -328,6 +335,26 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             // #D-001a Phase B: pairs/{pairId} SSoT への書込（責任者書込 + 30s fallback）
             // 詳細は docs/design/firebase-auth-pair-ssot.md §6.1 参照。
             WritePairRecordWithFallback(sig, info.PeerId, info.PeerDisplayName);
+
+            // Codex P2 fix (第5弾 #4): pairing 成立 = QR/コードがその役目を終えた瞬間なので、
+            // 自分の sessions/{_deviceId} と pairing_nonces/{_deviceId} を即時 revoke する。
+            // 残しておくと QR URL を保持した第三者が 1h (Workers /pair/token の nonce TTL) 内に
+            // bridge token を mint して PC inbox に書き込めてしまう (ghost pairing 経路)。
+            // peer 側の sid は revoke 権限が無いので触らない (相手側 OnPairingDetected が自分自身を
+            // revoke する形で対称に処理する想定)。bridge 単独経路 (片方 PC オフライン状態でペアリング
+            // 成立) では片側のみ revoke されるが、Workers /pair/token は両 nonce verify を要求するので
+            // nonce 漏れがない限り片側 revoke でも実害なし。
+            //
+            // verify 指摘 (第5弾 minor): 旧実装は `_ = Task.Run(...)` で fire-and-forget だったため、
+            // pairing 成立直後に Disconnect が走ると sig が Dispose されて ObjectDisposedException で
+            // revoke skip され QR/nonce が即時 revoke されない race があった。tempSig パターン (寿命分離) +
+            // 同期 await で race を解消する。最終的な失敗は CleanupAsync / firebase-cleanup.yml が後追い掃除。
+            try
+            {
+                using var revokeSig = new FirebaseSignaling(_databaseUrl, _authClient);
+                await revokeSig.RevokePairingTokensAsync(_deviceId);
+            }
+            catch (Exception ex) { Util.Logger.Log($"pairing tokens 即時 revoke 失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }
 
             // pairings/{pairingId} は **削除しない** 。即削除すると、もう片方の PC が Firebase の
             // InsertOrUpdate イベントを受け取る前にエントリが消え、ペアリング検知漏れが起きる
@@ -1749,21 +1776,20 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 {
                     using var tempSig = new FirebaseSignaling(_databaseUrl, _authClient);
                     await tempSig.PutPairAsync(pairId, record);
-                    // Codex P2 fix (第4弾 verify): PutPairAsync は rules 拒否で透過 ok 返却 / 401 ライブラリ吸収などの
-                    // 隠れ失敗があるため、queue clear の前に GetPairAsync で書込確認する。確認できなければ queue は
-                    // 残し、次サイクルの retry に委ねる（queue が残っても次の PutPair で再度 Remove を試みるので害なし）。
-                    var check = await tempSig.GetPairAsync(pairId);
-                    if (check == null)
-                    {
-                        Util.Logger.Log($"pairs/{maskedPair} 書込セルフチェック失敗（fallback に委譲、queue は保持）", Util.LogLevel.Warning);
-                    }
-                    else
-                    {
-                        Util.Logger.Log($"pairs/{maskedPair} 書込成功（責任者）");
-                        // 再ペアリング成立で queued delete が残っていると、後で retry が走ったとき新ペアの
-                        // pairs ノードを誤削除して remote unpair になる。書込確認できた時点で取消す。
-                        await TryRemovePendingPairDeleteAsync(pairId, maskedPair);
-                    }
+                    // Codex P2 fix (第5弾): self-check は GetPairAsync の transient null マッピング
+                    // (read/auth エラーも null 返却) で「PUT 成功 + GET 不確定 → queue が残る」race を作り、
+                    // 10 分後 retry が新ペアを誤削除する原因になる。サーバが PUT を受理した (例外なしで返った)
+                    // 時点で queue clear で十分。PutPair が透過 ok を返す隠れ失敗 (rules 拒否吸収等) は
+                    // 別レイヤの信頼性問題として切り離す。
+                    Util.Logger.Log($"pairs/{maskedPair} 書込成功（責任者）");
+                    // Codex P2 fix (第5弾 #5): PUT 成功直後に peer.PairsSsotObserved=true を立てて永続化する。
+                    // OnPairingDetected は false で peer を作っているので、この時点で初めて観察済みに昇格する。
+                    // これにより immediate + 30s fallback の両 Task ともに失敗するケースでも PairSync の
+                    // 「未観察 peer は 3 連続 404 でも削除延期」が効き、不本意な remote unpair を回避できる。
+                    await TryMarkPairsSsotObservedAsync(peerId, maskedPair);
+                    // 再ペアリング成立で queued delete が残っていると、後で retry が走ったとき新ペアの
+                    // pairs ノードを誤削除して remote unpair になる。PutPair 受理時点で取消す。
+                    await TryRemovePendingPairDeleteAsync(pairId, maskedPair);
                 }
                 catch (Exception ex)
                 {
@@ -1785,19 +1811,13 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     {
                         Util.Logger.Log($"pairs/{maskedPair} 未作成検知 → fallback 書込");
                         await tempSig.PutPairAsync(pairId, record);
-                        // Codex P2 fix (第4弾 verify): fallback 書込経路でも GetPairAsync で書込確認してから
-                        // queue clear する（PutPair の隠れ失敗で queue だけ消えるのを防ぐ）。確認できなければ
-                        // queue は保持し次サイクルに委ねる。
-                        var verify = await tempSig.GetPairAsync(pairId);
-                        if (verify == null)
-                        {
-                            Util.Logger.Log($"pairs/{maskedPair} fallback 書込セルフチェック失敗（queue は保持）", Util.LogLevel.Warning);
-                        }
-                        else
-                        {
-                            Util.Logger.Log($"pairs/{maskedPair} fallback 書込成功");
-                            await TryRemovePendingPairDeleteAsync(pairId, maskedPair);
-                        }
+                        // Codex P2 fix (第5弾): self-check は GetPairAsync の transient null マッピングで
+                        // race を作るため廃止。PutPair が例外なしで返れば queue clear で十分（責任者経路と同じ理由）。
+                        Util.Logger.Log($"pairs/{maskedPair} fallback 書込成功");
+                        // Codex P2 fix (第5弾 #5): fallback 経路も PUT 成功直後に PairsSsotObserved=true へ昇格させる。
+                        // 責任者経路と非責任者経路のどちらかが成功すれば一度だけ true になる (両方成功時は idempotent)。
+                        await TryMarkPairsSsotObservedAsync(peerId, maskedPair);
+                        await TryRemovePendingPairDeleteAsync(pairId, maskedPair);
                     }
                 }
                 catch (Exception ex)
@@ -1805,6 +1825,30 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     Util.Logger.Log($"pairs/{maskedPair} fallback 書込失敗: {ex.Message}", Util.LogLevel.Warning);
                 }
             });
+        }
+    }
+
+    /// <summary>
+    /// Codex P2 fix (第5弾 #5): pairs/{pairId} の PUT 成功直後に peer.PairsSsotObserved=true を立てて永続化する。
+    /// peer 参照は _peerRegistry.FindPeer(peerId) で都度引き直す (Task の lifetime と peer mutation の安全のため)。
+    /// 既に true 済み・peer 不在・registry 未注入・例外はすべて best-effort で握りつぶす (書込成功という主目的を阻害しない)。
+    /// </summary>
+    private async Task TryMarkPairsSsotObservedAsync(string peerId, string maskedPair)
+    {
+        var registry = _peerRegistry;
+        if (registry == null) return;
+        try
+        {
+            var peer = registry.FindPeer(peerId);
+            if (peer == null) return;
+            if (peer.PairsSsotObserved) return;  // 既に他経路で立っていれば no-op
+            peer.PairsSsotObserved = true;
+            await registry.AddOrUpdatePeerAsync(peer);
+            Util.Logger.Log($"pairs/{maskedPair} 観察済みフラグを永続化");
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"pairs/{maskedPair} PairsSsotObserved 永続化に失敗（無視）: {ex.Message}", Util.LogLevel.Warning);
         }
     }
 

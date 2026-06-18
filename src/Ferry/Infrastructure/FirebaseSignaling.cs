@@ -819,6 +819,21 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
     }
 
     /// <summary>
+    /// Codex P2 fix (第5弾 #4): pairing 成立後に <c>sessions/{sid}</c> と <c>pairing_nonces/{sid}</c> を即時 revoke する。
+    /// QR URL が外部に漏れていても 1h (Workers /pair/token の nonce 受理 TTL) を待たず bridge token mint を不可にする。
+    /// success 経路 (<see cref="ConnectionService.OnPairingDetected"/>) と cancel 経路 (<see cref="CleanupAsync"/>) の
+    /// 両方から呼ばれる想定で best-effort 化 (個別 DELETE 失敗は warn ログのみで握りつぶす)。
+    /// </summary>
+    public async Task RevokePairingTokensAsync(string sid, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(sid)) return;
+        try { await _client.Child("sessions").Child(sid).DeleteAsync(); }
+        catch (Exception ex) { Util.Logger.Log($"sessions/{Util.Logger.MaskDeviceId(sid)} 即時 revoke 失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }
+        try { await _client.Child("pairing_nonces").Child(sid).DeleteAsync(); }
+        catch (Exception ex) { Util.Logger.Log($"pairing_nonces/{Util.Logger.MaskDeviceId(sid)} 即時 revoke 失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }
+    }
+
+    /// <summary>
     /// セッションとシグナリングデータを Firebase から削除する。
     /// </summary>
     public async Task CleanupAsync(string? pairingId = null, CancellationToken ct = default)
@@ -827,11 +842,10 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
         {
             if (!string.IsNullOrEmpty(_sessionId))
             {
-                await _client.Child("sessions").Child(_sessionId).DeleteAsync();
-                // Codex P2 fix (第2弾): session 削除と並んで pairing_nonces/{sid} も即破棄する。
+                // Codex P2 fix (第2弾→第5弾 #4): session + pairing_nonces を即破棄する。
                 // 残しておくと cancel 後も Workers /pair/token が同 nonce で 1h 内 Custom Token を発行できてしまう。
-                try { await _client.Child("pairing_nonces").Child(_sessionId).DeleteAsync(); }
-                catch (Exception ex) { Util.Logger.Log($"pairing_nonces 削除失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }
+                // success 経路 (OnPairingDetected) と共通化するため RevokePairingTokensAsync に集約。
+                await RevokePairingTokensAsync(_sessionId, ct);
             }
             if (!string.IsNullOrEmpty(pairingId))
             {
