@@ -206,6 +206,9 @@ public sealed class PairSyncServiceTests
         var peer = new PairedPeer { PeerId = PeerId, DisplayName = "Bob", PairsSsotObserved = false };
         var registry = Substitute.For<IPeerRegistryService>();
         registry.GetPairedPeers().Returns(new List<PairedPeer> { peer });
+        // Codex 第9弾 #6 fix: PairSyncService が AddOrUpdatePeerAsync 前に FindPeer で再 check するため、
+        // GetPairedPeers と整合した FindPeer mock も必要。
+        registry.FindPeer(peer.PeerId).Returns(peer);
         var svc = CreateServiceFromQueue(registry, [(HttpStatusCode.OK, "{\"a\":1}")]);
 
         await svc.CheckOnceAsync(applyGracePeriod: false, TestContext.Current.CancellationToken);
@@ -223,9 +226,17 @@ public sealed class PairSyncServiceTests
     private static IPeerRegistryService SubstituteRegistry(params PairedPeer[] peers)
     {
         var registry = Substitute.For<IPeerRegistryService>();
-        registry.GetPairedPeers().Returns(peers.Length == 0
+        var list = peers.Length == 0
             ? new List<PairedPeer> { new() { PeerId = PeerId, DisplayName = "Bob", PairsSsotObserved = true } }
-            : new List<PairedPeer>(peers));
+            : new List<PairedPeer>(peers);
+        registry.GetPairedPeers().Returns(list);
+        // Codex 第9弾 #6 fix: PairSyncService が AddOrUpdatePeerAsync 前に FindPeer で peer 存在を再 check する
+        // 仕様になったため、 GetPairedPeers と整合して FindPeer も同じ peer を返すよう mock する。
+        // (テスト前提では peers は manual remove されないので、 GetPairedPeers と FindPeer は同期)
+        foreach (var p in list)
+        {
+            registry.FindPeer(p.PeerId).Returns(p);
+        }
         return registry;
     }
 

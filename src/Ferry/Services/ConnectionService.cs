@@ -228,7 +228,14 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         }
         _signaling?.Dispose();
         _signaling = new FirebaseSignaling(_databaseUrl, _authClient);
-        _seenPairingIds.Clear();
+        // Codex P2 fix (第9弾 #2): 旧実装は StartPairingSessionAsync の度に _seenPairingIds.Clear() で
+        // 過去 consumed の pairingId を忘れていた。 これだと「直前まで pairing してた peer を remove 直後に
+        // Add peer を開く」と、 Firebase に残った old pairings entry (replay filter の -60s tolerance 内)
+        // が OnPairingDetected を誤って fire させて peer 再追加 → 新 pairing session が revoke される race
+        // になっていた。 _seenPairingIds はアプリ寿命全期間で持続させて、 過去 consumed pairingId は二度と
+        // 受け付けないようにする。 _signaling.Dispose() でインスタンスが入れ替わっても、 _seenPairingIds は
+        // ConnectionService 側に残るので持続する。
+        // _seenPairingIds.Clear();  ← 削除
 
         // rere #D-001(b): 自分の公開鍵も session に載せる（コード貼付ペアリングで相手が読み取る）。
         var sessionId = await _signaling.RegisterSessionAsync(_deviceId, _displayName, PublicKeyForQr, ct);
@@ -1850,6 +1857,16 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                         Util.Logger.Log($"pairs/{maskedPair} fallback 書込成功");
                         // Codex P2 fix (第5弾 #5): fallback 経路も PUT 成功直後に PairsSsotObserved=true へ昇格させる。
                         // 責任者経路と非責任者経路のどちらかが成功すれば一度だけ true になる (両方成功時は idempotent)。
+                        await TryMarkPairsSsotObservedAsync(peerId, maskedPair);
+                        await TryRemovePendingPairDeleteAsync(pairId, maskedPair);
+                    }
+                    else
+                    {
+                        // Codex P2 fix (第9弾 #4): 責任者 (相手) が既に pairs/{pairId} を recreate 済の場合も
+                        // queued delete を取消す。残しておくと後の retry が新 pair を誤削除する race。
+                        // PUT は不要 (既に存在) だが queue clear は必須。TryMarkPairsSsotObservedAsync は
+                        // idempotent (peer.PairsSsotObserved 既に true なら no-op) なので両方呼んで安全。
+                        Util.Logger.Log($"pairs/{maskedPair} 既に存在 (相手が recreated) → queue clear");
                         await TryMarkPairsSsotObservedAsync(peerId, maskedPair);
                         await TryRemovePendingPairDeleteAsync(pairId, maskedPair);
                     }

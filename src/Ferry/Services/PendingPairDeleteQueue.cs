@@ -92,42 +92,46 @@ public sealed class PendingPairDeleteQueue : IDisposable
         foreach (var item in snapshot)
         {
             if (item.LastRetryAtMs > 0 && now - item.LastRetryAtMs < BackoffMs(item.RetryCount)) continue;
-            // Codex P2 fix (第6弾 #3): snapshot 取得後 → destructive callback 実行までの間に RemoveAsync
-            // (= 再ペアリング成立時の TryRemovePendingPairDeleteAsync) が走って queue から item が消えていたら、
-            // ここで callback (Firebase pairs DELETE) を呼ぶと再ペアした新ペアの SSoT を破壊してしまう。
-            // lock 取得して _items にまだ該当 pairId が残っているか直前再 check し、無ければ skip する。
-            bool stillQueued;
-            lock (_lock) stillQueued = _items.Any(i => i.PairId == item.PairId);
-            if (!stillQueued)
-            {
-                Util.Logger.Log($"pending delete pairId={item.PairId} は再ペアリングで取消済み → retry skip", Util.LogLevel.Debug);
-                continue;
-            }
-            bool ok;
-            try { ok = await deleteCallback(item.PairId); }
-            catch { ok = false; }
+            // Codex P2 fix (第9弾 #3): lock 内で item を queue から一時 reserve (in-flight) してから callback を呼ぶ。
+            // 旧実装 (第6弾 #3) は stillQueued check 後 lock release → callback 実行中に RemoveAsync が走っても
+            // 止められず、stale retry が新ペアを誤削除する race が残っていた。reserve すれば callback 実行中の
+            // RemoveAsync は「既に queue にない」状態の no-op になり race フリー。callback 失敗時は retry 情報を
+            // 更新して queue に戻す (callback 中に他者 Enqueue があった場合の defensive 重複チェック付き)。
+            PendingPairDelete reserved;
             lock (_lock)
             {
-                if (ok)
+                var idx = _items.FindIndex(i => i.PairId == item.PairId);
+                if (idx < 0)
                 {
-                    _items.RemoveAll(i => i.PairId == item.PairId);
-                    changed = true;
+                    Util.Logger.Log($"pending delete pairId={item.PairId} は再ペアリングで取消済み → retry skip", Util.LogLevel.Debug);
+                    continue;
                 }
-                else
+                reserved = _items[idx];
+                _items.RemoveAt(idx);
+                changed = true;
+            }
+            bool ok;
+            try { ok = await deleteCallback(reserved.PairId); }
+            catch { ok = false; }
+            if (!ok)
+            {
+                lock (_lock)
                 {
-                    var current = _items.FirstOrDefault(i => i.PairId == item.PairId);
-                    if (current != null)
+                    reserved.RetryCount++;
+                    reserved.LastRetryAtMs = now;
+                    // Codex P2 fix (第2弾): 5 回打ち切りは廃止。オフライン/未認証で 2h 以内に復旧しないと
+                    // 永久に相手側ペアが残ってしまっていた。失敗回数が増えても 24h 上限の backoff で
+                    // 永続 retry し続ける。手動削除に逃げる代替案より、ユーザーの「ペア消したい」意図を
+                    // 諦めずに反映する方が UX/信頼モデル上正しい。
+                    // reserve した item を queue に戻す。callback 中に他者が同 pairId で Enqueue していた場合は
+                    // skip (重複を避ける defensive チェック)。
+                    if (!_items.Any(i => i.PairId == reserved.PairId))
                     {
-                        current.RetryCount++;
-                        current.LastRetryAtMs = now;
-                        // Codex P2 fix (第2弾): 5 回打ち切りは廃止。オフライン/未認証で 2h 以内に復旧しないと
-                        // 永久に相手側ペアが残ってしまっていた。失敗回数が増えても 24h 上限の backoff で
-                        // 永続 retry し続ける。手動削除に逃げる代替案より、ユーザーの「ペア消したい」意図を
-                        // 諦めずに反映する方が UX/信頼モデル上正しい。
-                        changed = true;
+                        _items.Add(reserved);
                     }
                 }
             }
+            // 成功時は既に reserve で _items から消えているので追加処理不要
         }
         if (changed)
         {

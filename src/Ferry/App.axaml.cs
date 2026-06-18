@@ -211,18 +211,25 @@ public partial class App : Application
                             Util.Logger.Log("identity 紛失: ユーザーが [後で] を選択（オフラインモードで継続）");
                             return;
                         }
-                        // clean slate 実行:
-                        // 1. 新しい DeviceId を生成 + settings.json を上書き保存
-                        settings.DeviceId = System.Guid.NewGuid().ToString("N");
-                        await settingsService.SaveAsync();
-                        // 2. identity.key を破棄して新規生成
+                        // clean slate 実行 (Codex P2 fix 第9弾 #5): 順序を入れ替え、new key + peer cleanup を
+                        // 先に成功させてから new DeviceId を commit する。旧実装は settings.json への new DeviceId
+                        // 保存を最初に行い、後続失敗時もログのみで rollback しなかった。結果 settings.json は
+                        // new DeviceId、identity.key は失敗で古いまま → 次回起動で DEVICE_PUBKEY_MISMATCH or
+                        // peer-not-found 状態。新順序なら 1/2 で throw した場合 settings.json は無傷で残り、
+                        // 次回起動で旧 identity に戻る（rollback 不要・自動リカバリ）。
+                        var newDeviceId = System.Guid.NewGuid().ToString("N");
+                        // 1. identity.key を破棄して新規生成（失敗時 throw → settings.json 未変更で旧 DeviceId 維持）
                         var keyPath = System.IO.Path.Combine(
                             System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData),
                             "Ferry", "identity.key");
                         Infrastructure.DeviceIdentity.RegenerateAndSave(keyPath).Dispose();  // 新鍵をディスクに保存
-                        // 3. peers.json を空にする（既存ペアは PairSecret も含めて全消去）
+                        // 2. peers.json を空にする（既存ペアは PairSecret も含めて全消去）。
+                        //    失敗時 throw → settings.json 未変更で旧 DeviceId 維持（次回起動で旧 identity に戻る）。
                         foreach (var p in peerRegistry.GetPairedPeers().ToList())
                             await peerRegistry.RemovePeerAsync(p.PeerId);
+                        // 3. 最後に new DeviceId を commit（settings.json 書込）。ここまで来たら 1/2 は成功済み。
+                        settings.DeviceId = newDeviceId;
+                        await settingsService.SaveAsync();
                         Util.Logger.Log("identity 紛失リカバリー完了 - アプリを終了します");
                         // 4. in-memory の deviceIdentity / firebaseAuthClient は古い鍵を保持しているため、
                         //    続行すると次回 /auth/token でまた DEVICE_PUBKEY_MISMATCH → ダイアログ無限ループに陥る。
@@ -233,6 +240,12 @@ public partial class App : Application
                     }
                     catch (Exception ex)
                     {
+                        // Codex P2 fix (第9弾 #5): rollback 不要。clean slate の順序入替により
+                        // 失敗時の状態は以下のいずれかで、いずれも次回起動の自動リカバリで収束する:
+                        //   - RegenerateAndSave 失敗: settings.json 未変更 → 旧 identity.key が残っていれば旧 DeviceId と整合
+                        //   - peer cleanup 途中失敗: settings.json 未変更 → 旧 DeviceId のまま、一部 peer が消えた状態（再ペアリングで復旧）
+                        //   - SaveAsync 失敗: identity.key は新鍵、settings.json は旧 DeviceId →
+                        //       次回起動の IdentityLost ハンドラ経由で再度 clean slate UI が出る（ダイアログ無限ループには陥らない）
                         Util.Logger.Log($"identity 紛失リカバリー UI でエラー: {ex.Message}", Util.LogLevel.Error);
                     }
                 });

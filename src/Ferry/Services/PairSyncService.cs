@@ -150,6 +150,14 @@ public sealed class PairSyncService : IDisposable
                     // しないようにする。peers.json に永続するので再起動後も観察済みフラグが保たれる。
                     if (!peer.PairsSsotObserved)
                     {
+                        // Codex P2 fix (第9弾 #6): snapshot 取得 → AddOrUpdatePeerAsync 呼出までに manual remove が
+                        // 走ると、registry に居ない peer を AddOrUpdate の「不在なら Add」分岐で resurrect してしまう。
+                        // FindPeer で再 check し、不在ならスキップする (= ユーザーの remove 意図を尊重)。
+                        if (_peerRegistry.FindPeer(peer.PeerId) == null)
+                        {
+                            Util.Logger.Log($"PairSync 200 観察したが peer はローカルから削除済 → 永続化 skip", Util.LogLevel.Debug);
+                            continue;
+                        }
                         peer.PairsSsotObserved = true;
                         try { await _peerRegistry.AddOrUpdatePeerAsync(peer); }
                         catch (Exception ex) { Util.Logger.Log($"PairsSsotObserved 永続化に失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }
@@ -179,6 +187,13 @@ public sealed class PairSyncService : IDisposable
                             _backfillAttempted.TryAdd(peer.PeerId, 0);  // 成功時のみ marker
                             Util.Logger.Log($"pairs/{pairId} backfill 成功 (legacy peer)");
                             _consecutive404[peer.PeerId] = 0;
+                            // Codex P2 fix (第9弾 #6): backfill 成功も同じ re-check。snapshot 取得後の manual remove で
+                            // peer が消えていれば AddOrUpdate の resurrect 分岐を踏ませない。
+                            if (_peerRegistry.FindPeer(peer.PeerId) == null)
+                            {
+                                Util.Logger.Log($"backfill 成功したが peer はローカルから削除済 → 永続化 skip", Util.LogLevel.Debug);
+                                continue;
+                            }
                             peer.PairsSsotObserved = true;
                             try { await _peerRegistry.AddOrUpdatePeerAsync(peer); }
                             catch (Exception ex) { Util.Logger.Log($"PairsSsotObserved 永続化に失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }

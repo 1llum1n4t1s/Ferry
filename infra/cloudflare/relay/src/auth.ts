@@ -187,12 +187,18 @@ export async function handlePairToken(req: Request, env: Env): Promise<Response>
   // 1-QR の bridge token (sessions read のみで pairings には書かせない) には pairAuth を載せない。
   // rules で `pairings/{$deviceId}/{$pid}.write` に `auth.token.pairAuth == true` を AND し、
   // QR 1 枚だけで取った bridge token で他人 inbox に pairing 注入する経路を構造的に塞ぐ。
+  //
+  // Codex 第9弾 #1 fix (P1): pairAuth claim だけだと「どの peer sid が verify されたか」を rules で
+  // 判定できず、attacker が「victim A + attacker-controlled X」の 2-nonce で /pair/token を呼べば
+  // SidA=A, SidB=任意 で knownDeviceC の inbox に書込可能だった (ghost pairing 再開)。verified peer sid
+  // を `peerSid` claim にも埋め、rules で `$deviceId` と `SidA/SidB` が `auth.uid` か `auth.token.peerSid`
+  // のいずれかに一致することを必須化する。これで「自分 + verified peer 以外」の inbox に書けない。
   const customToken = await mintCustomToken(
     sessionId,
     300,
     env,
     'bridge',
-    hasPeer ? { pairAuth: true } : undefined,
+    hasPeer ? { pairAuth: true, peerSid: peerSessionId as string } : undefined,
   );
   return jsonOk({ customToken, expiresIn: 300 });
 }
@@ -214,6 +220,11 @@ export async function handlePairToken(req: Request, env: Env): Promise<Response>
  * 1-QR path (sessions read only) では渡さない。rules 側で pairings 書込時に
  * `auth.token.pairAuth == true` を必須化し、「QR 1 枚だけで取った bridge token で他人 inbox に
  * pairing 注入」を構造的に防ぐ。
+ *
+ * Codex 第9弾 #1 fix (P1): 2-nonce verified path では `peerSid` (= verified peer sessionId)
+ * も extraClaims に含める。rules 側で「$deviceId / SidA / SidB が auth.uid または
+ * auth.token.peerSid のいずれかに一致」を必須化し、attacker が自分の controlled session を
+ * peer に立てて第 3 者 C の inbox に pairing を注入する経路を閉じる。
  */
 export async function mintCustomToken(
   uid: string,
