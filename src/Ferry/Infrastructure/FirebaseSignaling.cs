@@ -814,9 +814,13 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
             }
             if (!string.IsNullOrEmpty(pairingId))
             {
-                await _client.Child("pairings").Child(pairingId).DeleteAsync();
-                // Codex P2 fix (第3弾): signaling/{pairId} の parent DELETE は rules で deny されるので
-                // CleanupSignalingDataAsync (child 個別 DELETE) を再利用する。
+                // CodeRabbit 第4弾 fix: 旧 `pairings/{pairingId}` の 2 セグメント DELETE は Phase B per-device 再構成
+                // (pairings/{sidA}/{pid} + pairings/{sidB}/{pid}) と path がミスマッチで no-op (rule 上も deny で例外
+                // catch されていた) になっていたため削除。本来の per-device DELETE は ConnectionService 側に `pid`
+                // (SubmitPairingAsync が払い出す 20 char) を持たせる設計変更が必要なので Phase B-2 へ defer。
+                // 当面の pairings 掃除は firebase-cleanup.yml (admin SDK、1h 以上 stale を削除) に委譲する。
+                // signaling/{pairId} の parent DELETE も rules で deny されるので CleanupSignalingDataAsync
+                // (child 個別 DELETE) を使う。
                 await CleanupSignalingDataAsync(pairingId);
             }
         }
