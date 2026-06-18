@@ -423,7 +423,7 @@ public sealed class UdpHolePunchTransport : ITransport
         // 片方向だけで確立して即データ(FileMeta)を送ると、相手 NAT にこちら向けの穴が開く前に落ちる
         // （別NAT間で承認待ち60sタイムアウト→切断する片肺誤確立バグの根本原因。2026-06-18 修正）。
         if (!IsConnected)
-            Util.Logger.Log($"UDP PUNCH 受信: {from} → PUNCH_ACK 返送（双方向確認待ち）");
+            Util.Logger.Log($"UDP PUNCH 受信: {Util.Logger.MaskIp(from.Address.ToString())}:{from.Port} → PUNCH_ACK 返送（双方向確認待ち）");
     }
 
     internal void HandlePunchAck(IPEndPoint from)
@@ -433,7 +433,7 @@ public sealed class UdpHolePunchTransport : ITransport
         _remoteEp = from;
         if (!IsConnected)
         {
-            Util.Logger.Log($"UDP PUNCH_ACK 受信: {from} → 接続確立（双方向開通確認）");
+            Util.Logger.Log($"UDP PUNCH_ACK 受信: {Util.Logger.MaskIp(from.Address.ToString())}:{from.Port} → 接続確立（双方向開通確認）");
             SetConnected();
         }
     }
