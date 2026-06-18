@@ -49,6 +49,9 @@ public sealed class UdpHolePunchTransport : ITransport
     // 無進捗なら破棄する。SendDeadlineMs の 2 倍に取り、送信側が再送を続けている間 (届くたびに
     // LastFragmentTick が更新される) は決して落とさない = 健全な転送を誤って壊さない。
     private const int PartialMessageTtlMs = 60_000;
+    // 確立後の NAT マッピング維持 keepalive 間隔。restricted-cone NAT の最短マッピング TTL(~21s)を
+    // 確実に下回る 12s。FileMeta 送出〜FileApprove 承認待ち(最大 60s)のアイドル中に穴が失効するのを防ぐ。
+    private const int KeepAliveIntervalMs = 12_000;
 
     // === ソケット ===
     private readonly UdpClient _udp;
@@ -66,7 +69,10 @@ public sealed class UdpHolePunchTransport : ITransport
     // 実際の受信ロックは ReceivingMessage 単位の `lock (msg)` で行う（HandleData 内）
     private readonly ConcurrentDictionary<uint, ReceivingMessage> _receivingMessages = new();
 
-    public bool IsConnected { get; private set; }
+    // volatile: ReceiveLoop(書き) / HolePunchAsync・KeepAliveLoop(読み) / SetConnected(書き) が別スレッドで
+    // 触るため、弱メモリモデル(ARM64 を win/osx/linux で配信)でも確立フラグの可視性を保証する。
+    private volatile bool _isConnected;
+    public bool IsConnected => _isConnected;
     public ConnectionRoute Route => ConnectionRoute.StunAssisted;
 
     public event EventHandler<byte[]>? DataReceived;
@@ -242,7 +248,7 @@ public sealed class UdpHolePunchTransport : ITransport
         if (!IsConnected && _loopCts == null) return;
 
         Util.Logger.Log("UDP 接続クローズ");
-        IsConnected = false;
+        _isConnected = false;
 
         _loopCts?.Cancel();
         _loopCts?.Dispose();
@@ -281,6 +287,7 @@ public sealed class UdpHolePunchTransport : ITransport
 
         _ = Task.Run(() => ReceiveLoopAsync(ct), ct);
         _ = Task.Run(() => RetransmitLoopAsync(ct), ct);
+        _ = Task.Run(() => KeepAliveLoopAsync(ct), ct);
     }
 
     /// <summary>受信ループ: UDP パケットを読み取ってタイプ別にディスパッチする。</summary>
@@ -332,7 +339,7 @@ public sealed class UdpHolePunchTransport : ITransport
         {
             if (IsConnected)
             {
-                IsConnected = false;
+                _isConnected = false;
                 ChannelClosed?.Invoke(this, EventArgs.Empty);
             }
         }
@@ -403,31 +410,43 @@ public sealed class UdpHolePunchTransport : ITransport
 
     // === パケットハンドラ ===
 
-    private void HandlePunch(IPEndPoint from)
+    internal void HandlePunch(IPEndPoint from)
     {
-        // 相手の PUNCH を受信 → PUNCH_ACK を返す
+        // 相手の PUNCH に PUNCH_ACK を返すのは無条件。これが相手側の双方向確認(相手の HandlePunchAck)を
+        // 成立させる。ここに IsConnected ゲートを足すと、片側が先に確立して PUNCH 送信を止めた後に
+        // 相手の PUNCH へ ACK を返さなくなり相互収束しない＝デッドロックするので絶対に足さない。
         _remoteEp = from;
         SendHeaderOnlyPacketFireAndForget(PktPunchAck, 0, from);
 
+        // ⚠ ここでは確立しない。相手の PUNCH 受信は「相手→こちら」方向の開通確認に過ぎず、
+        // 「こちら→相手」の開通(自分の PUNCH が相手 NAT を通って PUNCH_ACK が返る)は HandlePunchAck で確認する。
+        // 片方向だけで確立して即データ(FileMeta)を送ると、相手 NAT にこちら向けの穴が開く前に落ちる
+        // （別NAT間で承認待ち60sタイムアウト→切断する片肺誤確立バグの根本原因。2026-06-18 修正）。
         if (!IsConnected)
-        {
-            Util.Logger.Log($"UDP PUNCH 受信: {from} → PUNCH_ACK 返送");
-            SetConnected();
-        }
+            Util.Logger.Log($"UDP PUNCH 受信: {Util.Logger.MaskIp(from.Address.ToString())}:{from.Port} → PUNCH_ACK 返送（双方向確認待ち）");
     }
 
-    private void HandlePunchAck(IPEndPoint from)
+    internal void HandlePunchAck(IPEndPoint from)
     {
+        // PUNCH_ACK 受信 = 自分の PUNCH が相手 NAT を通って届き、相手が ACK を返した
+        // = 「こちら→相手」方向の開通確認。ここで初めて双方向開通とみなして確立する。
         _remoteEp = from;
         if (!IsConnected)
         {
-            Util.Logger.Log($"UDP PUNCH_ACK 受信: {from} → 接続確立");
+            Util.Logger.Log($"UDP PUNCH_ACK 受信: {Util.Logger.MaskIp(from.Address.ToString())}:{from.Port} → 接続確立（双方向開通確認）");
             SetConnected();
         }
     }
 
     private void HandleData(byte[] packet)
     {
+        // 確立前（双方向開通確認の前）に届いた DATA は ACK も配送もせずドロップする。
+        // 非対称タイミング: 片側が PUNCH_ACK を先に受けて確立→送信開始する一方、もう片側は自分の
+        // PUNCH_ACK 到着まで HolePunchAsync に留まり、ConnectionService がまだ DataReceived を購読していない。
+        // ここで ACK を返すと送信側が再送を止め、確立前に届いた最初のアプリメッセージ（SecureHello/FileMeta）が
+        // ロストする。ドロップすれば送信側は ACK 不達で再送を続け、確立・購読が済んでから正しく受信できる。
+        if (!IsConnected) return;
+
         if (packet.Length < PacketHeaderSize + FragmentHeaderSize) return;
 
         // P-4: BinaryPrimitives.Read* を 1 度の AsSpan() からスライスして読む
@@ -506,9 +525,41 @@ public sealed class UdpHolePunchTransport : ITransport
         }
     }
 
+    /// <summary>
+    /// 確立後の NAT マッピング維持 keepalive。FileMeta 送出後〜FileApprove 承認待ち(最大 60s)の
+    /// アイドル区間で restricted-cone NAT のマッピング TTL(最短 ~21s)が失効し、相手からの逆送
+    /// パケットが落ちるのを防ぐ。確立後は PUNCH を定期送信し、相手の HandlePunch が無条件で
+    /// PUNCH_ACK を返すことで相互に穴を維持する。信頼層 window を消費しない fire-and-forget 送出。
+    /// </summary>
+    private async Task KeepAliveLoopAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(KeepAliveIntervalMs));
+        var punch = MakeHeaderOnlyPacket(PktPunch, 0);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                var ep = _remoteEp;
+                if (IsConnected && ep != null)
+                {
+                    // ct を伝播してクローズ時に送信を即中断する（.NET 6+ の ReadOnlyMemory オーバーロード）。
+                    try { await _udp.SendAsync(punch, ep, ct); }
+                    catch (SocketException) { /* 一過性は無視。次周期で再送 */ }
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
+        catch (Exception ex)
+        {
+            // バックグラウンドタスクの未処理例外でアプリを巻き込まない（ReceiveLoop と同方針）。
+            Util.Logger.Log($"UDP KeepAlive ループで予期せぬエラー: {ex.Message}", Util.LogLevel.Warning);
+        }
+    }
+
     private void SetConnected()
     {
-        IsConnected = true;
+        _isConnected = true;
         ChannelOpened?.Invoke(this, EventArgs.Empty);
         RouteChanged?.Invoke(this, ConnectionRoute.StunAssisted);
     }

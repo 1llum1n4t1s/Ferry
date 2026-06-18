@@ -62,4 +62,9 @@
     <TrimmerRootAssembly Include="Avalonia.Desktop" />
     <TrimmerRootAssembly Include="Velopack" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- UDP ホールパンチの確立状態遷移など内部実装の回帰テストのため Ferry.Tests に internal を公開 -->
+    <InternalsVisibleTo Include="Ferry.Tests" />
+  </ItemGroup>
 </Project>
