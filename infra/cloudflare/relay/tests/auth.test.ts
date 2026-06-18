@@ -94,6 +94,21 @@ describe('mintCustomToken', () => {
         expect(payload.claims).toEqual({ src: 'bridge', pairAuth: true, peerSid });
     });
 
+    it('Codex 第11弾 #1: source=bridge + extraClaims に selfNonce/peerNonce を埋め込み payload に伝搬', async () => {
+        const { pem } = await generateRsaPemFixture();
+        const env = { FIREBASE_PRIVATE_KEY: pem, FIREBASE_CLIENT_EMAIL: 'sa@x' } as unknown as Env;
+        const claims = {
+            pairAuth: true,
+            peerSid: 'f'.repeat(32),
+            selfNonce: 'a'.repeat(32),
+            peerNonce: 'b'.repeat(32),
+        };
+        const token = await mintCustomToken('uid', 60, env, 'bridge', claims);
+        const [, payloadB64] = token.split('.');
+        const payload = JSON.parse(new TextDecoder().decode(base64UrlDecode(payloadB64)));
+        expect(payload.claims).toEqual({ src: 'bridge', ...claims });
+    });
+
     it('JWT 署名が同じ SA 公開鍵で verify 通る', async () => {
         const { pem, publicKey } = await generateRsaPemFixture();
         const env = {

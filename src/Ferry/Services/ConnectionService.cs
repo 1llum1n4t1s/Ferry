@@ -240,6 +240,16 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         // rere #D-001(b): 自分の公開鍵も session に載せる（コード貼付ペアリングで相手が読み取る）。
         var sessionId = await _signaling.RegisterSessionAsync(_deviceId, _displayName, PublicKeyForQr, ct);
 
+        // Codex P2 fix (第11弾 #3): 再起動を跨いだ pairings replay 防御。settings.json に永続化した
+        // 「過去 consume 済 pairings entry の CreatedAt 最大値」を注入し、_seenPairingIds (メモリ only,
+        // 起動時に空) の穴を塞ぐ。これが無いと「直前まで pairing してた peer を remove → 再起動 →
+        // 60s 以内に Add peer」で Firebase に残った old pairings entry が再採用される race があった。
+        var anchorMs = _settings?.Settings.LatestConsumedPairingAtMs ?? 0;
+        if (anchorMs > 0)
+        {
+            _signaling.SetLatestConsumedPairingAtMs(anchorMs);
+        }
+
         _signaling.PairingDetected += OnPairingDetected;
         _signaling.StartWatchingPairing();
 
@@ -306,6 +316,24 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             if (!_seenPairingIds.TryAdd(info.PairingId, 0)) return;
 
             Util.Logger.Log($"ペアリング検知: peer={info.PeerDisplayName}");
+
+            // Codex P2 fix (第11弾 #3): consume したら settings に CreatedAt を永続化して
+            // replay filter のアンカーを前進させる。次回 StartPairingSessionAsync (アプリ再起動含む)
+            // で SetLatestConsumedPairingAtMs され、これより古い entry は Where 句で構造排除される。
+            // 単調増加なので attacker が古い entry を仕込んでもこのアンカー以下なら採用されない。
+            try
+            {
+                var settings = _settings?.Settings;
+                if (settings != null && info.CreatedAt > settings.LatestConsumedPairingAtMs)
+                {
+                    settings.LatestConsumedPairingAtMs = info.CreatedAt;
+                    sig.SetLatestConsumedPairingAtMs(info.CreatedAt);
+                    // SaveAsync は I/O failure 時に内部で Warning ログを出すだけで throw しない (best-effort)。
+                    // ここで await して保存完了を確実にしてから revoke / event 発火に進む。
+                    await _settings!.SaveAsync();
+                }
+            }
+            catch (Exception ex) { Util.Logger.Log($"LatestConsumedPairingAtMs 永続化失敗 (継続): {ex.Message}", Util.LogLevel.Warning); }
 
             var peer = new PairedPeer
             {

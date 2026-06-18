@@ -115,4 +115,14 @@ public sealed class AppSettings
 
     /// <summary>サイドバー（左ペイン）の幅 px。左右スプリッターのドラッグ位置を永続化する。未設定時は既定 220。</summary>
     public double? SidebarWidth { get; set; }
+
+    /// <summary>
+    /// Codex P2 fix (第11弾 #3): pairings replay filter の永続アンカー (Unix ms, UTC)。
+    /// 過去に <see cref="Ferry.Services.ConnectionService.OnPairingDetected"/> が consume した
+    /// pairings entry の CreatedAt の最大値を保存する。
+    /// アプリ再起動でメモリ内 <c>_seenPairingIds</c> が空になっても、Firebase に残った old entry
+    /// (cleanup 前で CreatedAt &lt;= この値) が再採用されないようにするゲート。
+    /// 既定 0（初回起動 / 旧 settings.json）の場合は従来の subscribe 開始 -60s tolerance のみで動く。
+    /// </summary>
+    public long LatestConsumedPairingAtMs { get; set; }
 }

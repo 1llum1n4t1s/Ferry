@@ -78,6 +78,7 @@ public sealed class PendingPairDeleteQueue : IDisposable
     public async Task RemoveAsync(string pairId)
     {
         bool changed;
+        bool cancelledInFlight = false;
         byte[] payload;
         lock (_lock)
         {
@@ -89,10 +90,18 @@ public sealed class PendingPairDeleteQueue : IDisposable
             if (_inFlight.ContainsKey(pairId))
             {
                 _inFlight[pairId] = true;
+                cancelledInFlight = true;
             }
             payload = JsonSerializer.SerializeToUtf8Bytes(_items, PendingDeleteJsonContext.Default.ListPendingPairDelete);
         }
-        if (changed) await PersistAsync(payload);
+        // Codex P2 fix (第11弾 #2): changed か cancelledInFlight どちらでも Persist する。
+        // 旧実装は _items.RemoveAll が 0 (= 既に reserve 済) のとき Persist skip していたため、
+        // in-flight cancellation marker はメモリに記録されるものの、 アプリ終了 / background retry 中断で
+        // 次起動時に cancellation 情報が失われ、 disk 上の queue に古い pairId が残って次起動の
+        // ProcessAsync で誤って新ペアの Firebase pairs ノードを削除する race があった。
+        // payload は reserve 後の最新 _items state を反映するので、 cancelledInFlight 時の Persist で
+        // disk 状態が確実に最新化され、 次起動時に stale entry を引き継がない。
+        if (changed || cancelledInFlight) await PersistAsync(payload);
     }
 
     /// <summary>キュー内の全アイテムを処理する。各アイテムについて delete callback を呼び、成功なら除去・失敗なら retry 情報を更新。</summary>

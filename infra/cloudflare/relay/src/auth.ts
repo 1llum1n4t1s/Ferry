@@ -193,12 +193,25 @@ export async function handlePairToken(req: Request, env: Env): Promise<Response>
   // SidA=A, SidB=任意 で knownDeviceC の inbox に書込可能だった (ghost pairing 再開)。verified peer sid
   // を `peerSid` claim にも埋め、rules で `$deviceId` と `SidA/SidB` が `auth.uid` か `auth.token.peerSid`
   // のいずれかに一致することを必須化する。これで「自分 + verified peer 以外」の inbox に書けない。
+  //
+  // Codex 第11弾 #1 fix (P2): verified nonce 値 (selfNonce / peerNonce) も extraClaims に含めて
+  // rules で pairing_nonces/{sid}/Nonce 値との一致を必須化する。第10弾 #4 では「nonce node の存在」
+  // だけを check していたため、peer が cancel/pair 後に Add peer (= 新 nonce 作成) で再 open すると
+  // 古い 2-QR token が「新 nonce node 存在」だけで通過し、cross-inbox 書込が再成立する穴があった。
+  // nonce 値一致まで強制すれば、新 nonce が作られた時点で古い token は失効する (TTL 依存ゼロ)。
   const customToken = await mintCustomToken(
     sessionId,
     300,
     env,
     'bridge',
-    hasPeer ? { pairAuth: true, peerSid: peerSessionId as string } : undefined,
+    hasPeer
+      ? {
+          pairAuth: true,
+          peerSid: peerSessionId as string,
+          selfNonce: pairingNonce,
+          peerNonce: peerPairingNonce as string,
+        }
+      : undefined,
   );
   return jsonOk({ customToken, expiresIn: 300 });
 }
@@ -225,6 +238,12 @@ export async function handlePairToken(req: Request, env: Env): Promise<Response>
  * も extraClaims に含める。rules 側で「$deviceId / SidA / SidB が auth.uid または
  * auth.token.peerSid のいずれかに一致」を必須化し、attacker が自分の controlled session を
  * peer に立てて第 3 者 C の inbox に pairing を注入する経路を閉じる。
+ *
+ * Codex 第11弾 #1 fix (P2): verify 時の nonce 値 (selfNonce / peerNonce) も extraClaims に含める。
+ * rules 側で pairing_nonces/{auth.uid}/Nonce, pairing_nonces/{auth.token.peerSid}/Nonce との
+ * 「値一致」を必須化することで、peer が cancel/pair 後の Add peer で nonce 再作成しても、
+ * 古い stale token は新 nonce 値と一致せず write 拒否される (nonce node 存在 check のみだと、
+ * 新 nonce が作成された直後に古い token が通過する race が残っていた)。
  */
 export async function mintCustomToken(
   uid: string,

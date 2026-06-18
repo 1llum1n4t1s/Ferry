@@ -258,7 +258,12 @@ public partial class App : Application
             {
                 try
                 {
-                    await firebaseAuthClient.SignInAsync();
+                    // Codex P2 fix (第11弾 #4 verify minor): EnsureSignInAsync (semaphore 直列化版) に統一する。
+                    // 旧実装は SignInAsync() を fire-and-forget で呼んでいたため、 PendingPairDeleteQueue の
+                    // 起動 retry 経路 (line 335) の EnsureSignInAsync と完全並行で 2 回走り、
+                    // /auth/token と signInWithCustomToken に余分な POST + RefreshLoop の二重起動 race が発生していた。
+                    // EnsureSignInAsync は冪等で _signInSemaphore で直列化されるので、 並行呼出が来ても 1 回しか走らない。
+                    await firebaseAuthClient.EnsureSignInAsync();
                 }
                 catch (Infrastructure.IdentityLostException)
                 {
@@ -325,14 +330,31 @@ public partial class App : Application
                     catch { return false; }
                 }
                 // 起動直後 1 回
-                try { await pendingPairDeletes.ProcessAsync(DeleteOne); }
-                catch (Exception ex) { Util.Logger.Log($"PendingPairDelete 起動時処理エラー: {ex.Message}", Util.LogLevel.Warning); }
+                // Codex P2 fix (第11弾 #4): 直前 line 261 の SignInAsync() が fire-and-forget のため、
+                // ここで ProcessAsync を呼ぶと auth 完了前の DeleteOne が「not signed in yet」例外で失敗扱いになり、
+                // RetryCount が進んで数秒後に auth 成功しても 12h/24h backoff まで進んでしまう。
+                // EnsureSignInAsync は冪等なので（auth 既完了なら no-op、未完了なら待機）、retry の前に await して
+                // auth 完了を待ってから ProcessAsync を走らせる。auth 失敗ならこのサイクルはスキップして
+                // 次の 10min サイクルへ（refresh ループが裏でリトライ中）。
+                bool authReady = false;
+                try { await firebaseAuthClient.EnsureSignInAsync(pendingDeleteCtsToken); authReady = true; }
+                catch (OperationCanceledException) { return; }
+                catch (Exception ex) { Util.Logger.Log($"PendingPairDelete 起動時 auth 待機エラー（retry をスキップして 10min 後再試行）: {ex.Message}", Util.LogLevel.Warning); }
+                if (authReady)
+                {
+                    try { await pendingPairDeletes.ProcessAsync(DeleteOne); }
+                    catch (Exception ex) { Util.Logger.Log($"PendingPairDelete 起動時処理エラー: {ex.Message}", Util.LogLevel.Warning); }
+                }
                 // 以降 10min ごと（ペア削除 enqueue の遅延上限）
                 while (!pendingDeleteCtsToken.IsCancellationRequested)
                 {
                     try { await System.Threading.Tasks.Task.Delay(TimeSpan.FromMinutes(10), pendingDeleteCtsToken); }
                     catch (OperationCanceledException) { return; }
                     if (pendingPairDeletes.Count == 0) continue;
+                    // 定期処理経路でも同様に auth 完了を待つ（refresh ループが失敗中なら ProcessAsync をスキップ）。
+                    try { await firebaseAuthClient.EnsureSignInAsync(pendingDeleteCtsToken); }
+                    catch (OperationCanceledException) { return; }
+                    catch (Exception ex) { Util.Logger.Log($"PendingPairDelete 定期 auth 待機エラー（このサイクルはスキップ）: {ex.Message}", Util.LogLevel.Warning); continue; }
                     try { await pendingPairDeletes.ProcessAsync(DeleteOne); }
                     catch (Exception ex) { Util.Logger.Log($"PendingPairDelete 定期処理エラー: {ex.Message}", Util.LogLevel.Warning); }
                 }

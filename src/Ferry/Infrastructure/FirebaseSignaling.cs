@@ -44,6 +44,32 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
     /// gate では replay 防御として不十分だったので、subscribe 開始時刻以降の CreatedAt を持つ entry のみ
     /// accept する per-session start time gate を追加する。</summary>
     private long _pairingWatchStartedAtMs;
+
+    /// <summary>
+    /// Codex P2 fix (第11弾 #3): 過去に <see cref="ConnectionService.OnPairingDetected"/> が
+    /// consume した pairings entry の CreatedAt (Unix ms) の最大値。settings.json に永続化された
+    /// 値を <see cref="SetLatestConsumedPairingAtMs"/> で注入する。
+    /// アプリ再起動後はメモリ内 <c>_seenPairingIds</c> が空になるため、replay filter は
+    /// 「<c>_pairingWatchStartedAtMs - 60s</c>」しか防げず、再起動 60s 以内に新規ペア追加画面を
+    /// 開くと Firebase に残った old pairings entry (cleanup 前) が再採用されてしまう。
+    /// この timestamp 以下の CreatedAt を持つ entry を構造的に排除して race を塞ぐ。
+    /// </summary>
+    private long _latestConsumedPairingAtMs;
+
+    /// <summary>
+    /// Codex P2 fix (第11弾 #3): replay filter の永続アンカー (<see cref="_latestConsumedPairingAtMs"/>) を
+    /// 注入する。ConnectionService が起動時に settings から復元した値を渡し、
+    /// その後 OnPairingDetected が新しい CreatedAt を consume するたびに前進させる。
+    /// </summary>
+    public void SetLatestConsumedPairingAtMs(long valueMs)
+    {
+        // 単調増加にするため Math.Max で fold する (古い値で逆行させない)。
+        var prev = Interlocked.Read(ref _latestConsumedPairingAtMs);
+        if (valueMs > prev)
+        {
+            Interlocked.Exchange(ref _latestConsumedPairingAtMs, valueMs);
+        }
+    }
     private EventHandler? _idTokenRefreshedHandler;
     /// <summary>ペアリング相手が見つかったときに発火するイベント。</summary>
     public event EventHandler<PairingInfo>? PairingDetected;
@@ -254,7 +280,16 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
                         // CreatedAt 欠落 (long の default = 0) の旧 entries は startedAt - 60_000 (≈Unix ms) を
                         // 超えないため silent skip = 意図通り (Phase B 以前の data はもう新規 pairing として扱わない)。
                         // より堅牢な代替 (server timestamp / per-session nonce) は Phase B-2 へ defer。
-                        e.Object.CreatedAt >= _pairingWatchStartedAtMs - 60_000)
+                        //
+                        // Codex P2 fix (第11弾 #3): メモリ only な _seenPairingIds は再起動で失われるため、
+                        // 「アプリ再起動 → 60s 以内に Add peer 開く」と過去 consume 済 entry が再採用される
+                        // race があった。settings.json に永続化した _latestConsumedPairingAtMs (過去 consume
+                        // 済 entry の CreatedAt 最大値) で fold して、以前 consume した entry より新しい entry
+                        // のみ accept する (+1 ms で同値再採用も排除)。永続値が 0 (初回起動) の場合は従来の
+                        // -60s tolerance だけが効く。
+                        e.Object.CreatedAt >= Math.Max(
+                            _pairingWatchStartedAtMs - 60_000,
+                            Interlocked.Read(ref _latestConsumedPairingAtMs) + 1))
             .Subscribe(e =>
             {
                 Util.Logger.Log($"ペアリング検知: {e.Key}");
@@ -268,6 +303,8 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
                     IsInitiator = isA,
                     // 自分が A なら相手は B（その逆も）。rere #D-001(b): 相手 pk で PairSecret を導出する。
                     PeerPublicKey = isA ? data.PkB : data.PkA,
+                    // Codex P2 fix (第11弾 #3): consume 側で settings に永続化するアンカー。
+                    CreatedAt = data.CreatedAt,
                 });
             });
     }
@@ -1230,4 +1267,12 @@ public sealed class PairingInfo
 
     /// <summary>rere #D-001(b): ペア相手の長期公開鍵(base64url SPKI)。空なら PairSecret 未確立(平文)。</summary>
     public string PeerPublicKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Codex P2 fix (第11弾 #3): 元 PairingData の CreatedAt (Unix ms, UTC)。
+    /// OnPairingDetected が consume した時点で settings.LatestConsumedPairingAtMs を
+    /// 進めるアンカーに使い、アプリ再起動後の replay filter (memory only な _seenPairingIds
+    /// が空になる) で過去 entry が誤って再採用される race を防ぐ。
+    /// </summary>
+    public long CreatedAt { get; set; }
 }

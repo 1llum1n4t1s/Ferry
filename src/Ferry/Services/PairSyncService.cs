@@ -174,6 +174,14 @@ public sealed class PairSyncService : IDisposable
                     {
                         try
                         {
+                            // Codex P2 fix (第11弾 #5): PUT 前にも FindPeer で再 check する。
+                            // snapshot 取得後 → PUT 発射までに manual remove が走ると、 stale peer 参照で PUT が走り
+                            // SSoT を recreate して remote unpair 拒否される race を防ぐ。
+                            if (_peerRegistry.FindPeer(peer.PeerId) == null)
+                            {
+                                Util.Logger.Log($"PairSync backfill PUT 前に peer がローカル削除済 → PUT skip", Util.LogLevel.Debug);
+                                continue;
+                            }
                             await _putPair(pairId, new PairRecord
                             {
                                 PairId = pairId,
