@@ -124,23 +124,26 @@ public sealed class PendingPairDeleteQueueTests : IDisposable
     }
 
     [Fact]
-    public async Task ProcessAsync_RetryCount5で打ち切られキューから除去される()
+    public async Task ProcessAsync_5回以上失敗してもキューに残り続ける()
     {
+        // Codex P2 fix (第2弾): 旧仕様は 5 回失敗で諦めてキューから消していたが、オフライン期間が
+        // 2h 超だと「相手のペアを消す」というユーザー意図が永久に反映されなかった。打ち切り廃止後は
+        // 諦めず 24h cap の backoff で永続 retry する。
         var q = CreateQueue();
         await q.EnqueueAsync("a_b");
 
-        // 5 回失敗まで人為的に進める。毎回 LastRetryAtMs をファイルからクリアして
-        // インスタンス再生成で in-memory に反映 → backoff を回避する（時間モック代わり）。
         PendingPairDeleteQueue current = q;
-        for (int i = 0; i < 5; i++)
+        for (int i = 0; i < 6; i++)
         {
             await current.ProcessAsync(_ => Task.FromResult(false));
-            if (i == 4) break;
             ResetBackoff();
             current = CreateQueue();
         }
 
-        Assert.Equal(0, current.Count);
+        Assert.Equal(1, current.Count);
+        var items = LoadItems();
+        Assert.Equal("a_b", items[0].PairId);
+        Assert.True(items[0].RetryCount >= 6);
     }
 
     // === 永続化 ===

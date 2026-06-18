@@ -84,11 +84,10 @@ public sealed class PendingPairDeleteQueue
                     {
                         current.RetryCount++;
                         current.LastRetryAtMs = now;
-                        if (current.RetryCount >= 5)
-                        {
-                            Util.Logger.Log($"pairs/{item.PairId} DELETE を 5 回試行して諦め（手動削除に委ねる）", Util.LogLevel.Warning);
-                            _items.RemoveAll(i => i.PairId == item.PairId);
-                        }
+                        // Codex P2 fix (第2弾): 5 回打ち切りは廃止。オフライン/未認証で 2h 以内に復旧しないと
+                        // 永久に相手側ペアが残ってしまっていた。失敗回数が増えても 24h 上限の backoff で
+                        // 永続 retry し続ける。手動削除に逃げる代替案より、ユーザーの「ペア消したい」意図を
+                        // 諦めずに反映する方が UX/信頼モデル上正しい。
                         changed = true;
                     }
                 }
@@ -104,7 +103,8 @@ public sealed class PendingPairDeleteQueue
         2 => 300_000,            // 5min
         3 => 1_800_000,          // 30min
         4 => 7_200_000,          // 2h
-        _ => 43_200_000,         // 12h（実際は >=5 で打ち切られるので使われない）
+        5 => 43_200_000,         // 12h
+        _ => 86_400_000,         // 24h (以降は 24h 毎に retry し続ける)
     };
 
     private void Load()

@@ -132,15 +132,23 @@ public sealed class PairSyncService : IDisposable
                 if (status == HttpStatusCode.OK && body != "null")
                 {
                     _consecutive404[peer.PeerId] = 0;  // 存在確認できたらカウンタリセット
+                    // Codex P1 fix (第2弾): 一度でも SSoT を観察したら以後 backfill 不可にして remote unpair を resurrect
+                    // しないようにする。peers.json に永続するので再起動後も観察済みフラグが保たれる。
+                    if (!peer.PairsSsotObserved)
+                    {
+                        peer.PairsSsotObserved = true;
+                        try { await _peerRegistry.AddOrUpdatePeerAsync(peer); }
+                        catch (Exception ex) { Util.Logger.Log($"PairsSsotObserved 永続化に失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }
+                    }
                 }
                 else if (status == HttpStatusCode.NotFound || (status == HttpStatusCode.OK && body == "null"))
                 {
-                    // Codex P1 fix: 旧 peers.json から upgrade した既存ペアは pairs/{pairId} 未作成のため、
-                    // 自分が責任者なら 1 度だけ backfill を試みる (相手側が削除して不在の正規ケースと、初期未作成
-                    // の bootstrap ケースを区別する手段)。backfill 成功なら以降の 404 は発生しない。失敗・非責任者は
-                    // 従来通り 3 連続 404 で削除。
+                    // Codex P1 fix (第2弾): backfill は **未観察 (= 旧 peers.json upgrade 由来)** の peer に限定する。
+                    // 新規 PairingDetected で AddOrUpdatePeerAsync された peer は最初から PairsSsotObserved=true で
+                    // 入るので、相手が削除した時の 404 を backfill で resurrect する誤りを防げる。
+                    // backfill 成功なら以降の 404 は発生しない。失敗・非責任者・観察済みは従来通り 3 連続 404 で削除。
                     var isResponsible = string.Compare(_deviceId, peer.PeerId, StringComparison.Ordinal) < 0;
-                    if (isResponsible && _putPair != null && _backfillAttempted.TryAdd(peer.PeerId, 0))
+                    if (isResponsible && !peer.PairsSsotObserved && _putPair != null && _backfillAttempted.TryAdd(peer.PeerId, 0))
                     {
                         try
                         {
@@ -153,6 +161,9 @@ public sealed class PairSyncService : IDisposable
                             }, ct);
                             Util.Logger.Log($"pairs/{pairId} backfill 成功 (legacy peer)");
                             _consecutive404[peer.PeerId] = 0;
+                            peer.PairsSsotObserved = true;
+                            try { await _peerRegistry.AddOrUpdatePeerAsync(peer); }
+                            catch (Exception ex) { Util.Logger.Log($"PairsSsotObserved 永続化に失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }
                             continue;
                         }
                         catch (Exception ex)

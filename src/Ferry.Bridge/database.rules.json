@@ -20,7 +20,7 @@
     "pairing_nonces": {
       "$sid": {
         ".read": false,
-        ".write": "auth != null && auth.uid == $sid && newData.child('Nonce').val().matches(/^[a-f0-9]{32}$/) && newData.child('CreatedAt').val() > now - 60000 && newData.child('CreatedAt').val() < now + 60000",
+        ".write": "auth != null && auth.uid == $sid && (!newData.exists() || (newData.child('Nonce').val().matches(/^[a-f0-9]{32}$/) && newData.child('CreatedAt').val() > now - 60000 && newData.child('CreatedAt').val() < now + 60000))",
         "Nonce": { ".validate": "newData.isString() && newData.val().matches(/^[a-f0-9]{32}$/)" },
         "CreatedAt": { ".validate": "newData.isNumber()" },
         "$other": { ".validate": false }

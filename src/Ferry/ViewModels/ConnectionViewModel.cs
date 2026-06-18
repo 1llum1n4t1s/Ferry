@@ -636,14 +636,44 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     /// </summary>
     private void OnPeerRemovedFromRegistry(object? sender, string peerId)
     {
-        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
         {
-            var peer = PairedPeers.FirstOrDefault(p => p.PeerId == peerId);
-            if (peer == null) return;
-            peer.WentOnline -= OnPeerWentOnline;
-            PairedPeers.Remove(peer);
-            _presenceSignaling?.ForgetPresence(peerId);
-            UpdateHasPairedPeers();
+            try
+            {
+                var peer = PairedPeers.FirstOrDefault(p => p.PeerId == peerId);
+                if (peer != null)
+                {
+                    peer.WentOnline -= OnPeerWentOnline;
+                    PairedPeers.Remove(peer);
+                }
+                _presenceSignaling?.ForgetPresence(peerId);
+                UpdateHasPairedPeers();
+
+                // Codex P2 fix (第2弾): 手動 RemovePeerAsync と同等のフルクリーンアップを適用。
+                // 旧実装は PairedPeers 表示の更新だけで、SelectedPeer / 接続中状態 / CurrentListeningPeerId
+                // が残ったままアプリが「もう存在しない peer」を listen / 送信し続ける状態だった。
+                if (SelectedPeer?.PeerId == peerId)
+                {
+                    SelectedPeer = null;
+                    try { await _connectionService.DisconnectAsync(); }
+                    catch (Exception ex) { Util.Logger.Log($"PairSync 削除後の DisconnectAsync エラー (継続): {ex.Message}", Util.LogLevel.Debug); }
+                }
+                else if (_connectionService.CurrentListeningPeerId == peerId)
+                {
+                    _connectionService.StopListeningForConnection();
+                }
+
+                if (PairedPeers.Count == 0)
+                {
+                    // 手動削除パスでは「最後の 1 件削除で QR 再表示」していた。PairSync 由来の削除でも対称に揃える。
+                    try { await StartSessionAsync(); }
+                    catch (Exception ex) { Util.Logger.Log($"PairSync 全削除後の StartSession エラー (継続): {ex.Message}", Util.LogLevel.Debug); }
+                }
+            }
+            catch (Exception ex)
+            {
+                Util.Logger.Log($"OnPeerRemovedFromRegistry エラー: {ex.Message}", Util.LogLevel.Warning);
+            }
         });
     }
 

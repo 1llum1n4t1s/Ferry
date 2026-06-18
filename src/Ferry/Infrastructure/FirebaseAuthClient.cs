@@ -38,6 +38,11 @@ public sealed class FirebaseAuthClient : IDisposable
     private CancellationTokenSource? _refreshCts;
     private Task? _refreshLoop;
     private readonly object _lock = new();
+    /// <summary>
+    /// Codex P2 fix (第2弾): <see cref="EnsureSignInAsync"/> 用の SemaphoreSlim。並行呼出 (初回 fire-and-forget 中に
+    /// QR 自動表示が呼ぶ等) で SignInOnceAsync が重複起動しないように 1 つに直列化する。
+    /// </summary>
+    private readonly System.Threading.SemaphoreSlim _signInSemaphore = new(1, 1);
 
     /// <summary>新 idToken に切り替わった通知（AsObservable 購読の再 Subscribe トリガ）。</summary>
     public event EventHandler? IdTokenRefreshed;
@@ -88,6 +93,24 @@ public sealed class FirebaseAuthClient : IDisposable
             _idToken = idToken;
             StartRefreshLoop();
         }
+    }
+
+    /// <summary>
+    /// Codex P2 fix (第2弾): まだ SignIn 済みでなければここで完了を待つ冪等版。
+    /// 初回 SignIn が fire-and-forget で走っている最中に Firebase 操作 (RegisterSessionAsync 等) が
+    /// 呼ばれると <see cref="GetIdTokenAsync"/> が "not signed in yet" を投げて UI がエラー状態になっていた。
+    /// 既に idToken があれば即 return、無ければ semaphore で直列化して 1 回だけ SignIn を試みる。
+    /// </summary>
+    public async Task EnsureSignInAsync(CancellationToken ct = default)
+    {
+        if (!string.IsNullOrEmpty(_idToken)) return;
+        await _signInSemaphore.WaitAsync(ct);
+        try
+        {
+            if (!string.IsNullOrEmpty(_idToken)) return;
+            await SignInAsync(ct);
+        }
+        finally { _signInSemaphore.Release(); }
     }
 
     /// <summary>
@@ -158,16 +181,21 @@ public sealed class FirebaseAuthClient : IDisposable
     }
 
     /// <summary>refresh ループ: 50min ごとに SignInOnceAsync を呼んで idToken を入れ替える。</summary>
-    private void StartRefreshLoop()
+    private void StartRefreshLoop(bool startWithBackoff = false)
     {
         _refreshCts?.Cancel();
+        _refreshCts?.Dispose();  // 旧 CTS のリソースリーク防止 (PairSyncService.Start と同方針)
         _refreshCts = new CancellationTokenSource();
-        _refreshLoop = Task.Run(() => RefreshLoopAsync(_refreshCts.Token));
+        // Codex P2 fix: startWithBackoff=true で initialAttempt=1 を渡し、初回 SignIn 失敗時の
+        // EnsureRefreshLoopStarted 経路で「50min 待ち → ようやく初回 retry」だった旧挙動を回避。
+        // 1 から始まれば最初の wait が ComputeBackoff(1) ≈ 数秒となり、起動時 offline からの復旧が速い。
+        var initialAttempt = startWithBackoff ? 1 : 0;
+        _refreshLoop = Task.Run(() => RefreshLoopAsync(_refreshCts.Token, initialAttempt));
     }
 
-    private async Task RefreshLoopAsync(CancellationToken ct)
+    private async Task RefreshLoopAsync(CancellationToken ct, int initialAttempt = 0)
     {
-        var attempt = 0;
+        var attempt = initialAttempt;
         while (!ct.IsCancellationRequested)
         {
             // 通常は 1h - 10min = 50min 待ってから refresh。
@@ -201,12 +229,12 @@ public sealed class FirebaseAuthClient : IDisposable
     /// ループが立たないので呼出側 (App.axaml.cs) はこのメソッドを呼んで「失敗してもバックグラウンド再試行」を保証する。
     /// 既に SignIn 済みなら no-op。
     /// </summary>
-    public void EnsureRefreshLoopStarted()
+    public void EnsureRefreshLoopStarted(bool startWithBackoff = false)
     {
         lock (_lock)
         {
             if (_refreshCts != null && !_refreshCts.IsCancellationRequested) return;
-            StartRefreshLoop();
+            StartRefreshLoop(startWithBackoff);
         }
     }
 

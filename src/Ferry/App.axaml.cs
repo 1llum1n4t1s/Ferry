@@ -93,6 +93,11 @@ public partial class App : Application
 
     public override void Initialize()
     {
+        // macOS のメニューバーに表示するアプリ名を Avalonia の Application.Name 経由で固定する。
+        // 旧実装は未設定で、bundle 化されていないビルドや一部経路で macOS が "Avalonia Application"
+        // (Avalonia デフォルト) と表示してしまっていた。CFBundleName + Application.Name の両方に
+        // "Ferry" を入れることで .app 起動 / dotnet run のどちらでもメニューバーが Ferry になる。
+        Name = "Ferry";
         AvaloniaXamlLoader.Load(this);
     }
 
@@ -232,8 +237,8 @@ public partial class App : Application
                 }
                 catch (Exception ex)
                 {
-                    Util.Logger.Log($"Firebase Auth 初回 SignIn 失敗（refresh ループに委譲して再試行）: {ex.Message}", Util.LogLevel.Warning);
-                    firebaseAuthClient.EnsureRefreshLoopStarted();
+                    Util.Logger.Log($"Firebase Auth 初回 SignIn 失敗（refresh ループに委譲して短期バックオフで再試行）: {ex.Message}", Util.LogLevel.Warning);
+                    firebaseAuthClient.EnsureRefreshLoopStarted(startWithBackoff: true);
                 }
             });
             // peerRegistry / settingsService は暗号チャネルの PairSecret 引き当て・フラグ参照に使うため先に生成して注入する。

@@ -101,12 +101,29 @@ export async function handlePairToken(req: Request, env: Env): Promise<Response>
   const body = await readJsonBody(req);
   if ('error' in body) return body.error;
 
-  const { sessionId, pairingNonce } = body.value as Record<string, unknown>;
+  // Codex P1 (第2弾) fix: Bridge は QR スキャンで「自分の sid+nonce」と「相手 (scanned) の sid+nonce」の
+  // 4 値を持つ。旧仕様は sidA+nonceA だけを verify していたので、攻撃者が他人の sidB を知っていれば自分の
+  // sidA で auth → pairings/{sidB}/{pid} に好きなデータを書ける (rules は片側 nonce 検証しかしていなかった
+  // ペアリング起点を強制できず Ghost peer 注入可能だった)。peer* が提供されたら両方の nonce を verify する。
+  // peer* を省略した場合は従来どおり片側 verify のみ (PC コード貼付ペアリング経路の後方互換)。
+  const { sessionId, pairingNonce, peerSessionId, peerPairingNonce } = body.value as Record<string, unknown>;
   if (typeof sessionId !== 'string' || !/^[a-f0-9]{32}$/.test(sessionId)) {
     return jsonError(400, 'INVALID_SESSION_ID', 'sessionId must be 32 hex chars');
   }
   if (typeof pairingNonce !== 'string' || !/^[a-f0-9]{32}$/.test(pairingNonce)) {
     return jsonError(400, 'INVALID_NONCE', 'pairingNonce must be 32 hex chars');
+  }
+  const hasPeer = peerSessionId !== undefined || peerPairingNonce !== undefined;
+  if (hasPeer) {
+    if (typeof peerSessionId !== 'string' || !/^[a-f0-9]{32}$/.test(peerSessionId)) {
+      return jsonError(400, 'INVALID_PEER_SESSION_ID', 'peerSessionId must be 32 hex chars');
+    }
+    if (typeof peerPairingNonce !== 'string' || !/^[a-f0-9]{32}$/.test(peerPairingNonce)) {
+      return jsonError(400, 'INVALID_PEER_NONCE', 'peerPairingNonce must be 32 hex chars');
+    }
+    if (peerSessionId === sessionId) {
+      return jsonError(400, 'PEER_SAME_AS_SELF', 'peerSessionId must differ from sessionId');
+    }
   }
 
   if (env.RATELIMIT_SESSION) {
@@ -117,20 +134,25 @@ export async function handlePairToken(req: Request, env: Env): Promise<Response>
   // Codex P1 fix: PairingNonce は sessions/ ではなく pairing_nonces/ (rules で .read=false の server-only ノード) に分離。
   // SA access_token で pairing_nonces/{sid} を読んで一致確認する。
   const accessToken = await getServiceAccountAccessToken(env);
-  const url = `${env.FIREBASE_DATABASE_URL}/pairing_nonces/${sessionId}.json?access_token=${encodeURIComponent(accessToken)}`;
-  const r = await fetch(url);
-  if (!r.ok) {
-    return jsonError(502, 'FIREBASE_ERROR', `Firebase GET pairing_nonces/${sessionId} -> ${r.status}`);
+
+  async function verifyNonce(sid: string, expectedNonce: string, label: string): Promise<Response | null> {
+    const url = `${env.FIREBASE_DATABASE_URL}/pairing_nonces/${sid}.json?access_token=${encodeURIComponent(accessToken)}`;
+    const r = await fetch(url);
+    if (!r.ok) return jsonError(502, 'FIREBASE_ERROR', `Firebase GET pairing_nonces/${sid} (${label}) -> ${r.status}`);
+    const record = (await r.json()) as { CreatedAt?: number; Nonce?: string } | null;
+    if (!record || typeof record.Nonce !== 'string') return jsonError(404, 'SESSION_NOT_FOUND', `${label} pairing_nonces not present`);
+    if (record.Nonce !== expectedNonce) return jsonError(401, 'INVALID_NONCE_MATCH', `${label} PairingNonce does not match`);
+    if (typeof record.CreatedAt !== 'number' || Date.now() - record.CreatedAt > 3_600_000) {
+      return jsonError(401, 'EXPIRED_SESSION', `${label} session expired (>1h)`);
+    }
+    return null;
   }
-  const record = (await r.json()) as { CreatedAt?: number; Nonce?: string } | null;
-  if (!record || typeof record.Nonce !== 'string') {
-    return jsonError(404, 'SESSION_NOT_FOUND', 'pairing_nonces not present');
-  }
-  if (record.Nonce !== pairingNonce) {
-    return jsonError(401, 'INVALID_NONCE_MATCH', 'PairingNonce does not match');
-  }
-  if (typeof record.CreatedAt !== 'number' || Date.now() - record.CreatedAt > 3_600_000) {
-    return jsonError(401, 'EXPIRED_SESSION', 'session expired (>1h)');
+
+  const selfErr = await verifyNonce(sessionId, pairingNonce, 'self');
+  if (selfErr) return selfErr;
+  if (hasPeer) {
+    const peerErr = await verifyNonce(peerSessionId as string, peerPairingNonce as string, 'peer');
+    if (peerErr) return peerErr;
   }
 
   // 5min Custom Token (uid = sessionId)

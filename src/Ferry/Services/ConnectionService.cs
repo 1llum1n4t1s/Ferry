@@ -204,6 +204,19 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     public async Task<string> StartPairingSessionAsync(CancellationToken ct = default)
     {
+        // Codex P2 fix (第2弾): 初回 SignIn の fire-and-forget が走っている最中に MainWindow Loaded
+        // → 自動 QR 表示で本メソッドが呼ばれると GetIdTokenAsync が "not signed in yet" を投げて
+        // ペアリング画面がエラー固まりになっていた。EnsureSignInAsync で auth 完了 (or 失敗) を待ってから
+        // 進める。失敗時は通常の例外伝播 (UI で「再試行」可)。
+        if (_authClient != null)
+        {
+            try { await _authClient.EnsureSignInAsync(ct); }
+            catch (Exception ex) when (ex is not IdentityLostException)
+            {
+                Util.Logger.Log($"StartPairingSession: 認証完了待ちで失敗 (rethrow): {ex.Message}", Util.LogLevel.Warning);
+                throw;
+            }
+        }
         _signaling?.Dispose();
         _signaling = new FirebaseSignaling(_databaseUrl, _authClient);
         _seenPairingIds.Clear();
@@ -282,6 +295,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             {
                 PeerId = info.PeerId,
                 DisplayName = info.PeerDisplayName,
+                // Codex P1 fix (第2弾): 新規 PairingDetected で作る peer は直後に
+                // WritePairRecordWithFallback で pairs/{pairId} 書込を kick するので、SSoT 観察済み
+                // (PairSyncService が 404 で backfill 復活させない) として扱う。万一書込が完全失敗しても
+                // 30s fallback と 5min grace + 15min ポーリングで自然に削除に至るので保守的。
+                PairsSsotObserved = true,
             };
 
             // rere #D-001(b): 相手の公開鍵 × 自分の秘密鍵の ECDH から PairSecret を導出して永続する。

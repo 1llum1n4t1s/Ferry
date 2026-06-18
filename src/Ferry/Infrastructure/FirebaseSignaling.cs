@@ -795,6 +795,10 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
             if (!string.IsNullOrEmpty(_sessionId))
             {
                 await _client.Child("sessions").Child(_sessionId).DeleteAsync();
+                // Codex P2 fix (第2弾): session 削除と並んで pairing_nonces/{sid} も即破棄する。
+                // 残しておくと cancel 後も Workers /pair/token が同 nonce で 1h 内 Custom Token を発行できてしまう。
+                try { await _client.Child("pairing_nonces").Child(_sessionId).DeleteAsync(); }
+                catch (Exception ex) { Util.Logger.Log($"pairing_nonces 削除失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }
             }
             if (!string.IsNullOrEmpty(pairingId))
             {

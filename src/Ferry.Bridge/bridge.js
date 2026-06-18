@@ -132,10 +132,22 @@ function parseQrUrl(text) {
  * sidA と sidB を Firebase pairings/ に書き込んでペアリングを成立させる。
  * カメラ経路 / URL 貼り付け経路の共通処理。
  */
-async function performPairing(sidA, nameA, sidB, nameB, pkA, pkB) {
+async function performPairing(sidA, nameA, sidB, nameB, pkA, pkB, nonceB) {
     // 重複実行防止（同時にカメラ読取 + 貼り付け確定が起きた場合の保険）
     if (pairingInProgress) return;
     pairingInProgress = true;
+
+    // Codex P1 (第2弾): peer (sidB) の nonce を再認証で Workers に提示。これに成功してから
+    // pairings の atomic multi-path update を行う。ensureAuth (2 回目) で sidA+nonceA に
+    // 加え sidB+nonceB も同時 verify するため、Bridge が 2 つの QR を物理的にスキャンした
+    // 証拠が server side で揺るぎなく成立する。
+    try {
+        await ensureAuth(sidA, resolvedNonceA, sidB, nonceB);
+    } catch (err) {
+        pairingInProgress = false;
+        showError(`ペアリング相手認証エラー: ${err.message}`);
+        return;
+    }
 
     // カメラ停止 + 進行表示
     stopCamera();
@@ -186,7 +198,7 @@ async function performPairing(sidA, nameA, sidB, nameB, pkA, pkB) {
  * Firebase Auth に signInWithCustomToken でログインする。
  * 失敗時は例外を投げる（呼出側で showError）。
  */
-async function ensureAuth(sessionId, pairingNonce) {
+async function ensureAuth(sessionId, pairingNonce, peerSessionId, peerPairingNonce) {
     if (!pairingNonce) {
         throw new Error("QR に PairingNonce が含まれていません（古い PC バージョンの可能性）");
     }
@@ -194,10 +206,15 @@ async function ensureAuth(sessionId, pairingNonce) {
     // ペアリング後もスマホ側に sidA として書ける長期 auth セッションが残るのは攻撃面（nonce/session 期限後でも
     // 再度 pairings/{sidA}/... に書ける）。NONE に倒してタブを閉じれば auth が消えるようにする。
     await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.NONE);
+    // Codex P1 (第2弾): peerSessionId/peerPairingNonce が与えられていたら Workers に同時提示して
+    // 両側の物理スキャンを証明する (片側 verify では Ghost peer 注入余地が残っていた)。
+    const body = (peerSessionId && peerPairingNonce)
+        ? { sessionId, pairingNonce, peerSessionId, peerPairingNonce }
+        : { sessionId, pairingNonce };
     const resp = await fetch(PAIR_TOKEN_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, pairingNonce }),
+        body: JSON.stringify(body),
     });
     if (!resp.ok) {
         const body = await resp.text().catch(() => "");
@@ -235,7 +252,7 @@ async function startCameraMode() {
             { fps: 10, qrbox: { width: 250, height: 250 } },
             async (decodedText) => {
                 // QR コード読み取り成功
-                const { sid: sidB, name: nameB, pk: pkB } = parseQrUrl(decodedText);
+                const { sid: sidB, name: nameB, pk: pkB, nonce: nonceB } = parseQrUrl(decodedText);
 
                 if (!sidB) {
                     // Ferry の QR コードではない
@@ -247,7 +264,15 @@ async function startCameraMode() {
                     return;
                 }
 
-                await performPairing(resolvedSidA, resolvedNameA, sidB, nameB, resolvedPkA, pkB);
+                // Codex P1 (第2弾) fix: 2 つ目の QR の nonce も Workers /pair/token に渡して
+                // 「両 QR を物理スキャンした証拠」を server で検証してから書き込みする。
+                // 旧版は sidB の nonce を読み捨てていたため、攻撃者が他人の sid を知っていれば
+                // 自分の sidA + 他人の sidB で勝手にペアリングを偽装できた。
+                if (!nonceB) {
+                    showError("スキャンした QR コードに nonce が含まれていません (相手 PC を v1.0.62 以上に更新してください)");
+                    return;
+                }
+                await performPairing(resolvedSidA, resolvedNameA, sidB, nameB, resolvedPkA, pkB, nonceB);
             },
             () => {
                 // QR コード未検出（スキャン中）
