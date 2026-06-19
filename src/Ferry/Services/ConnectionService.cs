@@ -81,7 +81,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// App が生成・所有しライフサイクル管理するため、本クラスでは Dispose しない（参照保持のみ）。</summary>
     private readonly DeviceIdentity? _identity;
 
-    /// <summary>rere #D-001(b): EnableSecureChannel フラグの参照元（null なら暗号は常に無効＝平文）。</summary>
+    /// <summary>pairings replay anchor (<see cref="AppSettings.LatestConsumedPairingAtMs"/>) 等の参照元。null 許容（テスト用）。</summary>
     private readonly ISettingsService? _settings;
 
     /// <summary>rere #D-001(b): 接続相手の PairSecret を引くための registry（null なら暗号は常に無効）。</summary>
@@ -1665,18 +1665,18 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     // === rere #D-001(b): セッション暗号ハンドシェイクの駆動 ===
 
     /// <summary>
-    /// 接続確立に先立って（transport を attach する前に）暗号チャネルを用意する。EnableSecureChannel が ON
-    /// かつ相手の PairSecret を保有しているときだけ <see cref="SecureChannel"/> を Init 状態で生成する。
-    /// この時点では Hello を送らず、DataReceived 購読より先にチャネルを立てておくことで、
-    /// 確立直後に先着する相手 Hello を Init バッファで取りこぼさない（attach レース対策）。
-    /// 非対応時は _secureChannel=null のまま → 送受信は平文の現状パス。
+    /// 接続確立に先立って（transport を attach する前に）暗号チャネルを用意する。E2E 暗号は常時有効化済み
+    /// （旧 EnableSecureChannel トグルは v1.0.48 で撤去）で、相手の PairSecret を保有していれば自動的に
+    /// <see cref="SecureChannel"/> を Init 状態で生成する。この時点では Hello を送らず、DataReceived 購読より
+    /// 先にチャネルを立てておくことで、確立直後に先着する相手 Hello を Init バッファで取りこぼさない
+    /// （attach レース対策）。PairSecret 無し（古い peer / 未交換）の相手は _secureChannel=null のままで
+    /// 送受信は平文の現状パスに自然フォールバックする。
     /// </summary>
     private void CreateSecureChannel(string peerId)
     {
         ResetSecureChannel();
 
-        var secureEnabled = _settings?.Settings.EnableSecureChannel ?? false;
-        if (!secureEnabled || _peerRegistry == null)
+        if (_peerRegistry == null)
             return;
 
         var b64 = _peerRegistry.FindPeer(peerId)?.PairSecret;

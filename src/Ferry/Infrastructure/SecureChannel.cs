@@ -34,7 +34,7 @@ public sealed class SecureChannelStep
 /// <summary>
 /// rere #D-001(b) Phase 2/3: 1 接続分の暗号ハンドシェイク + 封筒化を司る自己ネゴシエーション状態機械。
 ///
-/// transport 接続確立直後、暗号対応(EnableSecureChannel ON かつ PairSecret 保有)の両端が
+/// transport 接続確立直後、暗号対応（v1.0.48 以降は常時 ON、PairSecret 保有が条件）の両端が
 /// SecureHello(0x30: sessionNonce + challenge) を送り合い、相手の nonce からセッション鍵を導出して
 /// SecureConfirm(0x31: HMAC 応答) を交換する。両者の HMAC が一致して初めて暗号セッション確立。
 ///

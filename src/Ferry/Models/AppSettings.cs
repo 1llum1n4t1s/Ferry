@@ -60,13 +60,10 @@ public sealed class AppSettings
     /// 値は維持されるので、自動承認したい人は設定画面で明示的に ON できる。</summary>
     public bool AutoAcceptFileTransfer { get; set; } = false;
 
-    /// <summary>
-    /// rere #D-001(b): ペア間 E2E 暗号（HMAC 相互認証 + AES-GCM 封筒）を有効にするか。既定 false（オプトイン）。
-    /// ON かつ両端が PairSecret を保有（QR で公開鍵交換済み）のときのみ、接続確立直後に HMAC ハンドシェイクを
-    /// 行い以降のデータを封筒化する。OFF または片側未対応・PairSecret 無しのときは従来どおり平文（完全に同一動作）。
-    /// 2 台実機で疎通を確認してから ON にすること（HMAC 不一致は安全側で切断するため、鍵不整合だと繋がらない）。
-    /// </summary>
-    public bool EnableSecureChannel { get; set; } = false;
+    // rere #D-001(b): 旧 EnableSecureChannel トグルは v1.0.48 で撤去（常時 ON 化）。
+    // PairSecret を保有するペアとは自動的に HMAC + AES-GCM 暗号化、未交換ペアは平文フォールバック。
+    // 旧 settings.json に残る `EnableSecureChannel` キーは System.Text.Json が未知キーとして無視し、
+    // 次回 SaveAsync で自然に消える（#D-004 と同じ互換パターン）。
 
     /// <summary>アップロード帯域制限 (KB/s)。0 で無制限。
     /// 送信側 SendChunksAsync の各チャンク送信前に TokenBucket でレート整形する。</summary>

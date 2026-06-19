@@ -258,8 +258,8 @@ xUnit v3 + NSubstitute。テスト内の非同期メソッドには `TestContext
 
 1. **同時接続の競合**: rere #D-003 で offer を per-sender ノード（`offers/{senderDeviceId}`）化したため、2台が同時に接続を試みても **offer の相互上書きは構造的に起きない**。さらに deviceId 序列の **deferral（`CompareOrdinal` で大きい側が answerer に委譲）** で「双方が offerer になり相互の answer を待ち続けるデッドロック」を収束させる。ただし deferral 判定の瞬間に相手がまだ offer を書いていない**同時ウィンドウ**は残る（完全収束は今後の課題）。基本は接続確立後にファイル送信するのが安全。
 2. **Native AOT 制約**: JSON の動的シリアライズは使用不可。モデル追加時は `*JsonContext` も追加。
-3. **信頼モデルは設計途上**: 現状 Firebase シグナリングは匿名アクセス（セキュリティルール要確認）、トランスポートのピア認証なし、**転送ペイロードは平文**（リレー経由時は中継サーバが内容を読める）。E2E 暗号・ペア相互認証・Firebase ルールは未実装の設計事項。改修方針は `memory-bank` の Ferry プロジェクト `design-proposals.md` を参照。
-   - ⚠️ rere #D-001b で **E2E 暗号コア（`PairCrypto`/`SecureSession`/`PairingHandshake`）は実装・テスト済みだが live コードから未呼出（inert）**。`PairCryptoTests` が通っても**転送はまだ平文**。実際の暗号化は配線（QR pk 交換 / HMAC ゲート / AES-GCM 封筒を `ConnectionService` に結線, Phase1/2 + Bridge deploy + 2台実機検証）が入って初めて働く。本「平文」の記述はそれまで削除しないこと。
+3. **信頼モデルは設計途上**: Firebase シグナリングは #D-001a で Custom Token Auth 化済み（PR #10）。E2E 暗号は `ConnectionService.CreateSecureChannel` / `StartSecureHandshake` / `ApplySecureStep` に配線済みで、v1.0.48 で設定トグル（旧 `EnableSecureChannel`）を撤去し**常時 ON 化**した。両端が PairSecret を保有していれば自動的に HMAC 相互認証 + AES-GCM 封筒化、保有していないペア（QR で公開鍵交換していない旧 peers.json）は **平文フォールバック**（互換維持）。改修方針は `memory-bank` の Ferry プロジェクト `design-proposals.md` を参照。
+   - ⚠️ **PairSecret 交換と 2 台実機検証は未完**: 「QR ペアリング時の長期 ECDH 公開鍵交換」は実装中（Bridge 経由で `PkA`/`PkB` を `pairings/` に乗せる Phase）。それまで既存の peers.json は `PairSecret=null` のままで平文ルートに落ちる。再ペアリング後に SecureChannel が起動するか、別回線 2 台でログ「暗号セッション確立（HMAC 相互認証成功）」を確認するまで「実機検証完了」とは扱わない。詳細は `docs/design/rere-deferred-implementation-plan.md`。
 
 > 設定（`settings.json` / `peers.json`）は一時ファイル→リネームでアトミックに保存し、読み込み失敗時は `.corrupt-<時刻>` に退避する。`DeviceId` は pairId / presence の基盤なので、破損で再生成されるとペアが消える点に注意。
 

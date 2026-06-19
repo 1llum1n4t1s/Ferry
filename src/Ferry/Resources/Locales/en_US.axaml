@@ -139,8 +139,6 @@
   <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">(Downloads folder)</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">Auto Accept Files</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">Automatically accept incoming files</x:String>
-  <x:String x:Key="Text.Settings.SecureChannel" xml:space="preserve">End-to-end encryption (experimental)</x:String>
-  <x:String x:Key="Text.Settings.SecureChannel.Desc" xml:space="preserve">Encrypt transfers with the paired device (mutual authentication + AES-GCM). Both PCs must enable this and be re-paired. When off, transfers are unchanged.</x:String>
   <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">Upload Limit (KB/s)</x:String>
   <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">Outbound bandwidth cap. 0 = unlimited</x:String>
   <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
