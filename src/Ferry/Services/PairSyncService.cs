@@ -28,6 +28,16 @@ public sealed class PairSyncService : IDisposable
     private readonly Func<string, PairRecord, CancellationToken, Task>? _putPair;
     private readonly IPeerRegistryService _peerRegistry;
     private readonly string _deviceId;
+    /// <summary>
+    /// Codex 第13弾 #3 (P2) fix: 起動時 immediate sync の前に Firebase Auth 完了を待つために保持する。
+    /// 旧実装は <see cref="App.axaml.cs"/> の fire-and-forget SignIn と並行で <see cref="CheckOnceAsync"/> が走り、
+    /// 認証前の GetPairWithStatusAsync が 401 で返って unknown state 扱い (削除しない) になっていた。
+    /// start-minimized tray 経路では 5min/15min 後の retry も <see cref="_isActive"/>=false で skip され、
+    /// remote unpair が起動から最大 15min 反映されない問題があった。
+    /// authClient が渡されている本番経路では LoopAsync 冒頭で EnsureSignInAsync を await する。
+    /// テスト用 ctor (HTTP delegate 差し替え) では null のまま (auth 待ちなしで delegate を呼ぶ)。
+    /// </summary>
+    private readonly FirebaseAuthClient? _authClient;
     private readonly ConcurrentDictionary<string, int> _consecutive404 = new();
     /// <summary>Codex P1 fix: 旧 peers.json 由来の既存ペアは pairs/{pairId} が未作成なので、責任者側が初回 backfill を試みる。Codex P2 fix (第4弾): 成功時のみ marker を set する (失敗時はマーカーを残さず次サイクルで再試行)。</summary>
     private readonly ConcurrentDictionary<string, byte> _backfillAttempted = new();
@@ -37,25 +47,26 @@ public sealed class PairSyncService : IDisposable
     private CancellationTokenSource? _cts;
     private volatile bool _isActive = true;
 
-    public PairSyncService(FirebaseSignaling signaling, IPeerRegistryService peerRegistry, string deviceId)
+    public PairSyncService(FirebaseSignaling signaling, IPeerRegistryService peerRegistry, string deviceId, FirebaseAuthClient? authClient = null)
         : this(
             (pairId, ct) => signaling.GetPairWithStatusAsync(pairId, ct),
             (pairId, record, ct) => signaling.PutPairAsync(pairId, record),
             peerRegistry,
-            deviceId)
+            deviceId,
+            authClient)
     {
     }
 
     /// <summary>
     /// テスト用コンストラクタ。FirebaseSignaling は sealed のため、HTTP 取得デリゲートを直接差し替えて
     /// 404 閾値 / grace period / 401 未操作などのロジックを単体検証する。
-    /// 本番経路は <see cref="PairSyncService(FirebaseSignaling, IPeerRegistryService, string)"/> を使う。
+    /// 本番経路は <see cref="PairSyncService(FirebaseSignaling, IPeerRegistryService, string, FirebaseAuthClient)"/> を使う。
     /// </summary>
     internal PairSyncService(
         Func<string, CancellationToken, Task<(HttpStatusCode Status, string Body)>> fetchPair,
         IPeerRegistryService peerRegistry,
         string deviceId)
-        : this(fetchPair, null, peerRegistry, deviceId)
+        : this(fetchPair, null, peerRegistry, deviceId, null)
     {
     }
 
@@ -63,12 +74,14 @@ public sealed class PairSyncService : IDisposable
         Func<string, CancellationToken, Task<(HttpStatusCode Status, string Body)>> fetchPair,
         Func<string, PairRecord, CancellationToken, Task>? putPair,
         IPeerRegistryService peerRegistry,
-        string deviceId)
+        string deviceId,
+        FirebaseAuthClient? authClient)
     {
         _fetchPair = fetchPair;
         _putPair = putPair;
         _peerRegistry = peerRegistry;
         _deviceId = deviceId;
+        _authClient = authClient;
     }
 
     /// <summary>同期ループを開始する。起動時に 1 回呼ぶ。</summary>
@@ -92,9 +105,48 @@ public sealed class PairSyncService : IDisposable
     {
         try
         {
+            // Codex 第13弾 #3 (P2) fix: 起動時 immediate sync の前に Firebase Auth 完了を待つ。
+            // 旧実装は App.axaml.cs の fire-and-forget SignIn と並行で走り、 未認証 GET が 401 で返って
+            // unknown state 扱い (削除しない) になっていた。 start-minimized tray 経路では 5min/15min check が
+            // _isActive=false で skip され、 remote unpair が起動から最大 15min 反映されない問題に直結。
+            // EnsureSignInAsync は冪等で semaphore 直列化済 (App.axaml.cs の初回 SignIn と並列でも 1 回しか走らない)。
+            if (_authClient != null)
+            {
+                try { await _authClient.EnsureSignInAsync(ct); }
+                catch (IdentityLostException)
+                {
+                    // identity.key 紛失 → App.axaml.cs の IdentityLost ハンドラが clean slate UI を出す。
+                    // ここでは sync ループ自体を回さず即抜ける (Firebase 全 REST が 401 で返るため意味なし)。
+                    // refresh ループ (FirebaseAuthClient 内) も同様に IdentityLost で停止しているので整合的。
+                    // 将来 identity.key 復旧経路 (export/import 等) を入れる場合は、 復旧後に App 側から
+                    // pairSyncService.Start() を呼び直すこと (Start は古い CTS を Cancel/Dispose してから
+                    // 再生成する冪等実装なので安全)。
+                    Util.Logger.Log("PairSyncService: identity 紛失検知のため起動時 sync を skip", Util.LogLevel.Warning);
+                    return;
+                }
+                catch (OperationCanceledException)
+                {
+                    // Codex 第13弾 verify minor: shutdown (Disconnect / アプリ終了 / Start 再呼出) で
+                    // ct.Cancel() が発火した場合の OCE は外側 catch (OperationCanceledException) { } に
+                    // 伝搬させて素直に終了する。 これがないと下の catch (Exception) に拾われて
+                    // 「auth 失敗で 5min retry に委譲」 という事実と異なる warning ログが残る。
+                    // CheckOnceAsync 内の OCE 処理 (rethrow) と同じパターン。
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // network error など transient 失敗。 即 sync は skip し、 後段の 5min/15min retry で
+                    // backoff で recover する。 LoopAsync 自体は止めない。
+                    Util.Logger.Log($"PairSyncService: 起動時 EnsureSignInAsync 失敗 (skip して 5min retry に委譲): {ex.Message}", Util.LogLevel.Warning);
+                    goto SkipImmediateSync;
+                }
+            }
+
             // 起動時即: gracePeriod を例外的に通過させる（最初のチェックは「相手が長期オフライン中に
             // 削除した」を即拾うため。連続 404 カウンタ閾値=3 で誤検出は防げる）。
             await CheckOnceAsync(applyGracePeriod: false, ct);
+
+            SkipImmediateSync: ;
 
             // 5min 後（gracePeriod 経過後の確認）
             try { await Task.Delay(TimeSpan.FromMinutes(5), ct); }

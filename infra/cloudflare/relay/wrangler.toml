@@ -34,10 +34,14 @@ custom_domain = true
 FIREBASE_DATABASE_URL = "https://ferry-edf09-default-rtdb.firebaseio.com"
 
 # deviceId ↔ pubKeySpki binding KV (first-write-wins)
-# 事前に: pnpm dlx wrangler kv namespace create DEVICE_KEY_BINDING で作成して id をここに貼る
+# Codex 第13弾 #4 (P1) fix: 旧 placeholder "REPLACE_WITH_KV_NAMESPACE_ID" のままだと deploy 後 /auth/token が
+# DEVICE_KEY_BINDING undefined で動かないため、 1llum1n4t1 account 配下に作成済の KV namespace ID を貼る
+# (`pnpm dlx wrangler kv namespace create DEVICE_KEY_BINDING` の出力)。
+# namespace ID 自体は Cloudflare リソース識別子で、 アクセスには API token + account 権限が必要なので
+# 公開しても security 上の悪化はない。
 [[kv_namespaces]]
 binding = "DEVICE_KEY_BINDING"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "1b36c961ac274a3385d7046df6cd7be9"
 
 # Rate Limit bindings (unsafe.bindings)
 # Cloudflare Rate Limit API (2024 Q4 GA)

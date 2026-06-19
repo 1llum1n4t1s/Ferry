@@ -310,7 +310,10 @@ public partial class App : Application
             // 専用の FirebaseSignaling インスタンスを持たせる（ConnectionService の _signaling と独立、
             // ライフサイクル分離）。Visibility gate は MainWindow から SetActive を呼ぶ。
             var pairSyncSignaling = new Infrastructure.FirebaseSignaling(AppConstants.FirebaseDatabaseUrl, firebaseAuthClient);
-            var pairSyncService = new PairSyncService(pairSyncSignaling, peerRegistry, settings.DeviceId);
+            // Codex 第13弾 #3 (P2) fix: authClient を渡して PairSyncService の起動時 immediate sync が
+            // EnsureSignInAsync を待ってから走るようにする。 旧実装は fire-and-forget SignIn と並行で
+            // 401 を unknown 扱い → start-minimized tray で 15min まで反映遅延、 という race があった。
+            var pairSyncService = new PairSyncService(pairSyncSignaling, peerRegistry, settings.DeviceId, firebaseAuthClient);
             PairSyncService = pairSyncService;  // MainWindow の visibility ハンドラから SetActive を呼ぶための公開
             pairSyncService.Start();
             var connectionVm = new ConnectionViewModel(connectionService, qrCodeService, settingsService, peerRegistry, presenceFactory, pendingPairDeletes);
