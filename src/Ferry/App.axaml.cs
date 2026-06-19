@@ -160,10 +160,13 @@ public partial class App : Application
                 settingsService.SetAutoStart(true);
 
             // rere #D-001(b): 長期 ECDH 鍵（%APPDATA%\Ferry\identity.key）。QR の公開鍵交換と PairSecret 導出に使う。
-            // Codex 第6弾 #6 (P2): identity.key 永続化失敗時は ephemeral key で続行せず起動を中止する。
-            // 旧実装は silent in-memory continued で続行 → 次起動で別 key が生成されて Workers /auth/token が
-            // DEVICE_PUBKEY_MISMATCH を返し clean-slate が無条件発火していた。書込不可な profile (権限なし /
-            // ロック) ではユーザーに権限を直してもらうしかないので、ここで明示的に exit する。
+            // Codex 第6弾 #6 (P2): identity.key 永続化 (write) 失敗時は ephemeral key で続行せず起動を中止する。
+            // Codex 第12弾 #2 (P2): 読込 (read/import) 失敗も同様に startup を中止する。
+            // 旧実装は load failure を warning ログ + silent regenerate で握り潰し → 一時 lock / 権限不足 /
+            // corrupt import error で本来読めたはずの旧鍵が新鍵で上書きされ、 次の /auth/token が
+            // DEVICE_PUBKEY_MISMATCH を返して既存ペアが unrecoverable になる経路を作っていた。
+            // load/save どちらの失敗も DeviceIdentity 側で InvalidOperationException として throw されるので、
+            // ここで catch して startup abort し、ユーザーに OS 側の問題解決を促す。
             Infrastructure.DeviceIdentity deviceIdentity;
             try
             {
@@ -171,7 +174,7 @@ public partial class App : Application
             }
             catch (Exception ex)
             {
-                Util.Logger.Log($"identity.key の永続化に失敗したため起動を中止します: {ex.Message}", Util.LogLevel.Error);
+                Util.Logger.Log($"identity.key の load/save 失敗のため起動を中止します: {ex.Message}", Util.LogLevel.Error);
                 // Avalonia の lifetime はまだ Run していない (この後 desktop.MainWindow を設定して Start) ので、
                 // ダイアログ表示は過剰。ログを残してプロセスを exit code 1 で落とす。
                 Environment.Exit(1);

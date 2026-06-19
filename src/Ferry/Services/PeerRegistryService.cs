@@ -17,6 +17,12 @@ public sealed class PeerRegistryService : IPeerRegistryService, IDisposable
 {
     private readonly string _filePath;
     private readonly List<PairedPeer> _peers = [];
+    // Codex 第12弾 #3 (P2) fix: ユーザー起点の unpair が in-flight な peerId を保持する。
+    // RemovePeerAsync の前に MarkPendingRemoval で立て、 finally で ClearPendingRemoval する。
+    // WritePairRecordWithFallback (責任者経路 / 30s fallback) が IsPendingRemoval を check し、
+    // true ならば PUT をスキップして「削除中のペアを resurrect」する race を構造的に塞ぐ。
+    // ConcurrentDictionary なので _peersLock とは独立に lock-free で参照できる。
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _pendingRemovals = new();
     // Codex 第6弾 #5 (P2): _peers の列挙 / 変更を直列化する。
     // PairSyncService の CheckOnceAsync が GetPairedPeers().ToList() で snapshot を取る間、
     // UI thread や pairing 経路から AddOrUpdatePeerAsync / RemovePeerAsync が走ると
@@ -107,6 +113,11 @@ public sealed class PeerRegistryService : IPeerRegistryService, IDisposable
     {
         lock (_peersLock) return _peers.FirstOrDefault(p => p.PeerId == peerId);
     }
+
+    // Codex 第12弾 #3 (P2) fix: pending-removal marker の操作。
+    public void MarkPendingRemoval(string peerId) => _pendingRemovals.TryAdd(peerId, 0);
+    public void ClearPendingRemoval(string peerId) => _pendingRemovals.TryRemove(peerId, out _);
+    public bool IsPendingRemoval(string peerId) => _pendingRemovals.ContainsKey(peerId);
 
     private void Load()
     {

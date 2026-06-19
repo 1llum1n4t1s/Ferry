@@ -109,19 +109,38 @@ public sealed class DeviceIdentity : IDisposable
 
     private static ECDiffieHellman LoadOrCreate(string path)
     {
-        try
+        // Codex 第12弾 #2 (P2) fix: 既存 identity.key の読込/import 失敗時は silent regenerate せず throw。
+        // 旧実装は read/import 失敗を warning ログだけで握り潰し CreateAndSave に落としていた。
+        // #D-001a Phase B 以降 identity.key は Firebase auth に bind されるため、 一時的な lock /
+        // 権限不足 / corrupt-file import error で silent regenerate すると、 本来あとから読めたはずの
+        // 旧鍵が新鍵で上書きされ、 次の /auth/token が DEVICE_PUBKEY_MISMATCH を返して既存 peer 全部が
+        // unrecoverable になる致命的データロス経路を作る。 File.Exists 経路は throw して App.axaml.cs の
+        // try/catch で startup abort させ、 ユーザーに OS 側の問題 (ロック解除/権限修復) を促す。
+        // 真にリセットしたい場合は IdentityLost ダイアログから RegenerateAndSave を明示選択する経路で。
+        // File 不在 (初回起動) は従来どおり CreateAndSave で新規生成する。
+        if (File.Exists(path))
         {
-            if (File.Exists(path))
+            try
             {
                 var pkcs8 = File.ReadAllBytes(path);
                 var ec = ECDiffieHellman.Create();
                 ec.ImportPkcs8PrivateKey(pkcs8, out _);
                 return ec;
             }
-        }
-        catch (Exception ex)
-        {
-            Util.Logger.Log($"identity.key の読み込みに失敗、鍵を再生成します: {ex.Message}", Util.LogLevel.Warning);
+            catch (Exception ex)
+            {
+                // Codex 第12弾 verify minor: 例外メッセージから「アプリ内のリカバリー UI」言及を撤去する。
+                // LoadOrCreate が throw すると App.axaml.cs:178 で Environment.Exit(1) され、 UI 自体に
+                // 到達できないため、 ユーザーは到達不能な手段を案内されて立ち往生する。 代わりに具体的な
+                // ファイルパスベースの手動リセット手順を提示する (既存ペアが全てやり直しになる旨も明記)。
+                Util.Logger.Log($"identity.key の読み込みに失敗: {ex.Message}", Util.LogLevel.Error);
+                throw new InvalidOperationException(
+                    $"identity.key ({path}) は存在しますが読み込めません。" +
+                    $"一時的なファイルロック、 権限不足、 または鍵ファイルの破損が考えられます。" +
+                    $"続行すると新鍵が生成され既存ペアの Firebase 認証が破壊されるため、 起動を中止します。" +
+                    $"問題が継続する場合は、 当該ファイルを手動で削除して再起動してください " +
+                    $"(既存ペアは全てやり直しになります)。", ex);
+            }
         }
         return CreateAndSave(path);
     }

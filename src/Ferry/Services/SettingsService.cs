@@ -12,9 +12,17 @@ namespace Ferry.Services;
 /// アプリケーション設定をファイルに永続化するサービス。
 /// %APPDATA%\Ferry\settings.json に保存する。
 /// </summary>
-public sealed class SettingsService : ISettingsService
+public sealed class SettingsService : ISettingsService, IDisposable
 {
     private readonly string _filePath;
+
+    // Codex 第12弾 verify critical: SaveAsync 内の JsonSerializer.SerializeToUtf8Bytes は
+    // SettingsViewModel / MainWindow / ConnectionService.OnPairingDetected 等の各経路から並列で呼ばれる。
+    // serialize は AppSettings 内の List/HashSet を foreach で enumerate するため、 別経路の mutation と
+    // 重なると "Collection was modified" 例外 → 保存失敗 → in-memory と persisted の desync で
+    // SeenPairingIds replay 防御が落ちる。 SemaphoreSlim で SaveAsync 全体 (serialize + write) を
+    // 直列化して enumerate と mutation を時間軸上分離する。
+    private readonly System.Threading.SemaphoreSlim _saveLock = new(1, 1);
 
     public AppSettings Settings { get; private set; } = new();
 
@@ -117,6 +125,11 @@ public sealed class SettingsService : ISettingsService
 
     public async Task SaveAsync()
     {
+        // Codex 第12弾 verify critical fix: SemaphoreSlim で SaveAsync 全体を直列化。
+        // serialize の foreach と mutation が同一 List/HashSet 上で衝突しないよう、
+        // 「serialize → write」の組を atomic に行う。 mutation 側 (ConnectionService.OnPairingDetected)
+        // は List 参照を copy-on-write で差し替える (古い List 参照は in-flight serialize から enumerate 中)。
+        await _saveLock.WaitAsync().ConfigureAwait(false);
         try
         {
             var json = JsonSerializer.SerializeToUtf8Bytes(Settings, AppSettingsJsonContext.Default.AppSettings);
@@ -126,7 +139,14 @@ public sealed class SettingsService : ISettingsService
         {
             Util.Logger.Log($"settings.json の保存に失敗: {ex.Message}", Util.LogLevel.Error);
         }
+        finally
+        {
+            _saveLock.Release();
+        }
     }
+
+    /// <summary>SemaphoreSlim をクリーンアップする。 アプリ寿命 = サービス寿命の前提で通常呼ばれないが、 テスト並列実行用に IDisposable 化。</summary>
+    public void Dispose() => _saveLock.Dispose();
 
     // === OS ログイン時の自動起動 ===
 

@@ -113,13 +113,19 @@ public sealed class AppSettings
     /// <summary>サイドバー（左ペイン）の幅 px。左右スプリッターのドラッグ位置を永続化する。未設定時は既定 220。</summary>
     public double? SidebarWidth { get; set; }
 
+    // Codex 第11弾 #3 で導入した LatestConsumedPairingAtMs は global timestamp gate で、
+    // 「1 台目ペアリング後に 2 台目を 30〜60s 遅い時計でペアリング」のような正規 pairings entry まで
+    // 一律に弾く副作用があった (Codex 第12弾 #4)。 第12弾で per-pairingId 永続化 (SeenPairingIds) に
+    // 置換したため撤去。 旧 settings.json に残る `LatestConsumedPairingAtMs` キーは
+    // System.Text.Json が未知キーとして無視し、 次回 SaveAsync で自然に消える (#D-004 互換パターン)。
+
     /// <summary>
-    /// Codex P2 fix (第11弾 #3): pairings replay filter の永続アンカー (Unix ms, UTC)。
-    /// 過去に <see cref="Ferry.Services.ConnectionService.OnPairingDetected"/> が consume した
-    /// pairings entry の CreatedAt の最大値を保存する。
-    /// アプリ再起動でメモリ内 <c>_seenPairingIds</c> が空になっても、Firebase に残った old entry
-    /// (cleanup 前で CreatedAt &lt;= この値) が再採用されないようにするゲート。
-    /// 既定 0（初回起動 / 旧 settings.json）の場合は従来の subscribe 開始 -60s tolerance のみで動く。
+    /// Codex 第12弾 #4 (P2) fix: 過去 consume 済みの pairingId を固定サイズ LRU で永続化する。
+    /// 再起動跨ぎで in-memory <c>ConnectionService._seenPairingIds</c> が空になっても、
+    /// Firebase に残った old pairings entry (cleanup 前) を replay として弾く。
+    /// 上限 <see cref="Ferry.Services.ConnectionService.SeenPairingIdsCap"/> 件を超えたら先頭 (= 最古) から落とす。
+    /// 旧 LatestConsumedPairingAtMs (global timestamp gate) の副作用 (=clock skew 60s 遅れの正規 peer まで
+    /// 弾く) を回避する。
     /// </summary>
-    public long LatestConsumedPairingAtMs { get; set; }
+    public List<string> SeenPairingIds { get; set; } = [];
 }

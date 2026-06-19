@@ -202,6 +202,14 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         // finally で TryRemove する: peer 不在で PeerRemoved event が発火しなかったケースでも
         // marker leak しないようにする (通常経路では handler が既に TryRemove 済みなので no-op)。
         _locallyInitiatedRemovals.TryAdd(peerId, 0);
+        // Codex 第12弾 #3 (P2) fix: PeerRegistry にも「削除 in-flight」marker を立てる。
+        // 旧実装は Firebase DELETE → registry.RemovePeerAsync という順序で、 DELETE が走っている間は
+        // 依然 FindPeer(peerId) != null。 直前の PairingCompleted で起動した
+        // WritePairRecordWithFallback の責任者書込 (即時) や 30s fallback が同 window で発火すると
+        // 「peer が居る → PUT pairs/{pairId}」を実行して削除済みペアを resurrect 、 相手側に unpair を
+        // 観測させない race があった。 marker を先に立てれば writer 側が IsPendingRemoval=true で abort する。
+        // finally で必ず ClearPendingRemoval。
+        _peerRegistry.MarkPendingRemoval(peerId);
         try
         {
             var peer = PairedPeers.FirstOrDefault(p => p.PeerId == peerId);
@@ -255,6 +263,10 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             // peer 不在で PeerRemoved event が発火しなかった (RemovePeerAsync が false 返却) ケースに備えて
             // marker leak を防ぐ。通常経路では既に handler が TryRemove 済みなので no-op。
             _locallyInitiatedRemovals.TryRemove(peerId, out _);
+            // Codex 第12弾 #3 (P2) fix: PeerRegistry の pending-removal marker も必ず掃除する。
+            // 30s fallback writer はこの marker が残っている間 abort するが、 marker を残し続けると
+            // 同一 peerId で再ペアリングしたケースの writer まで abort されてしまう。
+            _peerRegistry.ClearPendingRemoval(peerId);
         }
     }
 

@@ -81,7 +81,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// App が生成・所有しライフサイクル管理するため、本クラスでは Dispose しない（参照保持のみ）。</summary>
     private readonly DeviceIdentity? _identity;
 
-    /// <summary>pairings replay anchor (<see cref="AppSettings.LatestConsumedPairingAtMs"/>) 等の参照元。null 許容（テスト用）。</summary>
+    /// <summary>pairings replay anchor (<see cref="AppSettings.SeenPairingIds"/>) 等の参照元。null 許容（テスト用）。</summary>
     private readonly ISettingsService? _settings;
 
     /// <summary>rere #D-001(b): 接続相手の PairSecret を引くための registry（null なら暗号は常に無効）。</summary>
@@ -186,6 +186,13 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// </summary>
     private readonly PendingPairDeleteQueue? _pendingPairDeleteQueue;
 
+    /// <summary>
+    /// Codex 第12弾 #4 (P2): AppSettings.SeenPairingIds の永続化上限。
+    /// 200 件は「直近 200 ペアリング操作」を保持 = 通常運用 (1 ユーザー数十ペア) で 1 年以上 replay 防御が効く想定。
+    /// 超過時は List 先頭 (最古) から落とすので最新の history が保たれる。
+    /// </summary>
+    public const int SeenPairingIdsCap = 200;
+
     public ConnectionService(string databaseUrl, string deviceId, string displayName,
         DeviceIdentity? identity = null, IPeerRegistryService? peerRegistry = null, ISettingsService? settings = null,
         FirebaseAuthClient? authClient = null, PendingPairDeleteQueue? pendingPairDeleteQueue = null)
@@ -198,6 +205,16 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         _settings = settings;
         _authClient = authClient;
         _pendingPairDeleteQueue = pendingPairDeleteQueue;
+
+        // Codex 第12弾 #4 (P2) fix: 起動時に AppSettings.SeenPairingIds (永続) を _seenPairingIds (in-memory)
+        // に展開する。 これにより「アプリ再起動 → 60s 以内に Add peer 開く」で過去 consume 済 entry が
+        // 再採用される race を per-ID で塞ぐ (旧 LatestConsumedPairingAtMs global timestamp gate の置換)。
+        // List の copy を取って lock-free に展開する (起動時の単一スレッド前提)。
+        if (_settings != null)
+        {
+            foreach (var pid in _settings.Settings.SeenPairingIds)
+                _seenPairingIds.TryAdd(pid, 0);
+        }
     }
 
     /// <summary>rere #D-001(b): QR に載せる自分の長期公開鍵(base64url SPKI)。identity 未注入なら空。</summary>
@@ -240,15 +257,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         // rere #D-001(b): 自分の公開鍵も session に載せる（コード貼付ペアリングで相手が読み取る）。
         var sessionId = await _signaling.RegisterSessionAsync(_deviceId, _displayName, PublicKeyForQr, ct);
 
-        // Codex P2 fix (第11弾 #3): 再起動を跨いだ pairings replay 防御。settings.json に永続化した
-        // 「過去 consume 済 pairings entry の CreatedAt 最大値」を注入し、_seenPairingIds (メモリ only,
-        // 起動時に空) の穴を塞ぐ。これが無いと「直前まで pairing してた peer を remove → 再起動 →
-        // 60s 以内に Add peer」で Firebase に残った old pairings entry が再採用される race があった。
-        var anchorMs = _settings?.Settings.LatestConsumedPairingAtMs ?? 0;
-        if (anchorMs > 0)
-        {
-            _signaling.SetLatestConsumedPairingAtMs(anchorMs);
-        }
+        // Codex P2 fix (第12弾 #4): 再起動を跨いだ pairings replay 防御は AppSettings.SeenPairingIds
+        // (per-pairingId LRU) に集約済み。 ConnectionService の constructor で _seenPairingIds (in-memory)
+        // に展開済みなので、 ここで FirebaseSignaling へ追加注入する必要は無い (旧 LatestConsumedPairingAtMs
+        // の global timestamp gate は撤去)。
 
         _signaling.PairingDetected += OnPairingDetected;
         _signaling.StartWatchingPairing();
@@ -317,23 +329,48 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
             Util.Logger.Log($"ペアリング検知: peer={info.PeerDisplayName}");
 
-            // Codex P2 fix (第11弾 #3): consume したら settings に CreatedAt を永続化して
-            // replay filter のアンカーを前進させる。次回 StartPairingSessionAsync (アプリ再起動含む)
-            // で SetLatestConsumedPairingAtMs され、これより古い entry は Where 句で構造排除される。
-            // 単調増加なので attacker が古い entry を仕込んでもこのアンカー以下なら採用されない。
+            // Codex P2 fix (第12弾 #4): consume したら settings.SeenPairingIds に永続化する。
+            // 旧 LatestConsumedPairingAtMs (global timestamp gate) は「2 台目を 30-60s 遅い時計でペアリング」
+            // のような正規 pairings entry まで弾く副作用があったため撤去。 per-pairingId LRU (Cap 件) に置換し、
+            // 「再起動跨ぎで in-memory が空になる → 過去 consume 済 entry が replay される」race だけを
+            // ピンポイントで防ぐ (新規 pairing は弾かれない)。
             try
             {
                 var settings = _settings?.Settings;
-                if (settings != null && info.CreatedAt > settings.LatestConsumedPairingAtMs)
+                if (settings != null)
                 {
-                    settings.LatestConsumedPairingAtMs = info.CreatedAt;
-                    sig.SetLatestConsumedPairingAtMs(info.CreatedAt);
-                    // SaveAsync は I/O failure 時に内部で Warning ログを出すだけで throw しない (best-effort)。
-                    // ここで await して保存完了を確実にしてから revoke / event 発火に進む。
-                    await _settings!.SaveAsync();
+                    bool changed = false;
+                    // Codex 第12弾 verify critical fix: 既存 List を mutate せず、 copy-on-write で
+                    // 新 List 参照に差し替える。 旧 List 参照は SettingsViewModel / MainWindow 等の
+                    // 他経路で in-flight な JsonSerializer.SerializeToUtf8Bytes が enumerate しているかも
+                    // しれないため、 mutate すると "Collection was modified" で別経路の SaveAsync が落ちる。
+                    // 新 List は誰も enumerate していない不変オブジェクトとして差し替える。
+                    lock (settings)
+                    {
+                        if (!settings.SeenPairingIds.Contains(info.PairingId))
+                        {
+                            var next = new System.Collections.Generic.List<string>(settings.SeenPairingIds.Count + 1);
+                            // LRU: 上限超過時は先頭 (= 最古) から落とす。
+                            // 既存件数 + 新 1 件で Cap 超過分を skip する形でコピー。
+                            var skip = Math.Max(0, settings.SeenPairingIds.Count + 1 - SeenPairingIdsCap);
+                            for (int i = skip; i < settings.SeenPairingIds.Count; i++)
+                                next.Add(settings.SeenPairingIds[i]);
+                            next.Add(info.PairingId);
+                            settings.SeenPairingIds = next;
+                            changed = true;
+                        }
+                    }
+                    if (changed)
+                    {
+                        // SaveAsync は I/O failure 時に内部で Warning ログを出すだけで throw しない (best-effort)。
+                        // SettingsService.SaveAsync は SemaphoreSlim で直列化済 (第12弾 verify critical fix) なので
+                        // 他経路の SaveAsync と enumerate/mutation が衝突しない。
+                        // ここで await して保存完了を確実にしてから revoke / event 発火に進む。
+                        await _settings!.SaveAsync();
+                    }
                 }
             }
-            catch (Exception ex) { Util.Logger.Log($"LatestConsumedPairingAtMs 永続化失敗 (継続): {ex.Message}", Util.LogLevel.Warning); }
+            catch (Exception ex) { Util.Logger.Log($"SeenPairingIds 永続化失敗 (継続): {ex.Message}", Util.LogLevel.Warning); }
 
             var peer = new PairedPeer
             {
@@ -1828,12 +1865,22 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     // PairingCompleted → ユーザー速攻 unpair の 1〜数 ms で local 状態が外れる可能性があるので
                     // defensive に check する。非責任者経路 (30s fallback) と同じ防御で対称性を保つ。
                     // 注: テスト用 ctor は _peerRegistry=null。null の時は check を skip（本番のみ防御）。
-                    if (_peerRegistry != null && _peerRegistry.FindPeer(peerId) == null)
+                    // Codex 第12弾 #3 (P2) fix: FindPeer != null かつ削除 in-flight (= ユーザーが unpair 中で
+                    // Firebase DELETE がまだ返ってきていない) のケースも abort。 これがないと DELETE 完了前に
+                    // PUT が走って削除済みペアを resurrect する race を許す。
+                    if (_peerRegistry != null && (_peerRegistry.FindPeer(peerId) == null || _peerRegistry.IsPendingRemoval(peerId)))
                     {
-                        Util.Logger.Log($"pairs/{maskedPair} 責任者書込中止: peer が local から外れたため (unpair 検知)", Util.LogLevel.Debug);
+                        Util.Logger.Log($"pairs/{maskedPair} 責任者書込中止: peer が local から外れた / 削除中 (unpair 検知)", Util.LogLevel.Debug);
                         return;
                     }
                     using var tempSig = new FirebaseSignaling(_databaseUrl, _authClient);
+                    // Codex 第12弾 verify minor (TOCTOU): IsPendingRemoval check と PutPairAsync の間 (ms 単位の HTTP RTT 前)
+                    // にユーザーが unpair を開始した場合に備えて、 PUT 直前に再度 check する。
+                    if (_peerRegistry?.IsPendingRemoval(peerId) == true)
+                    {
+                        Util.Logger.Log($"pairs/{maskedPair} 責任者書込直前中止: PUT 寸前に unpair 開始を検知", Util.LogLevel.Debug);
+                        return;
+                    }
                     await tempSig.PutPairAsync(pairId, record);
                     // Codex P2 fix (第5弾): self-check は GetPairAsync の transient null マッピング
                     // (read/auth エラーも null 返却) で「PUT 成功 + GET 不確定 → queue が残る」race を作り、
@@ -1869,15 +1916,23 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     // 反映されない race を防ぐ。_peerRegistry.FindPeer(peerId) で local 状態を再確認し、
                     // 既に外れていれば fallback abort。
                     // 注: テスト用 ctor は _peerRegistry=null。null の時は check を skip（本番のみ防御）。
-                    if (_peerRegistry != null && _peerRegistry.FindPeer(peerId) == null)
+                    // Codex 第12弾 #3 (P2) fix: FindPeer != null かつ unpair in-flight も abort。
+                    if (_peerRegistry != null && (_peerRegistry.FindPeer(peerId) == null || _peerRegistry.IsPendingRemoval(peerId)))
                     {
-                        Util.Logger.Log($"pairs/{maskedPair} fallback 中止: peer が local から外れたため (unpair 検知)", Util.LogLevel.Debug);
+                        Util.Logger.Log($"pairs/{maskedPair} fallback 中止: peer が local から外れた / 削除中 (unpair 検知)", Util.LogLevel.Debug);
                         return;
                     }
                     using var tempSig = new FirebaseSignaling(_databaseUrl, _authClient);
                     var existing = await tempSig.GetPairAsync(pairId);
                     if (existing == null)
                     {
+                        // Codex 第12弾 verify minor (TOCTOU): GetPairAsync の HTTP RTT 中にユーザーが unpair した
+                        // 場合に備えて PUT 直前に再 check する (上の check と PUT の間に HTTP 1 往復が挟まる)。
+                        if (_peerRegistry?.IsPendingRemoval(peerId) == true)
+                        {
+                            Util.Logger.Log($"pairs/{maskedPair} fallback 書込直前中止: PUT 寸前に unpair 開始を検知", Util.LogLevel.Debug);
+                            return;
+                        }
                         Util.Logger.Log($"pairs/{maskedPair} 未作成検知 → fallback 書込");
                         await tempSig.PutPairAsync(pairId, record);
                         // Codex P2 fix (第5弾): self-check は GetPairAsync の transient null マッピングで

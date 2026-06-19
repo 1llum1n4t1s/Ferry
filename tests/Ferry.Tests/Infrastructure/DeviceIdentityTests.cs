@@ -162,12 +162,20 @@ public class DeviceIdentityTests : IDisposable
     }
 
     [Fact]
-    public void 壊れた鍵ファイルは再生成されること()
+    public void 壊れた鍵ファイルは例外を伝播して起動を中止させること()
     {
+        // Codex 第12弾 #2 (P2) fix: 既存 identity.key の読込/import 失敗は silent regenerate せず
+        // throw する。 #D-001a Phase B 以降 identity.key は Firebase auth に bind されるため、
+        // 一時的な lock / 権限不足 / corrupt-file import error で silent regenerate すると、
+        // 本来あとから読めたはずの旧鍵が新鍵で上書きされて既存ペア全部が DEVICE_PUBKEY_MISMATCH で
+        // unrecoverable になる。 App.axaml.cs はこの例外を catch して Environment.Exit(1) する。
         var path = KeyPath("corrupt");
         File.WriteAllBytes(path, new byte[] { 1, 2, 3, 4, 5 }); // PKCS#8 として不正
-        using var id = new DeviceIdentity(path);
-        Assert.False(string.IsNullOrEmpty(id.PublicKeyBase64Url)); // 例外を出さず新規生成して動く
+        // Codex 第12弾 verify minor: メッセージ文言依存の Assert ではなく、 path 自体 (テストが所有していて
+        // 必ずメッセージに含まれる) と InnerException の存在を assert する。 文言は変わりうるがこちらは安定。
+        var ex = Assert.Throws<InvalidOperationException>(() => new DeviceIdentity(path));
+        Assert.Contains(path, ex.Message);
+        Assert.NotNull(ex.InnerException);
     }
 
     // ---- ECDH 対称性（E2E 暗号の土台）----
