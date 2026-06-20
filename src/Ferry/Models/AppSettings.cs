@@ -60,13 +60,10 @@ public sealed class AppSettings
     /// 値は維持されるので、自動承認したい人は設定画面で明示的に ON できる。</summary>
     public bool AutoAcceptFileTransfer { get; set; } = false;
 
-    /// <summary>
-    /// rere #D-001(b): ペア間 E2E 暗号（HMAC 相互認証 + AES-GCM 封筒）を有効にするか。既定 false（オプトイン）。
-    /// ON かつ両端が PairSecret を保有（QR で公開鍵交換済み）のときのみ、接続確立直後に HMAC ハンドシェイクを
-    /// 行い以降のデータを封筒化する。OFF または片側未対応・PairSecret 無しのときは従来どおり平文（完全に同一動作）。
-    /// 2 台実機で疎通を確認してから ON にすること（HMAC 不一致は安全側で切断するため、鍵不整合だと繋がらない）。
-    /// </summary>
-    public bool EnableSecureChannel { get; set; } = false;
+    // rere #D-001(b): 旧 EnableSecureChannel トグルは v1.0.48 で撤去（常時 ON 化）。
+    // PairSecret を保有するペアとは自動的に HMAC + AES-GCM 暗号化、未交換ペアは平文フォールバック。
+    // 旧 settings.json に残る `EnableSecureChannel` キーは System.Text.Json が未知キーとして無視し、
+    // 次回 SaveAsync で自然に消える（#D-004 と同じ互換パターン）。
 
     /// <summary>アップロード帯域制限 (KB/s)。0 で無制限。
     /// 送信側 SendChunksAsync の各チャンク送信前に TokenBucket でレート整形する。</summary>
@@ -115,4 +112,49 @@ public sealed class AppSettings
 
     /// <summary>サイドバー（左ペイン）の幅 px。左右スプリッターのドラッグ位置を永続化する。未設定時は既定 220。</summary>
     public double? SidebarWidth { get; set; }
+
+    // Codex 第11弾 #3 で導入した LatestConsumedPairingAtMs は global timestamp gate で、
+    // 「1 台目ペアリング後に 2 台目を 30〜60s 遅い時計でペアリング」のような正規 pairings entry まで
+    // 一律に弾く副作用があった (Codex 第12弾 #4)。 第12弾で per-pairingId 永続化 (SeenPairingIds) に
+    // 置換したため撤去。 旧 settings.json に残る `LatestConsumedPairingAtMs` キーは
+    // System.Text.Json が未知キーとして無視し、 次回 SaveAsync で自然に消える (#D-004 互換パターン)。
+
+    /// <summary>
+    /// Codex 第12弾 #4 (P2) fix: 過去 consume 済みの pairingId を固定サイズ LRU で永続化する。
+    /// 再起動跨ぎで in-memory <c>ConnectionService._seenPairingIds</c> が空になっても、
+    /// Firebase に残った old pairings entry (cleanup 前) を replay として弾く。
+    /// 上限 <see cref="Ferry.Services.ConnectionService.SeenPairingIdsCap"/> 件を超えたら先頭 (= 最古) から落とす。
+    /// 旧 LatestConsumedPairingAtMs (global timestamp gate) の副作用 (=clock skew 60s 遅れの正規 peer まで
+    /// 弾く) を回避する。更新は <see cref="AddSeenPairingId"/> 経由で行う（copy-on-write の不変条件を所有者が守る）。
+    /// </summary>
+    public List<string> SeenPairingIds { get; set; } = [];
+
+    /// <summary>
+    /// <see cref="SeenPairingIds"/> に pairingId を LRU で追加する。既出なら false（呼び出し側は保存不要）。
+    ///
+    /// Codex 第12弾 verify critical fix: 既存 List を mutate せず copy-on-write で新 List 参照に差し替える。
+    /// 旧 List 参照は他経路 (SettingsViewModel / MainWindow 等) で in-flight な
+    /// <c>JsonSerializer.SerializeToUtf8Bytes</c> が enumerate しているかもしれず、mutate すると
+    /// 「Collection was modified」で別経路の SaveAsync が落ちるため。新 List は誰も enumerate していない
+    /// 不変オブジェクトとして差し替える。LRU の所有者である本クラスがこの不変条件を守る（呼び出し側は
+    /// 戻り値 true のときだけ <c>SaveAsync</c> すればよい）。
+    /// </summary>
+    /// <param name="pairingId">追加する pairingId。</param>
+    /// <param name="cap">LRU 上限（超過分は先頭=最古から落とす）。</param>
+    /// <returns>新規追加なら true、既出で変更なしなら false。</returns>
+    public bool AddSeenPairingId(string pairingId, int cap)
+    {
+        lock (this)
+        {
+            if (SeenPairingIds.Contains(pairingId)) return false;
+            var next = new List<string>(SeenPairingIds.Count + 1);
+            // 既存件数 + 新 1 件で cap 超過分を先頭から skip する形でコピー。
+            var skip = Math.Max(0, SeenPairingIds.Count + 1 - cap);
+            for (int i = skip; i < SeenPairingIds.Count; i++)
+                next.Add(SeenPairingIds[i]);
+            next.Add(pairingId);
+            SeenPairingIds = next;
+            return true;
+        }
+    }
 }

@@ -27,6 +27,47 @@ new_sqlite_classes = ["RelayDO"]
 pattern = "relay.ferry.nephilim.jp"
 custom_domain = true
 
+# === #D-001a Phase B: Firebase Custom Token Auth ===
+
+# Firebase Realtime DB URL (vars - 秘密ではないので環境変数として埋め込み)
+[vars]
+FIREBASE_DATABASE_URL = "https://ferry-edf09-default-rtdb.firebaseio.com"
+
+# deviceId ↔ pubKeySpki binding KV (first-write-wins)
+# Codex 第13弾 #4 (P1) fix: 旧 placeholder "REPLACE_WITH_KV_NAMESPACE_ID" のままだと deploy 後 /auth/token が
+# DEVICE_KEY_BINDING undefined で動かないため、 1llum1n4t1 account 配下に作成済の KV namespace ID を貼る
+# (`pnpm dlx wrangler kv namespace create DEVICE_KEY_BINDING` の出力)。
+# namespace ID 自体は Cloudflare リソース識別子で、 アクセスには API token + account 権限が必要なので
+# 公開しても security 上の悪化はない。
+[[kv_namespaces]]
+binding = "DEVICE_KEY_BINDING"
+id = "1b36c961ac274a3385d7046df6cd7be9"
+
+# Rate Limit bindings (unsafe.bindings)
+# Cloudflare Rate Limit API (2024 Q4 GA)
+[[unsafe.bindings]]
+name = "RATELIMIT_IP"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 60, period = 60 }
+
+[[unsafe.bindings]]
+name = "RATELIMIT_DEVICE"
+type = "ratelimit"
+namespace_id = "1002"
+simple = { limit = 30, period = 60 }
+
+[[unsafe.bindings]]
+name = "RATELIMIT_SESSION"
+type = "ratelimit"
+namespace_id = "1003"
+simple = { limit = 5, period = 60 }
+
+# secret は手動投入:
+#   SA_PATH=$(node -p "require('C:/Users/IMT/dev/Secret/secrets.json').firebase.sa_key_path")
+#   node -p "require('$SA_PATH').private_key" | pnpm dlx wrangler secret put FIREBASE_PRIVATE_KEY
+#   node -p "require('$SA_PATH').client_email" | pnpm dlx wrangler secret put FIREBASE_CLIENT_EMAIL
+
 # === Observability ===
 # Workers 標準のメトリクス + Logpush 連携時の保管設定。
 [observability]

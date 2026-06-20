@@ -19,4 +19,17 @@ public static class AppConstants
 
     /// <summary>WebSocket リレーサーバーの URL（NAT 越え用、Cloudflare Workers + Durable Objects 経由）。</summary>
     public const string RelayUrl = "wss://relay.ferry.nephilim.jp/ferry-relay";
+
+    // === #D-001a Phase B: Firebase Custom Token Auth ===
+    /// <summary>Workers の PC 用 Custom Token 発行エンドポイント。</summary>
+    public const string WorkersAuthTokenUrl = "https://relay.ferry.nephilim.jp/auth/token";
+
+    /// <summary>Workers の Bridge 用 short-lived Custom Token 発行エンドポイント（Bridge から叩く）。</summary>
+    public const string WorkersPairTokenUrl = "https://relay.ferry.nephilim.jp/pair/token";
+
+    /// <summary>
+    /// Firebase Identity Toolkit の Web API Key（公開鍵相当・bridge.js の firebaseConfig.apiKey と同じ）。
+    /// Custom Token を idToken に交換する signInWithCustomToken エンドポイントで使用。
+    /// </summary>
+    public const string FirebaseWebApiKey = "AIzaSyCOPRMYBv4keAHBjvFm4lgdfMoVva6rxTE";
 }

@@ -114,6 +114,9 @@ public partial class MainWindow : Window
     {
         var foreground = IsVisible && WindowState != WindowState.Minimized;
         ConnectionVm?.SetPresencePollingActive(foreground);
+        // CodeRabbit 指摘: PairSyncService の visibility gate もここで配線（旧実装は SetActive が呼ばれず
+        // 常時ポーリング = 帯域節約効果が出ていなかった）。前面復帰時に同期も再開する。
+        (Avalonia.Application.Current as App)?.PairSyncService?.SetActive(foreground);
     }
 
     protected override void OnDataContextChanged(EventArgs e)

@@ -10,4 +10,5 @@ namespace Ferry.Infrastructure;
 /// </summary>
 [JsonSerializable(typeof(AppSettings))]
 [JsonSerializable(typeof(HashSet<string>))]
+[JsonSerializable(typeof(List<string>))]
 internal partial class AppSettingsJsonContext : JsonSerializerContext;

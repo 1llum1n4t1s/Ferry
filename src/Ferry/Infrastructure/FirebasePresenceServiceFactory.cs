@@ -9,8 +9,13 @@ namespace Ferry.Infrastructure;
 public sealed class FirebasePresenceServiceFactory : IPresenceServiceFactory
 {
     private readonly string _databaseUrl;
+    private readonly FirebaseAuthClient? _authClient;
 
-    public FirebasePresenceServiceFactory(string databaseUrl) => _databaseUrl = databaseUrl;
+    public FirebasePresenceServiceFactory(string databaseUrl, FirebaseAuthClient? authClient = null)
+    {
+        _databaseUrl = databaseUrl;
+        _authClient = authClient;
+    }
 
-    public IPresenceService Create() => new FirebaseSignaling(_databaseUrl);
+    public IPresenceService Create() => new FirebaseSignaling(_databaseUrl, _authClient);
 }

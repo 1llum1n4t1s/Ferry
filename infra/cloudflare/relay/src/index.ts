@@ -22,6 +22,25 @@ export interface Env {
   RELAY: DurableObjectNamespace;
   /** pairId ハッシュ化用ソルト。`wrangler secret put SALT` で登録する。 */
   SALT: string;
+
+  // === #D-001a Phase B: Firebase Custom Token Auth (auth.ts) ===
+  /** deviceId ↔ pubKeySpki first-write-wins binding KV (wrangler kv namespace create で作成)。 */
+  DEVICE_KEY_BINDING: KVNamespace;
+  /** Firebase SA PKCS#8 PEM (改行込み)。`cat sa.pem | wrangler secret put FIREBASE_PRIVATE_KEY`。 */
+  FIREBASE_PRIVATE_KEY: string;
+  /** Firebase SA client_email。`wrangler secret put FIREBASE_CLIENT_EMAIL`。 */
+  FIREBASE_CLIENT_EMAIL: string;
+  /** Firebase Realtime DB URL (vars)。例: https://ferry-edf09-default-rtdb.firebaseio.com */
+  FIREBASE_DATABASE_URL: string;
+  /** Rate limit bindings (unsafe.bindings)。 */
+  RATELIMIT_IP?: RateLimit;
+  RATELIMIT_DEVICE?: RateLimit;
+  RATELIMIT_SESSION?: RateLimit;
+}
+
+/** Cloudflare Rate Limit binding の最小型（@cloudflare/workers-types の正式型と互換）。 */
+interface RateLimit {
+  limit(opts: { key: string }): Promise<{ success: boolean }>;
 }
 
 export default {
@@ -31,6 +50,25 @@ export default {
     // ヘルスチェック (curl https://relay.ferry.nephilim.jp/health で疎通確認)
     if (url.pathname === '/health') {
       return new Response('OK', { status: 200 });
+    }
+
+    // #D-001a Phase B: Firebase Custom Token Auth エンドポイント
+    //
+    // Codex P1 指摘: Bridge は https://ferry-edf09.web.app から POST application/json を投げるため、
+    // ブラウザは事前に CORS preflight (OPTIONS) を送る。本 Worker が OPTIONS を扱わないと
+    // Access-Control-Allow-* が返らず Bridge から /pair/token が呼べない (本番 /auth/token も
+    // 直接ブラウザ呼出を想定するならガード必要)。Allowed origins は Firebase Hosting 由来のみ。
+    if (url.pathname === '/auth/token' || url.pathname === '/pair/token') {
+      if (req.method === 'OPTIONS') {
+        return corsPreflightResponse(req);
+      }
+      if (req.method === 'POST') {
+        const { handleAuthToken, handlePairToken } = await import('./auth');
+        const handler = url.pathname === '/auth/token' ? handleAuthToken : handlePairToken;
+        const resp = await handler(req, env);
+        return withCorsHeaders(resp, req);
+      }
+      return new Response('Method Not Allowed', { status: 405, headers: { 'allow': 'POST, OPTIONS' } });
     }
 
     // WebSocket 以外は拒否
@@ -55,6 +93,49 @@ export default {
     return stub.fetch(forwarded);
   },
 };
+
+/**
+ * CORS preflight / レスポンスへのヘッダ付与。
+ *
+ * Allowed origins: 開発の利便で Firebase Hosting の通常ドメイン (web.app / firebaseapp.com) を許可。
+ * 不一致なら ACAO を付けない (= ブラウザがブロック)。Credentials は使わないので Allow-Credentials は不要。
+ */
+const ALLOWED_ORIGIN_SUFFIXES = ['.web.app', '.firebaseapp.com'];
+
+function resolveAllowedOrigin(req: Request): string | null {
+  const origin = req.headers.get('Origin');
+  if (!origin) return null;
+  try {
+    const o = new URL(origin);
+    if (o.protocol !== 'https:') return null;
+    if (ALLOWED_ORIGIN_SUFFIXES.some((sfx) => o.hostname.endsWith(sfx))) return origin;
+  } catch {
+    // invalid URL → no CORS
+  }
+  return null;
+}
+
+function corsPreflightResponse(req: Request): Response {
+  const allowed = resolveAllowedOrigin(req);
+  const headers: Record<string, string> = {
+    'access-control-allow-methods': 'POST, OPTIONS',
+    'access-control-allow-headers': 'content-type',
+    'access-control-max-age': '600',
+    'vary': 'Origin',
+  };
+  if (allowed) headers['access-control-allow-origin'] = allowed;
+  return new Response(null, { status: 204, headers });
+}
+
+function withCorsHeaders(resp: Response, req: Request): Response {
+  const allowed = resolveAllowedOrigin(req);
+  if (!allowed) return resp;
+  // Response は immutable なので新規生成して header を足す
+  const headers = new Headers(resp.headers);
+  headers.set('access-control-allow-origin', allowed);
+  headers.set('vary', 'Origin');
+  return new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers });
+}
 
 async function hashPairId(pairId: string, salt: string): Promise<string> {
   const data = new TextEncoder().encode(pairId + '|' + salt);
@@ -108,10 +189,20 @@ export class RelayDO {
     this.state.acceptWebSocket(server, [role]);
 
     // 2 peer 揃った瞬間に両方へ "ready" を送り、クライアントの WaitForReadyAsync を通過させる。
-    const sockets = this.state.getWebSockets();
-    if (sockets.length === 2) {
+    // Codex P2 fix (第10弾 #5): admission filter (OPEN/CONNECTING) と整合させる。
+    // 旧実装は unfiltered な getWebSockets() を `=== 2` で評価していたため、
+    // reconnect で CLOSING/CLOSED な古い socket が DO に残っていると以下の race が起きていた:
+    //   admission: live=1 (closed を除外) なので 2 人目を accept
+    //   ready check: sockets.length === 3 (closed 1 + live 2) なので ready 不送出
+    // 結果、両クライアントの WaitForReadyAsync が timeout する。
+    // ready check も live filter された sockets で評価することでこの race を解消する。
+    // 新規 accept 直後は readyState が CONNECTING の可能性があるので、改めて live を取り直す。
+    const liveAfterAccept = this.state
+      .getWebSockets()
+      .filter((ws) => ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING);
+    if (liveAfterAccept.length === 2) {
       console.log(`[relay] ready room=${room} (2 peers paired)`);
-      for (const ws of sockets) {
+      for (const ws of liveAfterAccept) {
         try {
           ws.send('ready');
         } catch {

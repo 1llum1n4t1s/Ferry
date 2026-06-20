@@ -26,6 +26,9 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     private readonly IQrCodeService _qrCodeService;
     private readonly ISettingsService _settingsService;
     private readonly IPeerRegistryService _peerRegistry;
+    // #D-001a Phase B §6.3: Firebase pairs/{pairId} DELETE 失敗時の再試行キュー。
+    // 注入経由（null 許容）= テストや過渡期で未配線でも動く。
+    private readonly PendingPairDeleteQueue? _pendingPairDeletes;
     // rere #B1-001: presence は Infrastructure を直接 new せず、Services 抽象のファクトリ経由で生成する。
     private readonly IPresenceServiceFactory _presenceFactory;
 
@@ -44,6 +47,13 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
 
     /// <summary>② 選択ピア優先ポーリングのサイクルカウンタ。FullPollEveryNCycles の剰余で全ピア取得回を決める。</summary>
     private long _pollCycle;
+
+    /// <summary>Codex P2 fix (第4弾 verify): 手動 RemovePeerAsync 経路が PeerRegistry の PeerRemoved event を再 trigger
+    /// するのを抑制する。TryAdd してから RemovePeerAsync を呼び、handler 側で TryRemove() の戻り値が true なら skip。
+    /// これで手動経路と handler 経路で StartSessionAsync が二重発火するのを防ぐ。
+    /// ConcurrentDictionary で UI スレッド (Add) と PairSyncService の worker スレッド (PeerRemoved event handler の Remove)
+    /// からの同時アクセスを thread-safe にする。HashSet は同時アクセスで内部バケットが破壊される。</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _locallyInitiatedRemovals = new();
 
     [ObservableProperty]
     public partial PeerState ConnectionState { get; set; } = PeerState.Disconnected;
@@ -110,13 +120,15 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         IQrCodeService qrCodeService,
         ISettingsService settingsService,
         IPeerRegistryService peerRegistry,
-        IPresenceServiceFactory presenceFactory)
+        IPresenceServiceFactory presenceFactory,
+        PendingPairDeleteQueue? pendingPairDeletes = null)
     {
         _connectionService = connectionService;
         _qrCodeService = qrCodeService;
         _settingsService = settingsService;
         _peerRegistry = peerRegistry;
         _presenceFactory = presenceFactory;
+        _pendingPairDeletes = pendingPairDeletes;
 
         _connectionService.StateChanged += OnStateChanged;
         _connectionService.RouteChanged += OnRouteChanged;
@@ -130,6 +142,9 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             PairedPeers.Add(peer);
         }
         UpdateHasPairedPeers();
+        // Codex P2 fix: PairSyncService が remote unpair を検知して peerRegistry から削除した時、
+        // UI 側 PairedPeers を即時に追従させる（旧実装は再起動まで古い peer が UI に残っていた）。
+        _peerRegistry.PeerRemoved += OnPeerRemovedFromRegistry;
 
         // rere PR#8 #F4: プレゼンス監視 (heartbeat + ポーリング) は実 Firebase への書き込み I/O を伴う。
         // ctor で起動すると、テストが VM を直接 new しただけで本番 Firebase に presence を書き込む汚染が
@@ -151,11 +166,12 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             var settings = _settingsService.Settings;
             SessionId = await _connectionService.StartPairingSessionAsync();
 
-            // Bridge ページ URL に sessionId / PC 名 / 公開鍵(rere #D-001(b)) を付与して QR コード生成。
-            // pk は base64url なので URL 安全。空のときは &pk= となり Bridge 側は単に無視する。
+            // Bridge ページ URL に sessionId / PC 名 / 公開鍵(rere #D-001(b)) / 認証 nonce(#D-001a Phase B) を付与して QR コード生成。
+            // pk は base64url・nonce は 32hex なので URL 安全。空のときは &pk= となり Bridge 側は単に無視する。
             var displayName = Uri.EscapeDataString(settings.DisplayName);
             var pk = _connectionService.PublicKeyForQr;
-            var bridgeUrl = $"{AppConstants.BridgePageUrl}?sid={SessionId}&name={displayName}&pk={pk}";
+            var nonce = _connectionService.LastPairingNonce;
+            var bridgeUrl = $"{AppConstants.BridgePageUrl}?sid={SessionId}&name={displayName}&pk={pk}&nonce={nonce}";
             PairingUrl = bridgeUrl;
             QrCodeImage = _qrCodeService.GenerateQrBitmap(bridgeUrl);
 
@@ -180,33 +196,77 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private async Task RemovePeerAsync(string peerId)
     {
-        var peer = PairedPeers.FirstOrDefault(p => p.PeerId == peerId);
-        await _peerRegistry.RemovePeerAsync(peerId);
-        if (peer != null)
+        // Codex P2 fix (第4弾 verify): 印付けを関数頭に移動する。PairSyncService が remote unpair を
+        // 観測する race window (DeletePairFromFirebaseAsync 中に PeerRegistry → PeerRemoved 発火) で
+        // handler が先回りして二重クリーンアップする可能性を防ぐ。
+        // finally で TryRemove する: peer 不在で PeerRemoved event が発火しなかったケースでも
+        // marker leak しないようにする (通常経路では handler が既に TryRemove 済みなので no-op)。
+        _locallyInitiatedRemovals.TryAdd(peerId, 0);
+        // Codex 第12弾 #3 (P2) fix: PeerRegistry にも「削除 in-flight」marker を立てる。
+        // 旧実装は Firebase DELETE → registry.RemovePeerAsync という順序で、 DELETE が走っている間は
+        // 依然 FindPeer(peerId) != null。 直前の PairingCompleted で起動した
+        // WritePairRecordWithFallback の責任者書込 (即時) や 30s fallback が同 window で発火すると
+        // 「peer が居る → PUT pairs/{pairId}」を実行して削除済みペアを resurrect 、 相手側に unpair を
+        // 観測させない race があった。 marker を先に立てれば writer 側が IsPendingRemoval=true で abort する。
+        // finally で必ず ClearPendingRemoval。
+        _peerRegistry.MarkPendingRemoval(peerId);
+        try
         {
-            peer.WentOnline -= OnPeerWentOnline;
-            PairedPeers.Remove(peer);
-        }
-        // rere #C2-001: 削除済みピアの presence ETag キャッシュ stale エントリを除去する。
-        _presenceSignaling?.ForgetPresence(peerId);
-        UpdateHasPairedPeers();
+            var peer = PairedPeers.FirstOrDefault(p => p.PeerId == peerId);
 
-        if (SelectedPeer?.PeerId == peerId)
-        {
-            SelectedPeer = null;
-            await _connectionService.DisconnectAsync();
-        }
-        else if (_connectionService.CurrentListeningPeerId == peerId)
-        {
-            // タブ切替 (DeselectKeepingListener) で SelectedPeer 外のピアを着信監視中に、
-            // そのピアが削除されたケース。削除済みピアの offer を受け続けないよう監視を停止する。
-            _connectionService.StopListeningForConnection();
-        }
+            // #D-001a Phase B §6.3: Firebase pairs/{pairId} を SSoT として削除する。
+            // 失敗（オフライン等）したら PendingPairDeleteQueue に積んで起動時 retry に委ねる。
+            try
+            {
+                await _connectionService.DeletePairFromFirebaseAsync(peerId);
+            }
+            catch (Exception ex)
+            {
+                var pairId = _connectionService.GeneratePairIdFor(peerId);
+                Util.Logger.Log($"pairs/{pairId} 即時 DELETE 失敗 → PendingPairDeleteQueue へ: {ex.Message}", Util.LogLevel.Warning);
+                if (_pendingPairDeletes != null)
+                    await _pendingPairDeletes.EnqueueAsync(pairId);
+            }
 
-        // ペアが全て削除されたら QR コードを再表示
-        if (PairedPeers.Count == 0)
+            // PeerRemoved event は同期発火し OnPeerRemovedFromRegistry がこの印を TryRemove() で消費する
+            // → handler 側は二重実行 (StartSessionAsync race 含む) を skip する。
+            await _peerRegistry.RemovePeerAsync(peerId);
+            if (peer != null)
+            {
+                peer.WentOnline -= OnPeerWentOnline;
+                PairedPeers.Remove(peer);
+            }
+            // rere #C2-001: 削除済みピアの presence ETag キャッシュ stale エントリを除去する。
+            _presenceSignaling?.ForgetPresence(peerId);
+            UpdateHasPairedPeers();
+
+            if (SelectedPeer?.PeerId == peerId)
+            {
+                SelectedPeer = null;
+                await _connectionService.DisconnectAsync();
+            }
+            else if (_connectionService.CurrentListeningPeerId == peerId)
+            {
+                // タブ切替 (DeselectKeepingListener) で SelectedPeer 外のピアを着信監視中に、
+                // そのピアが削除されたケース。削除済みピアの offer を受け続けないよう監視を停止する。
+                _connectionService.StopListeningForConnection();
+            }
+
+            // ペアが全て削除されたら QR コードを再表示
+            if (PairedPeers.Count == 0)
+            {
+                StartSessionCommand.Execute(null);
+            }
+        }
+        finally
         {
-            StartSessionCommand.Execute(null);
+            // peer 不在で PeerRemoved event が発火しなかった (RemovePeerAsync が false 返却) ケースに備えて
+            // marker leak を防ぐ。通常経路では既に handler が TryRemove 済みなので no-op。
+            _locallyInitiatedRemovals.TryRemove(peerId, out _);
+            // Codex 第12弾 #3 (P2) fix: PeerRegistry の pending-removal marker も必ず掃除する。
+            // 30s fallback writer はこの marker が残っている間 abort するが、 marker を残し続けると
+            // 同一 peerId で再ペアリングしたケースの writer まで abort されてしまう。
+            _peerRegistry.ClearPendingRemoval(peerId);
         }
     }
 
@@ -606,6 +666,58 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
 
     private void UpdateHasPairedPeers() => HasPairedPeers = PairedPeers.Count > 0;
 
+    /// <summary>
+    /// Codex P2 fix: <see cref="IPeerRegistryService.PeerRemoved"/> ハンドラ。PairSyncService が remote unpair を
+    /// 検知して peerRegistry から peer を消したとき、UI 側 PairedPeers と presence 監視も同期的に外す。
+    /// </summary>
+    private void OnPeerRemovedFromRegistry(object? sender, string peerId)
+    {
+        // Codex P2 fix (第4弾): 手動 RemovePeerAsync 経路が既に全クリーンアップを実行済みの場合は skip。
+        // event は同期発火するので Dispatcher.Post する前の outer scope で判定する必要がある
+        // (Post 後だと UI スレッドに切り替わるまでに別の event が来て印を消費し race する)。
+        if (_locallyInitiatedRemovals.TryRemove(peerId, out _)) return;
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+        {
+            try
+            {
+                var peer = PairedPeers.FirstOrDefault(p => p.PeerId == peerId);
+                if (peer != null)
+                {
+                    peer.WentOnline -= OnPeerWentOnline;
+                    PairedPeers.Remove(peer);
+                }
+                _presenceSignaling?.ForgetPresence(peerId);
+                UpdateHasPairedPeers();
+
+                // Codex P2 fix (第2弾): 手動 RemovePeerAsync と同等のフルクリーンアップを適用。
+                // 旧実装は PairedPeers 表示の更新だけで、SelectedPeer / 接続中状態 / CurrentListeningPeerId
+                // が残ったままアプリが「もう存在しない peer」を listen / 送信し続ける状態だった。
+                if (SelectedPeer?.PeerId == peerId)
+                {
+                    SelectedPeer = null;
+                    try { await _connectionService.DisconnectAsync(); }
+                    catch (Exception ex) { Util.Logger.Log($"PairSync 削除後の DisconnectAsync エラー (継続): {ex.Message}", Util.LogLevel.Debug); }
+                }
+                else if (_connectionService.CurrentListeningPeerId == peerId)
+                {
+                    _connectionService.StopListeningForConnection();
+                }
+
+                if (PairedPeers.Count == 0)
+                {
+                    // 手動削除パスでは「最後の 1 件削除で QR 再表示」していた。PairSync 由来の削除でも対称に揃える。
+                    try { await StartSessionAsync(); }
+                    catch (Exception ex) { Util.Logger.Log($"PairSync 全削除後の StartSession エラー (継続): {ex.Message}", Util.LogLevel.Debug); }
+                }
+            }
+            catch (Exception ex)
+            {
+                Util.Logger.Log($"OnPeerRemovedFromRegistry エラー: {ex.Message}", Util.LogLevel.Warning);
+            }
+        });
+    }
+
     // === プレゼンス監視 ===
 
     /// <summary>
@@ -775,6 +887,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         _connectionService.RouteChanged -= OnRouteChanged;
         _connectionService.PairingCompleted -= OnPairingCompleted;
         _connectionService.StatusMessageChanged -= OnStatusMessageChanged;
+        _peerRegistry.PeerRemoved -= OnPeerRemovedFromRegistry;
         ClearQrCodeImage();
 
         // 全ピアの WentOnline 購読を解除

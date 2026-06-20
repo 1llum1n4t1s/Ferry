@@ -32,6 +32,15 @@ public partial class App : Application
     /// <summary>TransferService のインスタンス（MainWindow からのアクセス用）。</summary>
     public ITransferService? TransferService { get; private set; }
 
+    /// <summary>
+    /// PairSyncService のインスタンス（MainWindow の visibility ハンドラから <see cref="PairSyncService.SetActive"/> を
+    /// 呼ぶための公開ハンドル）。CodeRabbit 指摘で SetActive 配線が抜けていたのを補う。
+    /// </summary>
+    public PairSyncService? PairSyncService { get; private set; }
+
+    /// <summary>PendingPairDelete 定期処理タスクの cancellation。終了時にキャンセルする。</summary>
+    private System.Threading.CancellationTokenSource? _pendingDeleteCts;
+
     /// <summary>自動更新の配信元 URL（Cloudflare R2 ferry-updates 経由）。</summary>
     private const string UpdateBaseUrl = "https://ferry.nephilim.jp";
 
@@ -84,6 +93,11 @@ public partial class App : Application
 
     public override void Initialize()
     {
+        // macOS のメニューバーに表示するアプリ名を Avalonia の Application.Name 経由で固定する。
+        // 旧実装は未設定で、bundle 化されていないビルドや一部経路で macOS が "Avalonia Application"
+        // (Avalonia デフォルト) と表示してしまっていた。CFBundleName + Application.Name の両方に
+        // "Ferry" を入れることで .app 起動 / dotnet run のどちらでもメニューバーが Ferry になる。
+        Name = "Ferry";
         AvaloniaXamlLoader.Load(this);
     }
 
@@ -146,10 +160,130 @@ public partial class App : Application
                 settingsService.SetAutoStart(true);
 
             // rere #D-001(b): 長期 ECDH 鍵（%APPDATA%\Ferry\identity.key）。QR の公開鍵交換と PairSecret 導出に使う。
-            var deviceIdentity = Infrastructure.DeviceIdentity.CreateDefault();
-            // peerRegistry / settingsService は暗号チャネルの PairSecret 引き当て・フラグ参照に使うため先に生成して注入する。
+            // Codex 第6弾 #6 (P2): identity.key 永続化 (write) 失敗時は ephemeral key で続行せず起動を中止する。
+            // Codex 第12弾 #2 (P2): 読込 (read/import) 失敗も同様に startup を中止する。
+            // 旧実装は load failure を warning ログ + silent regenerate で握り潰し → 一時 lock / 権限不足 /
+            // corrupt import error で本来読めたはずの旧鍵が新鍵で上書きされ、 次の /auth/token が
+            // DEVICE_PUBKEY_MISMATCH を返して既存ペアが unrecoverable になる経路を作っていた。
+            // load/save どちらの失敗も DeviceIdentity 側で InvalidOperationException として throw されるので、
+            // ここで catch して startup abort し、ユーザーに OS 側の問題解決を促す。
+            Infrastructure.DeviceIdentity deviceIdentity;
+            try
+            {
+                deviceIdentity = Infrastructure.DeviceIdentity.CreateDefault();
+            }
+            catch (Exception ex)
+            {
+                Util.Logger.Log($"identity.key の load/save 失敗のため起動を中止します: {ex.Message}", Util.LogLevel.Error);
+                // Avalonia の lifetime はまだ Run していない (この後 desktop.MainWindow を設定して Start) ので、
+                // ダイアログ表示は過剰。ログを残してプロセスを exit code 1 で落とす。
+                Environment.Exit(1);
+                return;  // unreachable だが deviceIdentity の definite-assignment のため
+            }
+            // #D-001a Phase B: Firebase Custom Token Auth クライアント。バックグラウンドで /auth/token に
+            // 署名チャレンジ → idToken 取得 → 50min ごとに refresh。FirebaseSignaling のすべての REST に注入される。
+            var firebaseAuthClient = new Infrastructure.FirebaseAuthClient(deviceIdentity, settings.DeviceId);
+            // peerRegistry を IdentityLost ハンドラより前で宣言（lambda capture 解析のため）
             var peerRegistry = new PeerRegistryService();
-            var connectionService = new ConnectionService(AppConstants.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName, deviceIdentity, peerRegistry, settingsService)
+            firebaseAuthClient.IdentityLost += (_, _) =>
+            {
+                Util.Logger.Log("identity.key 紛失イベントを検知 → clean slate UI を表示", Util.LogLevel.Warning);
+                // UI スレッドで IdentityLostDialog を表示し、[やり直す] なら DeviceId + identity.key + peers.json を一括リセット。
+                _ = Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+                {
+                    try
+                    {
+                        var dialog = new Views.IdentityLostDialog();
+                        var owner = GetMainWindow();
+                        if (owner != null && owner.IsVisible)
+                        {
+                            await dialog.ShowDialog(owner);
+                        }
+                        else
+                        {
+                            // owner 不在時の dialog.Show() は非ブロックなので、Closed まで TCS で待つ。
+                            // これが無いと ResetConfirmed が初期値 false のまま即座に評価され、
+                            // [やり直す] が選ばれても clean slate が実行されない (CodeRabbit 指摘)。
+                            var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
+                            dialog.Closed += (_, _) => tcs.TrySetResult(true);
+                            dialog.Show();
+                            await tcs.Task;
+                        }
+                        if (!dialog.ResetConfirmed)
+                        {
+                            Util.Logger.Log("identity 紛失: ユーザーが [後で] を選択（オフラインモードで継続）");
+                            return;
+                        }
+                        // clean slate 実行 (Codex P2 fix 第9弾 #5): 順序を入れ替え、new key + peer cleanup を
+                        // 先に成功させてから new DeviceId を commit する。旧実装は settings.json への new DeviceId
+                        // 保存を最初に行い、後続失敗時もログのみで rollback しなかった。結果 settings.json は
+                        // new DeviceId、identity.key は失敗で古いまま → 次回起動で DEVICE_PUBKEY_MISMATCH or
+                        // peer-not-found 状態。新順序なら 1/2 で throw した場合 settings.json は無傷で残り、
+                        // 次回起動で旧 identity に戻る（rollback 不要・自動リカバリ）。
+                        var newDeviceId = System.Guid.NewGuid().ToString("N");
+                        // 1. identity.key を破棄して新規生成（失敗時 throw → settings.json 未変更で旧 DeviceId 維持）
+                        var keyPath = System.IO.Path.Combine(
+                            System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData),
+                            "Ferry", "identity.key");
+                        Infrastructure.DeviceIdentity.RegenerateAndSave(keyPath).Dispose();  // 新鍵をディスクに保存
+                        // 2. peers.json を空にする（既存ペアは PairSecret も含めて全消去）。
+                        //    失敗時 throw → settings.json 未変更で旧 DeviceId 維持（次回起動で旧 identity に戻る）。
+                        foreach (var p in peerRegistry.GetPairedPeers().ToList())
+                            await peerRegistry.RemovePeerAsync(p.PeerId);
+                        // 3. 最後に new DeviceId を commit（settings.json 書込）。ここまで来たら 1/2 は成功済み。
+                        settings.DeviceId = newDeviceId;
+                        await settingsService.SaveAsync();
+                        Util.Logger.Log("identity 紛失リカバリー完了 - アプリを終了します");
+                        // 4. in-memory の deviceIdentity / firebaseAuthClient は古い鍵を保持しているため、
+                        //    続行すると次回 /auth/token でまた DEVICE_PUBKEY_MISMATCH → ダイアログ無限ループに陥る。
+                        //    確認ダイアログを表示してからプロセスを終了し、次回起動で新鍵で再構築させる。
+                        await Views.IdentityLostDialog.ShowRestartRequiredAsync(GetMainWindow());
+                        if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
+                            desktop.TryShutdown(0);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Codex P2 fix (第9弾 #5): rollback 不要。clean slate の順序入替により
+                        // 失敗時の状態は以下のいずれかで、いずれも次回起動の自動リカバリで収束する:
+                        //   - RegenerateAndSave 失敗: settings.json 未変更 → 旧 identity.key が残っていれば旧 DeviceId と整合
+                        //   - peer cleanup 途中失敗: settings.json 未変更 → 旧 DeviceId のまま、一部 peer が消えた状態（再ペアリングで復旧）
+                        //   - SaveAsync 失敗: identity.key は新鍵、settings.json は旧 DeviceId →
+                        //       次回起動の IdentityLost ハンドラ経由で再度 clean slate UI が出る（ダイアログ無限ループには陥らない）
+                        Util.Logger.Log($"identity 紛失リカバリー UI でエラー: {ex.Message}", Util.LogLevel.Error);
+                    }
+                });
+            };
+            // 初回 SignIn を fire-and-forget で開始。完了前の Firebase 操作は GetIdTokenAsync で例外になり、
+            // 既存リトライ経路で吸収される（実装の段階性を保つ）。
+            // Codex P2 fix: 初回失敗時 (起動時 offline 等) は EnsureRefreshLoopStarted で refresh ループを
+            // 立ち上げてバックグラウンド再試行に委ねる（旧実装は失敗時に何もせず永遠 unauthenticated 状態が続いた）。
+            _ = System.Threading.Tasks.Task.Run(async () =>
+            {
+                try
+                {
+                    // Codex P2 fix (第11弾 #4 verify minor): EnsureSignInAsync (semaphore 直列化版) に統一する。
+                    // 旧実装は SignInAsync() を fire-and-forget で呼んでいたため、 PendingPairDeleteQueue の
+                    // 起動 retry 経路 (line 335) の EnsureSignInAsync と完全並行で 2 回走り、
+                    // /auth/token と signInWithCustomToken に余分な POST + RefreshLoop の二重起動 race が発生していた。
+                    // EnsureSignInAsync は冪等で _signInSemaphore で直列化されるので、 並行呼出が来ても 1 回しか走らない。
+                    await firebaseAuthClient.EnsureSignInAsync();
+                }
+                catch (Infrastructure.IdentityLostException)
+                {
+                    // IdentityLost イベント発火済み → clean slate UI が処理する
+                }
+                catch (Exception ex)
+                {
+                    Util.Logger.Log($"Firebase Auth 初回 SignIn 失敗（refresh ループに委譲して短期バックオフで再試行）: {ex.Message}", Util.LogLevel.Warning);
+                    firebaseAuthClient.EnsureRefreshLoopStarted(startWithBackoff: true);
+                }
+            });
+            // peerRegistry / settingsService は暗号チャネルの PairSecret 引き当て・フラグ参照に使うため先に生成して注入する。
+            // peerRegistry は上の IdentityLost ハンドラより前で宣言済み。
+            // #D-001a Phase B §6.3: Firebase pairs DELETE が失敗したときの再試行キュー（pending-pair-deletes.json）。
+            // Codex P2 fix (第4弾): ConnectionService に注入して pairs/{pairId} 書込成功時に queued delete を取り消す。
+            var pendingPairDeletes = new PendingPairDeleteQueue();
+            var connectionService = new ConnectionService(AppConstants.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName, deviceIdentity, peerRegistry, settingsService, firebaseAuthClient, pendingPairDeletes)
             {
                 RelayUrl = AppConstants.RelayUrl,
             };
@@ -170,8 +304,67 @@ public partial class App : Application
             };
 
             // rere #B1-001: presence は Infrastructure を VM が直接 new せず、ファクトリ経由で生成する。
-            var presenceFactory = new FirebasePresenceServiceFactory(AppConstants.FirebaseDatabaseUrl);
-            var connectionVm = new ConnectionViewModel(connectionService, qrCodeService, settingsService, peerRegistry, presenceFactory);
+            // #D-001a Phase B: presence も auth 付き REST が必須（rules 厳格化で auth.uid==$deviceId 強制）。
+            var presenceFactory = new FirebasePresenceServiceFactory(AppConstants.FirebaseDatabaseUrl, firebaseAuthClient);
+            // #D-001a Phase B §6.2: pairs/{pairId} SSoT のローカル同期サービス（起動時即 + 5min + 1h）。
+            // 専用の FirebaseSignaling インスタンスを持たせる（ConnectionService の _signaling と独立、
+            // ライフサイクル分離）。Visibility gate は MainWindow から SetActive を呼ぶ。
+            var pairSyncSignaling = new Infrastructure.FirebaseSignaling(AppConstants.FirebaseDatabaseUrl, firebaseAuthClient);
+            // Codex 第13弾 #3 (P2) fix: authClient を渡して PairSyncService の起動時 immediate sync が
+            // EnsureSignInAsync を待ってから走るようにする。 旧実装は fire-and-forget SignIn と並行で
+            // 401 を unknown 扱い → start-minimized tray で 15min まで反映遅延、 という race があった。
+            var pairSyncService = new PairSyncService(pairSyncSignaling, peerRegistry, settings.DeviceId, firebaseAuthClient);
+            PairSyncService = pairSyncService;  // MainWindow の visibility ハンドラから SetActive を呼ぶための公開
+            pairSyncService.Start();
+            var connectionVm = new ConnectionViewModel(connectionService, qrCodeService, settingsService, peerRegistry, presenceFactory, pendingPairDeletes);
+            // 起動時 + 10min ごとに未処理の DELETE retry を実行（オフライン中に削除した分の遅延反映 + 起動後に
+            // enqueue された分の追従）。Codex P2 fix: 旧実装は起動時のみ呼出で、起動後に enqueue された分は
+            // 次再起動まで処理されなかった。バックグラウンドタイマで定期処理する。
+            _pendingDeleteCts = new System.Threading.CancellationTokenSource();
+            var pendingDeleteCtsToken = _pendingDeleteCts.Token;
+            _ = System.Threading.Tasks.Task.Run(async () =>
+            {
+                async Task<bool> DeleteOne(string pairId)
+                {
+                    try
+                    {
+                        using var sig = new Infrastructure.FirebaseSignaling(AppConstants.FirebaseDatabaseUrl, firebaseAuthClient);
+                        await sig.DeletePairAsync(pairId);
+                        Util.Logger.Log($"pairs/{pairId} retry DELETE 成功");
+                        return true;
+                    }
+                    catch { return false; }
+                }
+                // 起動直後 1 回
+                // Codex P2 fix (第11弾 #4): 直前 line 261 の SignInAsync() が fire-and-forget のため、
+                // ここで ProcessAsync を呼ぶと auth 完了前の DeleteOne が「not signed in yet」例外で失敗扱いになり、
+                // RetryCount が進んで数秒後に auth 成功しても 12h/24h backoff まで進んでしまう。
+                // EnsureSignInAsync は冪等なので（auth 既完了なら no-op、未完了なら待機）、retry の前に await して
+                // auth 完了を待ってから ProcessAsync を走らせる。auth 失敗ならこのサイクルはスキップして
+                // 次の 10min サイクルへ（refresh ループが裏でリトライ中）。
+                bool authReady = false;
+                try { await firebaseAuthClient.EnsureSignInAsync(pendingDeleteCtsToken); authReady = true; }
+                catch (OperationCanceledException) { return; }
+                catch (Exception ex) { Util.Logger.Log($"PendingPairDelete 起動時 auth 待機エラー（retry をスキップして 10min 後再試行）: {ex.Message}", Util.LogLevel.Warning); }
+                if (authReady)
+                {
+                    try { await pendingPairDeletes.ProcessAsync(DeleteOne); }
+                    catch (Exception ex) { Util.Logger.Log($"PendingPairDelete 起動時処理エラー: {ex.Message}", Util.LogLevel.Warning); }
+                }
+                // 以降 10min ごと（ペア削除 enqueue の遅延上限）
+                while (!pendingDeleteCtsToken.IsCancellationRequested)
+                {
+                    try { await System.Threading.Tasks.Task.Delay(TimeSpan.FromMinutes(10), pendingDeleteCtsToken); }
+                    catch (OperationCanceledException) { return; }
+                    if (pendingPairDeletes.Count == 0) continue;
+                    // 定期処理経路でも同様に auth 完了を待つ（refresh ループが失敗中なら ProcessAsync をスキップ）。
+                    try { await firebaseAuthClient.EnsureSignInAsync(pendingDeleteCtsToken); }
+                    catch (OperationCanceledException) { return; }
+                    catch (Exception ex) { Util.Logger.Log($"PendingPairDelete 定期 auth 待機エラー（このサイクルはスキップ）: {ex.Message}", Util.LogLevel.Warning); continue; }
+                    try { await pendingPairDeletes.ProcessAsync(DeleteOne); }
+                    catch (Exception ex) { Util.Logger.Log($"PendingPairDelete 定期処理エラー: {ex.Message}", Util.LogLevel.Warning); }
+                }
+            });
             // rere PR#8 #F4: プレゼンス監視は実 Firebase I/O を伴うため ctor ではなく本番起動時にここで開始する。
             connectionVm.StartPresenceMonitoring();
             var transferVm = new TransferViewModel(connectionService, transferService, connectionVm, settingsService);
@@ -209,7 +402,12 @@ public partial class App : Application
             {
                 DisposeQuietly(mainVm, nameof(MainWindowViewModel));
                 DisposeQuietly(transferService, nameof(TransferService));
+                DisposeQuietly(pairSyncService, nameof(PairSyncService));
+                DisposeQuietly(pairSyncSignaling, nameof(Infrastructure.FirebaseSignaling));
                 DisposeQuietly(connectionService, nameof(ConnectionService));
+                // #D-001a Phase B: FirebaseAuthClient は FirebaseSignaling から AuthTokenAsyncFactory 経由で
+                // 参照されている可能性があるため、ConnectionService 破棄後に破棄する。
+                DisposeQuietly(firebaseAuthClient, nameof(Infrastructure.FirebaseAuthClient));
                 // ConnectionService が参照を持つので、それを破棄した後に鍵を破棄する。
                 DisposeQuietly(deviceIdentity, nameof(Infrastructure.DeviceIdentity));
             };

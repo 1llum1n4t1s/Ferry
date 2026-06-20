@@ -43,10 +43,14 @@ let db = null;
 let html5QrCode = null;
 // ペアリング処理の重複実行を防ぐフラグ（カメラ連続読取の二重実行を防ぐ）
 let pairingInProgress = false;
-// Bridge 起動時に確定する PC-A の sid / name / pk (カメラ読取コールバックから参照)
+// Bridge 起動時に確定する PC-A の sid / name / pk / nonce (カメラ読取コールバックから参照)
 let resolvedSidA = null;
 let resolvedNameA = null;
 let resolvedPkA = "";
+let resolvedNonceA = "";  // #D-001a Phase B: QR に埋め込まれた PC-A の PairingNonce
+
+// Workers /pair/token エンドポイント (Bridge 用 short-lived Custom Token 発行)
+const PAIR_TOKEN_URL = "https://relay.ferry.nephilim.jp/pair/token";
 
 /**
  * URL パラメータを取得する。
@@ -58,6 +62,8 @@ function getParams() {
         name: params.get("name") ? decodeURIComponent(params.get("name")) : null,
         // rere #D-001(b): 長期公開鍵(base64url)。Bridge は中身を解釈せず文字列のまま中継する。
         pk: params.get("pk") || "",
+        // #D-001a Phase B: Workers /pair/token に渡す PairingNonce (PC 側 sessions/{sid}/PairingNonce と一致する)
+        nonce: params.get("nonce") || "",
     };
 }
 
@@ -115,9 +121,10 @@ function parseQrUrl(text) {
             sid: params.get("sid"),
             name: params.get("name") ? decodeURIComponent(params.get("name")) : null,
             pk: params.get("pk") || "",
+            nonce: params.get("nonce") || "",  // #D-001a Phase B
         };
     } catch {
-        return { sid: null, name: null, pk: "" };
+        return { sid: null, name: null, pk: "", nonce: "" };
     }
 }
 
@@ -125,10 +132,22 @@ function parseQrUrl(text) {
  * sidA と sidB を Firebase pairings/ に書き込んでペアリングを成立させる。
  * カメラ経路 / URL 貼り付け経路の共通処理。
  */
-async function performPairing(sidA, nameA, sidB, nameB, pkA, pkB) {
+async function performPairing(sidA, nameA, sidB, nameB, pkA, pkB, nonceB) {
     // 重複実行防止（同時にカメラ読取 + 貼り付け確定が起きた場合の保険）
     if (pairingInProgress) return;
     pairingInProgress = true;
+
+    // Codex P1 (第2弾): peer (sidB) の nonce を再認証で Workers に提示。これに成功してから
+    // pairings の atomic multi-path update を行う。ensureAuth (2 回目) で sidA+nonceA に
+    // 加え sidB+nonceB も同時 verify するため、Bridge が 2 つの QR を物理的にスキャンした
+    // 証拠が server side で揺るぎなく成立する。
+    try {
+        await ensureAuth(sidA, resolvedNonceA, sidB, nonceB);
+    } catch (err) {
+        pairingInProgress = false;
+        showError(`ペアリング相手認証エラー: ${err.message}`);
+        return;
+    }
 
     // カメラ停止 + 進行表示
     stopCamera();
@@ -147,9 +166,10 @@ async function performPairing(sidA, nameA, sidB, nameB, pkA, pkB) {
             return;
         }
 
-        // pairings/ にペアリング情報を書き込み
+        // #D-001a Phase B: pairings/{deviceId}/{pid} per-device path に atomic multi-path update で書く。
+        // 1 回の update で両 deviceId 配下に同時書込（片側成功・片側失敗が構造的に起こらない）。
         const pairingId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        await db.ref(`pairings/${pairingId}`).set({
+        const data = {
             SidA: sidA,
             SidB: sidB,
             NameA: nameA || "PC-A",
@@ -158,13 +178,51 @@ async function performPairing(sidA, nameA, sidB, nameB, pkA, pkB) {
             // rere #D-001(b): 両 PC の公開鍵を中継。受信側が session 削除レースに依らず PairSecret を導出できる。
             PkA: pkA || "",
             PkB: pkB || (snapB.val().PublicKey || ""),
-        });
+        };
+        const updates = {};
+        updates[`pairings/${sidA}/${pairingId}`] = data;
+        updates[`pairings/${sidB}/${pairingId}`] = data;
+        await db.ref().update(updates);
 
         showPaired(nameA || "PC-A", nameB || snapB.val().DisplayName || "PC-B");
+        // Codex P1 補足: ペアリング完了したら即 signOut。NONE persistence と併せて auth セッションを完全破棄。
+        firebase.auth().signOut().catch(() => { /* 失敗は無視 (タブを閉じれば消える) */ });
     } catch (err) {
         pairingInProgress = false;
         showError(`ペアリングエラー: ${err.message}`);
     }
+}
+
+/**
+ * #D-001a Phase B: Workers /pair/token で short-lived Custom Token を取得し
+ * Firebase Auth に signInWithCustomToken でログインする。
+ * 失敗時は例外を投げる（呼出側で showError）。
+ */
+async function ensureAuth(sessionId, pairingNonce, peerSessionId, peerPairingNonce) {
+    if (!pairingNonce) {
+        throw new Error("QR に PairingNonce が含まれていません（古い PC バージョンの可能性）");
+    }
+    // Codex P1 指摘: signInWithCustomToken のデフォルトは LOCAL persistence (refresh token を localStorage に保存)。
+    // ペアリング後もスマホ側に sidA として書ける長期 auth セッションが残るのは攻撃面（nonce/session 期限後でも
+    // 再度 pairings/{sidA}/... に書ける）。NONE に倒してタブを閉じれば auth が消えるようにする。
+    await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.NONE);
+    // Codex P1 (第2弾): peerSessionId/peerPairingNonce が与えられていたら Workers に同時提示して
+    // 両側の物理スキャンを証明する (片側 verify では Ghost peer 注入余地が残っていた)。
+    const body = (peerSessionId && peerPairingNonce)
+        ? { sessionId, pairingNonce, peerSessionId, peerPairingNonce }
+        : { sessionId, pairingNonce };
+    const resp = await fetch(PAIR_TOKEN_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+        const body = await resp.text().catch(() => "");
+        throw new Error(`Bridge 認証エラー: HTTP ${resp.status} ${body}`);
+    }
+    const { customToken } = await resp.json();
+    if (!customToken) throw new Error("Bridge 認証エラー: customToken が返ってきませんでした");
+    await firebase.auth().signInWithCustomToken(customToken);
 }
 
 /**
@@ -194,7 +252,7 @@ async function startCameraMode() {
             { fps: 10, qrbox: { width: 250, height: 250 } },
             async (decodedText) => {
                 // QR コード読み取り成功
-                const { sid: sidB, name: nameB, pk: pkB } = parseQrUrl(decodedText);
+                const { sid: sidB, name: nameB, pk: pkB, nonce: nonceB } = parseQrUrl(decodedText);
 
                 if (!sidB) {
                     // Ferry の QR コードではない
@@ -206,7 +264,15 @@ async function startCameraMode() {
                     return;
                 }
 
-                await performPairing(resolvedSidA, resolvedNameA, sidB, nameB, resolvedPkA, pkB);
+                // Codex P1 (第2弾) fix: 2 つ目の QR の nonce も Workers /pair/token に渡して
+                // 「両 QR を物理スキャンした証拠」を server で検証してから書き込みする。
+                // 旧版は sidB の nonce を読み捨てていたため、攻撃者が他人の sid を知っていれば
+                // 自分の sidA + 他人の sidB で勝手にペアリングを偽装できた。
+                if (!nonceB) {
+                    showError("スキャンした QR コードに nonce が含まれていません (相手 PC を v1.0.62 以上に更新してください)");
+                    return;
+                }
+                await performPairing(resolvedSidA, resolvedNameA, sidB, nameB, resolvedPkA, pkB, nonceB);
             },
             () => {
                 // QR コード未検出（スキャン中）
@@ -231,19 +297,28 @@ async function startCameraMode() {
  * メイン処理。
  */
 async function main() {
-    const { sid: sidA, name: nameA, pk: pkA } = getParams();
+    const { sid: sidA, name: nameA, pk: pkA, nonce: nonceA } = getParams();
 
     if (!sidA) {
         showError("セッション ID が見つかりません。QR コードを再スキャンしてください。");
+        return;
+    }
+    if (!nonceA) {
+        showError("ペアリング nonce が見つかりません（PC を v1.0.62 以上に更新してください）。");
         return;
     }
 
     statusText.textContent = "Firebase に接続中…";
 
     try {
-        // Firebase SDK 初期化（認証なし）
+        // Firebase SDK 初期化
         firebase.initializeApp(FIREBASE_CONFIG);
         db = firebase.database();
+
+        // #D-001a Phase B: anonymous 撤去 → Workers /pair/token で short-lived Custom Token を取得して Auth ログイン。
+        // 旧 signInAnonymously() は不採用（Ghost peer 強制注入を完全排除するため）。
+        statusText.textContent = "認証中…";
+        await ensureAuth(sidA, nonceA);
 
         // sessions/{sidA} の存在を確認
         statusText.textContent = "セッション情報を確認中…";
@@ -257,6 +332,9 @@ async function main() {
         resolvedSidA = sidA;
         resolvedNameA = nameA || snapA.val().DisplayName || "PC-A";
         resolvedPkA = pkA || "";
+        // resolvedNonceA は現状追加の用途は無いが、将来 PC 側で nonce rotation を入れた時の再認証や
+        // デバッグ表示用に保持しておく (CodeRabbit nitpick への対応: 削除せず意図を明記)。
+        resolvedNonceA = nonceA;
         sessionAInfo.classList.remove("hidden");
         sessionAId.textContent = sidA;
         sessionAName.textContent = resolvedNameA;

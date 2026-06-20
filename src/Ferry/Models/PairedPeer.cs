@@ -40,6 +40,18 @@ public sealed partial class PairedPeer : ObservableObject
     /// （脅威はネットワーク MITM であり、ローカル権限を得た攻撃者は DeviceId 等も読める）。</summary>
     public string? PairSecret { get; set; }
 
+    /// <summary>
+    /// Codex P1 fix (PR #10): pairs/{pairId} SSoT を一度でも観察済みかどうか。
+    ///
+    /// false = 旧 peers.json から upgrade した「pre-SSoT peer」(pairs/{pairId} がまだ書かれていない
+    /// 可能性がある) → PairSyncService は 404 を見たら 1 度だけ backfill を試みる。
+    /// true = 過去に 200 で観察 or 新規 PairingDetected で SSoT に書き込み完了 → 404 は本当の
+    /// remote unpair と判定して通常カウンタへ流す (backfill で resurrect しない)。
+    ///
+    /// peers.json に永続するので、再起動後も「観察済みフラグ」は引き継がれる。
+    /// </summary>
+    public bool PairsSsotObserved { get; set; }
+
     /// <summary>現在の接続経路（接続時に更新、未接続時は Unknown）。ランタイム専用。
     /// 派生プロパティ群は [NotifyPropertyChangedFor] で宣言的に連動通知する (TransferItem と同パターン。
     /// 手書き OnRouteChanged 列挙だと派生プロパティ追加時に通知漏れが起きやすい)。</summary>

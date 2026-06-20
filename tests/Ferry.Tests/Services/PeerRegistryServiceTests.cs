@@ -162,6 +162,51 @@ public sealed class PeerRegistryServiceTests : IDisposable
         Assert.Empty(svc2.GetPairedPeers());
     }
 
+    // === UpdatePeerIfPresentAsync (Codex 第15弾 #2) ===
+
+    [Fact]
+    public async Task UpdatePeerIfPresentAsync_既存ピアを更新してtrueを返す()
+    {
+        var svc = CreateService();
+        await svc.AddOrUpdatePeerAsync(CreatePeer());
+
+        var updated = new PairedPeer { PeerId = "peer1", DisplayName = "更新後", PairsSsotObserved = true };
+        var result = await svc.UpdatePeerIfPresentAsync(updated);
+
+        Assert.True(result);
+        Assert.Single(svc.GetPairedPeers());
+        Assert.Equal("更新後", svc.GetPairedPeers()[0].DisplayName);
+        Assert.True(svc.GetPairedPeers()[0].PairsSsotObserved);
+    }
+
+    [Fact]
+    public async Task UpdatePeerIfPresentAsync_不在ピアはinsertせずfalseを返す()
+    {
+        // 「FindPeer → AddOrUpdate」の隙間で unpair された peer を resurrect しないための核心挙動:
+        // 存在しない peer に対しては何も追加せず false を返す。
+        var svc = CreateService();
+
+        var ghost = new PairedPeer { PeerId = "removed", DisplayName = "幽霊", PairsSsotObserved = true };
+        var result = await svc.UpdatePeerIfPresentAsync(ghost);
+
+        Assert.False(result);
+        Assert.Empty(svc.GetPairedPeers());
+    }
+
+    [Fact]
+    public async Task UpdatePeerIfPresentAsync_空のPairSecretは既存鍵を消さない()
+    {
+        var svc = CreateService();
+        await svc.AddOrUpdatePeerAsync(new PairedPeer { PeerId = "peer1", DisplayName = "PC-A", PairSecret = "secret-key" });
+
+        // PairSecret を空にした更新でも既存鍵は維持される (AddOrUpdate と同じ規約)。
+        var result = await svc.UpdatePeerIfPresentAsync(new PairedPeer { PeerId = "peer1", DisplayName = "PC-A2", PairSecret = null });
+
+        Assert.True(result);
+        Assert.Equal("secret-key", svc.GetPairedPeers()[0].PairSecret);
+        Assert.Equal("PC-A2", svc.GetPairedPeers()[0].DisplayName);
+    }
+
     // === FindPeer ===
 
     [Fact]
