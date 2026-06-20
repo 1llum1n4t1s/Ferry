@@ -44,13 +44,10 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
     /// gate では replay 防御として不十分だったので、subscribe 開始時刻以降の CreatedAt を持つ entry のみ
     /// accept する per-session start time gate を追加する。</summary>
     private long _pairingWatchStartedAtMs;
+    // 注: 旧 _latestConsumedPairingAtMs (global timestamp gate) は Codex 第12弾 #4 で撤去し、
+    // 再起動跨ぎ replay 防御は AppSettings.SeenPairingIds (per-pairingId LRU) に移譲済。
+    // ここでは subscribe 開始 -60s tolerance のみで rules の clock skew と整合させる。
 
-    // Codex 第11弾 #3 で導入した _latestConsumedPairingAtMs / SetLatestConsumedPairingAtMs は
-    // global timestamp gate で、 「1 台目ペアリング後に 2 台目を 30〜60s 遅い時計でペアリング」
-    // のような正規 pairings entry まで弾く副作用があった (Codex 第12弾 #4)。
-    // 再起動跨ぎ replay 防御は per-pairingId 永続化 (AppSettings.SeenPairingIds + ConnectionService)
-    // に移譲したため撤去。 ここでは subscribe 開始 -60s tolerance だけ残し、 rules の 60s clock skew
-    // tolerance と整合させる。
     private EventHandler? _idTokenRefreshedHandler;
     /// <summary>ペアリング相手が見つかったときに発火するイベント。</summary>
     public event EventHandler<PairingInfo>? PairingDetected;

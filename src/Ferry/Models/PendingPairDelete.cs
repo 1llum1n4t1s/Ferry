@@ -13,6 +13,7 @@ public sealed class PendingPairDelete
     /// <summary>最後に retry を試みた時刻（unix ms）。次回 retry 判定に使う。</summary>
     public long LastRetryAtMs { get; set; }
 
-    /// <summary>これまでに retry を試みた回数。exponential backoff の指数と打ち切り判定（>=5）に使う。</summary>
+    /// <summary>これまでに retry を試みた回数。exponential backoff の指数に使う（打ち切りは無し。
+    /// <see cref="Ferry.Services.PendingPairDeleteQueue"/> 参照）。</summary>
     public int RetryCount { get; set; }
 }

@@ -125,7 +125,36 @@ public sealed class AppSettings
     /// Firebase に残った old pairings entry (cleanup 前) を replay として弾く。
     /// 上限 <see cref="Ferry.Services.ConnectionService.SeenPairingIdsCap"/> 件を超えたら先頭 (= 最古) から落とす。
     /// 旧 LatestConsumedPairingAtMs (global timestamp gate) の副作用 (=clock skew 60s 遅れの正規 peer まで
-    /// 弾く) を回避する。
+    /// 弾く) を回避する。更新は <see cref="AddSeenPairingId"/> 経由で行う（copy-on-write の不変条件を所有者が守る）。
     /// </summary>
     public List<string> SeenPairingIds { get; set; } = [];
+
+    /// <summary>
+    /// <see cref="SeenPairingIds"/> に pairingId を LRU で追加する。既出なら false（呼び出し側は保存不要）。
+    ///
+    /// Codex 第12弾 verify critical fix: 既存 List を mutate せず copy-on-write で新 List 参照に差し替える。
+    /// 旧 List 参照は他経路 (SettingsViewModel / MainWindow 等) で in-flight な
+    /// <c>JsonSerializer.SerializeToUtf8Bytes</c> が enumerate しているかもしれず、mutate すると
+    /// 「Collection was modified」で別経路の SaveAsync が落ちるため。新 List は誰も enumerate していない
+    /// 不変オブジェクトとして差し替える。LRU の所有者である本クラスがこの不変条件を守る（呼び出し側は
+    /// 戻り値 true のときだけ <c>SaveAsync</c> すればよい）。
+    /// </summary>
+    /// <param name="pairingId">追加する pairingId。</param>
+    /// <param name="cap">LRU 上限（超過分は先頭=最古から落とす）。</param>
+    /// <returns>新規追加なら true、既出で変更なしなら false。</returns>
+    public bool AddSeenPairingId(string pairingId, int cap)
+    {
+        lock (this)
+        {
+            if (SeenPairingIds.Contains(pairingId)) return false;
+            var next = new List<string>(SeenPairingIds.Count + 1);
+            // 既存件数 + 新 1 件で cap 超過分を先頭から skip する形でコピー。
+            var skip = Math.Max(0, SeenPairingIds.Count + 1 - cap);
+            for (int i = skip; i < SeenPairingIds.Count; i++)
+                next.Add(SeenPairingIds[i]);
+            next.Add(pairingId);
+            SeenPairingIds = next;
+            return true;
+        }
+    }
 }

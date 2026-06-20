@@ -15,7 +15,9 @@ namespace Ferry.Services;
 /// 再試行キュー。`%APPDATA%\Ferry\pending-pair-deletes.json` に永続。
 ///
 /// 起動時 + アプリ前面復帰時に <see cref="ProcessAsync"/> を呼んで queue の各アイテムを retry する。
-/// backoff: 1min, 5min, 30min, 2h, 12h。RetryCount >= 5 で打ち切り（Warning ログ + queue から除去）。
+/// backoff: 1min → 5min → 30min → 2h → 12h → 以降 24h 毎（<see cref="BackoffMs"/>）。
+/// 打ち切りは無し（Codex 第2弾 fix）。オフライン/未認証が長引いても相手側ペアを確実に消すため、
+/// 成功するまで 24h 上限の backoff で retry し続ける。
 /// </summary>
 public sealed class PendingPairDeleteQueue : IDisposable
 {

@@ -337,37 +337,13 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             try
             {
                 var settings = _settings?.Settings;
-                if (settings != null)
+                // copy-on-write LRU 更新は AppSettings.AddSeenPairingId が所有（不変条件の詳細はそちらの doc）。
+                // 新規追加 (true) のときだけ永続化する。SettingsService.SaveAsync は SemaphoreSlim で直列化済
+                // (第12弾 verify critical fix) なので他経路の SaveAsync と enumerate/mutation が衝突しない。
+                // ここで await して保存完了を確実にしてから revoke / event 発火に進む。
+                if (settings != null && settings.AddSeenPairingId(info.PairingId, SeenPairingIdsCap))
                 {
-                    bool changed = false;
-                    // Codex 第12弾 verify critical fix: 既存 List を mutate せず、 copy-on-write で
-                    // 新 List 参照に差し替える。 旧 List 参照は SettingsViewModel / MainWindow 等の
-                    // 他経路で in-flight な JsonSerializer.SerializeToUtf8Bytes が enumerate しているかも
-                    // しれないため、 mutate すると "Collection was modified" で別経路の SaveAsync が落ちる。
-                    // 新 List は誰も enumerate していない不変オブジェクトとして差し替える。
-                    lock (settings)
-                    {
-                        if (!settings.SeenPairingIds.Contains(info.PairingId))
-                        {
-                            var next = new System.Collections.Generic.List<string>(settings.SeenPairingIds.Count + 1);
-                            // LRU: 上限超過時は先頭 (= 最古) から落とす。
-                            // 既存件数 + 新 1 件で Cap 超過分を skip する形でコピー。
-                            var skip = Math.Max(0, settings.SeenPairingIds.Count + 1 - SeenPairingIdsCap);
-                            for (int i = skip; i < settings.SeenPairingIds.Count; i++)
-                                next.Add(settings.SeenPairingIds[i]);
-                            next.Add(info.PairingId);
-                            settings.SeenPairingIds = next;
-                            changed = true;
-                        }
-                    }
-                    if (changed)
-                    {
-                        // SaveAsync は I/O failure 時に内部で Warning ログを出すだけで throw しない (best-effort)。
-                        // SettingsService.SaveAsync は SemaphoreSlim で直列化済 (第12弾 verify critical fix) なので
-                        // 他経路の SaveAsync と enumerate/mutation が衝突しない。
-                        // ここで await して保存完了を確実にしてから revoke / event 発火に進む。
-                        await _settings!.SaveAsync();
-                    }
+                    await _settings!.SaveAsync();
                 }
             }
             catch (Exception ex) { Util.Logger.Log($"SeenPairingIds 永続化失敗 (継続): {ex.Message}", Util.LogLevel.Warning); }
@@ -1831,6 +1807,18 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     }
 
     /// <summary>
+    /// pairs/{pairId} 書込（責任者経路 / 30s fallback 経路）に共通の中止判定。
+    /// peer が local registry から外れた（unpair 済）か、ユーザー起点の unpair が in-flight
+    /// (<see cref="IPeerRegistryService.IsPendingRemoval"/>) のとき true を返す。これがないと
+    /// Firebase DELETE 完了前に PUT が走って削除済みペアを resurrect する race を許す。
+    /// テスト用 ctor は _peerRegistry=null で、その場合は本番防御をスキップ（常に false）する。
+    /// 新しい writer 経路を足すときも必ずここを通すことで、guard の貼り忘れによる resurrect バグを防ぐ。
+    /// </summary>
+    private bool ShouldAbortPairWrite(string peerId)
+        => _peerRegistry != null
+           && (_peerRegistry.FindPeer(peerId) == null || _peerRegistry.IsPendingRemoval(peerId));
+
+    /// <summary>
     /// #D-001a Phase B Q4: pairs/{pairId} の責任者書込 + 30s fallback による冗長化。
     /// - 責任者 (deviceId Ordinal 小さい方): 即書込 + セルフチェック GET
     /// - 非責任者: 30s 後に GET、未存在なら自分が書込（責任者クラッシュ救済）
@@ -1861,14 +1849,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             {
                 try
                 {
-                    // Codex P2 fix (第7弾 #1): 責任者経路は即時 PUT のため race window は狭いが、
-                    // PairingCompleted → ユーザー速攻 unpair の 1〜数 ms で local 状態が外れる可能性があるので
-                    // defensive に check する。非責任者経路 (30s fallback) と同じ防御で対称性を保つ。
-                    // 注: テスト用 ctor は _peerRegistry=null。null の時は check を skip（本番のみ防御）。
-                    // Codex 第12弾 #3 (P2) fix: FindPeer != null かつ削除 in-flight (= ユーザーが unpair 中で
-                    // Firebase DELETE がまだ返ってきていない) のケースも abort。 これがないと DELETE 完了前に
-                    // PUT が走って削除済みペアを resurrect する race を許す。
-                    if (_peerRegistry != null && (_peerRegistry.FindPeer(peerId) == null || _peerRegistry.IsPendingRemoval(peerId)))
+                    // 責任者経路は即時 PUT のため race window は狭いが、PairingCompleted → ユーザー速攻 unpair の
+                    // 1〜数 ms で local 状態が外れる可能性があるので、非責任者経路 (30s fallback) と同じ
+                    // ShouldAbortPairWrite で対称に防御する（Codex 第7弾 #1 / 第12弾 #3 の resurrect 対策）。
+                    if (ShouldAbortPairWrite(peerId))
                     {
                         Util.Logger.Log($"pairs/{maskedPair} 責任者書込中止: peer が local から外れた / 削除中 (unpair 検知)", Util.LogLevel.Debug);
                         return;
@@ -1911,13 +1895,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 try
                 {
                     await Task.Delay(TimeSpan.FromSeconds(30));
-                    // Codex P2 fix (第7弾 #1): 30s wait 中にユーザーが unpair した場合、
-                    // fallback の PutPair が消した pairs/{pairId} を resurrect してしまい remote unpair が
-                    // 反映されない race を防ぐ。_peerRegistry.FindPeer(peerId) で local 状態を再確認し、
-                    // 既に外れていれば fallback abort。
-                    // 注: テスト用 ctor は _peerRegistry=null。null の時は check を skip（本番のみ防御）。
-                    // Codex 第12弾 #3 (P2) fix: FindPeer != null かつ unpair in-flight も abort。
-                    if (_peerRegistry != null && (_peerRegistry.FindPeer(peerId) == null || _peerRegistry.IsPendingRemoval(peerId)))
+                    // 30s wait 中にユーザーが unpair した場合、fallback の PutPair が削除済み pairs/{pairId} を
+                    // resurrect して remote unpair が反映されない race を防ぐ（責任者経路と同じ ShouldAbortPairWrite。
+                    // Codex 第7弾 #1 / 第12弾 #3 の resurrect 対策）。
+                    if (ShouldAbortPairWrite(peerId))
                     {
                         Util.Logger.Log($"pairs/{maskedPair} fallback 中止: peer が local から外れた / 削除中 (unpair 検知)", Util.LogLevel.Debug);
                         return;
@@ -2033,12 +2014,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         await tempSig.DeletePairAsync(pairId, ct);
     }
 
-    private static string GeneratePairId(string a, string b)
-    {
-        return string.Compare(a, b, StringComparison.Ordinal) < 0
-            ? $"{a}_{b}"
-            : $"{b}_{a}";
-    }
+    // pairId 導出規約は Util.PairId.Generate に集約済（ConnectionService / PairSyncService 共通）。
+    // 既存の多数の呼び出し点を変えないための薄いラッパ。
+    private static string GeneratePairId(string a, string b) => Util.PairId.Generate(a, b);
 
     // === 接続情報のシリアライズ ===
 

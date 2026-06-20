@@ -299,8 +299,8 @@ public sealed class PairSyncService : IDisposable
         }
     }
 
-    private static string GeneratePairId(string a, string b)
-        => string.Compare(a, b, StringComparison.Ordinal) < 0 ? $"{a}_{b}" : $"{b}_{a}";
+    // pairId 導出規約は Util.PairId.Generate に集約済（ConnectionService と共通の単一定義点）。
+    private static string GeneratePairId(string a, string b) => Util.PairId.Generate(a, b);
 
     public void Dispose()
     {
