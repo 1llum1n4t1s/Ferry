@@ -34,7 +34,19 @@ public sealed class FirebaseAuthClient : IDisposable
     private readonly TimeSpan _maxBackoff = TimeSpan.FromMinutes(5);
     private readonly Random _jitter = new();
 
-    private volatile string? _idToken;
+    /// <summary>
+    /// Codex 第14弾 #4 (P2) fix: idToken とその失効時刻 (Unix ms, UTC) を 1 つの immutable record にまとめ、
+    /// volatile 参照 1 本で原子的に差し替える。token と expiry を別フィールドで持つと、SignInAsync (lock 内) と
+    /// RefreshLoopAsync (lock 外) の 2 writer が交互に書いた際に「別世代の (token, expiry) ペア」を reader が
+    /// 観測しうる torn-pair の脆さがあった。record 1 本なら単一 volatile write で常に整合ペアを観測できる。
+    /// ExpiresAtMs=0 は未設定 (旧経路後方互換) を表す。
+    /// </summary>
+    private sealed record TokenState(string IdToken, long ExpiresAtMs);
+
+    private volatile TokenState? _token;
+    /// <summary>失効まで <see cref="_expiryMargin"/> を切ったトークンは <see cref="EnsureSignInAsync"/> で
+    /// 再サインインを強制する余裕 (clock skew + RTT を吸収)。</summary>
+    private readonly TimeSpan _expiryMargin = TimeSpan.FromMinutes(2);
     private CancellationTokenSource? _refreshCts;
     private Task? _refreshLoop;
     private readonly object _lock = new();
@@ -78,36 +90,53 @@ public sealed class FirebaseAuthClient : IDisposable
     /// <summary>現在の idToken（未認証なら null）。FirebaseSignaling の AuthTokenAsyncFactory から呼ばれる。</summary>
     public Task<string> GetIdTokenAsync()
     {
-        var t = _idToken;
-        if (string.IsNullOrEmpty(t))
+        var t = _token;  // 単一 volatile read で整合ペアを観測
+        if (t == null || string.IsNullOrEmpty(t.IdToken))
             return Task.FromException<string>(new InvalidOperationException("FirebaseAuthClient not signed in yet"));
-        return Task.FromResult(t);
+        return Task.FromResult(t.IdToken);
     }
 
     /// <summary>初回サインイン。完了時に refresh ループを起動する。</summary>
     public async Task SignInAsync(CancellationToken ct = default)
     {
-        var idToken = await SignInOnceAsync(ct);
+        var (idToken, expiresAtMs) = await SignInOnceAsync(ct);
         lock (_lock)
         {
-            _idToken = idToken;
+            // record 1 本の単一 volatile write で (token, expiry) を原子的に差し替える (torn-pair 不可)。
+            _token = new TokenState(idToken, expiresAtMs);
             StartRefreshLoop();
         }
+    }
+
+    /// <summary>
+    /// 現在の <see cref="_token"/> が「存在し、かつ失効まで <see cref="_expiryMargin"/> 以上余裕がある」か。
+    /// 単一 volatile read で (token, expiry) の整合ペアを観測する。
+    /// </summary>
+    private bool IsTokenFresh()
+    {
+        var t = _token;  // 単一 volatile read で整合ペアを観測
+        if (t == null || string.IsNullOrEmpty(t.IdToken)) return false;
+        if (t.ExpiresAtMs <= 0) return true;  // 旧経路など未設定時は後方互換で fresh 扱い
+        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        return nowMs < t.ExpiresAtMs - (long)_expiryMargin.TotalMilliseconds;
     }
 
     /// <summary>
     /// Codex P2 fix (第2弾): まだ SignIn 済みでなければここで完了を待つ冪等版。
     /// 初回 SignIn が fire-and-forget で走っている最中に Firebase 操作 (RegisterSessionAsync 等) が
     /// 呼ばれると <see cref="GetIdTokenAsync"/> が "not signed in yet" を投げて UI がエラー状態になっていた。
-    /// 既に idToken があれば即 return、無ければ semaphore で直列化して 1 回だけ SignIn を試みる。
+    /// Codex 第14弾 #4 (P2) fix: 「非空なら認証済み」では token 失効を検知できず、refresh が transient 障害で
+    /// 失敗して期限切れになった後の pairing/delete 経路が stale token で進んで Firebase 401 を「実操作の失敗」
+    /// (pending-delete backoff の前進等) と誤記録していた。失効が近い/過ぎている場合は強制的に再 SignIn する。
+    /// fresh な token があれば即 return、無ければ semaphore で直列化して 1 回だけ SignIn を試みる。
     /// </summary>
     public async Task EnsureSignInAsync(CancellationToken ct = default)
     {
-        if (!string.IsNullOrEmpty(_idToken)) return;
+        if (IsTokenFresh()) return;
         await _signInSemaphore.WaitAsync(ct);
         try
         {
-            if (!string.IsNullOrEmpty(_idToken)) return;
+            if (IsTokenFresh()) return;
             await SignInAsync(ct);
         }
         finally { _signInSemaphore.Release(); }
@@ -116,8 +145,9 @@ public sealed class FirebaseAuthClient : IDisposable
     /// <summary>
     /// 1 回分のサインイン。リトライ無し（呼出側 = refresh ループ がバックオフで再試行する）。
     /// 401 DEVICE_PUBKEY_MISMATCH 時は <see cref="IdentityLost"/> を発火して例外を投げる。
+    /// 戻り値は idToken と失効時刻 (Unix ms, UTC)。
     /// </summary>
-    private async Task<string> SignInOnceAsync(CancellationToken ct)
+    private async Task<(string IdToken, long ExpiresAtMs)> SignInOnceAsync(CancellationToken ct)
     {
         // 1. /auth/token に署名チャレンジ
         var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -170,8 +200,11 @@ public sealed class FirebaseAuthClient : IDisposable
         if (signInBody == null || string.IsNullOrEmpty(signInBody.IdToken))
             throw new HttpRequestException("signInWithCustomToken returned empty idToken");
 
+        // expiresIn (秒, Identity Toolkit は string) から失効時刻を算出。パース不能時は安全側で 1h 既定。
+        var expiresInSec = int.TryParse(signInBody.ExpiresIn, out var sec) && sec > 0 ? sec : 3600;
+        var expiresAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + expiresInSec * 1000L;
         Util.Logger.Log($"Firebase Auth 認証成功 uid={_deviceId} (expiresIn={signInBody.ExpiresIn}s)");
-        return signInBody.IdToken;
+        return (signInBody.IdToken, expiresAtMs);
     }
 
     private async Task<AuthErrorResponse?> SafeReadErrorAsync(HttpResponseMessage resp, CancellationToken ct)
@@ -207,8 +240,9 @@ public sealed class FirebaseAuthClient : IDisposable
 
             try
             {
-                var newToken = await SignInOnceAsync(ct);
-                _idToken = newToken;
+                var (newToken, expiresAtMs) = await SignInOnceAsync(ct);
+                // record 1 本の単一 volatile write で原子差し替え (SignInAsync と同じく torn-pair 不可)。
+                _token = new TokenState(newToken, expiresAtMs);
                 attempt = 0;
                 IdTokenRefreshed?.Invoke(this, EventArgs.Empty);
             }

@@ -229,9 +229,13 @@ public sealed class PairSyncService : IDisposable
                             // Codex P2 fix (第11弾 #5): PUT 前にも FindPeer で再 check する。
                             // snapshot 取得後 → PUT 発射までに manual remove が走ると、 stale peer 参照で PUT が走り
                             // SSoT を recreate して remote unpair 拒否される race を防ぐ。
-                            if (_peerRegistry.FindPeer(peer.PeerId) == null)
+                            // Codex 第14弾 #3 (P2) fix: FindPeer != null のまま IsPendingRemoval (= unpair が
+                            // marker 済みだが Firebase DELETE/queue 経路がまだ完了していない window) でも PUT を止める。
+                            // WritePairRecordWithFallback の ShouldAbortPairWrite と同じ防御で、 legacy unobserved
+                            // peer の backfill が unpair 中に SSoT を recreate して remote 側の削除観測を妨げる race を塞ぐ。
+                            if (_peerRegistry.FindPeer(peer.PeerId) == null || _peerRegistry.IsPendingRemoval(peer.PeerId))
                             {
-                                Util.Logger.Log($"PairSync backfill PUT 前に peer がローカル削除済 → PUT skip", Util.LogLevel.Debug);
+                                Util.Logger.Log($"PairSync backfill PUT 前に peer がローカル削除済 / 削除中 → PUT skip", Util.LogLevel.Debug);
                                 continue;
                             }
                             await _putPair(pairId, new PairRecord
@@ -278,6 +282,25 @@ public sealed class PairSyncService : IDisposable
                         if (!peer.PairsSsotObserved)
                         {
                             Util.Logger.Log($"pairs/{pairId} 連続 {count} 回不在だが未観察 (legacy peer) のため削除を延期");
+                            continue;
+                        }
+                        // Codex 第14弾 #1 (P2) fix: 削除を確定する直前に pair を再 fetch する。
+                        // この cycle が 3 回目の 404/null を読んでから本行に到達するまでの間に「同一 peer との
+                        // 再ペアリング」が成立すると、 pairId は両 deviceId から決定論的に同じ値になるため、
+                        // 既に新 generation の pairs/{pairId} が recreate 済みなのに古い 404 を根拠に
+                        // 新規追加されたローカル peer を削除してしまう (= UI cleanup も誤発火する) race があった。
+                        // 再 fetch で 200 (非 null) を観測したら削除を中止し、 404 カウンタもリセットする。
+                        // IsPendingRemoval (ユーザー起点の unpair in-flight) のときも削除は冗長なので中止する。
+                        if (_peerRegistry.IsPendingRemoval(peer.PeerId))
+                        {
+                            Util.Logger.Log($"pairs/{pairId} 削除中止: ユーザー起点の unpair 進行中", Util.LogLevel.Debug);
+                            continue;
+                        }
+                        var (recheckStatus, recheckBody) = await _fetchPair(pairId, ct);
+                        if (recheckStatus == HttpStatusCode.OK && recheckBody != "null")
+                        {
+                            Util.Logger.Log($"pairs/{pairId} 削除直前の再確認で SSoT 復活を検出 → 削除中止 (同一 peer 再ペア)");
+                            _consecutive404[peer.PeerId] = 0;
                             continue;
                         }
                         Util.Logger.Log($"pairs/{pairId} が連続 {count} 回不在 → ローカル削除");

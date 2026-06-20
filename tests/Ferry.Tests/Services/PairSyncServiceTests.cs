@@ -50,6 +50,8 @@ public sealed class PairSyncServiceTests
             (HttpStatusCode.NotFound, "null"),
             (HttpStatusCode.NotFound, "null"),
             (HttpStatusCode.NotFound, "null"),
+            // Codex 第14弾 #1 fix: 削除確定直前に pair を再 fetch する。SSoT が依然不在 (404) なら削除続行。
+            (HttpStatusCode.NotFound, "null"),
         ]);
 
         for (int i = 0; i < 3; i++)
@@ -66,6 +68,8 @@ public sealed class PairSyncServiceTests
         var svc = CreateServiceFromQueue(registry, [
             (HttpStatusCode.OK, "null"),
             (HttpStatusCode.OK, "null"),
+            (HttpStatusCode.OK, "null"),
+            // Codex 第14弾 #1 fix: 削除確定直前の再 fetch も 200+null (= 不在) なら削除続行。
             (HttpStatusCode.OK, "null"),
         ]);
 
@@ -143,12 +147,35 @@ public sealed class PairSyncServiceTests
             (HttpStatusCode.Unauthorized, ""),         // 不明: そのまま
             (HttpStatusCode.NotFound, "null"),         // 404: 2/3
             (HttpStatusCode.NotFound, "null"),         // 404: 3/3 → 削除
+            // Codex 第14弾 #1 fix: 削除確定直前の再 fetch (依然不在) → 削除続行。
+            (HttpStatusCode.NotFound, "null"),
         ]);
 
         for (int i = 0; i < 4; i++)
             await svc.CheckOnceAsync(applyGracePeriod: false, TestContext.Current.CancellationToken);
 
         await registry.Received(1).RemovePeerAsync(PeerId);
+    }
+
+    // === Codex 第14弾 #1: 削除直前の SSoT 復活検出 ===
+
+    [Fact]
+    public async Task CheckOnceAsync_削除直前にSSoTが復活していたら削除しない()
+    {
+        // 3 連続 404 で削除条件は満たすが、削除確定直前の再 fetch で 200 (非 null) を観測したら
+        // 「同一 peer 再ペアで pairs/{pairId} が recreate された」とみなして削除を中止する。
+        var registry = SubstituteRegistry();
+        var svc = CreateServiceFromQueue(registry, [
+            (HttpStatusCode.NotFound, "null"),         // 404: 1/3
+            (HttpStatusCode.NotFound, "null"),         // 404: 2/3
+            (HttpStatusCode.NotFound, "null"),         // 404: 3/3 → 削除判定へ
+            (HttpStatusCode.OK, "{\"PairId\":\"alice_bob\"}"),  // 再 fetch: SSoT 復活 → 削除中止
+        ]);
+
+        for (int i = 0; i < 3; i++)
+            await svc.CheckOnceAsync(applyGracePeriod: false, TestContext.Current.CancellationToken);
+
+        await registry.DidNotReceive().RemovePeerAsync(Arg.Any<string>());
     }
 
     // === Grace period ===

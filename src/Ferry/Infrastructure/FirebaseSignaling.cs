@@ -825,11 +825,10 @@ public sealed class FirebaseSignaling : IDisposable, IPresenceService
             // keyed children は leaf (`{child}/{deviceId}`) を直接 DELETE する。
             // 1 つ失敗しても他の cleanup は続行する best-effort。
             //
-            // 注: rules (`auth.uid == $senderDeviceId` / `$answererDeviceId`) により、自分の deviceId で
-            // 相手 leaf を DELETE する操作は permission_denied になり no-op になる。実害は無い
-            // (次回接続時に相手が同 leaf を PUT で上書きする last-write-wins で stale 残留は起きない) が、
-            // 両 deviceId を defensive に試行しておくのは将来 rules が緩和されたとき自動で全消去動作になる
-            // ようにするため。
+            // Codex 第14弾 #2 (P2) fix: rules を「DELETE は pairId 当事者なら相手 leaf も可」に緩和したため、
+            // 自分の deviceId で相手 leaf (例: A が answers/B) を DELETE する操作が実際に効くようになった。
+            // これにより再接続時に stale な相手 answer が残って WaitForAnswerAsync が誤消費する race を塞ぐ。
+            // 両 deviceId を試行する設計はそのまま (自分 leaf + 相手 leaf の双方を確実に消す)。
             var keyedChildren = new[] { "offers", "answers", "endpoints" };
             foreach (var child in keyedChildren)
             {

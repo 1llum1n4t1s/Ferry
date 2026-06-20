@@ -60,19 +60,20 @@
     "signaling": {
       "$pairId": {
         ".read": "auth != null && auth.token.src == 'pc' && auth.uid.length == 32 && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))",
+        "_comment_signaling_leaf_delete": "Codex 第14弾 #2 (P2) fix: offers/answers/endpoints の leaf .write を「非 null 書込 (publish) は leaf 所有者 (auth.uid == $deviceId) のみ / DELETE (!newData.exists()) は pairId のどちらの当事者でも可」に緩和した。 旧ルールは leaf 所有者しか触れず、 CleanupSignalingDataAsync が相手 leaf を消そうとしても permission_denied で no-op になり、 例えば A が受け取った answers/B が残存して次の WaitForAnswerAsync(B) が B の上書き前に stale answer を消費 → 新接続が誤経路/タイムアウトする race があった。 DELETE は pairId 当事者 (beginsWith/endsWith で 2 deviceId のいずれか) に限定されるので第三者は触れない。 publish は依然 leaf 所有者限定 = なりすまし不可。 ペア相手が接続確立中の自分の leaf を delete できる self-DoS は信頼境界内 (ペア相手は応答拒否等で既にいくらでも妨害可能) なので意図的に許容する。 第三者からの妨害・なりすまし注入は構造的に不可。",
         "offers": {
           "$senderDeviceId": {
-            ".write": "auth != null && auth.token.src == 'pc' && auth.uid == $senderDeviceId && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
+            ".write": "auth != null && auth.token.src == 'pc' && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid)) && (auth.uid == $senderDeviceId || !newData.exists())"
           }
         },
         "answers": {
           "$answererDeviceId": {
-            ".write": "auth != null && auth.token.src == 'pc' && auth.uid == $answererDeviceId && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
+            ".write": "auth != null && auth.token.src == 'pc' && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid)) && (auth.uid == $answererDeviceId || !newData.exists())"
           }
         },
         "endpoints": {
           "$senderDeviceId": {
-            ".write": "auth != null && auth.token.src == 'pc' && auth.uid == $senderDeviceId && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid))"
+            ".write": "auth != null && auth.token.src == 'pc' && $pairId.matches(/^[a-f0-9]{32}_[a-f0-9]{32}$/) && ($pairId.beginsWith(auth.uid + '_') || $pairId.endsWith('_' + auth.uid)) && (auth.uid == $senderDeviceId || !newData.exists())"
           }
         },
         "probeOffers": {
