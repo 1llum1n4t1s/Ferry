@@ -17,6 +17,16 @@ public interface IPeerRegistryService
     /// <summary>ペアを追加（または既存のペアを更新）する。</summary>
     Task AddOrUpdatePeerAsync(PairedPeer peer);
 
+    /// <summary>
+    /// Codex 第15弾 #2 (P2) fix: 既存のときだけ更新し、 存在しなければ何もしない (insert しない)。
+    /// 戻り値は更新が行われたか (= 対象 peer が存在したか)。
+    /// PairSyncService の SSoT 観測フラグ更新のように「FindPeer != null を確認 → AddOrUpdate」の
+    /// 2 段操作の隙間で手動 unpair が走ると、AddOrUpdate の insert 分岐が古い snapshot を
+    /// 再追加して削除済み peer を resurrect する race があった。 この API は _peersLock 内で
+    /// 「存在確認 → 更新」を 1 アトミックにまとめて insert 分岐自体を持たないことで race を構造的に閉じる。
+    /// </summary>
+    Task<bool> UpdatePeerIfPresentAsync(PairedPeer peer);
+
     /// <summary>ペアを削除する。</summary>
     Task RemovePeerAsync(string peerId);
 

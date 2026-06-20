@@ -178,6 +178,49 @@ public sealed class PairSyncServiceTests
         await registry.DidNotReceive().RemovePeerAsync(Arg.Any<string>());
     }
 
+    // === Codex 第15弾 #1: 削除直前の再 fetch が不明 (401/5xx) なら削除しない ===
+
+    [Fact]
+    public async Task CheckOnceAsync_削除直前の再fetchが不明なら削除を保留する()
+    {
+        // 3 連続 404 で削除条件は満たすが、削除確定直前の再 fetch が 401/5xx (= 不在を確証できない) を
+        // 返したら削除しない。 一過性のトークン期限切れ・サーバ障害の瞬間に正当ペアを誤削除し、
+        // 削除後は次サイクルで列挙されず復旧不能になるのを防ぐ。
+        var registry = SubstituteRegistry();
+        var svc = CreateServiceFromQueue(registry, [
+            (HttpStatusCode.NotFound, "null"),                  // 404: 1/3
+            (HttpStatusCode.NotFound, "null"),                  // 404: 2/3
+            (HttpStatusCode.NotFound, "null"),                  // 404: 3/3 → 削除判定へ
+            (HttpStatusCode.ServiceUnavailable, ""),            // 再 fetch: 不明 → 削除保留
+        ]);
+
+        for (int i = 0; i < 3; i++)
+            await svc.CheckOnceAsync(applyGracePeriod: false, TestContext.Current.CancellationToken);
+
+        await registry.DidNotReceive().RemovePeerAsync(Arg.Any<string>());
+    }
+
+    [Fact]
+    public async Task CheckOnceAsync_再fetch不明で保留後の次サイクルで確証404なら削除する()
+    {
+        // #1 fix はカウンタを温存するので、 再 fetch 不明で保留した次サイクルで改めて 404 → 再 fetch 404
+        // (= 不在確証) が得られたら削除に進む。
+        var registry = SubstituteRegistry();
+        var svc = CreateServiceFromQueue(registry, [
+            (HttpStatusCode.NotFound, "null"),                  // 404: 1/3
+            (HttpStatusCode.NotFound, "null"),                  // 404: 2/3
+            (HttpStatusCode.NotFound, "null"),                  // 404: 3/3 → 削除判定へ
+            (HttpStatusCode.ServiceUnavailable, ""),            // 再 fetch: 不明 → 削除保留 (カウンタ温存)
+            (HttpStatusCode.NotFound, "null"),                  // 次サイクル 404: 4 件目 → 閾値維持で削除判定へ
+            (HttpStatusCode.NotFound, "null"),                  // 再 fetch: 不在確証 → 削除続行
+        ]);
+
+        for (int i = 0; i < 4; i++)
+            await svc.CheckOnceAsync(applyGracePeriod: false, TestContext.Current.CancellationToken);
+
+        await registry.Received(1).RemovePeerAsync(PeerId);
+    }
+
     // === Grace period ===
 
     [Fact]
@@ -229,19 +272,19 @@ public sealed class PairSyncServiceTests
     [Fact]
     public async Task CheckOnceAsync_観察済peerは200で観察フラグを永続化する()
     {
-        // OK 200 を返したら PairsSsotObserved=true を永続化する (AddOrUpdatePeerAsync 経由)。
+        // OK 200 を返したら PairsSsotObserved=true を永続化する (Codex 第15弾 #2: UpdatePeerIfPresentAsync 経由)。
         var peer = new PairedPeer { PeerId = PeerId, DisplayName = "Bob", PairsSsotObserved = false };
         var registry = Substitute.For<IPeerRegistryService>();
         registry.GetPairedPeers().Returns(new List<PairedPeer> { peer });
-        // Codex 第9弾 #6 fix: PairSyncService が AddOrUpdatePeerAsync 前に FindPeer で再 check するため、
-        // GetPairedPeers と整合した FindPeer mock も必要。
-        registry.FindPeer(peer.PeerId).Returns(peer);
+        // Codex 第15弾 #2 fix: 観察フラグの永続化は update-only API に変更。 peer が存在すれば true を返す。
+        registry.UpdatePeerIfPresentAsync(peer).Returns(Task.FromResult(true));
         var svc = CreateServiceFromQueue(registry, [(HttpStatusCode.OK, "{\"a\":1}")]);
 
         await svc.CheckOnceAsync(applyGracePeriod: false, TestContext.Current.CancellationToken);
 
         Assert.True(peer.PairsSsotObserved);
-        await registry.Received(1).AddOrUpdatePeerAsync(peer);
+        await registry.Received(1).UpdatePeerIfPresentAsync(peer);
+        await registry.DidNotReceive().AddOrUpdatePeerAsync(Arg.Any<PairedPeer>());
     }
 
     // === ヘルパ ===

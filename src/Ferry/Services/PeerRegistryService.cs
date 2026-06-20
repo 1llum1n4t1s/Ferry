@@ -64,7 +64,6 @@ public sealed class PeerRegistryService : IPeerRegistryService, IDisposable
 
     public async Task AddOrUpdatePeerAsync(PairedPeer peer)
     {
-        byte[] payload;
         lock (_peersLock)
         {
             var existing = _peers.FirstOrDefault(p => p.PeerId == peer.PeerId);
@@ -81,13 +80,30 @@ public sealed class PeerRegistryService : IPeerRegistryService, IDisposable
             {
                 _peers.Add(peer);
             }
-            // Codex 第7弾 #3 (P2): snapshot の serialize を mutation lock 内で確定する。
-            // ここで確定した payload を SemaphoreSlim で順次 disk に書く (PersistAsync) ことで、
-            // 「snapshot 取得 → Save」の順序が保たれ、後続 mutation の payload が
-            // 古い snapshot を上書きできなくなる (= 旧実装の後勝ち race を解消)。
-            payload = JsonSerializer.SerializeToUtf8Bytes(_peers, PeerRegistryJsonContext.Default.ListPairedPeer);
         }
-        await PersistAsync(payload);
+        // Codex 第15弾 verify minor: snapshot は PersistAsync 内 (_saveLock 配下) で再取得し reorder で stale 化させない。
+        await PersistAsync();
+    }
+
+    public async Task<bool> UpdatePeerIfPresentAsync(PairedPeer peer)
+    {
+        lock (_peersLock)
+        {
+            var existing = _peers.FirstOrDefault(p => p.PeerId == peer.PeerId);
+            // Codex 第15弾 #2 (P2): 存在しないなら insert せず即 false で抜ける。
+            // 「FindPeer → AddOrUpdate」2 段操作の隙間で手動 unpair が走ったときに
+            // 削除済み peer を再追加しないための update-only API。
+            if (existing == null) return false;
+
+            existing.DisplayName = peer.DisplayName;
+            existing.LastTransferAt = peer.LastTransferAt;
+            existing.PairsSsotObserved = peer.PairsSsotObserved;
+            // 非 null のときだけ PairSecret を上書き (AddOrUpdate と同じく既存鍵を消さない)。
+            if (!string.IsNullOrEmpty(peer.PairSecret))
+                existing.PairSecret = peer.PairSecret;
+        }
+        await PersistAsync();
+        return true;
     }
 
     /// <summary>Codex P2 fix: PairSyncService の remote unpair 検知から UI を即時更新するための通知。</summary>
@@ -96,14 +112,12 @@ public sealed class PeerRegistryService : IPeerRegistryService, IDisposable
     public async Task RemovePeerAsync(string peerId)
     {
         bool removed;
-        byte[] payload;
         lock (_peersLock)
         {
             removed = _peers.RemoveAll(p => p.PeerId == peerId) > 0;
-            // Codex 第7弾 #3 (P2): mutation lock 内で payload を確定する (AddOrUpdate と同じ理由)。
-            payload = JsonSerializer.SerializeToUtf8Bytes(_peers, PeerRegistryJsonContext.Default.ListPairedPeer);
         }
-        await PersistAsync(payload);
+        // Codex 第15弾 verify minor: snapshot は PersistAsync 内 (_saveLock 配下) で再取得する。
+        await PersistAsync();
         // PeerRemoved は lock 外で発火する (lock 内で event ハンドラが peer registry を再帰的に
         // 触ると deadlock するため)。
         if (removed) PeerRemoved?.Invoke(this, peerId);
@@ -149,11 +163,18 @@ public sealed class PeerRegistryService : IPeerRegistryService, IDisposable
     // Codex 第7弾 #3 (P2): mutation lock 内で確定済みの payload を SemaphoreSlim で順次 disk に書く。
     // SemaphoreSlim はファイル I/O のみを直列化し、mutation lock とは別オブジェクトなので
     // deadlock リスクは無い (mutation lock を保持したまま SemaphoreSlim を待つ経路は無い)。
-    private async Task PersistAsync(byte[] payload)
+    // Codex 第15弾 verify minor (#3/persist reorder と同型) fix: payload を **_saveLock 取得後に _peersLock 内で
+    // 再 snapshot** する。 旧実装 (第7弾 #3) は呼び出し側が _peersLock 内で payload を確定 → _saveLock 外で渡して
+    // いたが、 SemaphoreSlim は厳密 FIFO 保証が無いため、 並走した 2 つの persist が「新しい snapshot を先に書込 →
+    // 古い snapshot を後勝ちで上書き」する極小窓が残っていた。 _saveLock 配下で最新 _peers を再 snapshot すれば、
+    // 直列化区間内で常に「最後の書込 = 最新の in-memory 状態」になり reorder 窓が消える。
+    private async Task PersistAsync()
     {
         await _saveLock.WaitAsync().ConfigureAwait(false);
         try
         {
+            byte[] payload;
+            lock (_peersLock) payload = JsonSerializer.SerializeToUtf8Bytes(_peers, PeerRegistryJsonContext.Default.ListPairedPeer);
             // rere #B2-001: アトミック保存(tmp→Move)を共通ヘルパーへ集約
             await Util.AtomicFile.WriteAsync(_filePath, payload);
         }

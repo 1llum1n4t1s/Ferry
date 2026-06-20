@@ -202,16 +202,17 @@ public sealed class PairSyncService : IDisposable
                     // しないようにする。peers.json に永続するので再起動後も観察済みフラグが保たれる。
                     if (!peer.PairsSsotObserved)
                     {
-                        // Codex P2 fix (第9弾 #6): snapshot 取得 → AddOrUpdatePeerAsync 呼出までに manual remove が
-                        // 走ると、registry に居ない peer を AddOrUpdate の「不在なら Add」分岐で resurrect してしまう。
-                        // FindPeer で再 check し、不在ならスキップする (= ユーザーの remove 意図を尊重)。
-                        if (_peerRegistry.FindPeer(peer.PeerId) == null)
-                        {
-                            Util.Logger.Log($"PairSync 200 観察したが peer はローカルから削除済 → 永続化 skip", Util.LogLevel.Debug);
-                            continue;
-                        }
+                        // Codex 第15弾 #2 (P2) fix: 旧実装は「FindPeer != null を確認 → AddOrUpdatePeerAsync」の 2 段操作で、
+                        // その隙間で手動 unpair が走ると AddOrUpdate の「不在なら Add」分岐が削除済み peer を resurrect する
+                        // race があった (第9弾 #6 の FindPeer 再 check では隙間を完全には閉じられない)。
+                        // UpdatePeerIfPresentAsync は _peersLock 内で「存在確認 → 更新」を 1 アトミックにまとめ、
+                        // 不在なら insert せず false を返すので race を構造的に閉じる (= ユーザーの remove 意図を尊重)。
                         peer.PairsSsotObserved = true;
-                        try { await _peerRegistry.AddOrUpdatePeerAsync(peer); }
+                        try
+                        {
+                            if (!await _peerRegistry.UpdatePeerIfPresentAsync(peer))
+                                Util.Logger.Log($"PairSync 200 観察したが peer はローカルから削除済 → 永続化 skip", Util.LogLevel.Debug);
+                        }
                         catch (Exception ex) { Util.Logger.Log($"PairsSsotObserved 永続化に失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }
                     }
                 }
@@ -251,15 +252,14 @@ public sealed class PairSyncService : IDisposable
                             _backfillAttempted.TryAdd(peer.PeerId, 0);  // 成功時のみ marker
                             Util.Logger.Log($"pairs/{pairId} backfill 成功 (legacy peer)");
                             _consecutive404[peer.PeerId] = 0;
-                            // Codex P2 fix (第9弾 #6): backfill 成功も同じ re-check。snapshot 取得後の manual remove で
-                            // peer が消えていれば AddOrUpdate の resurrect 分岐を踏ませない。
-                            if (_peerRegistry.FindPeer(peer.PeerId) == null)
-                            {
-                                Util.Logger.Log($"backfill 成功したが peer はローカルから削除済 → 永続化 skip", Util.LogLevel.Debug);
-                                continue;
-                            }
+                            // Codex 第15弾 #2 (P2) fix: backfill 成功時の観察フラグ永続化も update-only API に統一。
+                            // 「FindPeer → AddOrUpdate」の隙間 unpair で resurrect する race を _peersLock 内アトミックで閉じる。
                             peer.PairsSsotObserved = true;
-                            try { await _peerRegistry.AddOrUpdatePeerAsync(peer); }
+                            try
+                            {
+                                if (!await _peerRegistry.UpdatePeerIfPresentAsync(peer))
+                                    Util.Logger.Log($"backfill 成功したが peer はローカルから削除済 → 永続化 skip", Util.LogLevel.Debug);
+                            }
                             catch (Exception ex) { Util.Logger.Log($"PairsSsotObserved 永続化に失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }
                             continue;
                         }
@@ -301,6 +301,19 @@ public sealed class PairSyncService : IDisposable
                         {
                             Util.Logger.Log($"pairs/{pairId} 削除直前の再確認で SSoT 復活を検出 → 削除中止 (同一 peer 再ペア)");
                             _consecutive404[peer.PeerId] = 0;
+                            continue;
+                        }
+                        // Codex 第15弾 #1 (P2) fix: 削除は再確認が「不在を確証」(NotFound / OK+null) できたときだけ。
+                        // 再 fetch が 401/403/5xx/その他を返す = 一過性のトークン期限切れやサーバ 5xx で不在を確証できない
+                        // 状態であり、 ここで削除すると正当ペアを誤って消し、 削除後は次サイクルで列挙されず復旧不能になる。
+                        // 確証できないときはカウンタを保持 (リセットしない) して skip し、 次サイクル以降で確証が得られた
+                        // ときだけ削除する (= 元の 3 連続 404 ガードと同じく不明は非破壊)。
+                        bool recheckConfirmedAbsent =
+                            recheckStatus == HttpStatusCode.NotFound ||
+                            (recheckStatus == HttpStatusCode.OK && recheckBody == "null");
+                        if (!recheckConfirmedAbsent)
+                        {
+                            Util.Logger.Log($"pairs/{pairId} 削除直前の再確認が HTTP {(int)recheckStatus} → 不在を確証できず削除を保留", Util.LogLevel.Debug);
                             continue;
                         }
                         Util.Logger.Log($"pairs/{pairId} が連続 {count} 回不在 → ローカル削除");

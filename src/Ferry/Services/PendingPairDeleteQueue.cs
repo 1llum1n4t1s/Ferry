@@ -54,7 +54,6 @@ public sealed class PendingPairDeleteQueue : IDisposable
     /// <summary>キューに新しい削除リトライアイテムを追加（または既存をリセット）。</summary>
     public async Task EnqueueAsync(string pairId)
     {
-        byte[] payload;
         lock (_lock)
         {
             var existing = _items.FirstOrDefault(i => i.PairId == pairId);
@@ -67,9 +66,9 @@ public sealed class PendingPairDeleteQueue : IDisposable
             {
                 _items.Add(new PendingPairDelete { PairId = pairId, LastRetryAtMs = 0, RetryCount = 0 });
             }
-            payload = JsonSerializer.SerializeToUtf8Bytes(_items, PendingDeleteJsonContext.Default.ListPendingPairDelete);
         }
-        await PersistAsync(payload);
+        // Codex 第15弾 verify minor: payload は PersistAsync 内 (_saveLock 配下) で再 snapshot する。
+        await PersistAsync();
     }
 
     /// <summary>
@@ -81,7 +80,6 @@ public sealed class PendingPairDeleteQueue : IDisposable
     {
         bool changed;
         bool cancelledInFlight = false;
-        byte[] payload;
         lock (_lock)
         {
             changed = _items.RemoveAll(i => i.PairId == pairId) > 0;
@@ -94,16 +92,14 @@ public sealed class PendingPairDeleteQueue : IDisposable
                 _inFlight[pairId] = true;
                 cancelledInFlight = true;
             }
-            payload = JsonSerializer.SerializeToUtf8Bytes(_items, PendingDeleteJsonContext.Default.ListPendingPairDelete);
         }
         // Codex P2 fix (第11弾 #2): changed か cancelledInFlight どちらでも Persist する。
         // 旧実装は _items.RemoveAll が 0 (= 既に reserve 済) のとき Persist skip していたため、
         // in-flight cancellation marker はメモリに記録されるものの、 アプリ終了 / background retry 中断で
         // 次起動時に cancellation 情報が失われ、 disk 上の queue に古い pairId が残って次起動の
         // ProcessAsync で誤って新ペアの Firebase pairs ノードを削除する race があった。
-        // payload は reserve 後の最新 _items state を反映するので、 cancelledInFlight 時の Persist で
-        // disk 状態が確実に最新化され、 次起動時に stale entry を引き継がない。
-        if (changed || cancelledInFlight) await PersistAsync(payload);
+        // Codex 第15弾 verify minor: 最新 _items の snapshot は PersistAsync 内 (_saveLock 配下) で確定する。
+        if (changed || cancelledInFlight) await PersistAsync();
     }
 
     /// <summary>キュー内の全アイテムを処理する。各アイテムについて delete callback を呼び、成功なら除去・失敗なら retry 情報を更新。</summary>
@@ -112,7 +108,6 @@ public sealed class PendingPairDeleteQueue : IDisposable
         List<PendingPairDelete> snapshot;
         lock (_lock) snapshot = [.. _items];
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var changed = false;
         foreach (var item in snapshot)
         {
             if (item.LastRetryAtMs > 0 && now - item.LastRetryAtMs < BackoffMs(item.RetryCount)) continue;
@@ -135,23 +130,26 @@ public sealed class PendingPairDeleteQueue : IDisposable
                 // Codex P2 fix (第10弾 #2): in-flight 登録。 callback await 中の RemoveAsync が
                 // 値 true (cancelled) に書き換えれば、 復帰時に queue 復活させない判断ができる。
                 _inFlight[reserved.PairId] = false;
-                changed = true;
             }
             bool ok;
             try { ok = await deleteCallback(reserved.PairId); }
             catch { ok = false; }
-            // Codex P2 fix (第10弾 #2 + verify follow-up): in-flight 解除と cancelled marker の評価、
-            // および callback 失敗時の queue 戻しを **同一 _lock 配下で atomic に** 実行する。
-            // cancelled==true なら RemoveAsync が in-flight 中に走った = 再ペア成立。 callback の
-            // 成否に関わらず queue 復活させず結果無視 (= stale Firebase DELETE 後の retry resurrect を防ぐ)。
-            // 旧 verify minor: TryRemove と Add を別 lock に分けると「TryRemove → RemoveAsync の
-            // ContainsKey が false → cancellation lost → callback 失敗で re-add で resurrect」の race
-            // が残っていた。lock 内で cancelled 判定と Add を確定すれば、RemoveAsync の lock 取得と
-            // インターリーブできないので race window が消える。
+            // Codex P2 fix (第10弾 #2 + verify follow-up): cancelled marker の評価と callback 失敗時の
+            // queue 戻しを **同一 _lock 配下で atomic に** 実行する。 cancelled==true なら RemoveAsync が
+            // in-flight 中に走った = 再ペア成立。 callback の成否に関わらず queue 復活させず結果無視
+            // (= stale Firebase DELETE 後の retry resurrect を防ぐ)。
+            // Codex 第15弾 #3 (P2) fix: in-flight marker は **persist の後** に落とす。 旧実装はこの lock 内で
+            // TryRemove して marker を即落とし、 queue の最新 state は batch footer (全 item 処理後に 1 度) でしか
+            // 永続化しなかった。 そのため「delete 成功 → 同一 device と再ペア → footer の persist 前にアプリ終了」で、
+            // RemoveAsync(pairId) が _items にも _inFlight にも当該 pairId を見つけられず Persist を skip し、
+            // disk に古い pairId が残存 → 次起動の ProcessAsync が再生成済み pairs/{pairId} を誤削除する race が
+            // あった。 ここでは marker を保持したまま cancelled を peek し、 reserve 由来の削除 (or 失敗時の戻し) を
+            // 反映した payload を確定 → persist → その後に marker を落とす。 これで「marker drop 時点で disk は
+            // 最新 state を反映済み」を保証し、 RemoveAsync は persist 完了まで marker を観測できる。
             bool cancelled;
             lock (_lock)
             {
-                _inFlight.TryRemove(reserved.PairId, out cancelled);
+                cancelled = _inFlight.TryGetValue(reserved.PairId, out var c) && c;
                 if (!cancelled && !ok)
                 {
                     reserved.RetryCount++;
@@ -168,16 +166,11 @@ public sealed class PendingPairDeleteQueue : IDisposable
                     }
                 }
             }
+            // marker を落とす前に最新 state を disk へ確定する (= 上記 #3 fix の core)。
+            // snapshot は PersistAsync 内 (_saveLock 配下) で再取得され、 reorder で stale 化しない (第15弾 verify minor)。
+            await PersistAsync();
+            lock (_lock) { _inFlight.TryRemove(reserved.PairId, out _); }
             // 成功時は既に reserve で _items から消えているので追加処理不要
-        }
-        if (changed)
-        {
-            byte[] payload;
-            lock (_lock)
-            {
-                payload = JsonSerializer.SerializeToUtf8Bytes(_items, PendingDeleteJsonContext.Default.ListPendingPairDelete);
-            }
-            await PersistAsync(payload);
         }
     }
 
@@ -212,14 +205,19 @@ public sealed class PendingPairDeleteQueue : IDisposable
         }
     }
 
-    // Codex P2 fix (第7弾 #5): 呼び出し側で lock 内に payload (snapshot 済 JSON bytes) を確定してから渡す。
-    // _saveLock で書込をシリアライズし、同時に走った 2 つの永続化で「古い non-empty snapshot が後勝ち」する
-    // race を排除する。
-    private async Task PersistAsync(byte[] payload)
+    // Codex 第15弾 verify minor (#3/persist reorder) fix: payload は **_saveLock 取得後に _lock 内で再 snapshot** する。
+    // 旧実装 (第7弾 #5) は呼び出し側が _lock 内で payload を確定 → _saveLock 外で渡していたため、 SemaphoreSlim は
+    // 厳密 FIFO 保証が無く、 異なる pairId の 2 つの persist が「新しい snapshot を先に書込 → 古い snapshot を
+    // 後勝ちで上書き」する極小窓があった (item ごと persist 化で書込頻度 = reorder 機会が増える)。 _saveLock 配下で
+    // 最新 _items を再 snapshot すれば、 直列化区間内で常に「最後の書込 = 最新の in-memory 状態」が保証され、
+    // disk が stale snapshot で固定されて次起動時に再ペア済み pairs を誤削除する窓が消える。
+    private async Task PersistAsync()
     {
         await _saveLock.WaitAsync();
         try
         {
+            byte[] payload;
+            lock (_lock) payload = JsonSerializer.SerializeToUtf8Bytes(_items, PendingDeleteJsonContext.Default.ListPendingPairDelete);
             await Util.AtomicFile.WriteAsync(_filePath, payload);
         }
         catch (Exception ex)

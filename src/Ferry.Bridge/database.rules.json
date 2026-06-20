@@ -92,6 +92,7 @@
       }
     },
 
+    "_comment_presence_read_gate": "Codex 第15弾 #4 は当初 presence/{$deviceId}.read を pairs レコードの exists() で当事者限定したが、 verify で穴を検出して revert した: pairs/{$pairId}.write は相手の consent (pairing_nonces 等) を要求せず auth.uid を含む pairId を自己 PUT できるため、 攻撃者は victim X に対し pairs/{sorted(self,X)} を 1 回自己書込 → presence/{X} の exists() ゲートを true 化して購読でき、 ゲートは PUT 1 回で回避可能。 加えて未バックフィル legacy peer が offline 固着するロールアウト regression もある。 真の当事者限定には pairs.write 自体に双方向 consent proof を要求する Phase B-2 (defer #1 の /pair/create signed proof) が前提。 それまで src=='pc' ゲート (bridge token 遮断) を維持し、 per-pair 絞込は defer #8 として継続。",
     "presence": {
       "$deviceId": {
         ".read": "auth != null && auth.token.src == 'pc'",
