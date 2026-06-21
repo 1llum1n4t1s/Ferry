@@ -20,12 +20,14 @@ jobs:
         # 旧版は unauthenticated REST で叩いていたが、rules 厳格化 (auth.uid 必須) deploy 後は
         # 全 REST が 401/403 を返すため、SA で OAuth access_token を取得して `?access_token=` で付与する。
         env:
-          FIREBASE_SA_KEY_JSON: ${{ secrets.FIREBASE_SA_KEY_JSON }}
+          # release.yml の Firebase Hosting deploy と同じ SA JSON Secret を再利用する。
+          # 旧版は存在しない FIREBASE_SA_KEY_JSON を参照しており cleanup が常時失敗していた。
+          FIREBASE_SA_KEY_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_FERRY_EDF09 }}
         shell: bash
         run: |
           set -euo pipefail
           if [ -z "${FIREBASE_SA_KEY_JSON}" ]; then
-            echo "ERROR: FIREBASE_SA_KEY_JSON secret が未設定です（Step 7.5 の前提）"
+            echo "ERROR: FIREBASE_SERVICE_ACCOUNT_FERRY_EDF09 secret が未設定です（Step 7.5 の前提）"
             exit 1
           fi
           # JWT を SA で署名 → OAuth 2.0 JWT bearer grant でアクセストークン交換
