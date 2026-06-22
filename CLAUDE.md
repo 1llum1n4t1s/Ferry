@@ -140,7 +140,7 @@ Velopack による自動更新の配信元は **Cloudflare R2**（カスタム�
 - `r2-upload` job — フィードとインストーラを `wrangler` で R2 にアップロード（要 Secrets: `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`）。**cleanup は R2 上の `releases.win-*.json` を keep set に取り込む**（CI 成果物に win manifest が無いため、取り込まないと署名済み win nupkg を「manifest 外」と誤判定して削除する。取得失敗時は安全側で cleanup を中止）
 - `firebase-deploy` job — Bridge ページ (`src/Ferry.Bridge`) を Firebase Hosting に deploy（`--only hosting`。**RTDB ルールはこの job では触らない**）
 
-> **サーバ成果物の自動デプロイ（release/** とは独立・main の path 変更でトリガー）**: relay Worker は `deploy-relay.yml`（`infra/cloudflare/relay/**` 変更時に `wrangler deploy`）、Firebase RTDB ルールは `deploy-firebase-rules.yml`（`src/Ferry.Bridge/database.rules.json` 変更時に `firebase deploy --only database`）が main への push で自動配信する。どちらも手動デプロイ忘れによる「コードと本番の乖離」事故（2026-06-23 の `/auth/token` 426・presence 露出）の再発防止。⚠️ `deploy-firebase-rules.yml` の SA は database ルール deploy 用に GCP IAM で `roles/firebasedatabase.admin` の付与が必要（未付与だと権限エラーで fail-loud）。RTDB ルールファイルは Firebase が受理する `//` コメントを含む（文字列値コメントキーは構文エラーで deploy 不能）。
+> **relay Worker の自動デプロイ（release/** とは独立・main の path 変更でトリガー）**: `deploy-relay.yml` が `infra/cloudflare/relay/**` 変更時に `wrangler deploy` で自動配信する（手動デプロイ忘れによる「コードと本番の乖離」事故＝2026-06-23 の `/auth/token` 426 の再発防止）。**Firebase RTDB ルールは CF 単独完結移行で Firebase ごと撤去予定のため CI 化せず手動運用**（`cd src/Ferry.Bridge && firebase deploy --only database`。厳格ルールは 2026-06-23 にデプロイ済み。ルールファイルは Firebase が受理する `//` コメントを含む＝文字列値コメントキーは構文エラーで deploy 不能なので残す）。
 
 > ℹ️ `package.yml` の win portable zip (`ferry_*.zip`) は引き続き CI で生成される未署名バイナリ（ランディングページ未参照のため影響は限定的）。署名対象に含めたい場合はローカルスクリプトへの移植が必要。
 
