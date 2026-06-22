@@ -21,6 +21,11 @@ class_name = "RelayDO"
 name = "PAIR"
 class_name = "PairDO"
 
+# CF 単独完結移行 Step 2: device DO (deviceId-keyed)。presence(poll) + pairing inbox(WS push)。
+[[durable_objects.bindings]]
+name = "DEVICE"
+class_name = "DeviceDO"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RelayDO"]
@@ -28,6 +33,10 @@ new_sqlite_classes = ["RelayDO"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["PairDO"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["DeviceDO"]
 
 # === カスタムドメイン ===
 # `relay.ferry.nephilim.jp` は Cloudflare Zone `nephilim.jp` (Yuro 所有) 配下。
@@ -42,6 +51,17 @@ custom_domain = true
 # Firebase Realtime DB URL (vars - 秘密ではないので環境変数として埋め込み)
 [vars]
 FIREBASE_DATABASE_URL = "https://ferry-edf09-default-rtdb.firebaseio.com"
+
+# === CF 単独完結移行 Step 2: ペア台帳 D1 ===
+# sessions / pairing_nonces / pairs を保持 (pairs は永続 SSoT、他は 1h stale)。
+# 作成手順 (deploy 前に必須):
+#   pnpm dlx wrangler d1 create ferry_ledger          # 出力の database_id を下に貼る
+#   pnpm dlx wrangler d1 execute ferry_ledger --remote --file=schema.sql
+# database_id は CF リソース識別子 (アクセスには API token + account 権限が要る) なので公開可。
+[[d1_databases]]
+binding = "DB"
+database_name = "ferry_ledger"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
 
 # deviceId ↔ pubKeySpki binding KV (first-write-wins)
 # Codex 第13弾 #4 (P1) fix: 旧 placeholder "REPLACE_WITH_KV_NAMESPACE_ID" のままだと deploy 後 /auth/token が

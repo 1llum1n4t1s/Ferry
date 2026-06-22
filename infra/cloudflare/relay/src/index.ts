@@ -22,6 +22,10 @@ export interface Env {
   RELAY: DurableObjectNamespace;
   /** signaling DO (PairDO)。CF 単独完結移行 Step 1。pairId-keyed で offers/answers/endpoints/probes を保持。 */
   PAIR: DurableObjectNamespace;
+  /** device DO (DeviceDO)。CF 単独完結移行 Step 2。deviceId-keyed で presence + pairing inbox(WS) を保持。 */
+  DEVICE: DurableObjectNamespace;
+  /** ペア台帳 D1 (sessions/pairing_nonces/pairs)。CF 単独完結移行 Step 2。 */
+  DB: D1Database;
   /** pairId ハッシュ化用ソルト。`wrangler secret put SALT` で登録する。 */
   SALT: string;
 
@@ -51,8 +55,9 @@ interface RateLimit {
   limit(opts: { key: string }): Promise<{ success: boolean }>;
 }
 
-// CF 単独完結移行 Step 1: signaling DO を entry module から re-export (Workers の DO クラス公開要件)。
+// CF 単独完結移行: DO クラスを entry module から re-export (Workers の DO クラス公開要件)。
 export { PairDO } from './pairdo';
+export { DeviceDO } from './devicedo';
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -88,6 +93,37 @@ export default {
     if (url.pathname.startsWith('/sig/')) {
       const { handleSignaling } = await import('./signaling-routes');
       return handleSignaling(req, env, url);
+    }
+
+    // CF 単独完結移行 Step 2: presence (poll) と pairing inbox (WS push)。
+    // /inbox は WebSocket upgrade なので、下の relay 用 WS 処理 (pairId 必須) より前に捌く。
+    if (url.pathname === '/inbox') {
+      const { handleInbox } = await import('./device-routes');
+      return handleInbox(req, env);
+    }
+    if (url.pathname.startsWith('/presence/')) {
+      const { handlePresence } = await import('./device-routes');
+      return handlePresence(req, env, url);
+    }
+
+    // CF 単独完結移行 Step 2: ペアリング / ペア台帳。
+    // /pair/create は Bridge(browser) から呼ぶので CORS 対応 (dual-path 中は web.app オリジン)。
+    if (url.pathname === '/pair/create') {
+      if (req.method === 'OPTIONS') return corsPreflightResponse(req);
+      if (req.method === 'POST') {
+        const { handlePairCreate } = await import('./pairing-routes');
+        return withCorsHeaders(await handlePairCreate(req, env), req);
+      }
+      return new Response('Method Not Allowed', { status: 405, headers: { allow: 'POST, OPTIONS' } });
+    }
+    // /pair/session と /pairs/* は PC (bearer) からのみ。CORS 不要。
+    if (url.pathname.startsWith('/pair/session')) {
+      const { handlePairSession } = await import('./pairing-routes');
+      return handlePairSession(req, env, url);
+    }
+    if (url.pathname.startsWith('/pairs/')) {
+      const { handlePairs } = await import('./pairing-routes');
+      return handlePairs(req, env, url);
     }
 
     // WebSocket 以外は拒否
