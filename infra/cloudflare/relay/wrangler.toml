@@ -10,6 +10,15 @@ compatibility_date = "2026-05-26"
 workers_dev = false
 preview_urls = false
 
+# === CF 単独完結移行 Step 4: Bridge QR ページを Workers Static Assets で配信 ===
+# public/ の index.html + bridge.js を Worker より先に配信し、API パス
+# (/sig /pair /pairs /inbox /presence /auth /health /ferry-relay) は非アセットなので
+# not_found_handling 既定 "none" で Worker にフォールスルーする。アセットパス (/, /bridge.js) と
+# API パスは互いに素なので run_worker_first は不要 (誤って Worker を素通りさせない)。
+# QR の宛先は AppConstants.CfBridgePageUrl = https://relay.ferry.nephilim.jp（API と同一オリジン → CORS 不要）。
+[assets]
+directory = "./public"
+
 # === Durable Object ===
 [[durable_objects.bindings]]
 name = "RELAY"

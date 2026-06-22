@@ -151,6 +151,41 @@ public class ConnectionViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task StartSessionAsync_既定ではFirebaseBridgeのURLが使われること()
+    {
+        _connectionService.StartPairingSessionAsync(Arg.Any<CancellationToken>())
+            .Returns("sid123");
+        _qrCodeService.GenerateQrBitmap(Arg.Any<string>()).Returns((Bitmap?)null);
+
+        using var vm = CreateViewModel();
+        await vm.StartSessionCommand.ExecuteAsync(null);
+
+        // 既定（UseCloudflareSignaling=false）は Firebase 版 Bridge を向く
+        _qrCodeService.Received(1).GenerateQrBitmap(
+            Arg.Is<string>(url => url.StartsWith(Ferry.AppConstants.BridgePageUrl)));
+    }
+
+    [Fact]
+    public async Task StartSessionAsync_CFモードではCFBridgeのURLが使われること()
+    {
+        // CF 単独完結移行: UseCloudflareSignaling=true のとき QR の宛先を CF 版 Bridge に切り替える
+        _settingsService.Settings.Returns(new AppSettings
+        {
+            DisplayName = "TestPC",
+            UseCloudflareSignaling = true,
+        });
+        _connectionService.StartPairingSessionAsync(Arg.Any<CancellationToken>())
+            .Returns("sid123");
+        _qrCodeService.GenerateQrBitmap(Arg.Any<string>()).Returns((Bitmap?)null);
+
+        using var vm = CreateViewModel();
+        await vm.StartSessionCommand.ExecuteAsync(null);
+
+        _qrCodeService.Received(1).GenerateQrBitmap(
+            Arg.Is<string>(url => url.StartsWith(Ferry.AppConstants.CfBridgePageUrl) && url.Contains("sid=sid123")));
+    }
+
+    [Fact]
     public async Task StartSessionAsync_成功時にWaitingForPairingになること()
     {
         _connectionService.StartPairingSessionAsync(Arg.Any<CancellationToken>())

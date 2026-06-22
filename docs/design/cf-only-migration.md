@@ -1,6 +1,6 @@
 # Cloudflare 単独完結 移行設計（Firebase 撤去）
 
-**ステータス**: 着手（feature/cf-only-signaling）。サーバ基盤から dual-path で段階実装。
+**ステータス**: Step 1-4 実装済（feature/cf-only-signaling）。サーバ基盤 + クライアント dual-path + CF 版 Bridge まで完了。残るは D1/secret プロビジョン + `wrangler deploy` + cold start 実測 + 2 台実機検証（Step 5 以降）。
 **前提**: v1.0.62 で Firebase Custom Token Auth + pairs SSoT 済（PR #10）。CF 側は relay Worker + Durable Objects(Hibernation) を本番運用中。
 **判断根拠**: 10 エージェント Workflow 調査（棚卸し→CF一次資料→設計→4観点敵対批判）。要約は memory-bank `Ferry/design-proposals.md` の「CF 単独完結化の実現性調査」節。
 
@@ -125,11 +125,11 @@ PairDO storage キー: `offer:{sender}`→`{data,createdAt}` / `answer:{sender}`
 
 | Step | 作業 | 可逆性 |
 |---|---|---|
-| 1 | **サーバ基盤追加**: PairDO + signaling ルート + auth cfToken（本ブランチ）。Firebase 不変 | 完全可逆（デプロイ戻すだけ） |
-| 2 | DeviceDO(presence+inbox) + D1 台帳 + pairing/pairs ルート。Firebase 並存 | 完全可逆 |
-| 3 | クライアント dual-path（`UseCloudflareSignaling` フラグ）。既定 Firebase | 完全可逆（フラグ） |
-| 3.5 | **cold start 実測ゲート**（東京 pin、Firebase と p50/p95 比較） | — |
-| 4 | Bridge 二系統（`/pair/create` 経路追加、Workers Static Assets 並行デプロイ） | 完全可逆 |
+| 1 ✅ | **サーバ基盤追加**: PairDO + signaling ルート + auth cfToken（`ccb9374`）。Firebase 不変 | 完全可逆（デプロイ戻すだけ） |
+| 2 ✅ | DeviceDO(presence+inbox) + D1 台帳 + pairing/pairs ルート（`1392ba6`）。Firebase 並存 | 完全可逆 |
+| 3 ✅ | クライアント dual-path（`UseCloudflareSignaling` フラグ・`37cb81f`）。既定 Firebase | 完全可逆（フラグ） |
+| 4 ✅ | **Bridge 二系統**: CF 版 Bridge（`infra/cloudflare/relay/public/` を Workers Static Assets で配信、同一オリジン `/pair/create` 直叩き・Firebase SDK 不使用）を追加。旧 Firebase Bridge（`src/Ferry.Bridge/`）は温存。QR は `UseCloudflareSignaling` で `CfBridgePageUrl` に切替 | 完全可逆 |
+| 3.5 / 4.5 | **cold start 実測ゲート**（東京 pin、Firebase と p50/p95 比較）+ dual-path 2 台実機 + D1/SESSION_HMAC_SECRET プロビジョン + `wrangler deploy` | — |
 | 5 | 既定を CF に切替（フラグ反転）。Firebase 経路はコードに数バージョン残置 | フラグ戻しで可逆 |
 | 6 | Firebase コード撤去（FirebaseSignaling/AuthClient/SDK/rules/firebase.json）+ cleanup を DO alarm に置換 | git revert で可逆 |
 | 7 | **Firebase プロジェクト無効化**（RTDB/Auth/Hosting）。**read-only 化 → N ヶ月放置 → アクセスログが閾値以下で削除**（Velopack R2 は配信統計を持たないため「全台更新確認」は観測不能 → 観測可能な放置プロトコルに差し替え） | **不可逆**（事前に pairs 台帳エクスポート） |

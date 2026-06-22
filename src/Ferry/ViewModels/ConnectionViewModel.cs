@@ -168,10 +168,13 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
 
             // Bridge ページ URL に sessionId / PC 名 / 公開鍵(rere #D-001(b)) / 認証 nonce(#D-001a Phase B) を付与して QR コード生成。
             // pk は base64url・nonce は 32hex なので URL 安全。空のときは &pk= となり Bridge 側は単に無視する。
+            // CF 単独完結移行: CF モードでは QR の宛先を CF 版 Bridge（relay Worker の Static Assets）に向ける。
+            // Firebase 版 Bridge とは別オリジンで dual-path 並存する（§5 Step 4）。
             var displayName = Uri.EscapeDataString(settings.DisplayName);
             var pk = _connectionService.PublicKeyForQr;
             var nonce = _connectionService.LastPairingNonce;
-            var bridgeUrl = $"{AppConstants.BridgePageUrl}?sid={SessionId}&name={displayName}&pk={pk}&nonce={nonce}";
+            var bridgeBase = settings.UseCloudflareSignaling ? AppConstants.CfBridgePageUrl : AppConstants.BridgePageUrl;
+            var bridgeUrl = $"{bridgeBase}?sid={SessionId}&name={displayName}&pk={pk}&nonce={nonce}";
             PairingUrl = bridgeUrl;
             QrCodeImage = _qrCodeService.GenerateQrBitmap(bridgeUrl);
 
