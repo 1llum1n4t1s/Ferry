@@ -10,14 +10,42 @@ compatibility_date = "2026-05-26"
 workers_dev = false
 preview_urls = false
 
+# === CF 単独完結移行 Step 4: Bridge QR ページを Workers Static Assets で配信 ===
+# public/ の index.html + bridge.js を Worker より先に配信し、API パス
+# (/sig /pair /pairs /inbox /presence /auth /health /ferry-relay) は非アセットなので
+# not_found_handling 既定 "none" で Worker にフォールスルーする。アセットパス (/, /bridge.js) と
+# API パスは互いに素なので run_worker_first は不要 (誤って Worker を素通りさせない)。
+# QR の宛先は AppConstants.CfBridgePageUrl = https://relay.ferry.nephilim.jp（API と同一オリジン → CORS 不要）。
+[assets]
+directory = "./public"
+
 # === Durable Object ===
 [[durable_objects.bindings]]
 name = "RELAY"
 class_name = "RelayDO"
 
+# CF 単独完結移行 Step 1 (docs/design/cf-only-migration.md): signaling DO (pairId-keyed)。
+# offers/answers/endpoints/probes/createdAt を DO storage で強整合に保持し、alarm で TTL cleanup する。
+[[durable_objects.bindings]]
+name = "PAIR"
+class_name = "PairDO"
+
+# CF 単独完結移行 Step 2: device DO (deviceId-keyed)。presence(poll) + pairing inbox(WS push)。
+[[durable_objects.bindings]]
+name = "DEVICE"
+class_name = "DeviceDO"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RelayDO"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["PairDO"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["DeviceDO"]
 
 # === カスタムドメイン ===
 # `relay.ferry.nephilim.jp` は Cloudflare Zone `nephilim.jp` (Yuro 所有) 配下。
@@ -32,6 +60,18 @@ custom_domain = true
 # Firebase Realtime DB URL (vars - 秘密ではないので環境変数として埋め込み)
 [vars]
 FIREBASE_DATABASE_URL = "https://ferry-edf09-default-rtdb.firebaseio.com"
+
+# === CF 単独完結移行 Step 2: ペア台帳 D1 ===
+# sessions / pairing_nonces / pairs を保持 (pairs は永続 SSoT、他は 1h stale)。
+# 作成手順 (deploy 前に必須):
+#   pnpm dlx wrangler d1 create ferry_ledger          # 出力の database_id を下に貼る
+#   pnpm dlx wrangler d1 execute ferry_ledger --remote --file=schema.sql
+# database_id は CF リソース識別子 (アクセスには API token + account 権限が要る) なので公開可。
+[[d1_databases]]
+binding = "DB"
+database_name = "ferry_ledger"
+# 2026-06-23 に APAC リージョン (東京 pin) で作成。database_id は CF リソース識別子なので公開可。
+database_id = "05b906bc-0c78-470d-8afe-6ee41b273049"
 
 # deviceId ↔ pubKeySpki binding KV (first-write-wins)
 # Codex 第13弾 #4 (P1) fix: 旧 placeholder "REPLACE_WITH_KV_NAMESPACE_ID" のままだと deploy 後 /auth/token が
@@ -67,6 +107,9 @@ simple = { limit = 5, period = 60 }
 #   SA_PATH=$(node -p "require('C:/Users/IMT/dev/Secret/secrets.json').firebase.sa_key_path")
 #   node -p "require('$SA_PATH').private_key" | pnpm dlx wrangler secret put FIREBASE_PRIVATE_KEY
 #   node -p "require('$SA_PATH').client_email" | pnpm dlx wrangler secret put FIREBASE_CLIENT_EMAIL
+#   # CF 単独完結 (cf-only-migration): cfToken (自前 HMAC bearer) 署名鍵。ランダム 32 byte を投入。
+#   #   未設定でも deploy は通る (/auth/token は cfToken を省略し Firebase 経路のみで動作)。
+#   openssl rand -hex 32 | pnpm dlx wrangler secret put SESSION_HMAC_SECRET
 
 # === Observability ===
 # Workers 標準のメトリクス + Logpush 連携時の保管設定。

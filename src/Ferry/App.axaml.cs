@@ -180,12 +180,11 @@ public partial class App : Application
                 Environment.Exit(1);
                 return;  // unreachable だが deviceIdentity の definite-assignment のため
             }
-            // #D-001a Phase B: Firebase Custom Token Auth クライアント。バックグラウンドで /auth/token に
-            // 署名チャレンジ → idToken 取得 → 50min ごとに refresh。FirebaseSignaling のすべての REST に注入される。
-            var firebaseAuthClient = new Infrastructure.FirebaseAuthClient(deviceIdentity, settings.DeviceId);
             // peerRegistry を IdentityLost ハンドラより前で宣言（lambda capture 解析のため）
             var peerRegistry = new PeerRegistryService();
-            firebaseAuthClient.IdentityLost += (_, _) =>
+            // CF 単独完結移行 (dual-path): clean slate ハンドラ（identity.key 紛失リカバリー）は auth provider に
+            // 依存しないので変数化し、Firebase / CF どちらの IdentityLost イベントにも同じものを繋ぐ。
+            EventHandler onIdentityLost = (_, _) =>
             {
                 Util.Logger.Log("identity.key 紛失イベントを検知 → clean slate UI を表示", Util.LogLevel.Warning);
                 // UI スレッドで IdentityLostDialog を表示し、[やり直す] なら DeviceId + identity.key + peers.json を一括リセット。
@@ -253,20 +252,60 @@ public partial class App : Application
                     }
                 });
             };
-            // 初回 SignIn を fire-and-forget で開始。完了前の Firebase 操作は GetIdTokenAsync で例外になり、
+            // CF 単独完結移行 (dual-path): settings.UseCloudflareSignaling で signaling 経路を切り替える。
+            //   Firebase = FirebaseAuthClient(/auth/token → idToken) + FirebaseSignaling(REST)
+            //   CF       = CfTokenProvider(/auth/token → cfToken)   + CloudflareSignaling(REST + inbox WS)
+            // どちらの auth provider も IdentityLost (401 DEVICE_PUBKEY_MISMATCH) で同じ clean slate を発火する。
+            // 下流（ConnectionService / PairSyncService / DeleteOne / presence）は具象に依存せず
+            // signalingFactory / ensureAuthAsync / presenceFactory 経由で経路非依存に動く。
+            IPresenceServiceFactory presenceFactory;
+            Func<Infrastructure.ISignalingService> signalingFactory;
+            Func<System.Threading.CancellationToken, System.Threading.Tasks.Task> ensureAuthAsync;
+            IDisposable authProvider;
+            System.Net.Http.HttpClient? cfHttp = null;
+            Func<System.Threading.Tasks.Task> initialEnsureAsync;
+            Action onInitialEnsureFailure;
+            if (settings.UseCloudflareSignaling)
+            {
+                // CF 経路: CfTokenProvider が /auth/token で cfToken (HS256 JWT) を取得し 50min ごとに refresh。
+                // CloudflareSignaling は共有 HttpClient で REST + inbox WS を張る。
+                var cfTokenProvider = new Infrastructure.CfTokenProvider(deviceIdentity, settings.DeviceId);
+                cfHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+                cfTokenProvider.IdentityLost += onIdentityLost;
+                signalingFactory = () => new Infrastructure.CloudflareSignaling(cfTokenProvider, settings.DeviceId, cfHttp);
+                ensureAuthAsync = cfTokenProvider.EnsureTokenAsync;
+                presenceFactory = new Infrastructure.CloudflarePresenceServiceFactory(cfTokenProvider, settings.DeviceId, cfHttp);
+                authProvider = cfTokenProvider;
+                initialEnsureAsync = () => cfTokenProvider.EnsureTokenAsync();
+                // CfTokenProvider.EnsureTokenAsync 自体が成功時に refresh ループを起動する。失敗時は次の signaling op が再試行。
+                onInitialEnsureFailure = () => { };
+                Util.Logger.Log("signaling 経路: Cloudflare (CF 単独完結)");
+            }
+            else
+            {
+                // Firebase 経路（既定）: #D-001a Phase B の Custom Token Auth。
+                var firebaseAuthClient = new Infrastructure.FirebaseAuthClient(deviceIdentity, settings.DeviceId);
+                firebaseAuthClient.IdentityLost += onIdentityLost;
+                signalingFactory = () => new Infrastructure.FirebaseSignaling(AppConstants.FirebaseDatabaseUrl, firebaseAuthClient);
+                ensureAuthAsync = firebaseAuthClient.EnsureSignInAsync;
+                presenceFactory = new FirebasePresenceServiceFactory(AppConstants.FirebaseDatabaseUrl, firebaseAuthClient);
+                authProvider = firebaseAuthClient;
+                initialEnsureAsync = () => firebaseAuthClient.EnsureSignInAsync();
+                onInitialEnsureFailure = () => firebaseAuthClient.EnsureRefreshLoopStarted(startWithBackoff: true);
+                Util.Logger.Log("signaling 経路: Firebase");
+            }
+
+            // 初回 SignIn を fire-and-forget で開始。完了前の signaling 操作は auth 例外になり、
             // 既存リトライ経路で吸収される（実装の段階性を保つ）。
-            // Codex P2 fix: 初回失敗時 (起動時 offline 等) は EnsureRefreshLoopStarted で refresh ループを
+            // Codex P2 fix: 初回失敗時 (起動時 offline 等) は onInitialEnsureFailure で refresh ループを
             // 立ち上げてバックグラウンド再試行に委ねる（旧実装は失敗時に何もせず永遠 unauthenticated 状態が続いた）。
             _ = System.Threading.Tasks.Task.Run(async () =>
             {
                 try
                 {
-                    // Codex P2 fix (第11弾 #4 verify minor): EnsureSignInAsync (semaphore 直列化版) に統一する。
-                    // 旧実装は SignInAsync() を fire-and-forget で呼んでいたため、 PendingPairDeleteQueue の
-                    // 起動 retry 経路 (line 335) の EnsureSignInAsync と完全並行で 2 回走り、
-                    // /auth/token と signInWithCustomToken に余分な POST + RefreshLoop の二重起動 race が発生していた。
-                    // EnsureSignInAsync は冪等で _signInSemaphore で直列化されるので、 並行呼出が来ても 1 回しか走らない。
-                    await firebaseAuthClient.EnsureSignInAsync();
+                    // EnsureSignInAsync / EnsureTokenAsync は冪等で semaphore 直列化されるので、
+                    // PendingPairDeleteQueue 起動 retry 経路の ensure と並行に来ても 1 回しか走らない。
+                    await initialEnsureAsync();
                 }
                 catch (Infrastructure.IdentityLostException)
                 {
@@ -274,8 +313,8 @@ public partial class App : Application
                 }
                 catch (Exception ex)
                 {
-                    Util.Logger.Log($"Firebase Auth 初回 SignIn 失敗（refresh ループに委譲して短期バックオフで再試行）: {ex.Message}", Util.LogLevel.Warning);
-                    firebaseAuthClient.EnsureRefreshLoopStarted(startWithBackoff: true);
+                    Util.Logger.Log($"認証 初回 SignIn 失敗（refresh ループに委譲して短期バックオフで再試行）: {ex.Message}", Util.LogLevel.Warning);
+                    onInitialEnsureFailure();
                 }
             });
             // peerRegistry / settingsService は暗号チャネルの PairSecret 引き当て・フラグ参照に使うため先に生成して注入する。
@@ -283,7 +322,9 @@ public partial class App : Application
             // #D-001a Phase B §6.3: Firebase pairs DELETE が失敗したときの再試行キュー（pending-pair-deletes.json）。
             // Codex P2 fix (第4弾): ConnectionService に注入して pairs/{pairId} 書込成功時に queued delete を取り消す。
             var pendingPairDeletes = new PendingPairDeleteQueue();
-            var connectionService = new ConnectionService(AppConstants.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName, deviceIdentity, peerRegistry, settingsService, firebaseAuthClient, pendingPairDeletes)
+            // CF 単独完結移行: authClient は具象 FirebaseAuthClient を渡さず（CF 経路では存在しない）、
+            // signalingFactory / ensureAuthAsync で経路非依存に注入する。
+            var connectionService = new ConnectionService(AppConstants.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName, deviceIdentity, peerRegistry, settingsService, null, pendingPairDeletes, signalingFactory, ensureAuthAsync)
             {
                 RelayUrl = AppConstants.RelayUrl,
             };
@@ -304,16 +345,15 @@ public partial class App : Application
             };
 
             // rere #B1-001: presence は Infrastructure を VM が直接 new せず、ファクトリ経由で生成する。
-            // #D-001a Phase B: presence も auth 付き REST が必須（rules 厳格化で auth.uid==$deviceId 強制）。
-            var presenceFactory = new FirebasePresenceServiceFactory(AppConstants.FirebaseDatabaseUrl, firebaseAuthClient);
+            // CF 単独完結移行: presenceFactory は上の dual-path 分岐で経路別に生成済み。
             // #D-001a Phase B §6.2: pairs/{pairId} SSoT のローカル同期サービス（起動時即 + 5min + 1h）。
-            // 専用の FirebaseSignaling インスタンスを持たせる（ConnectionService の _signaling と独立、
+            // 専用の signaling インスタンスを持たせる（ConnectionService の _signaling と独立、
             // ライフサイクル分離）。Visibility gate は MainWindow から SetActive を呼ぶ。
-            var pairSyncSignaling = new Infrastructure.FirebaseSignaling(AppConstants.FirebaseDatabaseUrl, firebaseAuthClient);
-            // Codex 第13弾 #3 (P2) fix: authClient を渡して PairSyncService の起動時 immediate sync が
-            // EnsureSignInAsync を待ってから走るようにする。 旧実装は fire-and-forget SignIn と並行で
+            var pairSyncSignaling = signalingFactory();
+            // Codex 第13弾 #3 (P2) fix: ensureAuthAsync を渡して PairSyncService の起動時 immediate sync が
+            // 認証完了を待ってから走るようにする。 旧実装は fire-and-forget SignIn と並行で
             // 401 を unknown 扱い → start-minimized tray で 15min まで反映遅延、 という race があった。
-            var pairSyncService = new PairSyncService(pairSyncSignaling, peerRegistry, settings.DeviceId, firebaseAuthClient);
+            var pairSyncService = new PairSyncService(pairSyncSignaling, peerRegistry, settings.DeviceId, ensureAuthAsync);
             PairSyncService = pairSyncService;  // MainWindow の visibility ハンドラから SetActive を呼ぶための公開
             pairSyncService.Start();
             var connectionVm = new ConnectionViewModel(connectionService, qrCodeService, settingsService, peerRegistry, presenceFactory, pendingPairDeletes);
@@ -328,7 +368,7 @@ public partial class App : Application
                 {
                     try
                     {
-                        using var sig = new Infrastructure.FirebaseSignaling(AppConstants.FirebaseDatabaseUrl, firebaseAuthClient);
+                        using var sig = signalingFactory();
                         await sig.DeletePairAsync(pairId);
                         Util.Logger.Log($"pairs/{pairId} retry DELETE 成功");
                         return true;
@@ -343,7 +383,7 @@ public partial class App : Application
                 // auth 完了を待ってから ProcessAsync を走らせる。auth 失敗ならこのサイクルはスキップして
                 // 次の 10min サイクルへ（refresh ループが裏でリトライ中）。
                 bool authReady = false;
-                try { await firebaseAuthClient.EnsureSignInAsync(pendingDeleteCtsToken); authReady = true; }
+                try { await ensureAuthAsync(pendingDeleteCtsToken); authReady = true; }
                 catch (OperationCanceledException) { return; }
                 catch (Exception ex) { Util.Logger.Log($"PendingPairDelete 起動時 auth 待機エラー（retry をスキップして 10min 後再試行）: {ex.Message}", Util.LogLevel.Warning); }
                 if (authReady)
@@ -358,7 +398,7 @@ public partial class App : Application
                     catch (OperationCanceledException) { return; }
                     if (pendingPairDeletes.Count == 0) continue;
                     // 定期処理経路でも同様に auth 完了を待つ（refresh ループが失敗中なら ProcessAsync をスキップ）。
-                    try { await firebaseAuthClient.EnsureSignInAsync(pendingDeleteCtsToken); }
+                    try { await ensureAuthAsync(pendingDeleteCtsToken); }
                     catch (OperationCanceledException) { return; }
                     catch (Exception ex) { Util.Logger.Log($"PendingPairDelete 定期 auth 待機エラー（このサイクルはスキップ）: {ex.Message}", Util.LogLevel.Warning); continue; }
                     try { await pendingPairDeletes.ProcessAsync(DeleteOne); }
@@ -403,11 +443,13 @@ public partial class App : Application
                 DisposeQuietly(mainVm, nameof(MainWindowViewModel));
                 DisposeQuietly(transferService, nameof(TransferService));
                 DisposeQuietly(pairSyncService, nameof(PairSyncService));
-                DisposeQuietly(pairSyncSignaling, nameof(Infrastructure.FirebaseSignaling));
+                DisposeQuietly(pairSyncSignaling, "Signaling");
                 DisposeQuietly(connectionService, nameof(ConnectionService));
-                // #D-001a Phase B: FirebaseAuthClient は FirebaseSignaling から AuthTokenAsyncFactory 経由で
+                // CF 単独完結移行: auth provider（FirebaseAuthClient / CfTokenProvider）は signaling から
                 // 参照されている可能性があるため、ConnectionService 破棄後に破棄する。
-                DisposeQuietly(firebaseAuthClient, nameof(Infrastructure.FirebaseAuthClient));
+                DisposeQuietly(authProvider, "AuthProvider");
+                // CF 経路の共有 HttpClient（Firebase 経路では null）。
+                if (cfHttp != null) DisposeQuietly(cfHttp, "CfHttpClient");
                 // ConnectionService が参照を持つので、それを破棄した後に鍵を破棄する。
                 DisposeQuietly(deviceIdentity, nameof(Infrastructure.DeviceIdentity));
             };

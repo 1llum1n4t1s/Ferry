@@ -16,6 +16,7 @@ import {
     mintCustomToken,
     handleAuthToken,
     rs256Sign,
+    verifySessionToken,
 } from '../src/auth';
 import type { Env } from '../src/index';
 
@@ -164,6 +165,8 @@ async function makeAuthEnv() {
         FIREBASE_PRIVATE_KEY: pem,
         FIREBASE_CLIENT_EMAIL: 'sa@ferry-test.iam',
         FIREBASE_DATABASE_URL: 'https://example.firebaseio.com',
+        // CF 単独完結移行: 設定時は /auth/token が cfToken も additive に返す。
+        SESSION_HMAC_SECRET: 'test-cf-hmac-secret-0123456789',
     } as unknown as Env;
     return { env, kv };
 }
@@ -286,6 +289,20 @@ describe('handleAuthToken', () => {
         expect(res.status).toBe(400);
         const j = (await res.json()) as { error: string };
         expect(j.error).toBe('INVALID_DEVICE_ID');
+    });
+
+    it('CF 単独完結: SESSION_HMAC_SECRET 設定時は cfToken を additive に返し verify が通る', async () => {
+        const { env } = await makeAuthEnv();
+        const deviceId = 'a'.repeat(32);
+        const body = await buildSignedAuthBody(deviceId);
+        const res = await handleAuthToken(mkRequest(body), env);
+        expect(res.status).toBe(200);
+        const j = (await res.json()) as { customToken: string; cfToken?: string; expiresIn: number };
+        // Firebase customToken と CF cfToken が dual で返る (後方互換)
+        expect(j.customToken.split('.').length).toBe(3);
+        expect(typeof j.cfToken).toBe('string');
+        const claims = await verifySessionToken(j.cfToken!, env);
+        expect(claims?.deviceId).toBe(deviceId);
     });
 });
 

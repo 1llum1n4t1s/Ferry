@@ -37,7 +37,7 @@ public sealed class PairSyncService : IDisposable
     /// authClient が渡されている本番経路では LoopAsync 冒頭で EnsureSignInAsync を await する。
     /// テスト用 ctor (HTTP delegate 差し替え) では null のまま (auth 待ちなしで delegate を呼ぶ)。
     /// </summary>
-    private readonly FirebaseAuthClient? _authClient;
+    private readonly Func<CancellationToken, Task>? _ensureAuthAsync;
     private readonly ConcurrentDictionary<string, int> _consecutive404 = new();
     /// <summary>Codex P1 fix: 旧 peers.json 由来の既存ペアは pairs/{pairId} が未作成なので、責任者側が初回 backfill を試みる。Codex P2 fix (第4弾): 成功時のみ marker を set する (失敗時はマーカーを残さず次サイクルで再試行)。</summary>
     private readonly ConcurrentDictionary<string, byte> _backfillAttempted = new();
@@ -47,20 +47,20 @@ public sealed class PairSyncService : IDisposable
     private CancellationTokenSource? _cts;
     private volatile bool _isActive = true;
 
-    public PairSyncService(FirebaseSignaling signaling, IPeerRegistryService peerRegistry, string deviceId, FirebaseAuthClient? authClient = null)
+    public PairSyncService(ISignalingService signaling, IPeerRegistryService peerRegistry, string deviceId, Func<CancellationToken, Task>? ensureAuthAsync = null)
         : this(
             (pairId, ct) => signaling.GetPairWithStatusAsync(pairId, ct),
             (pairId, record, ct) => signaling.PutPairAsync(pairId, record),
             peerRegistry,
             deviceId,
-            authClient)
+            ensureAuthAsync)
     {
     }
 
     /// <summary>
     /// テスト用コンストラクタ。FirebaseSignaling は sealed のため、HTTP 取得デリゲートを直接差し替えて
     /// 404 閾値 / grace period / 401 未操作などのロジックを単体検証する。
-    /// 本番経路は <see cref="PairSyncService(FirebaseSignaling, IPeerRegistryService, string, FirebaseAuthClient)"/> を使う。
+    /// 本番経路は public ctor（ISignalingService + ensureAuthAsync デリゲート）を使う。
     /// </summary>
     internal PairSyncService(
         Func<string, CancellationToken, Task<(HttpStatusCode Status, string Body)>> fetchPair,
@@ -75,13 +75,13 @@ public sealed class PairSyncService : IDisposable
         Func<string, PairRecord, CancellationToken, Task>? putPair,
         IPeerRegistryService peerRegistry,
         string deviceId,
-        FirebaseAuthClient? authClient)
+        Func<CancellationToken, Task>? ensureAuthAsync)
     {
         _fetchPair = fetchPair;
         _putPair = putPair;
         _peerRegistry = peerRegistry;
         _deviceId = deviceId;
-        _authClient = authClient;
+        _ensureAuthAsync = ensureAuthAsync;
     }
 
     /// <summary>同期ループを開始する。起動時に 1 回呼ぶ。</summary>
@@ -110,9 +110,9 @@ public sealed class PairSyncService : IDisposable
             // unknown state 扱い (削除しない) になっていた。 start-minimized tray 経路では 5min/15min check が
             // _isActive=false で skip され、 remote unpair が起動から最大 15min 反映されない問題に直結。
             // EnsureSignInAsync は冪等で semaphore 直列化済 (App.axaml.cs の初回 SignIn と並列でも 1 回しか走らない)。
-            if (_authClient != null)
+            if (_ensureAuthAsync != null)
             {
-                try { await _authClient.EnsureSignInAsync(ct); }
+                try { await _ensureAuthAsync(ct); }
                 catch (IdentityLostException)
                 {
                     // identity.key 紛失 → App.axaml.cs の IdentityLost ハンドラが clean slate UI を出す。
