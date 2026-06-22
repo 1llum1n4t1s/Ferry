@@ -53,28 +53,14 @@ export async function handleAuthToken(req: Request, env: Env): Promise<Response>
   // 検証前の保護は前段の RATELIMIT_IP (per-IP) が担当する。
   // ECDSA verify 自体の CPU コストは数 ms で、IP rate limit が flood を抑える前提。
 
-  // ECDSA P-256 SHA-256 IEEE P1363 raw 署名検証
+  // ECDSA P-256 SHA-256 IEEE P1363 raw 署名検証（純関数 verifyEcdsaSig に抽出 — CF 単独完結移行で
+  // /signaling 等の他経路からも device 署名検証を再利用できるようにする）。エラーコードは従来と同一。
   const message = `ferry-auth-v1|${deviceId}|${pubKeySpki}|${ts}`;
-  let verified = false;
-  try {
-    const pubKey = await crypto.subtle.importKey(
-      'spki',
-      base64UrlDecode(pubKeySpki),
-      { name: 'ECDSA', namedCurve: 'P-256' },
-      false,
-      ['verify'],
-    );
-    verified = await crypto.subtle.verify(
-      { name: 'ECDSA', hash: 'SHA-256' },
-      pubKey,
-      base64UrlDecode(sig),
-      new TextEncoder().encode(message),
-    );
-  } catch {
-    return jsonError(400, 'INVALID_SIG_FORMAT', 'pubKey or signature could not be decoded/imported');
-  }
-  if (!verified) {
-    return jsonError(401, 'BAD_SIGNATURE', 'signature verification failed');
+  const sigResult = await verifyEcdsaSig(pubKeySpki, message, sig);
+  if (!sigResult.ok) {
+    return sigResult.code === 'INVALID_SIG_FORMAT'
+      ? jsonError(400, 'INVALID_SIG_FORMAT', 'pubKey or signature could not be decoded/imported')
+      : jsonError(401, 'BAD_SIGNATURE', 'signature verification failed');
   }
 
   // Codex 第7弾 #4 fix (P2): device rate limit は **KV binding 一致確認後** に消費する。
@@ -104,9 +90,14 @@ export async function handleAuthToken(req: Request, env: Env): Promise<Response>
     await env.DEVICE_KEY_BINDING.put(kvKey, pubKeySpki);
   }
 
-  // Custom Token 発行 (uid = deviceId, exp = iat+3600, src=pc)
+  // Custom Token 発行 (uid = deviceId, exp = iat+3600, src=pc) — Firebase dual-path 用に当面併存。
   const customToken = await mintCustomToken(deviceId, 3600, env, 'pc');
-  return jsonOk({ customToken, expiresIn: 3600 });
+  // CF 単独完結用の自前 HMAC bearer (cfToken)。/signaling・/presence・/pairs・/inbox の認可に使う。
+  // SESSION_HMAC_SECRET 未設定時は省略 (Firebase 経路のみで動作・dual-path 段階の後方互換)。
+  const cfToken = env.SESSION_HMAC_SECRET ? await mintSessionToken(deviceId, 3600, env) : undefined;
+  return jsonOk(
+    cfToken ? { customToken, cfToken, expiresIn: 3600 } : { customToken, expiresIn: 3600 },
+  );
 }
 
 /** Bridge 用: sessions/{sid}/PairingNonce 一致 → 5min Custom Token */
@@ -340,6 +331,114 @@ export async function rs256Sign(
     ['sign'],
   );
   const sigBuf = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, enc.encode(unsigned));
+  return `${unsigned}.${base64UrlEncode(new Uint8Array(sigBuf))}`;
+}
+
+// ---------- CF 単独完結: device 署名検証 + 自前 HMAC bearer (cfToken) ----------
+//
+// docs/design/cf-only-migration.md §2。Firebase の「Worker が Custom Token mint → クライアントが
+// Firebase ログイン → idToken」二段を「Worker が ECDSA 検証して自前 HMAC bearer を発行 →
+// クライアントが Bearer で DO/D1 を叩く」一段に畳むための土台。Firebase RTDB 撤去後もそのまま生きる。
+
+/** verifyEcdsaSig の結果。decode/import 失敗は INVALID_SIG_FORMAT、検証不成立は BAD_SIGNATURE。 */
+export type EcdsaSigResult = { ok: true } | { ok: false; code: 'INVALID_SIG_FORMAT' | 'BAD_SIGNATURE' };
+
+/**
+ * ECDSA P-256 SHA-256 IEEE P1363 raw 署名検証（純関数）。
+ * handleAuthToken からの抽出。/signaling・/pair/create 等が device 所有を検証する際に再利用する。
+ */
+export async function verifyEcdsaSig(
+  pubKeySpki: string,
+  message: string,
+  sigB64Url: string,
+): Promise<EcdsaSigResult> {
+  let verified = false;
+  try {
+    const pubKey = await crypto.subtle.importKey(
+      'spki',
+      base64UrlDecode(pubKeySpki),
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['verify'],
+    );
+    verified = await crypto.subtle.verify(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      pubKey,
+      base64UrlDecode(sigB64Url),
+      new TextEncoder().encode(message),
+    );
+  } catch {
+    return { ok: false, code: 'INVALID_SIG_FORMAT' };
+  }
+  return verified ? { ok: true } : { ok: false, code: 'BAD_SIGNATURE' };
+}
+
+/**
+ * cfToken (自前 HMAC bearer) を HS256 で発行。Firebase idToken の置換。
+ * payload は最小 `{ sub: deviceId, iat, exp }`。クライアントは decode 不要
+ * (uid は自分の deviceId として自明、exp はレスポンス値) なので AOT セーフ。
+ */
+export async function mintSessionToken(deviceId: string, expiresInSec: number, env: Env): Promise<string> {
+  const iat = Math.floor(Date.now() / 1000);
+  const exp = iat + expiresInSec;
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const payload = { sub: deviceId, iat, exp };
+  return hs256Sign(header, payload, env.SESSION_HMAC_SECRET);
+}
+
+/**
+ * cfToken を検証して deviceId を返す。署名不一致 / 期限切れ / 形式不正 / secret 未設定は null。
+ * /signaling・/presence・/pairs・/inbox の認可入口で使う。
+ */
+export async function verifySessionToken(token: string, env: Env): Promise<{ deviceId: string } | null> {
+  if (!env.SESSION_HMAC_SECRET) return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const [headerB64, payloadB64, sigB64] = parts;
+  let ok = false;
+  try {
+    const key = await hmacKey(env.SESSION_HMAC_SECRET);
+    ok = await crypto.subtle.verify(
+      'HMAC',
+      key,
+      base64UrlDecode(sigB64),
+      new TextEncoder().encode(`${headerB64}.${payloadB64}`),
+    );
+  } catch {
+    return null;
+  }
+  if (!ok) return null;
+  let payload: { sub?: unknown; exp?: unknown };
+  try {
+    payload = JSON.parse(new TextDecoder().decode(base64UrlDecode(payloadB64)));
+  } catch {
+    return null;
+  }
+  if (typeof payload.sub !== 'string' || !/^[a-f0-9]{32}$/.test(payload.sub)) return null;
+  // exp は秒。clock skew は持たせず厳密に判定 (1h TTL に対し数秒のズレは誤差範囲)。
+  if (typeof payload.exp !== 'number' || payload.exp * 1000 < Date.now()) return null;
+  return { deviceId: payload.sub };
+}
+
+async function hmacKey(secret: string): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign', 'verify'],
+  );
+}
+
+/** HS256 JWT を HMAC secret で署名する (header.payload.signature の base64url 連結)。 */
+async function hs256Sign(header: object, payload: object, secret: string): Promise<string> {
+  if (!secret) throw new Error('SESSION_HMAC_SECRET is not configured');
+  const enc = new TextEncoder();
+  const headerB64 = base64UrlEncode(enc.encode(JSON.stringify(header)));
+  const payloadB64 = base64UrlEncode(enc.encode(JSON.stringify(payload)));
+  const unsigned = `${headerB64}.${payloadB64}`;
+  const key = await hmacKey(secret);
+  const sigBuf = await crypto.subtle.sign('HMAC', key, enc.encode(unsigned));
   return `${unsigned}.${base64UrlEncode(new Uint8Array(sigBuf))}`;
 }
 

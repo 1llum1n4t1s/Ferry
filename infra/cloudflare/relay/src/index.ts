@@ -20,6 +20,8 @@
 
 export interface Env {
   RELAY: DurableObjectNamespace;
+  /** signaling DO (PairDO)。CF 単独完結移行 Step 1。pairId-keyed で offers/answers/endpoints/probes を保持。 */
+  PAIR: DurableObjectNamespace;
   /** pairId ハッシュ化用ソルト。`wrangler secret put SALT` で登録する。 */
   SALT: string;
 
@@ -32,6 +34,12 @@ export interface Env {
   FIREBASE_CLIENT_EMAIL: string;
   /** Firebase Realtime DB URL (vars)。例: https://ferry-edf09-default-rtdb.firebaseio.com */
   FIREBASE_DATABASE_URL: string;
+
+  // === CF 単独完結 (docs/design/cf-only-migration.md) ===
+  /** cfToken (自前 HMAC bearer) 署名用シークレット。`wrangler secret put SESSION_HMAC_SECRET`。
+   *  未設定なら /auth/token は cfToken を発行せず Firebase 経路のみで動作する (dual-path)。 */
+  SESSION_HMAC_SECRET: string;
+
   /** Rate limit bindings (unsafe.bindings)。 */
   RATELIMIT_IP?: RateLimit;
   RATELIMIT_DEVICE?: RateLimit;
@@ -42,6 +50,9 @@ export interface Env {
 interface RateLimit {
   limit(opts: { key: string }): Promise<{ success: boolean }>;
 }
+
+// CF 単独完結移行 Step 1: signaling DO を entry module から re-export (Workers の DO クラス公開要件)。
+export { PairDO } from './pairdo';
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
@@ -69,6 +80,14 @@ export default {
         return withCorsHeaders(resp, req);
       }
       return new Response('Method Not Allowed', { status: 405, headers: { 'allow': 'POST, OPTIONS' } });
+    }
+
+    // CF 単独完結移行 Step 1: signaling HTTP ルート (`/sig/{pairId}/...`)。
+    // 認可 (cfToken Bearer + pairId 当事者 + sender キー強制) は handleSignaling 内で完結し PairDO へ委譲。
+    // C# desktop クライアントからの呼出なので CORS は不要 (ブラウザ経由は Bridge の /pair/* のみ)。
+    if (url.pathname.startsWith('/sig/')) {
+      const { handleSignaling } = await import('./signaling-routes');
+      return handleSignaling(req, env, url);
     }
 
     // WebSocket 以外は拒否
@@ -137,7 +156,7 @@ function withCorsHeaders(resp: Response, req: Request): Response {
   return new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers });
 }
 
-async function hashPairId(pairId: string, salt: string): Promise<string> {
+export async function hashPairId(pairId: string, salt: string): Promise<string> {
   const data = new TextEncoder().encode(pairId + '|' + salt);
   const buf = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(buf))

@@ -15,9 +15,19 @@ preview_urls = false
 name = "RELAY"
 class_name = "RelayDO"
 
+# CF 単独完結移行 Step 1 (docs/design/cf-only-migration.md): signaling DO (pairId-keyed)。
+# offers/answers/endpoints/probes/createdAt を DO storage で強整合に保持し、alarm で TTL cleanup する。
+[[durable_objects.bindings]]
+name = "PAIR"
+class_name = "PairDO"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RelayDO"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["PairDO"]
 
 # === カスタムドメイン ===
 # `relay.ferry.nephilim.jp` は Cloudflare Zone `nephilim.jp` (Yuro 所有) 配下。
@@ -67,6 +77,9 @@ simple = { limit = 5, period = 60 }
 #   SA_PATH=$(node -p "require('C:/Users/IMT/dev/Secret/secrets.json').firebase.sa_key_path")
 #   node -p "require('$SA_PATH').private_key" | pnpm dlx wrangler secret put FIREBASE_PRIVATE_KEY
 #   node -p "require('$SA_PATH').client_email" | pnpm dlx wrangler secret put FIREBASE_CLIENT_EMAIL
+#   # CF 単独完結 (cf-only-migration): cfToken (自前 HMAC bearer) 署名鍵。ランダム 32 byte を投入。
+#   #   未設定でも deploy は通る (/auth/token は cfToken を省略し Firebase 経路のみで動作)。
+#   openssl rand -hex 32 | pnpm dlx wrangler secret put SESSION_HMAC_SECRET
 
 # === Observability ===
 # Workers 標準のメトリクス + Logpush 連携時の保管設定。
