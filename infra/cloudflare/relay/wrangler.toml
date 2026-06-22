@@ -70,7 +70,8 @@ FIREBASE_DATABASE_URL = "https://ferry-edf09-default-rtdb.firebaseio.com"
 [[d1_databases]]
 binding = "DB"
 database_name = "ferry_ledger"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+# 2026-06-23 に APAC リージョン (東京 pin) で作成。database_id は CF リソース識別子なので公開可。
+database_id = "05b906bc-0c78-470d-8afe-6ee41b273049"
 
 # deviceId ↔ pubKeySpki binding KV (first-write-wins)
 # Codex 第13弾 #4 (P1) fix: 旧 placeholder "REPLACE_WITH_KV_NAMESPACE_ID" のままだと deploy 後 /auth/token が
