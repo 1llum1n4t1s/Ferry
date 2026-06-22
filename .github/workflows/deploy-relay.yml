@@ -1,0 +1,54 @@
+name: Deploy Relay
+
+# infra/cloudflare/relay/ 配下を main に push したら relay Worker (Cloudflare Workers + Durable Objects)
+# を自動デプロイする。手動 `wrangler deploy` 忘れによる「コードと本番の乖離」を防ぐ。
+#
+# 再発防止の背景 (2026-06-23): relay は手動デプロイのみで、PR #10 (/auth/token 追加) 後に
+# 誰も再デプロイせず数日放置された結果、本番 relay が旧コードのまま /auth/token を 426 で
+# 弾き続けた (24h で 433 回)。リリースに紐づかない手動運用が構造的原因だったため CI 化する。
+#
+# Velopack 配信 (release/**) や landing (web/) のパイプラインとは完全に独立。
+# secret (SALT / SESSION_HMAC_SECRET / FIREBASE_PRIVATE_KEY / FIREBASE_CLIENT_EMAIL) は
+# Worker に永続するので、コードデプロイ (`wrangler deploy`) では再設定不要。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/cloudflare/relay/**'
+      - '.github/workflows/deploy-relay.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy relay Worker
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリをチェックアウト
+        # actions/checkout@v4.2.2
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          # zizmor: artipacked 警告対策。push しないので資格情報を残さない。
+          persist-credentials: false
+
+      - name: Node.js セットアップ (wrangler 4.x が Node.js >=20 を要求)
+        # actions/setup-node@v6.4.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '22'
+
+      - name: wrangler CLI をインストール (サプライチェーン対策でバージョン固定)
+        run: npm install -g wrangler@4.93.0
+
+      # CLOUDFLARE_API_TOKEN は Workers Scripts:Edit 権限が必要
+      # (deploy-landing.yml と同じトークン。R2 Storage:Edit だけでは Worker デプロイ不可)。
+      # wrangler deploy は wrangler.toml の D1 migration (v1-v3) を冪等に適用し、
+      # public/ (Static Assets = CF 版 Bridge) も同時配信する。
+      - name: relay Worker をデプロイ
+        working-directory: infra/cloudflare/relay
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: wrangler deploy
