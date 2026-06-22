@@ -65,6 +65,10 @@ public sealed class AppSettings
     // 旧 settings.json に残る `EnableSecureChannel` キーは System.Text.Json が未知キーとして無視し、
     // 次回 SaveAsync で自然に消える（#D-004 と同じ互換パターン）。
 
+    /// <summary>CF 単独完結移行 (dual-path): true で signaling/presence/pairing を Cloudflare 経路にする。
+    /// 既定 false（Firebase 経路）。実機検証が済むまでの実験的フラグ。設計は docs/design/cf-only-migration.md。</summary>
+    public bool UseCloudflareSignaling { get; set; } = false;
+
     /// <summary>アップロード帯域制限 (KB/s)。0 で無制限。
     /// 送信側 SendChunksAsync の各チャンク送信前に TokenBucket でレート整形する。</summary>
     public int UploadKBps { get; set; } = 0;

@@ -32,4 +32,11 @@ public static class AppConstants
     /// Custom Token を idToken に交換する signInWithCustomToken エンドポイントで使用。
     /// </summary>
     public const string FirebaseWebApiKey = "AIzaSyCOPRMYBv4keAHBjvFm4lgdfMoVva6rxTE";
+
+    // === CF 単独完結移行 (docs/design/cf-only-migration.md) ===
+    /// <summary>CF 単独完結の Worker API ベース URL（signaling/presence/pairs/pair）。</summary>
+    public const string CfApiBaseUrl = "https://relay.ferry.nephilim.jp";
+
+    /// <summary>CF pairing inbox の WebSocket URL（成立通知の真 push 経路）。</summary>
+    public const string CfInboxWsUrl = "wss://relay.ferry.nephilim.jp/inbox";
 }

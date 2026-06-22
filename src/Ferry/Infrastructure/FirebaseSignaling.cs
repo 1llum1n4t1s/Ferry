@@ -29,7 +29,7 @@ namespace Ferry.Infrastructure;
 ///   signaling/{pairId}/probeOffers/{nonce} / probeAnswers/{nonce} = TimedSignalingValue (経路 probe)
 /// 書き手は自分の deviceId キー、読み手はペア相手の deviceId キーを読む (SignalingPaths 参照)。
 /// </summary>
-public sealed class FirebaseSignaling : IDisposable, IPresenceService
+public sealed class FirebaseSignaling : ISignalingService
 {
     private readonly FirebaseClient _client;
     private readonly string _databaseUrl;

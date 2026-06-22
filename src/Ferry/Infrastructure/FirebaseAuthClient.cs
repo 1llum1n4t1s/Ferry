@@ -310,6 +310,9 @@ public sealed class AuthTokenResponse
 {
     [JsonPropertyName("customToken")] public string CustomToken { get; set; } = string.Empty;
     [JsonPropertyName("expiresIn")] public int ExpiresIn { get; set; }
+
+    /// <summary>CF 単独完結移行: 自前 HMAC bearer (cfToken)。SESSION_HMAC_SECRET 設定時のみ返る（dual-path）。</summary>
+    [JsonPropertyName("cfToken")] public string? CfToken { get; set; }
 }
 
 public sealed class AuthErrorResponse
