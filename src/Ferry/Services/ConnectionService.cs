@@ -90,6 +90,19 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     private ISignalingService? _signaling;
     private ITransport? _transport;
     private string? _currentPairId;
+
+    // === 複数ペア同時接続対応 Stage 3a: ConnectionSession 集約の土台（シャドウ運用） ===
+    //
+    // 接続中ペアごとに ITransport / ISignalingService / pairId / Route / State / SecureChannel /
+    // CTS / ロック等をまとめる入れ物。Stage 3b で単数フィールドの参照を Session 経由に置換し、
+    // Stage 3c で AttachTransportEvents / OnChannelClosed を per-peer 化、Stage 4 で _connectGate /
+    // _connectCts / _listeningCts も per-peer 化する（並行接続解禁）。
+    //
+    // 現状(Stage 3a)は『単数フィールドの内容を Session に複製してミラーする』シャドウ運用で、
+    // ConnectedPeers / RouteOf 等の集合 API だけ _sessions 経由に切り替える（外部公開面の整合性を先行）。
+    // 接続フロー本体は単数フィールドを参照し続けるので挙動不変。Stage 3b で参照ごと置換する。
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ConnectionSession> _sessions = new(StringComparer.Ordinal);
+
     private CancellationTokenSource? _listeningCts;
     /// <summary>rere PR#8 #F2: 着信監視タスクの参照。role調停フォールバック時に Cancel 後 *完了まで* await して
     /// listener と本体のテアダウン競合 (確立直後の _transport をサイレント破壊) を防ぐために保持する。</summary>
@@ -125,6 +138,14 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// ピアを監視中に、そのピアが削除された場合の監視停止判定に VM が使う。</summary>
     public string? CurrentListeningPeerId => _currentListeningPeerId;
 
+    /// <summary>複数ペア同時接続対応 Stage 3a: 着信監視中ピアの集合。
+    /// 現状(Stage 3a)は単数 <see cref="_currentListeningPeerId"/> のシム。Stage 4 で peerId 辞書化される
+    /// (`_listeningCts` も per-peer 化したとき) ので、そこで実体に差し替える。</summary>
+    public System.Collections.Generic.IReadOnlyCollection<string> ListeningPeerIds
+        => string.IsNullOrEmpty(_currentListeningPeerId)
+            ? Array.Empty<string>()
+            : new[] { _currentListeningPeerId! };
+
     /// <summary>
     /// この pairing watch セッションで既に処理した pairingId。
     /// Firebase 購読時に既存子 (stale な pairings/ エントリ) が replay されても、
@@ -151,29 +172,35 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     public PeerInfo? ConnectedPeer { get; private set; }
     public ConnectionRoute Route { get; private set; } = ConnectionRoute.Unknown;
 
-    /// <summary>複数ペア同時接続対応 Stage 2: 接続中ペア集合。
-    /// Stage 3 で _sessions 辞書化したら _sessions の射影に置換する。
-    /// 現状(Stage 2)は ConnectedPeer 単数のシム。</summary>
+    /// <summary>複数ペア同時接続対応 Stage 3a: 接続中ペア集合。<see cref="_sessions"/> 経由で射影する。
+    /// Connected 状態の Session のみ ConnectedPeer 付きで返す（State!=Connected の Session は
+    /// 接続フロー中なので外向きには表に出さない）。</summary>
     public System.Collections.Generic.IReadOnlyDictionary<string, PeerInfo> ConnectedPeers
     {
         get
         {
-            var p = ConnectedPeer;
-            if (p == null) return _emptyConnectedPeers;
-            return new System.Collections.Generic.Dictionary<string, PeerInfo>(1) { [p.SessionId] = p };
+            var sessions = _sessions;
+            if (sessions.IsEmpty) return _emptyConnectedPeers;
+            var result = new System.Collections.Generic.Dictionary<string, PeerInfo>(sessions.Count, StringComparer.Ordinal);
+            foreach (var kvp in sessions)
+            {
+                if (kvp.Value.ConnectedPeer is { } info && kvp.Value.State == PeerState.Connected)
+                    result[kvp.Key] = info;
+            }
+            return result;
         }
     }
 
     private static readonly System.Collections.Generic.IReadOnlyDictionary<string, PeerInfo> _emptyConnectedPeers
         = new System.Collections.Generic.Dictionary<string, PeerInfo>(0);
 
-    /// <summary>複数ペア同時接続対応 Stage 2: 指定 peer の Route を返す（単数 Route のシム）。
-    /// Stage 3 で _sessions 化されたら Session.Route を直接引く実装に置換する。</summary>
+    /// <summary>複数ペア同時接続対応 Stage 3a: 指定 peer の Route を返す。
+    /// <see cref="_sessions"/> から該当 Session を引いて Route を返す。
+    /// 未接続/未知 peer は <see cref="ConnectionRoute.Unknown"/>。
+    /// Stage 4 で並行接続が解禁されたら、フロー制御等が transferId→peerId→RouteOf で読む。</summary>
     public ConnectionRoute RouteOf(string peerId)
     {
-        var p = ConnectedPeer;
-        if (p != null && string.Equals(p.SessionId, peerId, StringComparison.Ordinal))
-            return Route;
+        if (_sessions.TryGetValue(peerId, out var s)) return s.Route;
         return ConnectionRoute.Unknown;
     }
 
@@ -499,6 +526,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         StopListeningForConnection();
         _listeningCts = new CancellationTokenSource();
         _currentListeningPeerId = peerId;  // v1.0.38 review fix: 監視中のピア ID を保持
+        SyncShadowSession(); // 複数ペア対応 Stage 3a: 監視開始ピアを _sessions にミラー
         Util.Logger.Log($"着信接続監視開始: peer={peerId}");
         // rere PR#8 #F2: タスクを保持して role調停フォールバック時に Cancel 後の完了 await を可能にする。
         _listeningTask = ListenForIncomingConnectionAsync(peerId, _listeningCts.Token);
@@ -513,6 +541,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             _listeningCts.Dispose();
             _listeningCts = null;
             _currentListeningPeerId = null;  // v1.0.38 review fix: クリア
+            SyncShadowSession(); // 複数ペア対応 Stage 3a: 監視終了で _sessions も掃除
         }
     }
 
@@ -1703,6 +1732,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     private void OnTransportRouteChanged(object? sender, ConnectionRoute route)
     {
         Route = route;
+        // 複数ペア同時接続対応 Stage 3a: 単数 Route の更新を Session にミラー。
+        // Stage 3c で sender→Session 解決に置換予定（クロージャ束縛で peerId を直接持つ）。
+        SyncShadowSession();
         Util.Logger.Log($"接続経路確定: {route}");
         RouteChanged?.Invoke(this, route);
     }
@@ -1884,7 +1916,58 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     {
         Util.Logger.Log($"状態遷移: {State} → {state}");
         State = state;
+        // 複数ペア同時接続対応 Stage 3a: 単数 State の遷移を Session(現在/便宜セッション)にミラーする。
+        // 単数 ConnectedPeer / _currentPairId / _transport 等の context から Session を解決する。
+        SyncShadowSession();
         StateChanged?.Invoke(this, state);
+    }
+
+    /// <summary>複数ペア同時接続対応 Stage 3a: 単数フィールド (_transport / _signaling / _currentPairId /
+    /// Route / State / _secureChannel / ConnectedPeer) を <see cref="_sessions"/> へミラーする。
+    /// Stage 3a では単数フィールドが権威で、_sessions は ConnectedPeers / RouteOf 等の集合 API の表に
+    /// 整合させる用途。Stage 3b 以降で参照ごと _sessions へ移管し、このミラー処理は除去する。</summary>
+    private void SyncShadowSession()
+    {
+        var peer = ConnectedPeer;
+        var listeningPeerId = _currentListeningPeerId;
+        // 解決順: 接続成立済の peer → 着信監視中の peer → 何も無い (no-op)。
+        // Stage 3a の現状フィールドは 1 ペア分しか動かない前提なので、辞書は最大 1 件。
+        var peerId = peer?.SessionId ?? (string.IsNullOrEmpty(listeningPeerId) ? null : listeningPeerId);
+        if (string.IsNullOrEmpty(peerId))
+        {
+            // どの peer も対象外 → 残存セッションを掃除。
+            if (!_sessions.IsEmpty)
+            {
+                foreach (var kvp in _sessions)
+                {
+                    if (_sessions.TryRemove(kvp.Key, out var removed))
+                        DisposeSessionSilent(removed);
+                }
+            }
+            return;
+        }
+
+        var session = _sessions.GetOrAdd(peerId, id => new ConnectionSession(id));
+        session.Transport = _transport;
+        session.Signaling = _signaling;
+        session.PairId = _currentPairId;
+        session.Route = Route;
+        session.State = State;
+        session.ConnectedPeer = peer;
+        // SecureChannel は _secureLock 配下で扱うため、ここではミラーしない（OnDataReceived 経路で必要時に直接読む）。
+
+        // 別 peerId の旧セッションが残っていたら掃除（State 単数のため Stage 3a では同時に 1 peer のみ）。
+        if (_sessions.Count > 1)
+        {
+            foreach (var kvp in _sessions)
+            {
+                if (!string.Equals(kvp.Key, peerId, StringComparison.Ordinal))
+                {
+                    if (_sessions.TryRemove(kvp.Key, out var removed))
+                        DisposeSessionSilent(removed);
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -2127,6 +2210,81 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         StopListeningForConnection();
         _transport?.Dispose();
         _signaling?.Dispose();
+
+        // 複数ペア同時接続対応 Stage 3a: 残存セッション(現状(3a)は最大1件)を一括 Dispose する。
+        // Stage 3c で OnChannelClosed が個別に Dispose する形になっても、Service 自体の Dispose では
+        // 漏れがないように一括ヘルパーを通す。
+        foreach (var kvp in _sessions)
+            DisposeSessionSilent(kvp.Value);
+        _sessions.Clear();
+    }
+
+    /// <summary>複数ペア同時接続対応 Stage 3a: Session を安全に Dispose する単一ヘルパー。
+    /// 二重 Dispose は <see cref="ConnectionSession.Dispose"/> 側の Interlocked ガードで無害化される。</summary>
+    private static void DisposeSessionSilent(ConnectionSession session)
+    {
+        try { session.Dispose(); }
+        catch (Exception ex) { Util.Logger.Log($"Session Dispose 失敗（無視）: {ex.Message}", Util.LogLevel.Debug); }
+    }
+
+    /// <summary>
+    /// 複数ペア同時接続対応 Stage 3a: 接続中ペアごとに集約する入れ物。
+    /// Stage 3a ではフィールドの入れ物のみ（参照は単数フィールドのまま）でシャドウ運用する。
+    /// Stage 3b で単数フィールドの参照を Session 経由に置換、Stage 3c で AttachTransportEvents /
+    /// OnChannelClosed / OnTransportRouteChanged を per-peer 化、Stage 4 で gate/CTS を per-peer 化する。
+    ///
+    /// IDisposable の二重発火は <see cref="_disposed"/> の Interlocked ガードで無害化する
+    /// （OnChannelClosed と DisconnectAsync が同時に Dispose する競合への防御）。
+    /// </summary>
+    private sealed class ConnectionSession : IDisposable
+    {
+        /// <summary>このセッションが代表する相手 peer の SessionId(32hex)。<see cref="_sessions"/> の辞書キーと一致。</summary>
+        public string PeerId { get; }
+
+        /// <summary>このセッションの pairId（<see cref="ConnectionService._currentPairId"/> の Stage 3a シャドウ）。</summary>
+        public string? PairId { get; set; }
+
+        /// <summary>このセッションの transport。Stage 3a 時点では <see cref="ConnectionService._transport"/> のミラーで、
+        /// 単数フィールド側を Disposable の権威として扱う（二重 Dispose 防止のため Session.Dispose は
+        /// 自分が保持する参照のみ触る・単数 _transport は外側で別途破棄される）。</summary>
+        public ITransport? Transport { get; set; }
+
+        /// <summary>このセッションの signaling client。Stage 3a 時点では Mirror。</summary>
+        public ISignalingService? Signaling { get; set; }
+
+        /// <summary>このセッションの接続経路。Stage 3a 時点では <see cref="ConnectionService.Route"/> のミラー。</summary>
+        public ConnectionRoute Route { get; set; } = ConnectionRoute.Unknown;
+
+        /// <summary>このセッションの接続状態。Stage 3a 時点では <see cref="ConnectionService.State"/> のミラー。</summary>
+        public PeerState State { get; set; } = PeerState.Disconnected;
+
+        /// <summary>このセッションの相手 PeerInfo（接続成立後に設定）。<see cref="ConnectionService.ConnectedPeer"/> の Stage 3a シャドウ。</summary>
+        public PeerInfo? ConnectedPeer { get; set; }
+
+        /// <summary>このセッションの暗号チャネル。Stage 3 完了後は per-peer 暗号セッションを保持する。
+        /// Stage 3a 時点では Mirror。</summary>
+        public SecureChannel? SecureChannel { get; set; }
+
+        /// <summary>暗号チャネル状態機械の直列化ロック（Session 単位）。</summary>
+        public readonly object SecureLock = new();
+
+        private int _disposed;
+
+        public ConnectionSession(string peerId)
+        {
+            PeerId = peerId ?? throw new ArgumentNullException(nameof(peerId));
+        }
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+            // Stage 3a: 単数フィールド (_transport / _signaling) が権威なので、Session 自身は
+            // 参照を握っているだけで Dispose しない（二重 Dispose 防止）。
+            // Stage 3b で参照ごと Session へ移管したら、ここで Transport / Signaling の Dispose を担う。
+            Transport = null;
+            Signaling = null;
+            SecureChannel = null;
+        }
     }
 }
 
