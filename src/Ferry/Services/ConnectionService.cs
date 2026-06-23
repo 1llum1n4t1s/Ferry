@@ -733,7 +733,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 // 遅延キャンセル処理がオンデマンド側の状態 / transport を踏み潰すのを防ぐ
                 if (processingOffer && State == PeerState.Connecting && _connectingByListener)
                 {
-                    DetachTransportEvents();
+                    DetachTransportEvents(peerId, _transport); // Stage 3b: per-peer detach
                     _transport?.Dispose();
                     _transport = null;
                     SetState(PeerState.Disconnected);
@@ -931,7 +931,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             _signaling?.Dispose();
             _signaling = NewSignaling();
 
-            DetachTransportEvents();
+            // Stage 3b: peerId 指定で detach（古い transport が他 Session のものなら無視されるため安全）。
+            DetachTransportEventsForTransport(_transport);
             _transport?.Dispose();
             _transport = null;
 
@@ -989,7 +990,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 Util.Logger.Log("TCP 直接接続成功");
                 connected = true;
                 _transport = tcpTransport;
-                AttachTransportEvents();
+                AttachTransportEvents(peerId, tcpTransport); // Stage 3b: per-peer attach
 
                 // Answer ポーリングも完了を待つ（確認応答）。WaitForSdpAsync は内部例外を握りつぶして
                 // 無限ポーリングするため、受信側の answer 書き込みが失敗すると TCP 確立済みなのに
@@ -1128,7 +1129,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             DisposeOrphanTransports();
             if (State == PeerState.Connecting)
             {
-                DetachTransportEvents();
+                DetachTransportEvents(peerId, _transport); // Stage 3b: per-peer detach
                 _transport?.Dispose();
                 _transport = null;
                 SetState(PeerState.Disconnected);
@@ -1420,7 +1421,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         _connectCts?.Cancel();
         StopListeningForConnection();
         ResetSecureChannel(); // rere #D-001(b): 暗号チャネルを破棄して待機中送信を解放
-        DetachTransportEvents();
+        // Stage 3b: peerId 不明な切断経路は transport で逆引きして全 Session ハンドラを掃除する。
+        DetachTransportEventsForTransport(_transport);
         _transport?.Close();
         _transport?.Dispose();
         _transport = null;
@@ -1463,10 +1465,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
             await tcpTransport.ConnectAsync(ips, port, connectCts.Token);
 
-            DetachTransportEvents();
+            // Stage 3b: 既存 transport（前段の試行 or 別 peer のもの）を session 単位で detach する。
+            DetachTransportEventsForTransport(_transport);
             _transport?.Dispose();
             _transport = tcpTransport;
-            AttachTransportEvents();
+            AttachTransportEvents(peerId, tcpTransport);
             return true;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -1525,10 +1528,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             // (FileMeta/SecureHello)を取りこぼさない。確立前に届く DATA は HandleData の !IsConnected ガードで
             // ドロップされ送信側の再送に委ねられる。UDP 失敗時は attach 済み udpTransport が残るが、次経路
             // (リレー)の DetachTransportEvents+Dispose で確実に掃除される。
-            DetachTransportEvents();
+            DetachTransportEventsForTransport(_transport); // Stage 3b
             _transport?.Dispose();
             _transport = udpTransport;
-            AttachTransportEvents();
+            AttachTransportEvents(peerId, udpTransport);
             await udpTransport.HolePunchAsync(parts[0], remotePort, punchCts.Token);
             return true;
         }
@@ -1626,10 +1629,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
             // attach を HolePunchAsync の前に行う（理由は Offer 側と同じ。SetConnected〜attach の窓に届く
             // 最初のアプリデータを取りこぼさない。確立前 DATA は HandleData の !IsConnected ガードでドロップ）。
-            DetachTransportEvents();
+            DetachTransportEventsForTransport(_transport); // Stage 3b
             _transport?.Dispose();
             _transport = udpTransport;
-            AttachTransportEvents();
+            AttachTransportEvents(peerId, udpTransport);
             await udpTransport.HolePunchAsync(offer.ExternalIp!, offer.ExternalPort, punchCts.Token);
             return true;
         }
@@ -1678,10 +1681,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
             await relayTransport.ConnectAsync(relayCts.Token);
 
-            DetachTransportEvents();
+            DetachTransportEventsForTransport(_transport); // Stage 3b
             _transport?.Dispose();
             _transport = relayTransport;
-            AttachTransportEvents();
+            AttachTransportEvents(peerId, relayTransport);
             return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -1701,62 +1704,172 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     // === イベントハンドラ ===
 
-    private void AttachTransportEvents()
+    // === 複数ペア同時接続対応 Stage 3b: クロージャ束縛 Attach/Detach + per-Session イベントルーティング ===
+    //
+    // 旧実装はメソッド参照 (OnChannelClosed 等) を _transport の各イベントに attach していたため、
+    // 「どの peer の transport から飛んだイベントか」を sender 経由でしか復元できなかった。
+    // Stage 3b では Attach 時に peerId と transport を捕捉した lambda を生成し、Session に保存する。
+    // 各ハンドラは内部で `ReferenceEquals(transport, session.Transport)` ガードを通り、張り替え済みの
+    // 古い transport から漂着したイベントを無視する（Stage 4 で並列接続が解禁されたとき、別 peer の
+    // OnChannelClosed が手元の Session を踏み潰さないための防御）。
+
+    private void AttachTransportEvents(string peerId, ITransport transport)
     {
-        if (_transport == null) return;
-        _transport.ChannelOpened += OnChannelOpened;
-        _transport.ChannelClosed += OnChannelClosed;
-        _transport.DataReceived += OnDataReceived;
-        _transport.RouteChanged += OnTransportRouteChanged;
+        if (string.IsNullOrEmpty(peerId)) throw new ArgumentNullException(nameof(peerId));
+        if (transport == null) throw new ArgumentNullException(nameof(transport));
+
+        var session = _sessions.GetOrAdd(peerId, id => new ConnectionSession(id));
+
+        // 同 Session に Detach 無しで再 Attach されたら、古いハンドラを掃除してから差し替える（防御）。
+        var oldTransport = session.Transport;
+        if (oldTransport != null && oldTransport != transport)
+            DetachSessionHandlers(session, oldTransport);
+
+        session.Transport = transport;
+        // 単数フィールド (_transport) は呼び出し側で既に書かれているはず。整合のため SyncShadowSession を呼ぶと
+        // 別 Session を巻き込む（単数 State が他 peer 由来）危険があるので、Session.Transport の直接書込で済ます。
+
+        // クロージャ生成: peerId と transport を捕捉。`this` も暗黙キャプチャされ、内部メソッドへ委譲する。
+        EventHandler opened = (_, _) => OnSessionChannelOpened(peerId, transport);
+        EventHandler closed = (_, _) => OnSessionChannelClosed(peerId, transport);
+        EventHandler<Infrastructure.DataReceivedEventArgs> dataReceived = (_, e) => OnSessionDataReceived(peerId, transport, e);
+        EventHandler<ConnectionRoute> routeChanged = (_, route) => OnSessionRouteChanged(peerId, transport, route);
+
+        session.OnChannelOpenedHandler = opened;
+        session.OnChannelClosedHandler = closed;
+        session.OnDataReceivedHandler = dataReceived;
+        session.OnRouteChangedHandler = routeChanged;
+
+        transport.ChannelOpened += opened;
+        transport.ChannelClosed += closed;
+        transport.DataReceived += dataReceived;
+        transport.RouteChanged += routeChanged;
+
         // PR#5 Codex 指摘: transport が ConnectAsync 中（Attach 前）に RouteChanged を発火済みだと
         // Route が Unknown のまま残り、リレー経路のフロー制御ガードが誤って無効化される。
-        // Attach 時点の現在値を即時同期して取りこぼしを防ぐ
-        if (_transport.Route != ConnectionRoute.Unknown && _transport.Route != Route)
-            OnTransportRouteChanged(_transport, _transport.Route);
+        // Attach 時点の現在値を即時同期して取りこぼしを防ぐ。Stage 3b では Session.Route 経由で判定する。
+        if (transport.Route != ConnectionRoute.Unknown && transport.Route != session.Route)
+            OnSessionRouteChanged(peerId, transport, transport.Route);
     }
 
-    private void DetachTransportEvents()
+    private void DetachTransportEvents(string peerId, ITransport? transport)
     {
-        if (_transport == null) return;
-        _transport.ChannelOpened -= OnChannelOpened;
-        _transport.ChannelClosed -= OnChannelClosed;
-        _transport.DataReceived -= OnDataReceived;
-        _transport.RouteChanged -= OnTransportRouteChanged;
+        if (transport == null) return;
+        if (string.IsNullOrEmpty(peerId)) return;
+        if (!_sessions.TryGetValue(peerId, out var session)) return;
+
+        // 別 transport に張り替え済みなら触らない（古い close が新 transport のハンドラを巻き込まない）。
+        if (!ReferenceEquals(session.Transport, transport)) return;
+
+        DetachSessionHandlers(session, transport);
+        session.Transport = null;
     }
 
-    private void OnChannelOpened(object? sender, EventArgs e)
+    /// <summary>Stage 3b: <see cref="ConnectionSession"/> に保存したクロージャ参照で transport から
+    /// イベントハンドラを解除し、参照をクリアする。Attach 時の生成と対称な解除経路を 1 ヶ所に集約。</summary>
+    private static void DetachSessionHandlers(ConnectionSession session, ITransport transport)
     {
-        Util.Logger.Log("データチャネル接続完了");
+        if (session.OnChannelOpenedHandler != null) transport.ChannelOpened -= session.OnChannelOpenedHandler;
+        if (session.OnChannelClosedHandler != null) transport.ChannelClosed -= session.OnChannelClosedHandler;
+        if (session.OnDataReceivedHandler != null) transport.DataReceived -= session.OnDataReceivedHandler;
+        if (session.OnRouteChangedHandler != null) transport.RouteChanged -= session.OnRouteChangedHandler;
+        session.OnChannelOpenedHandler = null;
+        session.OnChannelClosedHandler = null;
+        session.OnDataReceivedHandler = null;
+        session.OnRouteChangedHandler = null;
     }
 
-    private void OnTransportRouteChanged(object? sender, ConnectionRoute route)
+    /// <summary>Stage 3b: peerId 不明な経路（DisconnectAsync 等）から、指定 transport に attach 済みの
+    /// 全 Session ハンドラを掃除する。<see cref="_sessions"/> を走査して該当 Session を見つけて detach する
+    /// （Stage 4 で並列接続が解禁されても、転送中の transport を取り違えない）。</summary>
+    private void DetachTransportEventsForTransport(ITransport? transport)
     {
-        Route = route;
-        // 複数ペア同時接続対応 Stage 3a: 単数 Route の更新を Session にミラー。
-        // Stage 3c で sender→Session 解決に置換予定（クロージャ束縛で peerId を直接持つ）。
-        SyncShadowSession();
-        Util.Logger.Log($"接続経路確定: {route}");
-        RouteChanged?.Invoke(this, route);
-    }
-
-    private void OnChannelClosed(object? sender, EventArgs e)
-    {
-        Util.Logger.Log($"データチャネル切断検知: currentState={State}", Util.LogLevel.Warning);
-        ResetSecureChannel(); // rere #D-001(b): 切断で宙吊りの暗号送信を解放
-        if (State == PeerState.Connected)
+        if (transport == null) return;
+        foreach (var kvp in _sessions)
         {
-            ConnectionLost?.Invoke(this, EventArgs.Empty);
-            SetState(PeerState.Disconnected);
+            if (ReferenceEquals(kvp.Value.Transport, transport))
+            {
+                DetachSessionHandlers(kvp.Value, transport);
+                kvp.Value.Transport = null;
+            }
         }
     }
 
-    private void OnDataReceived(object? sender, Infrastructure.DataReceivedEventArgs e)
+    private void OnSessionChannelOpened(string peerId, ITransport transport)
     {
+        // 張り替え済み transport は無視（古い transport の delayed open イベント等）。
+        if (!_sessions.TryGetValue(peerId, out var session) || !ReferenceEquals(session.Transport, transport))
+            return;
+        Util.Logger.Log($"データチャネル接続完了: peer={Util.Logger.MaskDeviceId(peerId)}");
+    }
+
+    private void OnSessionRouteChanged(string peerId, ITransport transport, ConnectionRoute route)
+    {
+        if (!_sessions.TryGetValue(peerId, out var session) || !ReferenceEquals(session.Transport, transport))
+            return;
+        session.Route = route;
+
+        // この Session が単数フィールド _transport の権威（primary）なら、単数 Route も同期する。
+        // primary 以外（Stage 4 で並列接続が解禁された後の secondary）は単数 Route を触らず、外向きイベントだけ
+        // 発火する（VM 側は単数 Route と RouteOf(peerId) を使い分ける設計）。
+        if (ReferenceEquals(_transport, transport))
+        {
+            Route = route;
+            Util.Logger.Log($"接続経路確定: {route}");
+        }
+        else
+        {
+            Util.Logger.Log($"接続経路確定（secondary）: peer={Util.Logger.MaskDeviceId(peerId)} {route}");
+        }
+        RouteChanged?.Invoke(this, route);
+    }
+
+    private void OnSessionChannelClosed(string peerId, ITransport transport)
+    {
+        Util.Logger.Log($"データチャネル切断検知: peer={Util.Logger.MaskDeviceId(peerId)} currentState={State}", Util.LogLevel.Warning);
+        // 張り替え済み transport（既に Session.Transport != transport）の close は無視 — 新 transport の
+        // ハンドラを巻き込まない。Session が見つからない場合（既に Dispose 済み等）も同様に何もしない。
+        if (!_sessions.TryGetValue(peerId, out var session) || !ReferenceEquals(session.Transport, transport))
+        {
+            Util.Logger.Log("（古い transport の close。Session は別 transport へ張り替え済み）", Util.LogLevel.Debug);
+            return;
+        }
+
+        var wasConnected = session.State == PeerState.Connected;
+        session.State = PeerState.Disconnected;
+
+        // この Session が単数 _transport の権威（primary）なら、暗号チャネルを掃除して単数 State も更新する。
+        // primary 以外（Stage 4 で並列接続が解禁された後の secondary）は単数 _secureChannel / State を触らず、
+        // ConnectionLost だけ単発で発火する（VM 側は per-peer の状態を別経路で管理する）。Stage 3c で
+        // SecureChannel が per-peer 化されたら、本分岐は Session.SecureChannel の掃除に置換する。
+        if (ReferenceEquals(_transport, transport))
+        {
+            ResetSecureChannel(); // rere #D-001(b): 切断で宙吊りの暗号送信を解放
+            if (State == PeerState.Connected)
+            {
+                ConnectionLost?.Invoke(this, EventArgs.Empty);
+                SetState(PeerState.Disconnected);
+            }
+        }
+        else if (wasConnected)
+        {
+            ConnectionLost?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private void OnSessionDataReceived(string peerId, ITransport transport, Infrastructure.DataReceivedEventArgs e)
+    {
+        // 張り替え済み transport から漂着したデータは無視（幽霊フレームで暗号状態機械を壊さない）。
+        if (!_sessions.TryGetValue(peerId, out var session) || !ReferenceEquals(session.Transport, transport))
+            return;
+
         // 複数ペア同時接続対応 Stage 2: transport が運んだ peerId を IConnectionService.DataReceived へ貫通させる。
         // TransferService 側は e.PeerId を権威値として TransferItem.PeerId / _transferPeerId 索引に設定し、
         // ConnectedPeer 単数の逆引きをやめる。
         var data = e.Data;
         SecureChannelStep? step = null;
+        // Stage 3b: 暗号チャネルは引き続き単数 _secureChannel（_secureLock 配下）を権威で使う。
+        // Stage 3c で session.SecureChannel/SecureLock 経由に置換する。
         lock (_secureLock)
         {
             var channel = _secureChannel;
@@ -2268,6 +2381,29 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         /// <summary>暗号チャネル状態機械の直列化ロック（Session 単位）。</summary>
         public readonly object SecureLock = new();
 
+        // === 複数ペア同時接続対応 Stage 3b: クロージャ束縛されたトランスポートイベントハンドラ ===
+        //
+        // AttachTransportEvents(peerId, transport) が peerId と transport を捕捉した
+        // クロージャ（lambda）を生成し、ここに保存する。DetachTransportEvents は
+        // 保存したクロージャ参照を使って `_=` 解除する（メソッド参照だと自然に解除できるが、
+        // クロージャは生成のたびに別インスタンスになるため、Attach 時に保存して同じ参照で
+        // Detach する必要がある）。各ハンドラは内部で
+        // `ReferenceEquals(transport, session.Transport)` ガードを通し、張り替え済みの
+        // 古い transport から漂着したイベントを無視する（Stage 4 で並列接続が解禁されたとき、
+        // 古い peer の OnChannelClosed が新 peer の Session を破壊しないための防御）。
+
+        /// <summary>このセッションの transport.ChannelOpened に attach 済みのハンドラ。</summary>
+        public EventHandler? OnChannelOpenedHandler { get; set; }
+
+        /// <summary>このセッションの transport.ChannelClosed に attach 済みのハンドラ。</summary>
+        public EventHandler? OnChannelClosedHandler { get; set; }
+
+        /// <summary>このセッションの transport.DataReceived に attach 済みのハンドラ。</summary>
+        public EventHandler<Infrastructure.DataReceivedEventArgs>? OnDataReceivedHandler { get; set; }
+
+        /// <summary>このセッションの transport.RouteChanged に attach 済みのハンドラ。</summary>
+        public EventHandler<ConnectionRoute>? OnRouteChangedHandler { get; set; }
+
         private int _disposed;
 
         public ConnectionSession(string peerId)
@@ -2281,6 +2417,21 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             // Stage 3a: 単数フィールド (_transport / _signaling) が権威なので、Session 自身は
             // 参照を握っているだけで Dispose しない（二重 Dispose 防止）。
             // Stage 3b で参照ごと Session へ移管したら、ここで Transport / Signaling の Dispose を担う。
+            //
+            // Stage 3b: 古い transport が残っていればハンドラ解除（DetachTransportEvents 通常経路で
+            // 既に解除済みのはずだが、二重防御として Session.Dispose 経路でも掃除する）。
+            var t = Transport;
+            if (t != null)
+            {
+                if (OnChannelOpenedHandler != null) t.ChannelOpened -= OnChannelOpenedHandler;
+                if (OnChannelClosedHandler != null) t.ChannelClosed -= OnChannelClosedHandler;
+                if (OnDataReceivedHandler != null) t.DataReceived -= OnDataReceivedHandler;
+                if (OnRouteChangedHandler != null) t.RouteChanged -= OnRouteChangedHandler;
+            }
+            OnChannelOpenedHandler = null;
+            OnChannelClosedHandler = null;
+            OnDataReceivedHandler = null;
+            OnRouteChangedHandler = null;
             Transport = null;
             Signaling = null;
             SecureChannel = null;
