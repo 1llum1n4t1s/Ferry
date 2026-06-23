@@ -211,25 +211,14 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     public event EventHandler? ConnectionLost;
     public event EventHandler<string>? StatusMessageChanged;
 
-    // === rere #D-001(b): セッション暗号（接続ごとに張り直す） ===
+    // === rere #D-001(b) / 複数ペア同時接続対応 Stage 3c: per-peer セッション暗号 ===
 
     /// <summary>暗号ハンドシェイクの待ち時間（秒）。相手非対応/無応答ならこの後フォールバック/切断する。</summary>
     private const int SecureHandshakeTimeoutSeconds = 8;
 
-    /// <summary>暗号チャネルの状態機械（OnFrame/Start/OnTimeout）を直列化するロック。
-    /// DataReceived（受信スレッド）/ Start（接続スレッド）/ OnTimeout（タイマー）が並行しうるため、
-    /// チャネル呼び出しと step 取り出しはこのロック内で行い、副作用処理はロック外で行う。</summary>
-    private readonly object _secureLock = new();
-
-    /// <summary>現在接続の暗号チャネル。null なら暗号無効＝平文（フラグ OFF / PairSecret 無しは生成しない）。</summary>
-    private SecureChannel? _secureChannel;
-
-    /// <summary>ハンドシェイク完了通知。true=暗号確立 / false=平文フォールバック / 例外=HMAC 失敗。
-    /// 送信側はこれを待ってから封筒化要否を判断する（確立前のアプリデータ平文漏れを防ぐゲート）。</summary>
-    private TaskCompletionSource<bool>? _secureReadyTcs;
-
-    /// <summary>ハンドシェイクタイムアウト用 CTS（確立/フォールバックで Cancel）。</summary>
-    private CancellationTokenSource? _secureTimeoutCts;
+    // 暗号チャネル/Lock/Ready TCS/Timeout CTS は Stage 3c で <see cref="ConnectionSession"/> 側へ移管した
+    // （per-peer 化）。LookupActiveSession() で現在の単数 _transport に対応する Session を引いて読み書きする。
+    // Stage 5 で SendAsync/DisconnectAsync が peerId を受けるようになったら lookup を peerId 直引きへ置換する。
 
     private readonly FirebaseAuthClient? _authClient;
 
@@ -718,7 +707,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     State = PeerState.Connected,
                 };
                 SetState(PeerState.Connected);
-                StartSecureHandshake(); // rere #D-001(b): 暗号有効時のみ Hello 送信してハンドシェイク開始
+                StartSecureHandshake(peerId); // Stage 3c: per-peer ハンドシェイク開始
                 Util.Logger.Log($"着信接続完了！ 経路: {_transport?.Route}");
 
                 minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -1118,7 +1107,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 State = PeerState.Connected,
             };
             SetState(PeerState.Connected);
-            StartSecureHandshake(); // rere #D-001(b): 暗号有効時のみ Hello 送信してハンドシェイク開始
+            StartSecureHandshake(peerId); // Stage 3c: per-peer ハンドシェイク開始
             Util.Logger.Log($"オンデマンド接続完了！ 経路: {_transport?.Route}");
         }
         catch (OperationCanceledException)
@@ -1373,16 +1362,21 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             throw new InvalidOperationException("接続されていません");
 
         // rere #D-001(b): 暗号有効時はハンドシェイク完了を待ってから封筒化する。
-        // channel==null（フラグ OFF / 非対応ペア）は下の平文パスへ直行＝現状と完全同一。
-        var channel = _secureChannel;
-        if (channel != null)
+        // Stage 3c: per-peer の SecureChannel を Session から引く。channel==null は下の平文パスへ直行。
+        var session = LookupActiveSession();
+        if (session != null)
         {
-            var ready = _secureReadyTcs;
-            if (ready != null) await ready.Task.WaitAsync(ct);
-            if (channel.IsSecure)
+            SecureChannel? channel;
+            TaskCompletionSource<bool>? ready;
+            lock (session.SecureLock) { channel = session.SecureChannel; ready = session.SecureReadyTcs; }
+            if (channel != null)
             {
-                await transport.SendAsync(channel.Encrypt(data), ct);
-                return;
+                if (ready != null) await ready.Task.WaitAsync(ct);
+                if (channel.IsSecure)
+                {
+                    await transport.SendAsync(channel.Encrypt(data), ct);
+                    return;
+                }
             }
         }
         await transport.SendAsync(data, ct);
@@ -1399,15 +1393,20 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         if (transport == null || !transport.IsConnected)
             throw new InvalidOperationException("接続されていません");
 
-        var channel = _secureChannel;
-        if (channel != null)
+        var session = LookupActiveSession();
+        if (session != null)
         {
-            var ready = _secureReadyTcs;
-            if (ready != null) await ready.Task.WaitAsync(ct);
-            if (channel.IsSecure)
+            SecureChannel? channel;
+            TaskCompletionSource<bool>? ready;
+            lock (session.SecureLock) { channel = session.SecureChannel; ready = session.SecureReadyTcs; }
+            if (channel != null)
             {
-                await transport.SendAsync(channel.Encrypt(data.Span), ct);
-                return;
+                if (ready != null) await ready.Task.WaitAsync(ct);
+                if (channel.IsSecure)
+                {
+                    await transport.SendAsync(channel.Encrypt(data.Span), ct);
+                    return;
+                }
             }
         }
         await transport.SendAsync(data, ct);
@@ -1420,7 +1419,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         // (Disconnect→Connect の順で呼ばれる経路で自己デッドロックを避けるため、Cancel のみ)。
         _connectCts?.Cancel();
         StopListeningForConnection();
-        ResetSecureChannel(); // rere #D-001(b): 暗号チャネルを破棄して待機中送信を解放
+        ResetAllSecureChannels(); // Stage 3c: 全 Session の暗号チャネルを破棄
         // Stage 3b: peerId 不明な切断経路は transport で逆引きして全 Session ハンドラを掃除する。
         DetachTransportEventsForTransport(_transport);
         _transport?.Close();
@@ -1838,13 +1837,13 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         var wasConnected = session.State == PeerState.Connected;
         session.State = PeerState.Disconnected;
 
-        // この Session が単数 _transport の権威（primary）なら、暗号チャネルを掃除して単数 State も更新する。
-        // primary 以外（Stage 4 で並列接続が解禁された後の secondary）は単数 _secureChannel / State を触らず、
-        // ConnectionLost だけ単発で発火する（VM 側は per-peer の状態を別経路で管理する）。Stage 3c で
-        // SecureChannel が per-peer 化されたら、本分岐は Session.SecureChannel の掃除に置換する。
+        // Stage 3c: 当該 Session の暗号チャネルを per-peer reset（宙吊りの送信を解放）。
+        // 単数 _transport が同じ transport を指していれば（primary）、単数 State も Disconnected へ
+        // 遷移し ConnectionLost を発火する。secondary（Stage 4 で並列接続解禁後）は session.State
+        // だけ動かして ConnectionLost を単発で出す（VM 側で peer 区別は別経路）。
+        ResetSecureChannel(session);
         if (ReferenceEquals(_transport, transport))
         {
-            ResetSecureChannel(); // rere #D-001(b): 切断で宙吊りの暗号送信を解放
             if (State == PeerState.Connected)
             {
                 ConnectionLost?.Invoke(this, EventArgs.Empty);
@@ -1864,15 +1863,12 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             return;
 
         // 複数ペア同時接続対応 Stage 2: transport が運んだ peerId を IConnectionService.DataReceived へ貫通させる。
-        // TransferService 側は e.PeerId を権威値として TransferItem.PeerId / _transferPeerId 索引に設定し、
-        // ConnectedPeer 単数の逆引きをやめる。
+        // Stage 3c: 暗号チャネルは Session.SecureChannel（Session.SecureLock 配下）を権威で使う。
         var data = e.Data;
         SecureChannelStep? step = null;
-        // Stage 3b: 暗号チャネルは引き続き単数 _secureChannel（_secureLock 配下）を権威で使う。
-        // Stage 3c で session.SecureChannel/SecureLock 経由に置換する。
-        lock (_secureLock)
+        lock (session.SecureLock)
         {
-            var channel = _secureChannel;
+            var channel = session.SecureChannel;
             if (channel != null)
                 step = channel.OnFrame(data);
         }
@@ -1881,68 +1877,69 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             DataReceived?.Invoke(this, e); // 平文（現状パス）。peerId 付きのまま貫通。
             return;
         }
-        ApplySecureStep(step, e.PeerId); // 副作用（送信/配送/遷移）はロック外で。peerId を Deliver にも伝播。
+        ApplySecureStep(session, step); // 副作用（送信/配送/遷移）はロック外で。
     }
 
-    // === rere #D-001(b): セッション暗号ハンドシェイクの駆動 ===
+    // === rere #D-001(b) / 複数ペア同時接続対応 Stage 3c: per-peer セッション暗号ハンドシェイクの駆動 ===
 
     /// <summary>
     /// 接続確立に先立って（transport を attach する前に）暗号チャネルを用意する。E2E 暗号は常時有効化済み
     /// （旧 EnableSecureChannel トグルは v1.0.48 で撤去）で、相手の PairSecret を保有していれば自動的に
     /// <see cref="SecureChannel"/> を Init 状態で生成する。この時点では Hello を送らず、DataReceived 購読より
     /// 先にチャネルを立てておくことで、確立直後に先着する相手 Hello を Init バッファで取りこぼさない
-    /// （attach レース対策）。PairSecret 無し（古い peer / 未交換）の相手は _secureChannel=null のままで
-    /// 送受信は平文の現状パスに自然フォールバックする。
+    /// （attach レース対策）。PairSecret 無し（古い peer / 未交換）の相手は Session.SecureChannel=null のままで
+    /// 送受信は平文の現状パスに自然フォールバックする。Stage 3c で per-peer 化済（Session に保存）。
     /// </summary>
     private void CreateSecureChannel(string peerId)
     {
-        ResetSecureChannel();
+        var session = _sessions.GetOrAdd(peerId, id => new ConnectionSession(id));
+        ResetSecureChannel(session);
 
-        if (_peerRegistry == null)
-            return;
+        if (_peerRegistry == null) return;
 
         var b64 = _peerRegistry.FindPeer(peerId)?.PairSecret;
-        if (string.IsNullOrEmpty(b64))
-            return;
+        if (string.IsNullOrEmpty(b64)) return;
 
         byte[] pairSecret;
         try { pairSecret = Convert.FromBase64String(b64); }
         catch (FormatException) { return; }
 
-        lock (_secureLock)
+        lock (session.SecureLock)
         {
-            _secureReadyTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _secureChannel = new SecureChannel(_deviceId, peerId, pairSecret, secureEnabled: true);
+            session.SecureReadyTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            session.SecureChannel = new SecureChannel(_deviceId, peerId, pairSecret, secureEnabled: true);
         }
     }
 
     /// <summary>
     /// 接続確立直後（ConnectedPeer 設定後）に Hello を送ってハンドシェイクを開始する。
     /// CreateSecureChannel でチャネルが立っていなければ何もしない（平文）。両接続経路から呼ぶ。
+    /// Stage 3c: peerId 直引きの per-peer 化済。
     /// </summary>
-    private void StartSecureHandshake()
+    private void StartSecureHandshake(string peerId)
     {
+        if (!_sessions.TryGetValue(peerId, out var session)) return;
+
         SecureChannelStep step;
-        lock (_secureLock)
+        lock (session.SecureLock)
         {
-            var channel = _secureChannel;
+            var channel = session.SecureChannel;
             if (channel == null) return;
 
             var timeoutCts = new CancellationTokenSource();
-            _secureTimeoutCts = timeoutCts;
-            _ = SecureTimeoutAsync(channel, timeoutCts.Token);
+            session.SecureTimeoutCts = timeoutCts;
+            _ = SecureTimeoutAsync(session, channel, timeoutCts.Token);
 
             step = channel.Start(); // Hello 生成 + 先着フレームのドレイン
         }
-        ApplySecureStep(step); // 送信/配送/遷移はロック外で
+        ApplySecureStep(session, step); // 送信/配送/遷移はロック外で
     }
 
     /// <summary>状態機械の 1 ステップ（送るフレーム・配送平文・遷移）を実行する。
-    /// 複数ペア同時接続対応 Stage 2: <paramref name="peerId"/> を peerId 付帯 DataReceived に貫通させる。
-    /// Start/SecureTimeout 経路は『現在の唯一の transport』に紐づくのでフィールド側 PeerId を引く。</summary>
-    private void ApplySecureStep(SecureChannelStep step, string? peerId = null)
+    /// Stage 3c: peer ごとの Session に紐づく transport / Deliver peerId / TCS を使う。</summary>
+    private void ApplySecureStep(ConnectionSession session, SecureChannelStep step)
     {
-        var transport = _transport;
+        var transport = session.Transport;
         foreach (var f in step.Send)
         {
             // ハンドシェイクフレーム(0x30/0x31)は SendAsync ゲートを通さず transport へ直送する。
@@ -1950,29 +1947,26 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 _ = SafeSendRawAsync(transport, f);
         }
 
-        // 複数ペア同時接続対応 Stage 2: 復号後の Deliver にも peerId を付帯。
-        // Start / SecureTimeout 経路は peerId 引数 null で来るので、現 transport から推定する
-        // （Stage 3 で _sessions 化されると Session の PeerId を引く実装に置換）。
-        var deliverPeerId = peerId ?? GetCurrentTransportPeerId() ?? string.Empty;
+        // 復号後の Deliver は Session の peerId を権威で付帯する。
         foreach (var d in step.Deliver)
-            DataReceived?.Invoke(this, new Infrastructure.DataReceivedEventArgs(deliverPeerId, d));
+            DataReceived?.Invoke(this, new Infrastructure.DataReceivedEventArgs(session.PeerId, d));
 
         switch (step.Outcome)
         {
             case SecureOutcome.Established:
-                Util.Logger.Log("暗号セッション確立（HMAC 相互認証成功）");
-                _secureTimeoutCts?.Cancel();
-                _secureReadyTcs?.TrySetResult(true);
+                Util.Logger.Log($"暗号セッション確立（HMAC 相互認証成功）: peer={Util.Logger.MaskDeviceId(session.PeerId)}");
+                session.SecureTimeoutCts?.Cancel();
+                session.SecureReadyTcs?.TrySetResult(true);
                 break;
             case SecureOutcome.FellBackToPlaintext:
-                Util.Logger.Log("暗号ハンドシェイク非成立 → 平文フォールバック", Util.LogLevel.Warning);
-                _secureTimeoutCts?.Cancel();
-                _secureReadyTcs?.TrySetResult(false);
+                Util.Logger.Log($"暗号ハンドシェイク非成立 → 平文フォールバック: peer={Util.Logger.MaskDeviceId(session.PeerId)}", Util.LogLevel.Warning);
+                session.SecureTimeoutCts?.Cancel();
+                session.SecureReadyTcs?.TrySetResult(false);
                 break;
             case SecureOutcome.Failed:
-                Util.Logger.Log("暗号ハンドシェイク失敗（HMAC 不一致）→ 切断", Util.LogLevel.Error);
-                _secureTimeoutCts?.Cancel();
-                _secureReadyTcs?.TrySetException(new InvalidOperationException("ペア相互認証に失敗しました（HMAC 不一致）"));
+                Util.Logger.Log($"暗号ハンドシェイク失敗（HMAC 不一致）→ 切断: peer={Util.Logger.MaskDeviceId(session.PeerId)}", Util.LogLevel.Error);
+                session.SecureTimeoutCts?.Cancel();
+                session.SecureReadyTcs?.TrySetException(new InvalidOperationException("ペア相互認証に失敗しました（HMAC 不一致）"));
                 _ = DisconnectAsync();
                 break;
         }
@@ -1984,9 +1978,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         catch (Exception ex) { Util.Logger.Log($"ハンドシェイクフレーム送信失敗: {ex.Message}", Util.LogLevel.Warning); }
     }
 
-    /// <summary>複数ペア同時接続対応 Stage 2: 現在の <see cref="_transport"/> から PeerId を引く便宜ヘルパー。
-    /// 暗号 Start / SecureTimeout 経路で受信元 peer の情報が手元に無い場合の fallback。
-    /// Stage 3 で _sessions 辞書化されたら Session.PeerId を直接引く実装に置換する。</summary>
+    /// <summary>複数ペア同時接続対応: 現在の <see cref="_transport"/> から PeerId を引く便宜ヘルパー。
+    /// Stage 5 で SendAsync(peerId) になったら本ヘルパーは削除し peerId 直引きに置換する。</summary>
     private string? GetCurrentTransportPeerId() => _transport switch
     {
         TcpDirectTransport t when !string.IsNullOrEmpty(t.PeerId) => t.PeerId,
@@ -1995,34 +1988,57 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         _ => null,
     };
 
-    private async Task SecureTimeoutAsync(SecureChannel channel, CancellationToken ct)
+    /// <summary>Stage 3c: 現在の単数 <see cref="_transport"/> に対応する <see cref="ConnectionSession"/> を引く
+    /// （SendAsync など peerId を持たない経路向け）。Stage 5 で SendAsync が peerId 直引きになったら本ヘルパーは
+    /// 撤去する。</summary>
+    private ConnectionSession? LookupActiveSession()
+    {
+        var transport = _transport;
+        if (transport == null) return null;
+        foreach (var kvp in _sessions)
+        {
+            if (ReferenceEquals(kvp.Value.Transport, transport)) return kvp.Value;
+        }
+        return null;
+    }
+
+    private async Task SecureTimeoutAsync(ConnectionSession session, SecureChannel channel, CancellationToken ct)
     {
         try { await Task.Delay(TimeSpan.FromSeconds(SecureHandshakeTimeoutSeconds), ct); }
         catch (OperationCanceledException) { return; }
 
         SecureChannelStep? step = null;
-        lock (_secureLock)
+        lock (session.SecureLock)
         {
             // 別接続に張り替わっていたら無視（古いタイマーの暴発防止）。
-            if (ReferenceEquals(_secureChannel, channel))
+            if (ReferenceEquals(session.SecureChannel, channel))
                 step = channel.OnTimeout();
         }
-        if (step != null) ApplySecureStep(step);
+        if (step != null) ApplySecureStep(session, step);
     }
 
-    /// <summary>暗号チャネルを破棄し、待機中の送信を平文として解放する（切断/再接続時）。</summary>
-    private void ResetSecureChannel()
+    /// <summary>Stage 3c: 指定 Session の暗号チャネルを破棄し、待機中の送信を平文として解放する
+    /// （切断 / 再接続時の per-peer reset）。</summary>
+    private static void ResetSecureChannel(ConnectionSession session)
     {
-        lock (_secureLock)
+        lock (session.SecureLock)
         {
-            _secureTimeoutCts?.Cancel();
-            _secureTimeoutCts?.Dispose();
-            _secureTimeoutCts = null;
-            // 宙吊りの SendAsync を解放（切断後は次段の _transport 操作で自然に例外化する）。
-            _secureReadyTcs?.TrySetResult(false);
-            _secureReadyTcs = null;
-            _secureChannel = null;
+            session.SecureTimeoutCts?.Cancel();
+            session.SecureTimeoutCts?.Dispose();
+            session.SecureTimeoutCts = null;
+            // 宙吊りの SendAsync を解放（切断後は次段の transport 操作で自然に例外化する）。
+            session.SecureReadyTcs?.TrySetResult(false);
+            session.SecureReadyTcs = null;
+            session.SecureChannel = null;
         }
+    }
+
+    /// <summary>Stage 3c: 全 Session の暗号チャネルを破棄する（DisconnectAsync 等 peerId 不明な経路向け）。
+    /// Stage 5 で DisconnectAsync が peerId を受けるようになったら、per-peer 経路に置換する。</summary>
+    private void ResetAllSecureChannels()
+    {
+        foreach (var kvp in _sessions)
+            ResetSecureChannel(kvp.Value);
     }
 
     private void SetState(PeerState state)
@@ -2374,12 +2390,20 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         /// <summary>このセッションの相手 PeerInfo（接続成立後に設定）。<see cref="ConnectionService.ConnectedPeer"/> の Stage 3a シャドウ。</summary>
         public PeerInfo? ConnectedPeer { get; set; }
 
-        /// <summary>このセッションの暗号チャネル。Stage 3 完了後は per-peer 暗号セッションを保持する。
-        /// Stage 3a 時点では Mirror。</summary>
+        /// <summary>このセッションの暗号チャネル。Stage 3c から per-peer 暗号セッションの権威ストレージ。
+        /// OnSessionDataReceived（受信）と Stage 5 で per-peer 化される送信 API の両側がここを読む。</summary>
         public SecureChannel? SecureChannel { get; set; }
 
-        /// <summary>暗号チャネル状態機械の直列化ロック（Session 単位）。</summary>
+        /// <summary>暗号チャネル状態機械の直列化ロック（Session 単位）。
+        /// OnFrame / Start / OnTimeout / ApplySecureStep の各経路が並行しうるためチャネル操作を直列化する。</summary>
         public readonly object SecureLock = new();
+
+        /// <summary>Stage 3c: 暗号ハンドシェイク完了通知。true=確立 / false=平文フォールバック / 例外=HMAC 失敗。
+        /// 送信側はこれを待ってから封筒化要否を判断する。</summary>
+        public TaskCompletionSource<bool>? SecureReadyTcs { get; set; }
+
+        /// <summary>Stage 3c: ハンドシェイクタイムアウト用 CTS（確立/フォールバックで Cancel する）。</summary>
+        public CancellationTokenSource? SecureTimeoutCts { get; set; }
 
         // === 複数ペア同時接続対応 Stage 3b: クロージャ束縛されたトランスポートイベントハンドラ ===
         //
@@ -2434,7 +2458,18 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             OnRouteChangedHandler = null;
             Transport = null;
             Signaling = null;
-            SecureChannel = null;
+
+            // Stage 3c: 暗号リソースを解放。Channel は IDisposable ではないが、
+            // CTS と TCS は宙吊りの SendAsync を解放するためにここでも掃除する（防御）。
+            lock (SecureLock)
+            {
+                SecureTimeoutCts?.Cancel();
+                SecureTimeoutCts?.Dispose();
+                SecureTimeoutCts = null;
+                SecureReadyTcs?.TrySetResult(false);
+                SecureReadyTcs = null;
+                SecureChannel = null;
+            }
         }
     }
 }
