@@ -142,6 +142,10 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             PairedPeers.Add(peer);
         }
         UpdateHasPairedPeers();
+        // 複数ペア同時接続対応 Stage 4: 全 paired peer の listener を即時起動する（旧実装は SelectedPeer の listener のみ）。
+        // peer ごとに <see cref="IConnectionService.StartListeningForConnection"/> が加算的に呼ばれるため、
+        // 別 peer の listener を巻き込まずに並列稼働する。これで「ペア済みの誰からでも着信を受け付ける」基本動作を担保する。
+        StartListeningForAllPairedPeers();
         // Codex P2 fix: PairSyncService が remote unpair を検知して peerRegistry から削除した時、
         // UI 側 PairedPeers を即時に追従させる（旧実装は再起動まで古い peer が UI に残っていた）。
         _peerRegistry.PeerRemoved += OnPeerRemovedFromRegistry;
@@ -880,6 +884,22 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         {
             // Background 優先度で Dispose → レイアウトパス完了後に実行される
             Dispatcher.UIThread.Post(() => oldImage.Dispose(), DispatcherPriority.Background);
+        }
+    }
+
+    /// <summary>複数ペア同時接続対応 Stage 4: 全 paired peer の <see cref="IConnectionService.StartListeningForConnection"/>
+    /// を呼ぶヘルパー。コンストラクタの保存ピア読み込み直後と、必要時の再起動経路で利用する。
+    /// listener は per-peer Session に保存され、相互独立に走るため複数 peer 並列で着信を受けられる。</summary>
+    private void StartListeningForAllPairedPeers()
+    {
+        foreach (var peer in PairedPeers)
+        {
+            if (string.IsNullOrEmpty(peer.PeerId)) continue;
+            try { _connectionService.StartListeningForConnection(peer.PeerId); }
+            catch (Exception ex)
+            {
+                Util.Logger.Log($"全ペア listener 起動失敗 (peer={peer.DisplayName}): {ex.Message}", Util.LogLevel.Warning);
+            }
         }
     }
 

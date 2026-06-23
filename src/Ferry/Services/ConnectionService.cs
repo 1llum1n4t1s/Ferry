@@ -103,10 +103,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     // 接続フロー本体は単数フィールドを参照し続けるので挙動不変。Stage 3b で参照ごと置換する。
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ConnectionSession> _sessions = new(StringComparer.Ordinal);
 
-    private CancellationTokenSource? _listeningCts;
-    /// <summary>rere PR#8 #F2: 着信監視タスクの参照。role調停フォールバック時に Cancel 後 *完了まで* await して
-    /// listener と本体のテアダウン競合 (確立直後の _transport をサイレント破壊) を防ぐために保持する。</summary>
-    private Task? _listeningTask;
+    // 複数ペア同時接続対応 Stage 4: 旧 _listeningCts / _listeningTask は Session に移管した
+    // （Session.ListeningCts / Session.ListeningTask）。StartListeningForConnection は加算的に動き、
+    // 別 peer の listener と並列で走れる。_currentListeningPeerId は Stage 4 で「最後に開始した peer」の
+    // 単数互換シムとして残るが、ListeningPeerIds は _sessions から本物の集合を返す。
 
     /// <summary>
     /// オンデマンド接続 (ConnectToPeerAsync) の所有 CTS と直列化ゲート。
@@ -138,13 +138,23 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// ピアを監視中に、そのピアが削除された場合の監視停止判定に VM が使う。</summary>
     public string? CurrentListeningPeerId => _currentListeningPeerId;
 
-    /// <summary>複数ペア同時接続対応 Stage 3a: 着信監視中ピアの集合。
-    /// 現状(Stage 3a)は単数 <see cref="_currentListeningPeerId"/> のシム。Stage 4 で peerId 辞書化される
-    /// (`_listeningCts` も per-peer 化したとき) ので、そこで実体に差し替える。</summary>
+    /// <summary>複数ペア同時接続対応 Stage 4: 着信監視中ピアの集合。<see cref="_sessions"/> 内で
+    /// <see cref="ConnectionSession.ListeningCts"/> が生きている Session の peerId を返す。
+    /// 全ペア常時 listen 中は paired peer の数だけ要素が返る。</summary>
     public System.Collections.Generic.IReadOnlyCollection<string> ListeningPeerIds
-        => string.IsNullOrEmpty(_currentListeningPeerId)
-            ? Array.Empty<string>()
-            : new[] { _currentListeningPeerId! };
+    {
+        get
+        {
+            var sessions = _sessions;
+            if (sessions.IsEmpty) return Array.Empty<string>();
+            var list = new System.Collections.Generic.List<string>(sessions.Count);
+            foreach (var kvp in sessions)
+            {
+                if (kvp.Value.ListeningCts != null) list.Add(kvp.Key);
+            }
+            return list;
+        }
+    }
 
     /// <summary>
     /// この pairing watch セッションで既に処理した pairingId。
@@ -510,28 +520,62 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     // === 着信接続監視 ===
 
+    /// <summary>複数ペア同時接続対応 Stage 4: 加算的な per-peer listen。指定 peer の Session に既に listener が
+    /// 走っていれば置換（同じ Session 内の二重起動を防ぐ）し、他 peer の listener は維持する。
+    /// 「全ペア常時 listen」を支える基盤で、VM 起動時にペア済み peer 全員ぶんを呼ぶ運用が前提。
+    /// 既存の単数 _currentListeningPeerId は「最後に開始した peer」の互換シムとして更新する。</summary>
     public void StartListeningForConnection(string peerId)
     {
-        StopListeningForConnection();
-        _listeningCts = new CancellationTokenSource();
-        _currentListeningPeerId = peerId;  // v1.0.38 review fix: 監視中のピア ID を保持
-        SyncShadowSession(); // 複数ペア対応 Stage 3a: 監視開始ピアを _sessions にミラー
-        Util.Logger.Log($"着信接続監視開始: peer={peerId}");
+        if (string.IsNullOrEmpty(peerId)) throw new ArgumentNullException(nameof(peerId));
+
+        var session = _sessions.GetOrAdd(peerId, id => new ConnectionSession(id));
+
+        // 同 peer に既存 listener があれば停止して張り替える（再起動）。他 peer は触らない。
+        StopSessionListener(session);
+
+        var cts = new CancellationTokenSource();
+        session.ListeningCts = cts;
+        _currentListeningPeerId = peerId;  // 互換シム（旧 UI コードが単数値を読むケース向け）
+        SyncShadowSession();
+        Util.Logger.Log($"着信接続監視開始: peer={Util.Logger.MaskDeviceId(peerId)}");
         // rere PR#8 #F2: タスクを保持して role調停フォールバック時に Cancel 後の完了 await を可能にする。
-        _listeningTask = ListenForIncomingConnectionAsync(peerId, _listeningCts.Token);
+        session.ListeningTask = ListenForIncomingConnectionAsync(peerId, cts.Token);
     }
 
+    /// <summary>Stage 4: 全 peer の listener を停止する（後方互換 — peerId 不明な経路向け）。
+    /// 個別停止は <see cref="StopListeningForConnection(string)"/>。Disconnect 全体・Service.Dispose 等で使う。</summary>
     public void StopListeningForConnection()
     {
-        if (_listeningCts != null)
+        Util.Logger.Log("着信接続監視停止（全ペア）");
+        foreach (var kvp in _sessions)
+            StopSessionListener(kvp.Value);
+        _currentListeningPeerId = null;
+        SyncShadowSession();
+    }
+
+    /// <summary>Stage 4: 指定 peer の listener だけを停止する。他 peer の listener は維持する。</summary>
+    public void StopListeningForConnection(string peerId)
+    {
+        if (string.IsNullOrEmpty(peerId)) return;
+        if (_sessions.TryGetValue(peerId, out var session))
         {
-            Util.Logger.Log("着信接続監視停止");
-            _listeningCts.Cancel();
-            _listeningCts.Dispose();
-            _listeningCts = null;
-            _currentListeningPeerId = null;  // v1.0.38 review fix: クリア
-            SyncShadowSession(); // 複数ペア対応 Stage 3a: 監視終了で _sessions も掃除
+            Util.Logger.Log($"着信接続監視停止: peer={Util.Logger.MaskDeviceId(peerId)}");
+            StopSessionListener(session);
         }
+        if (string.Equals(_currentListeningPeerId, peerId, StringComparison.Ordinal))
+            _currentListeningPeerId = null;
+        SyncShadowSession();
+    }
+
+    /// <summary>Stage 4: 1 Session の listener を Cancel/Dispose する（共通ヘルパー）。</summary>
+    private static void StopSessionListener(ConnectionSession session)
+    {
+        var cts = session.ListeningCts;
+        if (cts == null) return;
+        try { cts.Cancel(); } catch { /* 既に Dispose 済み等 */ }
+        cts.Dispose();
+        session.ListeningCts = null;
+        session.ListeningTask = null;
     }
 
     /// <summary>
@@ -893,8 +937,12 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                         // 失敗時も再ポーリングを続ける) ため、待たずに下流の _transport?.Dispose() へ進むと、listener が
                         // ちょうど確立した transport をサイレント破壊する競合窓が残る。Cancel → タスク完了 await →
                         // 最終 State 確認 の順で窓を塞ぐ (listener は _connectGate を取らないので await で deadlock しない)。
-                        var listenerTask = _listeningTask;
-                        StopListeningForConnection();
+                        // 複数ペア同時接続対応 Stage 4: listener タスクは Session に持つ。当該 peer の listener
+                        // だけ取り出して畳む（他 peer の listener は触らない）。
+                        Task? listenerTask = null;
+                        if (_sessions.TryGetValue(peerId, out var listenerSession))
+                            listenerTask = listenerSession.ListeningTask;
+                        StopListeningForConnection(peerId);
                         if (listenerTask != null)
                         {
                             try { await listenerTask.WaitAsync(TimeSpan.FromSeconds(6)); }
@@ -2140,23 +2188,12 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     private void SyncShadowSession()
     {
         var peer = ConnectedPeer;
-        var listeningPeerId = _currentListeningPeerId;
-        // 解決順: 接続成立済の peer → 着信監視中の peer → 何も無い (no-op)。
-        // Stage 3a の現状フィールドは 1 ペア分しか動かない前提なので、辞書は最大 1 件。
-        var peerId = peer?.SessionId ?? (string.IsNullOrEmpty(listeningPeerId) ? null : listeningPeerId);
+        // Stage 4: 単数 _transport / ConnectedPeer / Route / State の権威を「primary Session」に同期する。
+        // Stage 4 から複数 Session が並列に存在するため、ここでは「peer の SessionId が分かる場合だけ
+        // その Session を最新化」し、他 Session は触らない（listener / connect が独立に走る前提）。
+        var peerId = peer?.SessionId ?? _currentListeningPeerId;
         if (string.IsNullOrEmpty(peerId))
-        {
-            // どの peer も対象外 → 残存セッションを掃除。
-            if (!_sessions.IsEmpty)
-            {
-                foreach (var kvp in _sessions)
-                {
-                    if (_sessions.TryRemove(kvp.Key, out var removed))
-                        DisposeSessionSilent(removed);
-                }
-            }
-            return;
-        }
+            return; // 単数 ConnectedPeer / Listening もないなら、他 Session の独立状態を尊重する
 
         var session = _sessions.GetOrAdd(peerId, id => new ConnectionSession(id));
         session.Transport = _transport;
@@ -2165,20 +2202,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         session.Route = Route;
         session.State = State;
         session.ConnectedPeer = peer;
-        // SecureChannel は _secureLock 配下で扱うため、ここではミラーしない（OnDataReceived 経路で必要時に直接読む）。
-
-        // 別 peerId の旧セッションが残っていたら掃除（State 単数のため Stage 3a では同時に 1 peer のみ）。
-        if (_sessions.Count > 1)
-        {
-            foreach (var kvp in _sessions)
-            {
-                if (!string.Equals(kvp.Key, peerId, StringComparison.Ordinal))
-                {
-                    if (_sessions.TryRemove(kvp.Key, out var removed))
-                        DisposeSessionSilent(removed);
-                }
-            }
-        }
+        // SecureChannel / SecureLock は Stage 3c で Session 権威化済み（ここではミラーしない）。
+        // Stage 4 の listener-only Session（StartListeningForConnection だけ呼ばれて単数 _transport が
+        // 別 peer のもの）は session.Transport を上書きするとマイラ破壊につながるため、上記の peerId が
+        // 「接続中 / 単数 listening の peer」のみに対応する Session 限定で同期する。
     }
 
     /// <summary>
@@ -2487,6 +2514,22 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         /// <summary>Stage 3c: ハンドシェイクタイムアウト用 CTS（確立/フォールバックで Cancel する）。</summary>
         public CancellationTokenSource? SecureTimeoutCts { get; set; }
 
+        // === 複数ペア同時接続対応 Stage 4: per-peer 着信監視 ===
+
+        /// <summary>このセッションの着信監視 CTS（StartListeningForConnection で生成、StopListeningForConnection で Cancel/Dispose）。
+        /// Stage 4 で per-Session 化し、全ペア常時 listen を支える。</summary>
+        public CancellationTokenSource? ListeningCts { get; set; }
+
+        /// <summary>このセッションの着信監視タスク参照。role 調停フォールバック時に Cancel 後の完了 await に使う
+        /// （listener と本体のテアダウン競合防御）。Stage 4 で per-Session 化。</summary>
+        public Task? ListeningTask { get; set; }
+
+        // 将来追加予定（並列接続解禁時に必要）:
+        //   - ConnectGate (SemaphoreSlim) / ConnectCts: ConnectToPeerAsync の per-Session 直列化と in-flight キャンセル
+        //   - ConnectingByListener (volatile bool) / CurrentPairId: listener と connect の所有権分離・並列 pairId 管理
+        // 現状は単数 _connectGate / _connectCts / _connectingByListener / _currentPairId が権威で、
+        // 並列接続は未解禁（同時 ConnectToPeerAsync は引き続き直列）。listener は per-Session で全ペア常時 listen 可能。
+
         // === 複数ペア同時接続対応 Stage 3b: クロージャ束縛されたトランスポートイベントハンドラ ===
         //
         // AttachTransportEvents(peerId, transport) が peerId と transport を捕捉した
@@ -2552,6 +2595,12 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 SecureReadyTcs = null;
                 SecureChannel = null;
             }
+
+            // Stage 4: per-Session 着信監視 CTS を解放する。
+            try { ListeningCts?.Cancel(); } catch { /* 既に Dispose 済み等 */ }
+            ListeningCts?.Dispose();
+            ListeningCts = null;
+            ListeningTask = null;
         }
     }
 }
