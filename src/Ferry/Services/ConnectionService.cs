@@ -610,7 +610,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 CreateSecureChannel(peerId);
 
                 // ① TCP 直接接続を試行
-                var connected = await TryTcpConnectAsync(offer.Ips, offer.Port, ct);
+                var connected = await TryTcpConnectAsync(offer.Ips, offer.Port, peerId, ct);
 
                 // TCP 結果を即座に Answer として送信（Offer 側が待機中）
                 var answerInfo = new ConnectionInfo
@@ -636,7 +636,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     if (udpOffer != null)
                     {
                         StatusMessageChanged?.Invoke(this, "Status.Phase.UdpHolePunch");
-                        connected = await TryUdpHolePunchAnswerAsync(udpOffer, pairId, ct);
+                        connected = await TryUdpHolePunchAnswerAsync(udpOffer, pairId, peerId, ct);
                     }
                 }
 
@@ -644,7 +644,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 if (!connected)
                 {
                     StatusMessageChanged?.Invoke(this, "Status.Phase.Relay");
-                    connected = await TryRelayConnectAsync(pairId, "answer", ct);
+                    connected = await TryRelayConnectAsync(pairId, "answer", peerId, ct);
                 }
 
                 if (!connected)
@@ -726,6 +726,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         Util.Logger.Log($"Probe offer 受信: pairId={pairId}, nonce={nonce}, TCP 試行のみで応答");
         var probeSig = NewSignaling();
         var connected = false;
+        // 複数ペア同時接続対応 Stage 1: probe transient は受信ルーティングしない (transport を
+        // _transport へ昇格させず確立直後に Dispose する) ので PeerId は空のまま。
+        // DataReceivedEventArgs は発火しても TransferService 連携には流さない。
         TcpDirectTransport? tcpTransport = null;
 
         try
@@ -888,7 +891,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
             // ① TCP リスナー起動 → offer 送信（STUN なし）
             StatusMessageChanged?.Invoke(this, "Status.Phase.TcpPreparing");
-            tcpTransport = new TcpDirectTransport();
+            // 複数ペア同時接続対応 Stage 1: peerId(SessionId) を transport に注入。
+            tcpTransport = new TcpDirectTransport { PeerId = peerId };
             var port = tcpTransport.StartListener();
 
             var localIps = TcpDirectTransport.GetLocalIpAddresses();
@@ -1003,7 +1007,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 StatusMessageChanged?.Invoke(this, "Status.Phase.StunQuery");
 
                 // ③ STUN + UDP ホールパンチを試行
-                udpTransport = new UdpHolePunchTransport();
+                // 複数ペア同時接続対応 Stage 1: peerId(SessionId) を transport に注入。
+                udpTransport = new UdpHolePunchTransport { PeerId = peerId };
                 var stunResult = await udpTransport.GetExternalEndpointAsync(ct: linked);
 
                 if (stunResult != null)
@@ -1035,7 +1040,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 if (!connected)
                 {
                     StatusMessageChanged?.Invoke(this, "Status.Phase.Relay");
-                    var relayConnected = await TryRelayConnectAsync(pairId, "offer", linked);
+                    var relayConnected = await TryRelayConnectAsync(pairId, "offer", peerId, linked);
                     if (!relayConnected)
                         throw new InvalidOperationException("全ての接続方法が失敗しました");
                 }
@@ -1175,7 +1180,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             // 同じ pair で real connection と probe が同時に走っても互いに干渉しない
 
             // ① TCP リスナー起動 → probe 専用 offer 送信
-            tcpTransport = new TcpDirectTransport();
+            // 複数ペア同時接続対応 Stage 1: probe 経路でも peerId(SessionId) を transport に注入。
+            // probe transient は _transport へ昇格しないが、PeerId を埋めておくと将来の意図が明確。
+            tcpTransport = new TcpDirectTransport { PeerId = peerId };
             var port = tcpTransport.StartListener();
             var localIps = TcpDirectTransport.GetLocalIpAddresses();
             var offerInfo = new ConnectionInfo
@@ -1382,7 +1389,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// <summary>
     /// TCP 直接接続を試行する（Answer 側が使用）。
     /// </summary>
-    private async Task<bool> TryTcpConnectAsync(string[] ips, int port, CancellationToken ct)
+    private async Task<bool> TryTcpConnectAsync(string[] ips, int port, string peerId, CancellationToken ct)
     {
         if (ips.Length == 0 || port <= 0)
         {
@@ -1392,7 +1399,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
         try
         {
-            var tcpTransport = new TcpDirectTransport();
+            // 複数ペア同時接続対応 Stage 1: 1 transport = 1 peer の対応関係を peerId で結ぶ。
+            // DataReceivedEventArgs.PeerId に常時付帯される。
+            var tcpTransport = new TcpDirectTransport { PeerId = peerId };
 
             using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             connectCts.CancelAfter(TimeSpan.FromSeconds(TcpConnectTimeoutSeconds));
@@ -1533,13 +1542,14 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// UDP ホールパンチを試行する（Answer 側）。
     /// STUN で自身の外部エンドポイントを取得し、Firebase に書き込んでからホールパンチを実行する。
     /// </summary>
-    private async Task<bool> TryUdpHolePunchAnswerAsync(ConnectionInfo offer, string pairId, CancellationToken ct)
+    private async Task<bool> TryUdpHolePunchAnswerAsync(ConnectionInfo offer, string pairId, string peerId, CancellationToken ct)
     {
         UdpHolePunchTransport? udpTransport = null;
         try
         {
             Util.Logger.Log("UDP ホールパンチ（Answer 側）開始: STUN クエリ実行中…");
-            udpTransport = new UdpHolePunchTransport();
+            // 複数ペア同時接続対応 Stage 1: peerId を transport へ伝播。
+            udpTransport = new UdpHolePunchTransport { PeerId = peerId };
             var stunResult = await udpTransport.GetExternalEndpointAsync(ct: ct);
 
             if (stunResult == null)
@@ -1593,7 +1603,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// <summary>
     /// WebSocket リレー接続を試行する。
     /// </summary>
-    private async Task<bool> TryRelayConnectAsync(string pairId, string role, CancellationToken ct)
+    private async Task<bool> TryRelayConnectAsync(string pairId, string role, string peerId, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(RelayUrl))
         {
@@ -1605,7 +1615,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         try
         {
             Util.Logger.Log($"WebSocket リレー接続試行: role={role}");
-            relayTransport = new WebSocketRelayTransport(RelayUrl, pairId, role);
+            // 複数ペア同時接続対応 Stage 1: peerId を transport へ伝播。
+            relayTransport = new WebSocketRelayTransport(RelayUrl, pairId, role, peerId);
 
             using var relayCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             relayCts.CancelAfter(TimeSpan.FromSeconds(RelayPeerWaitSeconds));
@@ -1681,9 +1692,12 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         }
     }
 
-    private void OnDataReceived(object? sender, byte[] data)
+    private void OnDataReceived(object? sender, Infrastructure.DataReceivedEventArgs e)
     {
-        // 暗号無効（フラグ OFF / 非対応ペア）なら従来どおり素通し＝現状と完全に同一パス。
+        // 複数ペア同時接続対応 Stage 1: transport が peerId を運ぶようになったが、
+        // Stage 1 では IConnectionService.DataReceived は依然 byte[] のままで挙動不変を保つ。
+        // peerId の権威化と TransferService への貫通は Stage 2 で行う。
+        var data = e.Data;
         SecureChannelStep? step = null;
         lock (_secureLock)
         {

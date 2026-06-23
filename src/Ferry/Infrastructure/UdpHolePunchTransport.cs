@@ -75,7 +75,12 @@ public sealed class UdpHolePunchTransport : ITransport
     public bool IsConnected => _isConnected;
     public ConnectionRoute Route => ConnectionRoute.StunAssisted;
 
-    public event EventHandler<byte[]>? DataReceived;
+    /// <summary>複数ペア同時接続対応 Stage 1: 1 transport = 1 peer の対応関係を保持する。
+    /// <see cref="DataReceivedEventArgs.PeerId"/> に常時付帯される。
+    /// 生成側 (ConnectionService) が接続文脈の peerId(SessionId) を init で渡す。</summary>
+    public string PeerId { get; init; } = string.Empty;
+
+    public event EventHandler<DataReceivedEventArgs>? DataReceived;
     public event EventHandler? ChannelOpened;
     public event EventHandler? ChannelClosed;
     public event EventHandler<ConnectionRoute>? RouteChanged;
@@ -501,7 +506,7 @@ public sealed class UdpHolePunchTransport : ITransport
             offset += msg.Fragments[i].Length;
         }
 
-        DataReceived?.Invoke(this, fullData);
+        DataReceived?.Invoke(this, new DataReceivedEventArgs(PeerId, fullData));
     }
 
     private void HandleAck(byte[] packet)

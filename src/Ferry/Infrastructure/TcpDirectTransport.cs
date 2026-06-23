@@ -25,7 +25,14 @@ public sealed class TcpDirectTransport : ITransport
     public bool IsConnected { get; private set; }
     public ConnectionRoute Route => ConnectionRoute.Direct;
 
-    public event EventHandler<byte[]>? DataReceived;
+    /// <summary>複数ペア同時接続対応 Stage 1: 1 transport = 1 peer の対応関係を保持する。
+    /// <see cref="DataReceivedEventArgs.PeerId"/> に常時付帯される。
+    /// 生成側 (ConnectionService) が接続文脈の peerId(SessionId) を init で渡す。
+    /// 未設定（空文字）の場合は『peer 識別不能』として後段が逆引きにフォールバックする
+    /// （Stage 2 までの過渡期のセーフティ。Stage 3 完了後は全生成サイトが必ず設定する）。</summary>
+    public string PeerId { get; init; } = string.Empty;
+
+    public event EventHandler<DataReceivedEventArgs>? DataReceived;
     public event EventHandler? ChannelOpened;
     public event EventHandler? ChannelClosed;
     public event EventHandler<ConnectionRoute>? RouteChanged;
@@ -259,7 +266,7 @@ public sealed class TcpDirectTransport : ITransport
                         break;
                     }
 
-                    DataReceived?.Invoke(this, data);
+                    DataReceived?.Invoke(this, new DataReceivedEventArgs(PeerId, data));
                 }
             }
             catch (OperationCanceledException)

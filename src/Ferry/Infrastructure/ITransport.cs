@@ -17,8 +17,12 @@ public interface ITransport : IDisposable
     /// <summary>接続経路（Direct / Relay）。</summary>
     ConnectionRoute Route { get; }
 
-    /// <summary>バイナリデータを受信したときに発火するイベント。</summary>
-    event EventHandler<byte[]>? DataReceived;
+    /// <summary>バイナリデータを受信したときに発火するイベント。
+    /// 複数ペア同時接続対応 Stage 1: 受信元 peerId を <see cref="DataReceivedEventArgs"/> で付帯する。
+    /// 各 transport は 1:1 (1 transport = 1 peer) なのでコンストラクタ注入された peerId を Invoke 時に付帯する。
+    /// 受信側は引数の PeerId を権威値として TransferItem.PeerId / _transferPeerId 索引に設定し、
+    /// 旧来の ConnectedPeer 単数プロパティ逆引きを撤去する根拠にする。</summary>
+    event EventHandler<DataReceivedEventArgs>? DataReceived;
 
     /// <summary>接続が確立したときに発火するイベント。</summary>
     event EventHandler? ChannelOpened;
