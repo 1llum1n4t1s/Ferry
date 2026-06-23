@@ -160,9 +160,31 @@ public interface IConnectionService
         => SendAsync(data.ToArray(), ct);
 
     /// <summary>
+    /// 複数ペア同時接続対応 Stage 5: 指定 peer の transport に直接送信する。
+    /// 旧 <see cref="SendAsync(byte[], CancellationToken)"/> は「現在の単数 _transport」へ送る
+    /// 単峰前提だったため、複数 peer が同時接続中に別 peer へ誤送する race があった。
+    /// peerId 指定版は <see cref="ConnectionSession"/> 経由で送信先 transport を決定する。
+    /// 既定実装は peerId を捨てて旧 API へフォールバック（テスト/旧経路互換）。
+    /// </summary>
+    Task SendAsync(string peerId, byte[] data, CancellationToken ct = default)
+        => SendAsync(data, ct);
+
+    /// <summary>Stage 5: peerId 指定の <see cref="ReadOnlyMemory{T}"/> 版。</summary>
+    Task SendAsync(string peerId, ReadOnlyMemory<byte> data, CancellationToken ct = default)
+        => SendAsync(data, ct);
+
+    /// <summary>
     /// 接続を切断し、リソースを解放する。
     /// </summary>
     Task DisconnectAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// 複数ペア同時接続対応 Stage 5: 指定 peer の接続だけを切断する（他 peer の接続は維持）。
+    /// 既定実装は peerId を捨てて全切断へフォールバック（テスト/旧経路互換）。
+    /// <see cref="ConnectionService"/> 実装は対応する <see cref="ConnectionSession"/> のみ Dispose する。
+    /// </summary>
+    Task DisconnectAsync(string peerId, CancellationToken ct = default)
+        => DisconnectAsync(ct);
 
     // === #D-001a Phase B: pairs/{pairId} SSoT 連携 ===
 

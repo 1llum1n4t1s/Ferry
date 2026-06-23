@@ -28,12 +28,16 @@ public interface ITransferService : IDisposable
 
     /// <summary>
     /// 指定したファイルをピアに送信する。
+    /// 複数ペア同時接続対応 Stage 5: <paramref name="peerId"/> 既定値は空文字で旧呼び出しの互換を維持する
+    /// （旧経路は <see cref="IConnectionService.ConnectedPeer"/> の SessionId に自然落ちする）。
+    /// 並列ペア接続が解禁されたあとは VM 側で送信先 peer を明示してこの API に流す。
     /// </summary>
     /// <param name="filePath">送信するファイルのパス。</param>
     /// <param name="relativePath">フォルダ送信時の相対パス（フォルダ名/サブフォルダ/ファイル名）。null で単独ファイル扱い。</param>
     /// <param name="transferId">UI 側で生成済みの転送 ID。指定すると進捗・キャンセル・一時停止を UI 行と TransferId で正確に対応付けできる。null なら内部生成。</param>
+    /// <param name="peerId">Stage 5: 送信先 peer の SessionId(32hex)。空文字なら旧来の <see cref="IConnectionService.ConnectedPeer"/> 逆引きに fallback。</param>
     /// <param name="ct">キャンセルトークン。</param>
-    Task SendFileAsync(string filePath, string? relativePath = null, Guid? transferId = null, CancellationToken ct = default);
+    Task SendFileAsync(string filePath, string? relativePath = null, Guid? transferId = null, string peerId = "", CancellationToken ct = default);
 
     /// <summary>
     /// 中断された転送を再開する。

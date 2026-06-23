@@ -1357,29 +1357,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     public async Task SendAsync(byte[] data, CancellationToken ct = default)
     {
-        var transport = _transport;
-        if (transport == null || !transport.IsConnected)
-            throw new InvalidOperationException("接続されていません");
-
-        // rere #D-001(b): 暗号有効時はハンドシェイク完了を待ってから封筒化する。
-        // Stage 3c: per-peer の SecureChannel を Session から引く。channel==null は下の平文パスへ直行。
+        // Stage 5: 旧 API は「現在の単数 _transport」を引いて per-peer 経路へ委譲する。
+        // 並列接続が解禁された後（Stage 4）も旧 API を使う呼び出し側は単数前提を維持。
         var session = LookupActiveSession();
-        if (session != null)
-        {
-            SecureChannel? channel;
-            TaskCompletionSource<bool>? ready;
-            lock (session.SecureLock) { channel = session.SecureChannel; ready = session.SecureReadyTcs; }
-            if (channel != null)
-            {
-                if (ready != null) await ready.Task.WaitAsync(ct);
-                if (channel.IsSecure)
-                {
-                    await transport.SendAsync(channel.Encrypt(data), ct);
-                    return;
-                }
-            }
-        }
-        await transport.SendAsync(data, ct);
+        if (session == null) throw new InvalidOperationException("接続されていません");
+        await SendAsyncCore(session, data, ct);
     }
 
     /// <summary>
@@ -1389,24 +1371,70 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// </summary>
     public async Task SendAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default)
     {
-        var transport = _transport;
+        var session = LookupActiveSession();
+        if (session == null) throw new InvalidOperationException("接続されていません");
+        await SendAsyncCore(session, data, ct);
+    }
+
+    /// <summary>Stage 5: peerId 指定の送信。指定 peer の Session.Transport へ直送する。</summary>
+    public async Task SendAsync(string peerId, byte[] data, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(peerId)) throw new ArgumentNullException(nameof(peerId));
+        if (!_sessions.TryGetValue(peerId, out var session) || session.Transport == null)
+            throw new InvalidOperationException($"指定 peer は接続されていません: {Util.Logger.MaskDeviceId(peerId)}");
+        await SendAsyncCore(session, data, ct);
+    }
+
+    /// <summary>Stage 5: peerId 指定の <see cref="ReadOnlyMemory{T}"/> 版送信。</summary>
+    public async Task SendAsync(string peerId, ReadOnlyMemory<byte> data, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(peerId)) throw new ArgumentNullException(nameof(peerId));
+        if (!_sessions.TryGetValue(peerId, out var session) || session.Transport == null)
+            throw new InvalidOperationException($"指定 peer は接続されていません: {Util.Logger.MaskDeviceId(peerId)}");
+        await SendAsyncCore(session, data, ct);
+    }
+
+    /// <summary>Stage 5: 共通化された送信コア。暗号ハンドシェイク完了を待ち、必要なら封筒化して transport に流す。
+    /// 各 SendAsync オーバーロードが <see cref="ConnectionSession"/> を解決した後に委譲する。</summary>
+    private async Task SendAsyncCore(ConnectionSession session, byte[] data, CancellationToken ct)
+    {
+        var transport = session.Transport;
         if (transport == null || !transport.IsConnected)
             throw new InvalidOperationException("接続されていません");
 
-        var session = LookupActiveSession();
-        if (session != null)
+        // rere #D-001(b): 暗号有効時はハンドシェイク完了を待ってから封筒化する。
+        SecureChannel? channel;
+        TaskCompletionSource<bool>? ready;
+        lock (session.SecureLock) { channel = session.SecureChannel; ready = session.SecureReadyTcs; }
+        if (channel != null)
         {
-            SecureChannel? channel;
-            TaskCompletionSource<bool>? ready;
-            lock (session.SecureLock) { channel = session.SecureChannel; ready = session.SecureReadyTcs; }
-            if (channel != null)
+            if (ready != null) await ready.Task.WaitAsync(ct);
+            if (channel.IsSecure)
             {
-                if (ready != null) await ready.Task.WaitAsync(ct);
-                if (channel.IsSecure)
-                {
-                    await transport.SendAsync(channel.Encrypt(data.Span), ct);
-                    return;
-                }
+                await transport.SendAsync(channel.Encrypt(data), ct);
+                return;
+            }
+        }
+        await transport.SendAsync(data, ct);
+    }
+
+    /// <summary>Stage 5: 共通化された送信コア（<see cref="ReadOnlyMemory{T}"/> 版）。</summary>
+    private async Task SendAsyncCore(ConnectionSession session, ReadOnlyMemory<byte> data, CancellationToken ct)
+    {
+        var transport = session.Transport;
+        if (transport == null || !transport.IsConnected)
+            throw new InvalidOperationException("接続されていません");
+
+        SecureChannel? channel;
+        TaskCompletionSource<bool>? ready;
+        lock (session.SecureLock) { channel = session.SecureChannel; ready = session.SecureReadyTcs; }
+        if (channel != null)
+        {
+            if (ready != null) await ready.Task.WaitAsync(ct);
+            if (channel.IsSecure)
+            {
+                await transport.SendAsync(channel.Encrypt(data.Span), ct);
+                return;
             }
         }
         await transport.SendAsync(data, ct);
@@ -1438,6 +1466,60 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         Route = ConnectionRoute.Unknown;
         SetState(PeerState.Disconnected);
         Util.Logger.Log("切断処理完了");
+    }
+
+    /// <summary>Stage 5: 指定 peer の接続だけを切断する（他 peer の接続と _signaling は維持）。
+    /// この peer が「現在の単数 _transport の権威（primary）」だった場合のみ単数フィールドも掃除し、
+    /// 単数 State を Disconnected に遷移させる。primary 以外なら ConnectionLost を単発で発火するのみ。
+    /// Stage 4 で並列接続が解禁されたあとに、片方の peer だけ閉じるユースケースを支える。</summary>
+    public async Task DisconnectAsync(string peerId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(peerId)) throw new ArgumentNullException(nameof(peerId));
+        Util.Logger.Log($"切断処理開始: peer={Util.Logger.MaskDeviceId(peerId)}");
+
+        if (!_sessions.TryGetValue(peerId, out var session))
+        {
+            Util.Logger.Log($"切断処理: 該当 Session 無し（既に切断済）peer={Util.Logger.MaskDeviceId(peerId)}", Util.LogLevel.Debug);
+            return;
+        }
+
+        var transport = session.Transport;
+        var wasPrimary = ReferenceEquals(_transport, transport);
+        var wasConnected = session.State == PeerState.Connected;
+
+        ResetSecureChannel(session);
+
+        if (transport != null)
+        {
+            DetachSessionHandlers(session, transport);
+            session.Transport = null;
+            try { transport.Close(); } catch (Exception ex) { Util.Logger.Log($"transport.Close 失敗（無視）: {ex.Message}", Util.LogLevel.Debug); }
+            transport.Dispose();
+        }
+
+        session.State = PeerState.Disconnected;
+        session.ConnectedPeer = null;
+        session.Route = ConnectionRoute.Unknown;
+
+        if (_sessions.TryRemove(peerId, out var removed))
+            DisposeSessionSilent(removed);
+
+        // primary だった場合は単数フィールドを掃除して、外向き API（ConnectedPeer/State/Route）を整合させる。
+        if (wasPrimary)
+        {
+            _transport = null;
+            ConnectedPeer = null;
+            Route = ConnectionRoute.Unknown;
+            SetState(PeerState.Disconnected);
+        }
+        else if (wasConnected)
+        {
+            ConnectionLost?.Invoke(this, EventArgs.Empty);
+        }
+
+        // _signaling と _currentPairId は他 peer が使い続けるかもしれないので触らない。
+        // 全 peer 切断時は呼び出し側が DisconnectAsync()（peerId 無し）を呼ぶ運用。
+        await Task.CompletedTask;
     }
 
     // === 接続ヘルパー ===

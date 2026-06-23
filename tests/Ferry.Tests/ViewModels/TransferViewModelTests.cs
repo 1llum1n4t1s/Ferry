@@ -47,9 +47,12 @@ public class TransferViewModelTests : IDisposable
         if (withSelectedPeer)
         {
             _connectionViewModel.SelectedPeer = new PairedPeer { PeerId = "test-peer", DisplayName = "TestPeer" };
+            var peerInfo = new PeerInfo { SessionId = "test-peer", DisplayName = "TestPeer", State = PeerState.Connected };
             // v1.0.47: EnsureConnectedAsync が ConnectedPeer.SessionId == peer.PeerId を要求するため、
             // 接続済みシナリオでは ConnectedPeer も同じ SessionId を返すよう mock を整える。
-            _connectionService.ConnectedPeer.Returns(new PeerInfo { SessionId = "test-peer", DisplayName = "TestPeer", State = PeerState.Connected });
+            _connectionService.ConnectedPeer.Returns(peerInfo);
+            // 複数ペア対応 Stage 5: EnsureConnectedToPeerAsync は ConnectedPeers 集合で接続済みを判定する。
+            _connectionService.ConnectedPeers.Returns(new Dictionary<string, PeerInfo> { ["test-peer"] = peerInfo });
         }
         // v1.0.38: TransferViewModel が ISettingsService に依存するようになった (AutoAccept チェック用)
         return new TransferViewModel(_connectionService, _transferService, _connectionViewModel, _settingsService);
@@ -109,7 +112,7 @@ public class TransferViewModelTests : IDisposable
         await vm.SendFilesCommand.ExecuteAsync(new[] { filePath });
 
         Assert.Empty(vm.Transfers);
-        await _transferService.DidNotReceive().SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await _transferService.DidNotReceive().SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -132,7 +135,7 @@ public class TransferViewModelTests : IDisposable
         await vm.SendFilesCommand.ExecuteAsync(new[] { @"C:\nonexistent\file.txt" });
 
         Assert.Empty(vm.Transfers);
-        await _transferService.DidNotReceive().SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await _transferService.DidNotReceive().SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -158,7 +161,7 @@ public class TransferViewModelTests : IDisposable
     {
         _connectionService.State.Returns(PeerState.Connected);
         var filePath = CreateTempFile("error.txt");
-        _transferService.SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+        _transferService.SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new IOException("ディスクエラー"));
 
         using var vm = CreateViewModel(withSelectedPeer: true);
@@ -216,7 +219,7 @@ public class TransferViewModelTests : IDisposable
     {
         _connectionService.State.Returns(PeerState.Connected);
         var filePath = CreateTempFile();
-        _transferService.SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+        _transferService.SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new Exception("err"));
 
         using var vm = CreateViewModel(withSelectedPeer: true);

@@ -443,7 +443,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
 
                     try
                     {
-                        await EnsureConnectedAsync(peer, cts.Token);
+                        await EnsureConnectedToPeerAsync(peer, cts.Token);
                     }
                     catch (OperationCanceledException) when (!cts.IsCancellationRequested)
                     {
@@ -452,8 +452,10 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                         // 確定させるため、一過性エラーに変換してリトライ分岐へ回す
                         throw new InvalidOperationException(App.Text("Transfer.ConnectFailed"));
                     }
-                    // UI 行と同じ TransferId を渡し、進捗・キャンセル・一時停止を対応付ける
-                    await _transferService.SendFileAsync(absolutePath, relativePath, item.TransferId, cts.Token);
+                    // 複数ペア同時接続対応 Stage 5: UI 行と同じ TransferId に加え、宛先 peerId も明示する。
+                    // _connectionService 側で per-peer の transport へ流れ、Stage 4 で並列接続が解禁された後も
+                    // 「宛先取り違え」が起きない。
+                    await _transferService.SendFileAsync(absolutePath, relativePath, item.TransferId, peer.PeerId, cts.Token);
 
                     item.State = TransferState.Completed;
                     item.TransferredBytes = item.FileSize;
@@ -514,28 +516,24 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         }
     }
 
-    /// <summary>指定ピアへ接続済みであることを保証する。別ピアに接続中なら切り替える。確立できなければ例外。
-    /// 複数ピア + 複数ファイル + UI 選択切り替えが混ざっても、各 item が「自分の宛先」に必ず行くようにする。
-    /// 旧実装は <c>State==Connected</c> なら相手ピアを確認せず素通りし、selection 切替で別ピア B 宛に
-    /// item A が送られる事故があった。ct は CancelTransfer 経由で渡され、接続待ち中もキャンセルで抜けられる。</summary>
-    private async Task EnsureConnectedAsync(PairedPeer peer, CancellationToken ct)
+    /// <summary>複数ペア同時接続対応 Stage 5: 指定 peer に接続済みであることを保証する。
+    /// 旧 <c>EnsureConnectedAsync</c> は SelectedPeer を書き換えて
+    /// <see cref="ConnectionViewModel.ConnectToSelectedPeerAsync"/> 経由で接続していたが、
+    /// 並列接続が解禁されると「item A 送信中の selection 切替が item A の宛先を踏み潰す」race の根が残る。
+    /// Stage 5 は SelectedPeer を触らず、<see cref="IConnectionService.ConnectToPeerAsync"/> を peerId 指定で
+    /// 直接呼ぶ。接続済みかは <see cref="IConnectionService.ConnectedPeers"/> 集合で判定する。
+    /// ct は CancelTransfer 経由で渡され、接続待ち中もキャンセルで抜けられる。</summary>
+    private async Task EnsureConnectedToPeerAsync(PairedPeer peer, CancellationToken ct)
     {
-        // 既に「対象ピアそのものに」接続済みなら何もしない
-        if (_connectionService.State == PeerState.Connected
-            && _connectionService.ConnectedPeer?.SessionId == peer.PeerId)
+        // 既に対象 peer へ接続済みなら何もしない（並列接続が解禁された Stage 4 でも安全）。
+        if (_connectionService.ConnectedPeers.ContainsKey(peer.PeerId))
             return;
 
-        // 別ピアに接続中なら宛先を peer に切り替えてから接続を張り直す
-        if (_connectionViewModel.SelectedPeer?.PeerId != peer.PeerId)
-            _connectionViewModel.SelectedPeer = peer;
+        Util.Logger.Log($"未接続のためオンデマンド接続を開始… 宛先={peer.DisplayName}");
+        await _connectionService.ConnectToPeerAsync(peer.PeerId, ct);
+        Util.Logger.Log($"オンデマンド接続完了: 宛先={peer.DisplayName}");
 
-        Util.Logger.Log($"未接続/別ピア接続中のためオンデマンド接続を開始… 宛先={peer.DisplayName}");
-        // CT を渡して接続待ち中の CancelTransfer に応答できるようにする（offline / NAT 越えで張り付くケースを救う）
-        await _connectionViewModel.ConnectToSelectedPeerAsync(ct);
-        Util.Logger.Log($"オンデマンド接続完了: State={_connectionService.State}");
-
-        if (_connectionService.State != PeerState.Connected
-            || _connectionService.ConnectedPeer?.SessionId != peer.PeerId)
+        if (!_connectionService.ConnectedPeers.ContainsKey(peer.PeerId))
             throw new InvalidOperationException(App.Text("Transfer.ConnectFailed"));
     }
 
