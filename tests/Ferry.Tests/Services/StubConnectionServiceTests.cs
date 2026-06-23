@@ -170,4 +170,71 @@ public sealed class StubConnectionServiceTests
         var ex = await Record.ExceptionAsync(() => svc.SendAsync(new byte[] { 1, 2, 3 }, TestContext.Current.CancellationToken));
         Assert.Null(ex);
     }
+
+    // === Stage 2: 単数 ConnectedPeer の便宜値 / Stage 5: peerId 指定の SendAsync / DisconnectAsync 既定実装 ===
+
+    /// <summary>Stage 2: 未接続時の <see cref="IConnectionService.ConnectedPeers"/> は『同一インスタンス』の
+    /// 空辞書を返すこと（IConnectionService の interface static field キャッシュにより呼出ごと割当が起きない）。</summary>
+    [Fact]
+    public void ConnectedPeers_未接続時はキャッシュ済の空辞書を返すこと()
+    {
+        IConnectionService svc = new StubConnectionService();
+        var a = svc.ConnectedPeers;
+        var b = svc.ConnectedPeers;
+
+        Assert.NotNull(a);
+        Assert.Empty(a);
+        // PR #12 review fix: 呼出ごとに new Dictionary しない（同一参照キャッシュ）
+        Assert.Same(a, b);
+    }
+
+    /// <summary>Stage 2: 未接続時の <see cref="IConnectionService.ListeningPeerIds"/> は空であること。</summary>
+    [Fact]
+    public void ListeningPeerIds_未接続時は空であること()
+    {
+        IConnectionService svc = new StubConnectionService();
+        Assert.Empty(svc.ListeningPeerIds);
+    }
+
+    /// <summary>Stage 2: <see cref="IConnectionService.RouteOf"/> の既定実装は ConnectedPeer の SessionId が
+    /// 一致するときだけ <see cref="IConnectionService.Route"/> を返し、それ以外は <see cref="ConnectionRoute.Unknown"/>。</summary>
+    [Fact]
+    public async Task RouteOf_既定実装はConnectedPeer一致時のみRouteを返すこと()
+    {
+        // RouteOf は IConnectionService の interface default 実装なので interface 経由で呼ぶ
+        IConnectionService svc = new StubConnectionService();
+        // 未接続時はどの peerId でも Unknown
+        Assert.Equal(ConnectionRoute.Unknown, svc.RouteOf("any-peer"));
+
+        await svc.ConnectToPeerAsync("connected-peer", TestContext.Current.CancellationToken);
+
+        Assert.Equal(ConnectionRoute.Direct, svc.RouteOf("connected-peer"));
+        Assert.Equal(ConnectionRoute.Unknown, svc.RouteOf("other-peer"));
+    }
+
+    /// <summary>Stage 5: peerId 指定の <see cref="IConnectionService.SendAsync(string, byte[], System.Threading.CancellationToken)"/>
+    /// は既定実装で旧 API <c>SendAsync(byte[])</c> に委譲して例外を投げないこと（テスト/旧経路互換）。</summary>
+    [Fact]
+    public async Task SendAsync_peerId指定版_既定実装が旧APIへフォールバックすること()
+    {
+        IConnectionService svc = new StubConnectionService();
+        var ex = await Record.ExceptionAsync(() => svc.SendAsync("any-peer", new byte[] { 1, 2, 3 }, TestContext.Current.CancellationToken));
+        Assert.Null(ex);
+    }
+
+    /// <summary>Stage 5: peerId 指定の <see cref="IConnectionService.DisconnectAsync(string, System.Threading.CancellationToken)"/>
+    /// は既定実装で全切断 (peerId なし版) にフォールバックすること。
+    /// Stub では DisconnectAsync(ct) が状態をリセットする実装になっているため、Disconnected に戻ることを確認。</summary>
+    [Fact]
+    public async Task DisconnectAsync_peerId指定版_既定実装が全切断にフォールバックすること()
+    {
+        IConnectionService svc = new StubConnectionService();
+        await svc.ConnectToPeerAsync("peer-X", TestContext.Current.CancellationToken);
+        Assert.Equal(PeerState.Connected, svc.State);
+
+        await svc.DisconnectAsync("peer-X", TestContext.Current.CancellationToken);
+
+        Assert.Equal(PeerState.Disconnected, svc.State);
+        Assert.Null(svc.ConnectedPeer);
+    }
 }

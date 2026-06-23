@@ -127,6 +127,20 @@
                                                     </StackPanel>
                                                 </Border>
 
+                                                <!-- Stage 6: 進行中転送バッジ。peer に紐づく転送が 1 件以上ある間だけ
+                                                     表示する。複数 peer 並列転送が解禁された後 (Stage 4) の視覚的フィードバック。 -->
+                                                <Border Classes="route-badge transferring-badge"
+                                                        VerticalAlignment="Center"
+                                                        IsVisible="{Binding IsTransferring}"
+                                                        ToolTip.Tip="このピアへの進行中転送">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Classes="route-badge-icon route-badge-text"
+                                                                   Text="🔄" />
+                                                        <TextBlock Classes="route-badge-text"
+                                                                   Text="{Binding ActiveTransferCount}" />
+                                                    </StackPanel>
+                                                </Border>
+
                                                 <!-- 接続状態テキスト (未接続時のヒント等) — バッジの右に並べる -->
                                                 <TextBlock Text="{Binding ConnectionStatusText}"
                                                            FontSize="11"
