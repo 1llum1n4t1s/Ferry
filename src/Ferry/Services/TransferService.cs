@@ -76,6 +76,14 @@ public sealed class TransferService : ITransferService, IDisposable
     /// PauseSendTransfer で追加、ResumeSendTransfer で除去。SendChunksAsync のループがここを見て待機する。</summary>
     private readonly ConcurrentDictionary<Guid, byte> _pausedSends = new();
 
+    /// <summary>複数ペア同時接続対応 Stage 0: TransferId → 宛先/受信元 peerId(SessionId) の索引。
+    /// 送信は SendFileAsync が記入、受信は HandleFileMeta が記入する（Stage 2 で配線）。
+    /// Stage 2 以降で SendFlowAckAsync / SendRejectFireAndForget / フロー制御 Route 判定が
+    /// この索引から transfer の宛先 peer を引いて返送・判定する（受信中の FlowAck が他 peer に
+    /// 漏れる blocker の根治）。OnConnectionLost(peerId) も当該 peer の transfer のみに絞り込む。
+    /// 現状(Stage 0)は誰も参照しないので挙動不変。</summary>
+    private readonly ConcurrentDictionary<Guid, string> _transferPeerId = new();
+
     public event EventHandler<TransferItem>? ProgressChanged;
     public event EventHandler<TransferItem>? FileReceived;
     public event EventHandler<TransferItem>? TransferError;
