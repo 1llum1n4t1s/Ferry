@@ -73,8 +73,12 @@ public interface IConnectionService
     /// 土台を作り済み。</summary>
     event EventHandler<DataReceivedEventArgs>? DataReceived;
 
-    /// <summary>接続が切断されたときに発火するイベント（転送中の切断検知用）。</summary>
-    event EventHandler? ConnectionLost;
+    /// <summary>接続が切断されたときに発火するイベント（転送中の切断検知用）。
+    /// 複数ペア同時接続対応 Stage 5: <see cref="ConnectionLostEventArgs.PeerId"/> 付帯。
+    /// 受信側 (TransferService) は当該 peer の transfer のみに絞り込んで cleanup する
+    /// （Stage 4 で並列接続が解禁された後、peer A の切断で peer B の転送を巻き込まないため）。
+    /// peerId 空文字は『全 peer 切断 / 不明』を表す（DisconnectAsync 全体や旧経路の互換）。</summary>
+    event EventHandler<ConnectionLostEventArgs>? ConnectionLost;
 
     /// <summary>接続フェーズの詳細ステータスメッセージが更新されたときに発火するイベント。</summary>
     event EventHandler<string>? StatusMessageChanged;

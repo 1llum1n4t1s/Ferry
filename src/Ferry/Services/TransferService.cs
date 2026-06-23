@@ -153,19 +153,32 @@ public sealed class TransferService : ITransferService, IDisposable
     /// 切断で最大 60 秒 Pending が残り UX が悪化する。TCS を TrySetResult(false) で完了させて
     /// WaitForApprovalAsync が Cancelled に遷移するようにする。
     /// </summary>
-    private void OnConnectionLost(object? sender, EventArgs e)
+    private void OnConnectionLost(object? sender, Infrastructure.ConnectionLostEventArgs e)
     {
-        Util.Logger.Log($"接続切断検知: 受信中 {_receiveStates.Count} 件 + 承認待ち(受) {_pendingApprovals.Count} 件 + 承認待ち(送) {_pendingSendApprovals.Count} 件 + 送信中 {_activeTransfers.Count} 件を cleanup", Util.LogLevel.Warning);
+        // 複数ペア同時接続対応 Stage 5: ConnectionLost に peerId が付帯する（旧 EventHandler? は撤廃）。
+        // peerId 空文字は『全 peer 切断 / 不明』を表し、旧挙動どおり全 transfers を cleanup する。
+        // peerId 付きは当該 peer 由来の transfer のみに絞り込む（Stage 4 で並列接続が解禁されたあと、
+        // peer A の切断で peer B の進行中転送を巻き込まないため）。
+        var peerId = e.PeerId;
+        var scopeLabel = string.IsNullOrEmpty(peerId) ? "全 peer" : $"peer={Util.Logger.MaskDeviceId(peerId)}";
+        Util.Logger.Log($"接続切断検知 ({scopeLabel}): 受信中 {_receiveStates.Count} 件 + 承認待ち(受) {_pendingApprovals.Count} 件 + 承認待ち(送) {_pendingSendApprovals.Count} 件 + 送信中 {_activeTransfers.Count} 件を cleanup", Util.LogLevel.Warning);
+
+        // peerId 指定時のスコープ判定ヘルパー。peerId 空ならすべて対象（旧挙動）。
+        bool BelongsTo(Guid tid)
+        {
+            if (string.IsNullOrEmpty(peerId)) return true;
+            return _transferPeerId.TryGetValue(tid, out var tpid)
+                && string.Equals(tpid, peerId, StringComparison.Ordinal);
+        }
 
         // v1.0.47: 「一時停止中だった」送信だけを抜けさせる（CTS Cancel）。それ以外の進行中送信は
         // SendChunksAsync の _connectionService.SendAsync(...) が転送断で IOException を投げ、
         // SendItemAsync の transient catch（MaxSendAttempts までリトライ）に乗るのが望ましい。
-        // ここで全 _sendCts を一括 Cancel すると OperationCanceled になり、リトライ機構を素通りして
-        // 即 Cancelled で履歴が終わってしまう（接続断 = 即諦め）ので、対象を paused に限定する。
-        var pausedTids = _pausedSends.Keys.ToArray();
-        _pausedSends.Clear();
-        foreach (var tid in pausedTids)
+        // Stage 5: 当該 peer に紐づく一時停止中送信のみ対象。
+        foreach (var tid in _pausedSends.Keys.ToArray())
         {
+            if (!BelongsTo(tid)) continue;
+            _pausedSends.TryRemove(tid, out _);
             if (_sendCts.TryGetValue(tid, out var cts))
             {
                 try { cts.Cancel(); } catch { /* ignore */ }
@@ -175,6 +188,7 @@ public sealed class TransferService : ITransferService, IDisposable
         // 受信中の部分ファイルを削除
         foreach (var tid in _receiveStates.Keys.ToArray())
         {
+            if (!BelongsTo(tid)) continue;
             if (_receiveStates.TryRemove(tid, out var state))
             {
                 state.Item.State = TransferState.Cancelled;
@@ -187,6 +201,7 @@ public sealed class TransferService : ITransferService, IDisposable
         // 受信側承認待ちもキャンセル扱い (送信側はもう存在しないので承認しても無意味)
         foreach (var tid in _pendingApprovals.Keys.ToArray())
         {
+            if (!BelongsTo(tid)) continue;
             if (_pendingApprovals.TryRemove(tid, out var pending))
             {
                 pending.Item.State = TransferState.Cancelled;
@@ -209,6 +224,7 @@ public sealed class TransferService : ITransferService, IDisposable
         //      MaxSendAttempts まで自動リトライが走る（接続復帰後の再送信に対応）
         foreach (var tid in _pendingSendApprovals.Keys.ToArray())
         {
+            if (!BelongsTo(tid)) continue;
             if (_pendingSendApprovals.TryRemove(tid, out var tcs))
             {
                 // ErrorMessage は WaitForApprovalAsync の fallback ("相手が受信を拒否しました") を上書き

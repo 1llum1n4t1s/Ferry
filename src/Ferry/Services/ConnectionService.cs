@@ -218,7 +218,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     public event EventHandler<ConnectionRoute>? RouteChanged;
     public event EventHandler<PairedPeer>? PairingCompleted;
     public event EventHandler<Infrastructure.DataReceivedEventArgs>? DataReceived;
-    public event EventHandler? ConnectionLost;
+    public event EventHandler<Infrastructure.ConnectionLostEventArgs>? ConnectionLost;
     public event EventHandler<string>? StatusMessageChanged;
 
     // === rere #D-001(b) / 複数ペア同時接続対応 Stage 3c: per-peer セッション暗号 ===
@@ -1559,10 +1559,12 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             ConnectedPeer = null;
             Route = ConnectionRoute.Unknown;
             SetState(PeerState.Disconnected);
+            if (wasConnected)
+                ConnectionLost?.Invoke(this, new Infrastructure.ConnectionLostEventArgs(peerId));
         }
         else if (wasConnected)
         {
-            ConnectionLost?.Invoke(this, EventArgs.Empty);
+            ConnectionLost?.Invoke(this, new Infrastructure.ConnectionLostEventArgs(peerId));
         }
 
         // _signaling と _currentPairId は他 peer が使い続けるかもしれないので触らない。
@@ -1976,13 +1978,13 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         {
             if (State == PeerState.Connected)
             {
-                ConnectionLost?.Invoke(this, EventArgs.Empty);
+                ConnectionLost?.Invoke(this, new Infrastructure.ConnectionLostEventArgs(peerId));
                 SetState(PeerState.Disconnected);
             }
         }
         else if (wasConnected)
         {
-            ConnectionLost?.Invoke(this, EventArgs.Empty);
+            ConnectionLost?.Invoke(this, new Infrastructure.ConnectionLostEventArgs(peerId));
         }
     }
 

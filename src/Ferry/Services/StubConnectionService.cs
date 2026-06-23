@@ -23,7 +23,7 @@ public sealed class StubConnectionService : IConnectionService
     public event EventHandler<ConnectionRoute>? RouteChanged;
     public event EventHandler<PairedPeer>? PairingCompleted;
     public event EventHandler<DataReceivedEventArgs>? DataReceived;
-    public event EventHandler? ConnectionLost;
+    public event EventHandler<Ferry.Infrastructure.ConnectionLostEventArgs>? ConnectionLost;
     public event EventHandler<string>? StatusMessageChanged;
 
     public Task<string> StartPairingSessionAsync(CancellationToken ct = default)

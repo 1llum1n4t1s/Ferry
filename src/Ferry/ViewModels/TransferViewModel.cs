@@ -260,8 +260,38 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         return list.FirstOrDefault(t => !t.IsTerminal) ?? list[0];
     }
 
-    private void RecomputeIsTransferring() =>
+    private void RecomputeIsTransferring()
+    {
         IsTransferring = Transfers.Any(t => t.State == TransferState.InProgress);
+        // 複数ペア同時接続対応 Stage 6: PairedPeer ごとに進行中転送件数を集計し、
+        // PairedPeer.IsTransferring / ActiveTransferCount を set する（左ペインのバッジ用）。
+        // 集計は Transfers の全行を peerId でグルーピングする線形走査（通常 ~10 行）。
+        // 一覧外（PairedPeers に居ない peerId）はスキップする。
+        RecomputePerPeerTransferCounts();
+    }
+
+    /// <summary>複数ペア同時接続対応 Stage 6: TransferItem.PeerId 別に進行中件数を集計して
+    /// 該当 <see cref="PairedPeer"/> の <see cref="PairedPeer.IsTransferring"/> / <see cref="PairedPeer.ActiveTransferCount"/>
+    /// を更新する。AddTransfer / 完了/エラー/キャンセル/状態遷移時に <see cref="RecomputeIsTransferring"/> 経由で呼ばれ、
+    /// 左ペインのピアリストに per-peer 転送バッジを反映する。</summary>
+    private void RecomputePerPeerTransferCounts()
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var t in Transfers)
+        {
+            if (t.State != TransferState.InProgress) continue;
+            var pid = t.PeerId;
+            if (string.IsNullOrEmpty(pid)) continue;
+            counts[pid] = counts.TryGetValue(pid, out var c) ? c + 1 : 1;
+        }
+        foreach (var peer in _connectionViewModel.PairedPeers)
+        {
+            var n = counts.TryGetValue(peer.PeerId, out var c) ? c : 0;
+            // ObservableProperty の setter は値が同じなら通知しない（生成済 generator がガード）。
+            peer.ActiveTransferCount = n;
+            peer.IsTransferring = n > 0;
+        }
+    }
 
     /// <summary>受信時の宛先を解決する。
     /// 複数ペア同時接続対応 Stage 2: service 側 HandleFileMeta が transport 由来 peerId を権威設定するため、
