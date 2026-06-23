@@ -258,6 +258,15 @@ public sealed class TransferService : ITransferService, IDisposable
         };
         _activeTransfers[transferId] = item;
 
+        // 複数ペア同時接続対応 Stage 2: 送信先 peerId を _transferPeerId 索引に記入。
+        // VM は SendFileAsync 呼び出し前に同 TransferId の TransferItem.PeerId を設定済みのケースが多いので、
+        // VM 側の TransferItem から peerId を引いて記録する（VM と service の item が別インスタンスでも
+        // requestedTransferId で相関する）。Stage 5 で SendFileAsync 自体に peerId 引数を追加して権威化する。
+        // 現状(Stage 2)は記入のみで参照は Stage 5 から。
+        var connectedPeerId = _connectionService.ConnectedPeer?.SessionId;
+        if (!string.IsNullOrEmpty(connectedPeerId))
+            _transferPeerId[transferId] = connectedPeerId;
+
         // 送信側の承認待ち TCS を準備 (FileMeta 送信前に登録する)
         var approvalTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pendingSendApprovals[transferId] = approvalTcs;
@@ -322,6 +331,7 @@ public sealed class TransferService : ITransferService, IDisposable
             _pendingSendApprovals.TryRemove(transferId, out _);
             _activeTransfers.TryRemove(transferId, out _);
             _pausedSends.TryRemove(transferId, out _);
+            _transferPeerId.TryRemove(transferId, out _); // 複数ペア対応 Stage 2: 送信終了時に索引も解放
             if (_sendCts.TryRemove(transferId, out var cts))
                 cts.Dispose();
         }
@@ -461,8 +471,11 @@ public sealed class TransferService : ITransferService, IDisposable
 
     /// <summary>
     /// 受信データを処理する。ConnectionService の DataReceived から呼び出される。
+    /// 複数ペア同時接続対応 Stage 2: <paramref name="peerId"/> を権威値として
+    /// HandleFileMeta が TransferItem.PeerId と _transferPeerId 索引に書き込む。
+    /// 後方互換のため peerId 既定値 "" を許容する（旧テスト/旧呼び出し経路は逆引きにフォールバックする）。
     /// </summary>
-    public void HandleReceivedData(byte[] data)
+    public void HandleReceivedData(byte[] data, string peerId = "")
     {
         if (data.Length == 0) return;
 
@@ -474,7 +487,7 @@ public sealed class TransferService : ITransferService, IDisposable
         // SafePath の NUL 制御文字対策と同じ「細工 1 通で受信ループを殺せない」不変条件をプロトコル全体へ拡張。
         try
         {
-            DispatchMessage(messageType, data);
+            DispatchMessage(messageType, data, peerId);
         }
         catch (Exception ex)
         {
@@ -482,12 +495,12 @@ public sealed class TransferService : ITransferService, IDisposable
         }
     }
 
-    private void DispatchMessage(byte messageType, byte[] data)
+    private void DispatchMessage(byte messageType, byte[] data, string peerId)
     {
         switch (messageType)
         {
             case TransferProtocol.FileMeta:
-                HandleFileMeta(data);
+                HandleFileMeta(data, peerId);
                 break;
 
             case TransferProtocol.FileChunk:
@@ -720,7 +733,7 @@ public sealed class TransferService : ITransferService, IDisposable
         }
     }
 
-    private void HandleFileMeta(byte[] data)
+    private void HandleFileMeta(byte[] data, string peerIdFromTransport = "")
     {
         var meta = FileChunker.ParseFileMeta(data);
         if (meta == null)
@@ -767,9 +780,21 @@ public sealed class TransferService : ITransferService, IDisposable
         var saveDir = _settingsService.Settings.SaveDirectory;
 
         // 接続元ピアを FileMeta 到着時点で確定（フォルダ構造マッピングのキーと ReceiveState の双方で使う）。
-        var receivePeerId = _connectionService.ConnectedPeer?.SessionId
-                            ?? _connectionService.CurrentListeningPeerId
-                            ?? string.Empty;
+        // 複数ペア同時接続対応 Stage 2: transport から運ばれた peerId を権威値として優先採用。
+        // 空文字（後方互換経路、テスト経路）の場合のみ旧 ConnectedPeer 単数の逆引きにフォールバックする。
+        // Stage 4 で並行接続が解禁された時点で逆引きは取り違える可能性があるが、その時点では
+        // 必ず transport から peerId が運ばれてくる（Stage 1 で配線済み）ので逆引きは事実上死に経路。
+        var receivePeerId = !string.IsNullOrEmpty(peerIdFromTransport)
+            ? peerIdFromTransport
+            : (_connectionService.ConnectedPeer?.SessionId
+               ?? _connectionService.CurrentListeningPeerId
+               ?? string.Empty);
+
+        // 複数ペア同時接続対応 Stage 2: TransferId→peerId 索引を記入。
+        // Stage 5 の SendFlowAckAsync / SendRejectFireAndForget / フロー制御 Route 判定がこの索引から
+        // 返送先 peer を引いて、受信中の FlowAck が他 peer に漏れる blocker を根治する。
+        if (!string.IsNullOrEmpty(receivePeerId))
+            _transferPeerId[transferIdGuid] = receivePeerId;
 
         // 送信元 OS のパス区切りに依存しないよう、受信した相対パスを '/' へ正規化してから分解・検証する
         // （Windows 送信 → mac/Linux 受信の混在を吸収。区切り/トラバーサル判定は Util.SafePath に集約）。
@@ -1554,6 +1579,8 @@ public sealed class TransferService : ITransferService, IDisposable
         var fs = Interlocked.Exchange(ref state.FileStream, null);
         fs?.Dispose();
         _receiveStates.TryRemove(state.TransferId, out _);
+        // 複数ペア同時接続対応 Stage 2: 受信終了時に索引も解放。
+        _transferPeerId.TryRemove(state.TransferId, out _);
 
         // 不完全な受信ファイルを削除
         try
@@ -1564,9 +1591,12 @@ public sealed class TransferService : ITransferService, IDisposable
         catch { /* 削除失敗は無視 */ }
     }
 
-    private void OnDataReceived(object? sender, byte[] data)
+    private void OnDataReceived(object? sender, Infrastructure.DataReceivedEventArgs e)
     {
-        HandleReceivedData(data);
+        // 複数ペア同時接続対応 Stage 2: transport→ConnectionService 経由で運ばれた peerId を
+        // 受信ルーティングに直結。HandleReceivedData が _transferPeerId 索引と
+        // TransferItem.PeerId / _folderMappings キーへ権威値として設定する。
+        HandleReceivedData(e.Data, e.PeerId);
     }
 
     /// <summary>

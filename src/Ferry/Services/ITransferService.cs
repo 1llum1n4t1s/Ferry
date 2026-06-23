@@ -45,9 +45,14 @@ public interface ITransferService : IDisposable
 
     /// <summary>
     /// 受信データを処理する（ConnectionService の DataReceived から呼び出される）。
+    /// 複数ペア同時接続対応 Stage 2: <paramref name="peerId"/> を権威値として
+    /// HandleFileMeta が TransferItem.PeerId と _transferPeerId 索引に書き込む。
+    /// 後方互換のため peerId 既定値 "" を許容する（旧テスト/旧呼び出し経路は逆引きにフォールバックする）。
     /// </summary>
     /// <param name="data">受信したバイナリデータ。</param>
-    void HandleReceivedData(byte[] data);
+    /// <param name="peerId">複数ペア同時接続対応 Stage 2: 送信元 peer の SessionId(32hex)。
+    /// 空文字なら旧来の ConnectedPeer 単数逆引きにフォールバック。</param>
+    void HandleReceivedData(byte[] data, string peerId = "");
 
     /// <summary>
     /// レジューム可能な転送の一覧を取得する。

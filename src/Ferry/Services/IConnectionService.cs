@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Ferry.Infrastructure;
 using Ferry.Models;
 
 namespace Ferry.Services;
@@ -17,11 +19,34 @@ public interface IConnectionService
     /// <summary>現在の接続状態。</summary>
     PeerState State { get; }
 
-    /// <summary>接続中のピア情報。未接続時は null。</summary>
+    /// <summary>接続中のピア情報。未接続時は null。
+    /// 複数ペア同時接続対応 Stage 2: <see cref="ConnectedPeers"/> の便宜値（最後に接続したペア）として
+    /// 後方互換シムを維持する。受信ルーティングは <see cref="DataReceived"/> の <see cref="DataReceivedEventArgs.PeerId"/> を
+    /// 権威値として TransferItem.PeerId 等に設定する設計に切り替えるため、
+    /// 単数 ConnectedPeer に逆引き依存しない新コードを書くこと。</summary>
     PeerInfo? ConnectedPeer { get; }
 
-    /// <summary>現在の接続経路（LAN 直接 / STUN P2P / TURN リレー）。</summary>
+    /// <summary>複数ペア同時接続対応 Stage 2: 接続中ピアの集合（peerId(SessionId) → PeerInfo）。
+    /// 既存実装/テストの互換のため default で空辞書を返す。<see cref="ConnectionService"/> は本当の集合を返す。
+    /// Stage 3-4 で実装側を埋める。</summary>
+    IReadOnlyDictionary<string, PeerInfo> ConnectedPeers => new Dictionary<string, PeerInfo>();
+
+    /// <summary>複数ペア同時接続対応 Stage 2: 着信監視中ピアの集合。<see cref="CurrentListeningPeerId"/> の集合版。
+    /// 既存実装/テスト互換のため default で空集合を返す。Stage 4 で全ペア常時 listen を駆動する際に実装側を埋める。</summary>
+    IReadOnlyCollection<string> ListeningPeerIds => Array.Empty<string>();
+
+    /// <summary>現在の接続経路（LAN 直接 / STUN P2P / TURN リレー）。
+    /// 複数ペア同時接続対応 Stage 2: 単数プロパティは『最後に確定したペアの Route』の便宜値。
+    /// 送信先 peer の Route を引きたい場合は <see cref="RouteOf"/> を使うこと。</summary>
     ConnectionRoute Route { get; }
+
+    /// <summary>複数ペア同時接続対応 Stage 2: 指定 peer の接続経路を返す。
+    /// 未接続/未知 peer は <see cref="ConnectionRoute.Unknown"/>。既定実装は単数 <see cref="Route"/> 互換動作
+    /// （ConnectedPeer の peerId が一致するときだけ <see cref="Route"/> を返す）。
+    /// <see cref="ConnectionService"/> は Session 別の Route を引く実装に置換する（Stage 3）。</summary>
+    ConnectionRoute RouteOf(string peerId)
+        => (ConnectedPeer != null && string.Equals(ConnectedPeer.SessionId, peerId, StringComparison.Ordinal))
+            ? Route : ConnectionRoute.Unknown;
 
     // === イベント ===
 
@@ -34,8 +59,13 @@ public interface IConnectionService
     /// <summary>ペアリングが完了したときに発火するイベント。</summary>
     event EventHandler<PairedPeer>? PairingCompleted;
 
-    /// <summary>DataChannel でバイナリデータを受信したときに発火するイベント。</summary>
-    event EventHandler<byte[]>? DataReceived;
+    /// <summary>DataChannel でバイナリデータを受信したときに発火するイベント。
+    /// 複数ペア同時接続対応 Stage 2: 旧 <c>EventHandler&lt;byte[]&gt;</c> から
+    /// <see cref="DataReceivedEventArgs"/> 付き(PeerId 同梱)に変更。
+    /// 購読側は <c>e.PeerId</c> を権威値として TransferItem.PeerId / _transferPeerId 索引に設定し、
+    /// 旧来の ConnectedPeer 単数プロパティ逆引きをやめる。Stage 1 で transport が peerId を運ぶ
+    /// 土台を作り済み。</summary>
+    event EventHandler<DataReceivedEventArgs>? DataReceived;
 
     /// <summary>接続が切断されたときに発火するイベント（転送中の切断検知用）。</summary>
     event EventHandler? ConnectionLost;

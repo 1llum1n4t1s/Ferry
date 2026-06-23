@@ -151,10 +151,36 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     public PeerInfo? ConnectedPeer { get; private set; }
     public ConnectionRoute Route { get; private set; } = ConnectionRoute.Unknown;
 
+    /// <summary>複数ペア同時接続対応 Stage 2: 接続中ペア集合。
+    /// Stage 3 で _sessions 辞書化したら _sessions の射影に置換する。
+    /// 現状(Stage 2)は ConnectedPeer 単数のシム。</summary>
+    public System.Collections.Generic.IReadOnlyDictionary<string, PeerInfo> ConnectedPeers
+    {
+        get
+        {
+            var p = ConnectedPeer;
+            if (p == null) return _emptyConnectedPeers;
+            return new System.Collections.Generic.Dictionary<string, PeerInfo>(1) { [p.SessionId] = p };
+        }
+    }
+
+    private static readonly System.Collections.Generic.IReadOnlyDictionary<string, PeerInfo> _emptyConnectedPeers
+        = new System.Collections.Generic.Dictionary<string, PeerInfo>(0);
+
+    /// <summary>複数ペア同時接続対応 Stage 2: 指定 peer の Route を返す（単数 Route のシム）。
+    /// Stage 3 で _sessions 化されたら Session.Route を直接引く実装に置換する。</summary>
+    public ConnectionRoute RouteOf(string peerId)
+    {
+        var p = ConnectedPeer;
+        if (p != null && string.Equals(p.SessionId, peerId, StringComparison.Ordinal))
+            return Route;
+        return ConnectionRoute.Unknown;
+    }
+
     public event EventHandler<PeerState>? StateChanged;
     public event EventHandler<ConnectionRoute>? RouteChanged;
     public event EventHandler<PairedPeer>? PairingCompleted;
-    public event EventHandler<byte[]>? DataReceived;
+    public event EventHandler<Infrastructure.DataReceivedEventArgs>? DataReceived;
     public event EventHandler? ConnectionLost;
     public event EventHandler<string>? StatusMessageChanged;
 
@@ -1694,9 +1720,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     private void OnDataReceived(object? sender, Infrastructure.DataReceivedEventArgs e)
     {
-        // 複数ペア同時接続対応 Stage 1: transport が peerId を運ぶようになったが、
-        // Stage 1 では IConnectionService.DataReceived は依然 byte[] のままで挙動不変を保つ。
-        // peerId の権威化と TransferService への貫通は Stage 2 で行う。
+        // 複数ペア同時接続対応 Stage 2: transport が運んだ peerId を IConnectionService.DataReceived へ貫通させる。
+        // TransferService 側は e.PeerId を権威値として TransferItem.PeerId / _transferPeerId 索引に設定し、
+        // ConnectedPeer 単数の逆引きをやめる。
         var data = e.Data;
         SecureChannelStep? step = null;
         lock (_secureLock)
@@ -1707,10 +1733,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         }
         if (step == null)
         {
-            DataReceived?.Invoke(this, data); // 平文（現状パス）
+            DataReceived?.Invoke(this, e); // 平文（現状パス）。peerId 付きのまま貫通。
             return;
         }
-        ApplySecureStep(step); // 副作用（送信/配送/遷移）はロック外で
+        ApplySecureStep(step, e.PeerId); // 副作用（送信/配送/遷移）はロック外で。peerId を Deliver にも伝播。
     }
 
     // === rere #D-001(b): セッション暗号ハンドシェイクの駆動 ===
@@ -1766,8 +1792,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         ApplySecureStep(step); // 送信/配送/遷移はロック外で
     }
 
-    /// <summary>状態機械の 1 ステップ（送るフレーム・配送平文・遷移）を実行する。</summary>
-    private void ApplySecureStep(SecureChannelStep step)
+    /// <summary>状態機械の 1 ステップ（送るフレーム・配送平文・遷移）を実行する。
+    /// 複数ペア同時接続対応 Stage 2: <paramref name="peerId"/> を peerId 付帯 DataReceived に貫通させる。
+    /// Start/SecureTimeout 経路は『現在の唯一の transport』に紐づくのでフィールド側 PeerId を引く。</summary>
+    private void ApplySecureStep(SecureChannelStep step, string? peerId = null)
     {
         var transport = _transport;
         foreach (var f in step.Send)
@@ -1777,8 +1805,12 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 _ = SafeSendRawAsync(transport, f);
         }
 
+        // 複数ペア同時接続対応 Stage 2: 復号後の Deliver にも peerId を付帯。
+        // Start / SecureTimeout 経路は peerId 引数 null で来るので、現 transport から推定する
+        // （Stage 3 で _sessions 化されると Session の PeerId を引く実装に置換）。
+        var deliverPeerId = peerId ?? GetCurrentTransportPeerId() ?? string.Empty;
         foreach (var d in step.Deliver)
-            DataReceived?.Invoke(this, d);
+            DataReceived?.Invoke(this, new Infrastructure.DataReceivedEventArgs(deliverPeerId, d));
 
         switch (step.Outcome)
         {
@@ -1806,6 +1838,17 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         try { await transport.SendAsync(frame); }
         catch (Exception ex) { Util.Logger.Log($"ハンドシェイクフレーム送信失敗: {ex.Message}", Util.LogLevel.Warning); }
     }
+
+    /// <summary>複数ペア同時接続対応 Stage 2: 現在の <see cref="_transport"/> から PeerId を引く便宜ヘルパー。
+    /// 暗号 Start / SecureTimeout 経路で受信元 peer の情報が手元に無い場合の fallback。
+    /// Stage 3 で _sessions 辞書化されたら Session.PeerId を直接引く実装に置換する。</summary>
+    private string? GetCurrentTransportPeerId() => _transport switch
+    {
+        TcpDirectTransport t when !string.IsNullOrEmpty(t.PeerId) => t.PeerId,
+        UdpHolePunchTransport u when !string.IsNullOrEmpty(u.PeerId) => u.PeerId,
+        WebSocketRelayTransport w when !string.IsNullOrEmpty(w.PeerId) => w.PeerId,
+        _ => null,
+    };
 
     private async Task SecureTimeoutAsync(SecureChannel channel, CancellationToken ct)
     {

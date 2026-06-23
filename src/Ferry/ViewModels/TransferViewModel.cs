@@ -263,13 +263,20 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     private void RecomputeIsTransferring() =>
         IsTransferring = Transfers.Any(t => t.State == TransferState.InProgress);
 
-    /// <summary>受信時の宛先（接続中 or 着信監視中のピア）を解決する。</summary>
-    private (string PeerId, string PeerName) ResolveReceivePeer()
+    /// <summary>受信時の宛先を解決する。
+    /// 複数ペア同時接続対応 Stage 2: service 側 HandleFileMeta が transport 由来 peerId を権威設定するため、
+    /// VM では <paramref name="suggestedPeerId"/>(イベント引数の TransferItem.PeerId) を最優先する。
+    /// 空のときだけ旧来の単数 ConnectedPeer / CurrentListeningPeerId / SelectedPeer の逆引きへフォールバックする
+    /// （複数ペア同時受信で取り違える経路は service 側で peerId が必ず付帯するため死に経路だが、
+    /// テスト経路や旧 transport 互換のために残す）。</summary>
+    private (string PeerId, string PeerName) ResolveReceivePeer(string? suggestedPeerId = null)
     {
-        var peerId = _connectionService.ConnectedPeer?.SessionId
-                     ?? _connectionService.CurrentListeningPeerId
-                     ?? _connectionViewModel.SelectedPeer?.PeerId
-                     ?? string.Empty;
+        var peerId = !string.IsNullOrEmpty(suggestedPeerId)
+            ? suggestedPeerId
+            : (_connectionService.ConnectedPeer?.SessionId
+               ?? _connectionService.CurrentListeningPeerId
+               ?? _connectionViewModel.SelectedPeer?.PeerId
+               ?? string.Empty);
         var peer = _connectionViewModel.PairedPeers.FirstOrDefault(p => p.PeerId == peerId);
         var name = peer?.DisplayName ?? _connectionViewModel.SelectedPeer?.DisplayName ?? string.Empty;
         return (peerId, name);
@@ -732,8 +739,9 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 if (e.Direction != TransferDirection.Receive)
                     return; // 送信は VM 側で必ず先に行を作る
 
-                // 進捗が承認イベントより先に来た受信の保険
-                var (peerId, peerName) = ResolveReceivePeer();
+                // 進捗が承認イベントより先に来た受信の保険。
+                // 複数ペア同時接続対応 Stage 2: service 側 HandleFileMeta が e.PeerId を権威設定済みなので最優先。
+                var (peerId, peerName) = ResolveReceivePeer(e.PeerId);
                 item = new TransferItem
                 {
                     TransferId = e.TransferId,
@@ -777,7 +785,8 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             }
             else
             {
-                var (peerId, peerName) = ResolveReceivePeer();
+                // 複数ペア同時接続対応 Stage 2: service 側 e.PeerId を優先。
+                var (peerId, peerName) = ResolveReceivePeer(e.PeerId);
                 e.PeerId = peerId;
                 e.PeerName = peerName;
                 e.CompletedAt = DateTime.UtcNow;
@@ -826,7 +835,8 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 // 進捗より先に来た受信エラーの保険（送信は VM 側に必ず行があるので追加しない）
                 if (e.State is TransferState.InProgress or TransferState.Pending)
                     e.State = TransferState.Error;
-                var (peerId, peerName) = ResolveReceivePeer();
+                // 複数ペア同時接続対応 Stage 2: service 側 e.PeerId を優先（既存ロジックの『空時のみ補完』を踏襲）。
+                var (peerId, peerName) = ResolveReceivePeer(e.PeerId);
                 if (string.IsNullOrEmpty(e.PeerId)) e.PeerId = peerId;
                 if (string.IsNullOrEmpty(e.PeerName)) e.PeerName = peerName;
                 AddTransfer(CreateDisplayCopy(e));  // rere #B1-001: サービス instance を bind しない
@@ -844,9 +854,10 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     {
         Dispatcher.UIThread.Post(() =>
         {
-            var (peerId, peerName) = ResolveReceivePeer();
-            // PeerId は service 側 HandleFileMeta が FileMeta 到着時点で確定させているのでそれを優先し、
-            // 空のときだけ VM 側の推測で補完する（宛先別履歴のピア混入防止）。PeerName は表示名解決を持つ VM 側で常に設定。
+            // 複数ペア同時接続対応 Stage 2: service 側 HandleFileMeta が FileMeta 到着時点で
+            // transport 由来 peerId を権威設定しているので、e.PeerId を ResolveReceivePeer 第1引数に渡して
+            // 必ず優先採用させる（既存挙動を踏襲）。PeerName は表示名解決を持つ VM 側で常に設定。
+            var (peerId, peerName) = ResolveReceivePeer(e.PeerId);
             if (string.IsNullOrEmpty(e.PeerId)) e.PeerId = peerId;
             e.PeerName = peerName;
 
