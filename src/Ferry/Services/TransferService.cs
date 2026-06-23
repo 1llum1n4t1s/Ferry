@@ -191,6 +191,9 @@ public sealed class TransferService : ITransferService, IDisposable
             {
                 pending.Item.State = TransferState.Cancelled;
                 pending.Item.ErrorMessage = "接続が切断されました";
+                // 複数ペア同時接続対応 Stage 2 leak fix (PR #12 review): pending approval は
+                // CleanupReceiveState に到達しないため、_transferPeerId 索引を直接掃除する。
+                _transferPeerId.TryRemove(tid, out _);
                 TransferError?.Invoke(this, pending.Item);
             }
         }
@@ -1343,6 +1346,9 @@ public sealed class TransferService : ITransferService, IDisposable
             Util.Logger.Log($"受信側 pending approval を expire (送信側通知): {pendingState.FileName} / 理由={reason}");
             pendingState.Item.State = TransferState.Cancelled;
             pendingState.Item.ErrorMessage = $"送信側がキャンセル: {reason}";
+            // 複数ペア同時接続対応 Stage 2 leak fix (PR #12 review): pending approval 経路は
+            // CleanupReceiveState に到達しないため、_transferPeerId 索引を直接掃除する。
+            _transferPeerId.TryRemove(transferId, out _);
             TransferError?.Invoke(this, pendingState.Item);
             return;
         }
@@ -1509,7 +1515,10 @@ public sealed class TransferService : ITransferService, IDisposable
         // FileReject メッセージを送信側に通知 — fire-and-forget でブロッキングを回避
         // v1.0.38: TransferId プレフィックス付きに変更 (同時複数転送の区別のため)
         // v1.0.38 review fix v9: SendRejectFireAndForget ヘルパーに統一 (重複削減)
+        // 複数ペア同時接続対応 Stage 2 leak fix (PR #12 review): SendRejectFireAndForget は
+        // 内部で _transferPeerId から peerId を引いて送るため、Remove はこの後で行う。
         SendRejectFireAndForget(tid, "受信側が拒否しました");
+        _transferPeerId.TryRemove(tid, out _);
     }
 
     /// <summary>進行中の転送をキャンセルする。送受信どちら側からでも呼べ、相手にも FileReject で通知して
@@ -1536,7 +1545,10 @@ public sealed class TransferService : ITransferService, IDisposable
             Util.Logger.Log($"承認待ちキャンセル: {pendingState.FileName}");
             pendingState.Item.State = TransferState.Cancelled;
             pendingState.Item.ErrorMessage = "キャンセルされました";
+            // 複数ペア同時接続対応 Stage 2 leak fix (PR #12 review): SendRejectFireAndForget 内で
+            // _transferPeerId 索引から peerId を引くので、Remove はこの後で行う。
             SendRejectFireAndForget(tid, "受信側がキャンセルしました");
+            _transferPeerId.TryRemove(tid, out _);
             TransferError?.Invoke(this, pendingState.Item);
             return;
         }

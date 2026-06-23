@@ -26,10 +26,16 @@ public interface IConnectionService
     /// 単数 ConnectedPeer に逆引き依存しない新コードを書くこと。</summary>
     PeerInfo? ConnectedPeer { get; }
 
+    /// <summary>PR #12 review (gemini-code-assist medium): プロパティ呼び出しごとに
+    /// <c>new Dictionary&lt;,&gt;()</c> していたヒープアロケーションを排除するため、interface 内
+    /// <c>private static readonly</c> として 1 度だけ空辞書を生成してキャッシュする
+    /// （C# 8.0 以降の interface static field 機能、TargetFramework=net10.0 で問題なし）。</summary>
+    private static readonly IReadOnlyDictionary<string, PeerInfo> EmptyConnectedPeers = new Dictionary<string, PeerInfo>(0);
+
     /// <summary>複数ペア同時接続対応 Stage 2: 接続中ピアの集合（peerId(SessionId) → PeerInfo）。
-    /// 既存実装/テストの互換のため default で空辞書を返す。<see cref="ConnectionService"/> は本当の集合を返す。
-    /// Stage 3-4 で実装側を埋める。</summary>
-    IReadOnlyDictionary<string, PeerInfo> ConnectedPeers => new Dictionary<string, PeerInfo>();
+    /// 既存実装/テストの互換のため default で空辞書を返す（呼出ごとアロケーションなし）。
+    /// <see cref="ConnectionService"/> は本当の集合を返す。Stage 3-4 で実装側を埋める。</summary>
+    IReadOnlyDictionary<string, PeerInfo> ConnectedPeers => EmptyConnectedPeers;
 
     /// <summary>複数ペア同時接続対応 Stage 2: 着信監視中ピアの集合。<see cref="CurrentListeningPeerId"/> の集合版。
     /// 既存実装/テスト互換のため default で空集合を返す。Stage 4 で全ペア常時 listen を駆動する際に実装側を埋める。</summary>
