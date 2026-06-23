@@ -90,29 +90,30 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     private ISignalingService? _signaling;
     private ITransport? _transport;
     private string? _currentPairId;
-    private CancellationTokenSource? _listeningCts;
-    /// <summary>rere PR#8 #F2: 着信監視タスクの参照。role調停フォールバック時に Cancel 後 *完了まで* await して
-    /// listener と本体のテアダウン競合 (確立直後の _transport をサイレント破壊) を防ぐために保持する。</summary>
-    private Task? _listeningTask;
 
-    /// <summary>
-    /// オンデマンド接続 (ConnectToPeerAsync) の所有 CTS と直列化ゲート。
-    /// 再送等で接続フローが多重起動すると、同一 pairId に offer 側フロー (answer ポーラー →
-    /// STUN → endpoint 待ち → リレー offer 接続) が並走し、二重 answer 受信 → 二重リレー接続 →
-    /// 409 / _transport 上書き Dispose で接続が崩壊する。所有 CTS で in-flight (孤児ポーラー含む) を
-    /// 中断し、SemaphoreSlim で本体を直列化して、同時に 1 本だけ走るようにする。
-    /// </summary>
-    private CancellationTokenSource? _connectCts;
-    private readonly SemaphoreSlim _connectGate = new(1, 1);
+    // === 複数ペア同時接続対応 Stage 3a: ConnectionSession 集約の土台（シャドウ運用） ===
+    //
+    // 接続中ペアごとに ITransport / ISignalingService / pairId / Route / State / SecureChannel /
+    // CTS / ロック等をまとめる入れ物。Stage 3b で単数フィールドの参照を Session 経由に置換し、
+    // Stage 3c で AttachTransportEvents / OnChannelClosed を per-peer 化、Stage 4 で _connectGate /
+    // _connectCts / _listeningCts も per-peer 化する（並行接続解禁）。
+    //
+    // 現状(Stage 3a)は『単数フィールドの内容を Session に複製してミラーする』シャドウ運用で、
+    // ConnectedPeers / RouteOf 等の集合 API だけ _sessions 経由に切り替える（外部公開面の整合性を先行）。
+    // 接続フロー本体は単数フィールドを参照し続けるので挙動不変。Stage 3b で参照ごと置換する。
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ConnectionSession> _sessions = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// 現在の State=Connecting を立てたのが着信監視ループ (listener) かどうか。
-    /// listener のキャンセル復旧ブロックは、自分が立てた Connecting だけを Disconnected に
-    /// 巻き戻すためにこれを確認する。ConnectToPeerAsync が Connecting を立て直した後に
-    /// listener の遅延キャンセル処理が走っても、オンデマンド接続側の状態と transport を
-    /// 誤って破棄しないようにする (同時接続競合時の踏み潰し防止)。
-    /// </summary>
-    private volatile bool _connectingByListener;
+    // 複数ペア同時接続対応 Stage 4: 旧 _listeningCts / _listeningTask は Session に移管した
+    // （Session.ListeningCts / Session.ListeningTask）。StartListeningForConnection は加算的に動き、
+    // 別 peer の listener と並列で走れる。_currentListeningPeerId は Stage 4 で「最後に開始した peer」の
+    // 単数互換シムとして残るが、ListeningPeerIds は _sessions から本物の集合を返す。
+
+    // Stage 4: オンデマンド接続 (ConnectToPeerAsync) の所有 CTS / 直列化ゲート / Connecting 所有権フラグは
+    // 全て <see cref="ConnectionSession"/> 側に移管した。
+    //   - <see cref="ConnectionSession.ConnectGate"/>: 同 peer の多重 connect を直列化（別 peer とは独立）
+    //   - <see cref="ConnectionSession.ConnectCts"/>: 同 peer の in-flight connect を割り込みキャンセル
+    //   - <see cref="ConnectionSession.ConnectingByListener"/>: 当該 peer の Connecting 所有権（listener vs ConnectToPeerAsync）
+    // これにより peer Y と peer Z の ConnectToPeerAsync は完全並列に走り、片方の取消は他方を巻き込まない。
 
     /// <summary>
     /// v1.0.38 review fix: 現在 StartListeningForConnection で監視中のピア ID。
@@ -124,6 +125,24 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// <summary>現在着信監視中のピア ID（未監視なら null）。タブ切替で SelectedPeer 外の
     /// ピアを監視中に、そのピアが削除された場合の監視停止判定に VM が使う。</summary>
     public string? CurrentListeningPeerId => _currentListeningPeerId;
+
+    /// <summary>複数ペア同時接続対応 Stage 4: 着信監視中ピアの集合。<see cref="_sessions"/> 内で
+    /// <see cref="ConnectionSession.ListeningCts"/> が生きている Session の peerId を返す。
+    /// 全ペア常時 listen 中は paired peer の数だけ要素が返る。</summary>
+    public System.Collections.Generic.IReadOnlyCollection<string> ListeningPeerIds
+    {
+        get
+        {
+            var sessions = _sessions;
+            if (sessions.IsEmpty) return Array.Empty<string>();
+            var list = new System.Collections.Generic.List<string>(sessions.Count);
+            foreach (var kvp in sessions)
+            {
+                if (kvp.Value.ListeningCts != null) list.Add(kvp.Key);
+            }
+            return list;
+        }
+    }
 
     /// <summary>
     /// この pairing watch セッションで既に処理した pairingId。
@@ -151,32 +170,53 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     public PeerInfo? ConnectedPeer { get; private set; }
     public ConnectionRoute Route { get; private set; } = ConnectionRoute.Unknown;
 
+    /// <summary>複数ペア同時接続対応 Stage 3a: 接続中ペア集合。<see cref="_sessions"/> 経由で射影する。
+    /// Connected 状態の Session のみ ConnectedPeer 付きで返す（State!=Connected の Session は
+    /// 接続フロー中なので外向きには表に出さない）。</summary>
+    public System.Collections.Generic.IReadOnlyDictionary<string, PeerInfo> ConnectedPeers
+    {
+        get
+        {
+            var sessions = _sessions;
+            if (sessions.IsEmpty) return _emptyConnectedPeers;
+            var result = new System.Collections.Generic.Dictionary<string, PeerInfo>(sessions.Count, StringComparer.Ordinal);
+            foreach (var kvp in sessions)
+            {
+                if (kvp.Value.ConnectedPeer is { } info && kvp.Value.State == PeerState.Connected)
+                    result[kvp.Key] = info;
+            }
+            return result;
+        }
+    }
+
+    private static readonly System.Collections.Generic.IReadOnlyDictionary<string, PeerInfo> _emptyConnectedPeers
+        = new System.Collections.Generic.Dictionary<string, PeerInfo>(0);
+
+    /// <summary>複数ペア同時接続対応 Stage 3a: 指定 peer の Route を返す。
+    /// <see cref="_sessions"/> から該当 Session を引いて Route を返す。
+    /// 未接続/未知 peer は <see cref="ConnectionRoute.Unknown"/>。
+    /// Stage 4 で並行接続が解禁されたら、フロー制御等が transferId→peerId→RouteOf で読む。</summary>
+    public ConnectionRoute RouteOf(string peerId)
+    {
+        if (_sessions.TryGetValue(peerId, out var s)) return s.Route;
+        return ConnectionRoute.Unknown;
+    }
+
     public event EventHandler<PeerState>? StateChanged;
     public event EventHandler<ConnectionRoute>? RouteChanged;
     public event EventHandler<PairedPeer>? PairingCompleted;
-    public event EventHandler<byte[]>? DataReceived;
-    public event EventHandler? ConnectionLost;
+    public event EventHandler<Infrastructure.DataReceivedEventArgs>? DataReceived;
+    public event EventHandler<Infrastructure.ConnectionLostEventArgs>? ConnectionLost;
     public event EventHandler<string>? StatusMessageChanged;
 
-    // === rere #D-001(b): セッション暗号（接続ごとに張り直す） ===
+    // === rere #D-001(b) / 複数ペア同時接続対応 Stage 3c: per-peer セッション暗号 ===
 
     /// <summary>暗号ハンドシェイクの待ち時間（秒）。相手非対応/無応答ならこの後フォールバック/切断する。</summary>
     private const int SecureHandshakeTimeoutSeconds = 8;
 
-    /// <summary>暗号チャネルの状態機械（OnFrame/Start/OnTimeout）を直列化するロック。
-    /// DataReceived（受信スレッド）/ Start（接続スレッド）/ OnTimeout（タイマー）が並行しうるため、
-    /// チャネル呼び出しと step 取り出しはこのロック内で行い、副作用処理はロック外で行う。</summary>
-    private readonly object _secureLock = new();
-
-    /// <summary>現在接続の暗号チャネル。null なら暗号無効＝平文（フラグ OFF / PairSecret 無しは生成しない）。</summary>
-    private SecureChannel? _secureChannel;
-
-    /// <summary>ハンドシェイク完了通知。true=暗号確立 / false=平文フォールバック / 例外=HMAC 失敗。
-    /// 送信側はこれを待ってから封筒化要否を判断する（確立前のアプリデータ平文漏れを防ぐゲート）。</summary>
-    private TaskCompletionSource<bool>? _secureReadyTcs;
-
-    /// <summary>ハンドシェイクタイムアウト用 CTS（確立/フォールバックで Cancel）。</summary>
-    private CancellationTokenSource? _secureTimeoutCts;
+    // 暗号チャネル/Lock/Ready TCS/Timeout CTS は Stage 3c で <see cref="ConnectionSession"/> 側へ移管した
+    // （per-peer 化）。LookupActiveSession() で現在の単数 _transport に対応する Session を引いて読み書きする。
+    // Stage 5 で SendAsync/DisconnectAsync が peerId を受けるようになったら lookup を peerId 直引きへ置換する。
 
     private readonly FirebaseAuthClient? _authClient;
 
@@ -468,26 +508,62 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     // === 着信接続監視 ===
 
+    /// <summary>複数ペア同時接続対応 Stage 4: 加算的な per-peer listen。指定 peer の Session に既に listener が
+    /// 走っていれば置換（同じ Session 内の二重起動を防ぐ）し、他 peer の listener は維持する。
+    /// 「全ペア常時 listen」を支える基盤で、VM 起動時にペア済み peer 全員ぶんを呼ぶ運用が前提。
+    /// 既存の単数 _currentListeningPeerId は「最後に開始した peer」の互換シムとして更新する。</summary>
     public void StartListeningForConnection(string peerId)
     {
-        StopListeningForConnection();
-        _listeningCts = new CancellationTokenSource();
-        _currentListeningPeerId = peerId;  // v1.0.38 review fix: 監視中のピア ID を保持
-        Util.Logger.Log($"着信接続監視開始: peer={peerId}");
+        if (string.IsNullOrEmpty(peerId)) throw new ArgumentNullException(nameof(peerId));
+
+        var session = _sessions.GetOrAdd(peerId, id => new ConnectionSession(id));
+
+        // 同 peer に既存 listener があれば停止して張り替える（再起動）。他 peer は触らない。
+        StopSessionListener(session);
+
+        var cts = new CancellationTokenSource();
+        session.ListeningCts = cts;
+        _currentListeningPeerId = peerId;  // 互換シム（旧 UI コードが単数値を読むケース向け）
+        SyncShadowSession();
+        Util.Logger.Log($"着信接続監視開始: peer={Util.Logger.MaskDeviceId(peerId)}");
         // rere PR#8 #F2: タスクを保持して role調停フォールバック時に Cancel 後の完了 await を可能にする。
-        _listeningTask = ListenForIncomingConnectionAsync(peerId, _listeningCts.Token);
+        session.ListeningTask = ListenForIncomingConnectionAsync(peerId, cts.Token);
     }
 
+    /// <summary>Stage 4: 全 peer の listener を停止する（後方互換 — peerId 不明な経路向け）。
+    /// 個別停止は <see cref="StopListeningForConnection(string)"/>。Disconnect 全体・Service.Dispose 等で使う。</summary>
     public void StopListeningForConnection()
     {
-        if (_listeningCts != null)
+        Util.Logger.Log("着信接続監視停止（全ペア）");
+        foreach (var kvp in _sessions)
+            StopSessionListener(kvp.Value);
+        _currentListeningPeerId = null;
+        SyncShadowSession();
+    }
+
+    /// <summary>Stage 4: 指定 peer の listener だけを停止する。他 peer の listener は維持する。</summary>
+    public void StopListeningForConnection(string peerId)
+    {
+        if (string.IsNullOrEmpty(peerId)) return;
+        if (_sessions.TryGetValue(peerId, out var session))
         {
-            Util.Logger.Log("着信接続監視停止");
-            _listeningCts.Cancel();
-            _listeningCts.Dispose();
-            _listeningCts = null;
-            _currentListeningPeerId = null;  // v1.0.38 review fix: クリア
+            Util.Logger.Log($"着信接続監視停止: peer={Util.Logger.MaskDeviceId(peerId)}");
+            StopSessionListener(session);
         }
+        if (string.Equals(_currentListeningPeerId, peerId, StringComparison.Ordinal))
+            _currentListeningPeerId = null;
+        SyncShadowSession();
+    }
+
+    /// <summary>Stage 4: 1 Session の listener を Cancel/Dispose する（共通ヘルパー）。</summary>
+    private static void StopSessionListener(ConnectionSession session)
+    {
+        var cts = session.ListeningCts;
+        if (cts == null) return;
+        try { cts.Cancel(); } catch { /* 既に Dispose 済み等 */ }
+        cts.Dispose();
+        session.ListeningCts = null;
+        session.ListeningTask = null;
     }
 
     /// <summary>
@@ -498,6 +574,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     {
         var pairId = GeneratePairId(_deviceId, peerId);
         Util.Logger.Log($"着信接続ポーリング開始: pairId={pairId}");
+
+        // Stage 4: per-Session の Connecting 所有権を扱う。Session は StartListeningForConnection が
+        // 既に GetOrAdd 済みなので TryGet で十分（呼び出し直後の race も無い）。
+        var session = _sessions.GetOrAdd(peerId, id => new ConnectionSession(id));
 
         var minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         // v1.0.38 review fix v14 / v15 (Codex P2 #3318349010): 既に処理した probe nonce を記録。
@@ -521,7 +601,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             {
                 processingOffer = false;
 
-                if (State is PeerState.Connected or PeerState.Connecting)
+                // Stage 4: 別 peer の接続中は当該 peer の listener を止める必要がない。
+                // 当該 peer 自身が既に Connecting/Connected ならスキップ（同 peer の重複処理回避）。
+                if (session.State is PeerState.Connected or PeerState.Connecting)
                 {
                     await Task.Delay(2000, ct);
                     continue;
@@ -565,7 +647,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     continue;
                 }
 
-                if (State is PeerState.Connected or PeerState.Connecting)
+                // Stage 4: 当該 peer の接続状態だけで判定（別 peer の接続中は影響させない）。
+                if (session.State is PeerState.Connected or PeerState.Connecting)
                 {
                     Util.Logger.Log("着信接続情報を検知したが、既に接続中のためスキップ");
                     minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -596,21 +679,25 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 }
 
                 Util.Logger.Log($"着信接続情報検知！ Answer 側として接続開始: pairId={pairId}, ips=[{string.Join(", ", offer.Ips.Select(Util.Logger.MaskIp))}], port={offer.Port}");
-                _connectingByListener = true;  // Connecting の所有権は listener (キャンセル復旧の判定に使う)
+                // Stage 4: per-Session の Connecting 所有権を立てる。単数 State は primary alias として追従。
+                session.ConnectingByListener = true;
+                session.State = PeerState.Connecting;
                 SetState(PeerState.Connecting);
                 processingOffer = true;
                 StatusMessageChanged?.Invoke(this, "Status.Phase.TcpConnecting");
 
-                _signaling?.Dispose();
+                // Stage 4: per-Session の signaling を生成（pairing 用 _signaling とは独立、別 peer の connect とも独立）。
+                session.Signaling?.Dispose();
                 var sig = NewSignaling();
-                _signaling = sig;
-                _currentPairId = pairId;
+                session.Signaling = sig;
+                session.PairId = pairId;
+                _currentPairId = pairId;  // 単数は primary alias
 
                 // rere #D-001(b): transport を attach する前に暗号チャネルを用意（先着 Hello の取りこぼし防止）。
                 CreateSecureChannel(peerId);
 
                 // ① TCP 直接接続を試行
-                var connected = await TryTcpConnectAsync(offer.Ips, offer.Port, ct);
+                var connected = await TryTcpConnectAsync(session, offer.Ips, offer.Port, peerId, ct);
 
                 // TCP 結果を即座に Answer として送信（Offer 側が待機中）
                 var answerInfo = new ConnectionInfo
@@ -636,7 +723,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     if (udpOffer != null)
                     {
                         StatusMessageChanged?.Invoke(this, "Status.Phase.UdpHolePunch");
-                        connected = await TryUdpHolePunchAnswerAsync(udpOffer, pairId, ct);
+                        connected = await TryUdpHolePunchAnswerAsync(udpOffer, sig, session, pairId, peerId, ct);
                     }
                 }
 
@@ -644,27 +731,32 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 if (!connected)
                 {
                     StatusMessageChanged?.Invoke(this, "Status.Phase.Relay");
-                    connected = await TryRelayConnectAsync(pairId, "answer", ct);
+                    connected = await TryRelayConnectAsync(session, pairId, "answer", peerId, ct);
                 }
 
                 if (!connected)
                 {
                     Util.Logger.Log("全接続方法が失敗", Util.LogLevel.Error);
+                    session.State = PeerState.Disconnected;
                     SetState(PeerState.Disconnected);
                     minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     try { await Task.Delay(3000, ct); } catch { break; }
                     continue;
                 }
 
-                ConnectedPeer = new PeerInfo
+                // Stage 4: per-Session に確立済み peer 情報を反映。単数 ConnectedPeer は primary alias として更新。
+                var listenerPeerInfo = new PeerInfo
                 {
                     SessionId = peerId,
                     DisplayName = peerId,
                     State = PeerState.Connected,
                 };
+                session.ConnectedPeer = listenerPeerInfo;
+                session.State = PeerState.Connected;
+                ConnectedPeer = listenerPeerInfo;
                 SetState(PeerState.Connected);
-                StartSecureHandshake(); // rere #D-001(b): 暗号有効時のみ Hello 送信してハンドシェイク開始
-                Util.Logger.Log($"着信接続完了！ 経路: {_transport?.Route}");
+                StartSecureHandshake(peerId); // Stage 3c: per-peer ハンドシェイク開始
+                Util.Logger.Log($"着信接続完了！ 経路: {session.Transport?.Route}");
 
                 minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             }
@@ -674,14 +766,15 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 // (リレー試行中など) に中断された場合、Connecting のまま残すと次の監視ループが
                 // 「接続中」と誤認して着信を永久に処理できなくなるため、自分が立てた Connecting に
                 // 限り後始末して Disconnected へ戻す (ConnectToPeerAsync のキャンセル経路と対称)。
-                // _connectingByListener は ConnectToPeerAsync が Connecting を立て直した後の
-                // 遅延キャンセル処理がオンデマンド側の状態 / transport を踏み潰すのを防ぐ
-                if (processingOffer && State == PeerState.Connecting && _connectingByListener)
+                // Stage 4: per-Session の ConnectingByListener / State を見る（別 peer の状態に左右されない）。
+                if (processingOffer && session.State == PeerState.Connecting && session.ConnectingByListener)
                 {
-                    DetachTransportEvents();
-                    _transport?.Dispose();
-                    _transport = null;
-                    SetState(PeerState.Disconnected);
+                    DetachTransportEvents(peerId, session.Transport); // Stage 3b: per-peer detach
+                    session.Transport?.Dispose();
+                    session.Transport = null;
+                    session.State = PeerState.Disconnected;
+                    // 単数 alias がこの session の transport を指していたら同期する。
+                    if (State == PeerState.Connecting) SetState(PeerState.Disconnected);
                 }
                 Util.Logger.Log("着信接続監視: 正常キャンセル");
                 break;
@@ -689,14 +782,16 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             catch (OperationCanceledException)
             {
                 Util.Logger.Log("着信接続: タイムアウト、リトライ", Util.LogLevel.Warning);
-                SetState(PeerState.Disconnected);
+                session.State = PeerState.Disconnected;
+                if (State == PeerState.Connecting) SetState(PeerState.Disconnected);
                 minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 try { await Task.Delay(3000, ct); } catch { break; }
             }
             catch (Exception ex)
             {
                 Util.Logger.Log($"着信接続処理エラー: {ex.Message}", Util.LogLevel.Error);
-                SetState(PeerState.Disconnected);
+                session.State = PeerState.Disconnected;
+                if (State == PeerState.Connecting) SetState(PeerState.Disconnected);
                 try { await Task.Delay(3000, ct); } catch { break; }
                 minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             }
@@ -726,6 +821,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         Util.Logger.Log($"Probe offer 受信: pairId={pairId}, nonce={nonce}, TCP 試行のみで応答");
         var probeSig = NewSignaling();
         var connected = false;
+        // 複数ペア同時接続対応 Stage 1: probe transient は受信ルーティングしない (transport を
+        // _transport へ昇格させず確立直後に Dispose する) ので PeerId は空のまま。
+        // DataReceivedEventArgs は発火しても TransferService 連携には流さない。
         TcpDirectTransport? tcpTransport = null;
 
         try
@@ -773,10 +871,17 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     public async Task ConnectToPeerAsync(string peerId, CancellationToken ct = default)
     {
+        if (string.IsNullOrEmpty(peerId)) throw new ArgumentNullException(nameof(peerId));
+
+        // Stage 4: per-Session ゲートに切替。別 peer の Session には触らないため、
+        // peer Y と peer Z の同時 connect は完全並列で進む。同 peer の多重 connect は session.ConnectGate
+        // で従来どおり直列化する。
+        var session = _sessions.GetOrAdd(peerId, id => new ConnectionSession(id));
+
         // 進行中の接続 (孤児ポーラー含む) を先に中断してから直列化ゲートを取る。
         // 順序を逆 (Gate→Cancel) にすると、自然完了しない孤児ポーラーを抱えたまま待ち、自己デッドロックする。
-        _connectCts?.Cancel();
-        await _connectGate.WaitAsync(ct);
+        session.ConnectCts?.Cancel();
+        await session.ConnectGate.WaitAsync(ct);
 
         // 所有権がまだ _transport に移っていないローカル transport を例外/キャンセル経路で確実に破棄する。
         // (bound ソケット / LISTEN ポートが GC ファイナライザ回収までリークするのを防ぐ。Dispose は冪等)
@@ -784,11 +889,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         UdpHolePunchTransport? udpTransport = null;
         void DisposeOrphanTransports()
         {
-            if (tcpTransport != null && !ReferenceEquals(tcpTransport, _transport))
+            if (tcpTransport != null && !ReferenceEquals(tcpTransport, session.Transport))
             {
                 try { tcpTransport.Dispose(); } catch { }
             }
-            if (udpTransport != null && !ReferenceEquals(udpTransport, _transport))
+            if (udpTransport != null && !ReferenceEquals(udpTransport, session.Transport))
             {
                 try { udpTransport.Dispose(); } catch { }
             }
@@ -796,9 +901,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
         try
         {
-            _connectCts?.Dispose();
-            _connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            var linked = _connectCts.Token;
+            session.ConnectCts?.Dispose();
+            session.ConnectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var linked = session.ConnectCts.Token;
 
             Util.Logger.Log($"オンデマンド接続開始: peer={peerId}, deviceId={_deviceId}");
 
@@ -839,22 +944,28 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                         // State が Connected にならないまま例外も出ず *サイレント未接続* になる。listener が実際に
                         // Connected を確立するまで待ち、確立すれば委譲成功で return。時間内に確立できなければ
                         // 下の通常 offerer 経路へフォールバックして自分でも接続を試みる (#D-003 で同時 offer は安全)。
-                        if (await WaitForListenerConnectedAsync(RoleDeferListenTimeoutSeconds * 1000, linked))
+                        // Stage 4: peerId 指定の per-session 版を使う（他 peer の listener 状態と混同しない）。
+                        if (await WaitForListenerConnectedAsync(peerId, RoleDeferListenTimeoutSeconds * 1000, linked))
                             return;  // 委譲成功。finally で gate 解放
                         // rere PR#8 #F2 verify: timeout フォールバック前に listener を *完了まで* 畳む。
                         // StopListeningForConnection は Cancel するだけでタスク完了を待たない (listener はループ型で
                         // 失敗時も再ポーリングを続ける) ため、待たずに下流の _transport?.Dispose() へ進むと、listener が
                         // ちょうど確立した transport をサイレント破壊する競合窓が残る。Cancel → タスク完了 await →
                         // 最終 State 確認 の順で窓を塞ぐ (listener は _connectGate を取らないので await で deadlock しない)。
-                        var listenerTask = _listeningTask;
-                        StopListeningForConnection();
+                        // 複数ペア同時接続対応 Stage 4: listener タスクは Session に持つ。当該 peer の listener
+                        // だけ取り出して畳む（他 peer の listener は触らない）。
+                        Task? listenerTask = null;
+                        if (_sessions.TryGetValue(peerId, out var listenerSession))
+                            listenerTask = listenerSession.ListeningTask;
+                        StopListeningForConnection(peerId);
                         if (listenerTask != null)
                         {
                             try { await listenerTask.WaitAsync(TimeSpan.FromSeconds(6)); }
                             catch { /* listener の faulted/timeout は無視。最終 State で接続成否を判断する */ }
                         }
                         // listener が止まる直前に接続を確立していたら尊重し、確立済み transport を壊さない。
-                        if (State == PeerState.Connected)
+                        // Stage 4: per-Session の State で当該 peer の接続有無だけを判定する（別 peer の状態に依存しない）。
+                        if (session.State == PeerState.Connected)
                             return;
                         Util.Logger.Log(
                             $"role調停: 委譲先 listener が {RoleDeferListenTimeoutSeconds}s 以内に接続確立せず → " +
@@ -864,31 +975,43 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 }
             }
 
-            _connectingByListener = false;  // Connecting の所有権をオンデマンド接続側へ移す
-            SetState(PeerState.Connecting);
+            // Stage 4: per-Session の所有権を立てる（global ConnectingByListener フラグは撤去）。
+            session.ConnectingByListener = false;
+            session.State = PeerState.Connecting;
+            SetState(PeerState.Connecting);  // 単数 State は primary alias として更新（後方互換）
 
-            // 着信監視を一時停止（自分の Offer を自分で拾わないように）
-            StopListeningForConnection();
+            // Stage 4: 着信監視を一時停止するのは『この peer の listener のみ』。
+            // 別 peer (Y / Z) の listener は維持し、彼らの着信を取り逃さないようにする。
+            // 自分の Offer は per-sender ノード offers/{_deviceId} に書く一方、この peer の listener は
+            // offers/{peerId} を読むので衝突しないが、role 委譲経路で listener が走っていたら畳む必要がある。
+            StopListeningForConnection(peerId);
 
-            _signaling?.Dispose();
-            _signaling = NewSignaling();
+            // Stage 4: per-Session の signaling を生成（pairing 用 _signaling とは独立）。
+            // peer Y の connect と peer Z の connect が並列でも、各々別の ISignalingService インスタンスを使う。
+            session.Signaling?.Dispose();
+            var sessionSig = NewSignaling();
+            session.Signaling = sessionSig;
 
-            DetachTransportEvents();
-            _transport?.Dispose();
-            _transport = null;
+            // Stage 3b: peerId 指定で detach（古い transport が他 Session のものなら無視されるため安全）。
+            DetachTransportEvents(peerId, session.Transport);
+            session.Transport?.Dispose();
+            session.Transport = null;
+            if (ReferenceEquals(_transport, session.Transport)) _transport = null;
 
             // rere #D-001(b): transport を attach する前に暗号チャネルを用意（先着 Hello の取りこぼし防止）。
             CreateSecureChannel(peerId);
 
-            _currentPairId = pairId;
+            session.PairId = pairId;
+            _currentPairId = pairId;  // 単数 _currentPairId は primary alias として更新
             Util.Logger.Log($"pairId 生成: {pairId}");
 
             // 古いシグナリングデータを削除
-            await _signaling.CleanupSignalingDataAsync(pairId, linked);
+            await sessionSig.CleanupSignalingDataAsync(pairId, linked);
 
             // ① TCP リスナー起動 → offer 送信（STUN なし）
             StatusMessageChanged?.Invoke(this, "Status.Phase.TcpPreparing");
-            tcpTransport = new TcpDirectTransport();
+            // 複数ペア同時接続対応 Stage 1: peerId(SessionId) を transport に注入。
+            tcpTransport = new TcpDirectTransport { PeerId = peerId };
             var port = tcpTransport.StartListener();
 
             var localIps = TcpDirectTransport.GetLocalIpAddresses();
@@ -901,7 +1024,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             };
             var offerJson = SerializeConnectionInfo(offerInfo);
             Util.Logger.Log($"接続情報送信: ips=[{string.Join(", ", localIps.Select(Util.Logger.MaskIp))}], port={port}");
-            await _signaling.SendSdpOfferAsync(pairId, _deviceId, offerJson, linked);
+            await sessionSig.SendSdpOfferAsync(pairId, _deviceId, offerJson, linked);
 
             // ② TCP accept + Answer ポーリングを同時待機
             StatusMessageChanged?.Invoke(this, "Status.Phase.TcpConnecting");
@@ -917,7 +1040,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             // 後続 STUN/UDP/relay (いずれも linked トークン使用) の最中に 20s が発火しても下流に無影響。
             answerCts.CancelAfter(TimeSpan.FromSeconds(OfferAnswerWaitSeconds));
             var tcpAcceptTask = tcpTransport.AcceptAsync(linked);
-            var answerTask = _signaling.WaitForAnswerAsync(pairId, peerId, answerCts.Token);
+            var answerTask = sessionSig.WaitForAnswerAsync(pairId, peerId, answerCts.Token);
 
             // どちらか先に完了した方で判断
             var completedTask = await Task.WhenAny(tcpAcceptTask, answerTask);
@@ -929,8 +1052,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 // TCP 接続成功（LAN 内）
                 Util.Logger.Log("TCP 直接接続成功");
                 connected = true;
+                // Stage 4: session.Transport を権威に、_transport は primary alias として最新の接続に追随。
+                session.Transport = tcpTransport;
                 _transport = tcpTransport;
-                AttachTransportEvents();
+                AttachTransportEvents(peerId, tcpTransport); // Stage 3b: per-peer attach
 
                 // Answer ポーリングも完了を待つ（確認応答）。WaitForSdpAsync は内部例外を握りつぶして
                 // 無限ポーリングするため、受信側の answer 書き込みが失敗すると TCP 確立済みなのに
@@ -1003,7 +1128,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 StatusMessageChanged?.Invoke(this, "Status.Phase.StunQuery");
 
                 // ③ STUN + UDP ホールパンチを試行
-                udpTransport = new UdpHolePunchTransport();
+                // 複数ペア同時接続対応 Stage 1: peerId(SessionId) を transport に注入。
+                udpTransport = new UdpHolePunchTransport { PeerId = peerId };
                 var stunResult = await udpTransport.GetExternalEndpointAsync(ct: linked);
 
                 if (stunResult != null)
@@ -1020,10 +1146,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                         RelayUrl = RelayUrl,
                         From = _deviceId,  // v1.0.38 review fix v2
                     };
-                    await _signaling.SendSdpOfferAsync(pairId, _deviceId, SerializeConnectionInfo(updatedOffer), linked);
+                    await sessionSig.SendSdpOfferAsync(pairId, _deviceId, SerializeConnectionInfo(updatedOffer), linked);
 
                     StatusMessageChanged?.Invoke(this, "Status.Phase.UdpHolePunch");
-                    connected = await TryUdpHolePunchOfferAsync(udpTransport, pairId, peerId, linked);
+                    // Stage 4: per-session sig + session 引数で UDP ホールパンチを駆動。session.Transport を権威に書く。
+                    connected = await TryUdpHolePunchOfferAsync(udpTransport, sessionSig, session, pairId, peerId, linked);
                 }
                 else
                 {
@@ -1035,7 +1162,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 if (!connected)
                 {
                     StatusMessageChanged?.Invoke(this, "Status.Phase.Relay");
-                    var relayConnected = await TryRelayConnectAsync(pairId, "offer", linked);
+                    var relayConnected = await TryRelayConnectAsync(session, pairId, "offer", peerId, linked);
                     if (!relayConnected)
                         throw new InvalidOperationException("全ての接続方法が失敗しました");
                 }
@@ -1047,18 +1174,22 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             linked.ThrowIfCancellationRequested();
 
             // 防御: どの経路でも transport が確立していなければ Connected を立てない (偽 Connected 残留の安全網)
-            if (_transport == null || !_transport.IsConnected)
+            var establishedTransport = session.Transport;
+            if (establishedTransport == null || !establishedTransport.IsConnected)
                 throw new InvalidOperationException("接続経路が確立されていません");
 
-            ConnectedPeer = new PeerInfo
+            var peerInfo = new PeerInfo
             {
                 SessionId = peerId,
                 DisplayName = peerId,
                 State = PeerState.Connected,
             };
+            session.ConnectedPeer = peerInfo;
+            session.State = PeerState.Connected;
+            ConnectedPeer = peerInfo;  // 単数 ConnectedPeer は primary alias として更新
             SetState(PeerState.Connected);
-            StartSecureHandshake(); // rere #D-001(b): 暗号有効時のみ Hello 送信してハンドシェイク開始
-            Util.Logger.Log($"オンデマンド接続完了！ 経路: {_transport?.Route}");
+            StartSecureHandshake(peerId); // Stage 3c: per-peer ハンドシェイク開始
+            Util.Logger.Log($"オンデマンド接続完了！ 経路: {establishedTransport.Route}");
         }
         catch (OperationCanceledException)
         {
@@ -1066,12 +1197,18 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             // Connecting のまま残すと Probe や接続判定が「接続中」と誤認するため、後始末して Disconnected へ戻す。
             // 追い越した側の新しい ConnectToPeerAsync は gate 取得後に自分で Connecting を立て直すので競合しない。
             DisposeOrphanTransports();
-            if (State == PeerState.Connecting)
+            // Stage 4: per-Session の Connecting だけ巻き戻す（別 peer の State は触らない）。
+            if (session.State == PeerState.Connecting)
             {
-                DetachTransportEvents();
-                _transport?.Dispose();
-                _transport = null;
-                SetState(PeerState.Disconnected);
+                DetachTransportEvents(peerId, session.Transport);
+                session.Transport?.Dispose();
+                session.Transport = null;
+                session.State = PeerState.Disconnected;
+                if (ReferenceEquals(_transport, null) || _transport == null)
+                {
+                    // 単数 alias がこの session を指していたケース。単数 State も Disconnected へ戻す。
+                    if (State == PeerState.Connecting) SetState(PeerState.Disconnected);
+                }
             }
             Util.Logger.Log("接続試行がキャンセルされました（ユーザー操作または新しい接続要求）");
             throw;
@@ -1082,23 +1219,28 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             // rere #F-003: ex.Message だけだと SocketException 等の汎用文言でどの段の失敗か追えない。
             // LogException で型・stack trace・InnerException・相関 ID(pairId) を残す。
             Util.Logger.LogException("接続エラー", ex);
+            // Stage 4: per-Session のエラー状態を立てる。単数 State は primary alias として最後の失敗を表示。
+            session.State = PeerState.Error;
             SetState(PeerState.Error);
             throw;
         }
         finally
         {
-            _connectGate.Release();
+            session.ConnectGate.Release();
         }
     }
 
     /// <summary>
-    /// rere PR#8 #F2: role調停で listener に委譲した後、listener が実際に接続を確立 (State=Connected)
-    /// するまで最大 <paramref name="timeoutMs"/> 待つ。Connected になれば true、listener が一度 Connecting
-    /// へ進んだ後に失敗 (Disconnected/Error) すれば false を返して即フォールバックさせる。timeout でも false。
-    /// listener ループは <see cref="_connectGate"/> を取らず背景で独立に State を進めるため、gate を保持した
-    /// まま待っても deadlock しない。ct (新規接続要求/Disconnect) 発火時は OCE を伝播させ上位の後始末に委ねる。
+    /// rere PR#8 #F2 / Stage 4: role調停で listener に委譲した後、当該 peer の listener が実際に接続を確立
+    /// (session.State=Connected) するまで最大 <paramref name="timeoutMs"/> 待つ。Connected になれば true、
+    /// listener が一度 Connecting へ進んだ後に失敗 (Disconnected/Error) すれば false を返して即フォールバックさせる。
+    /// timeout でも false。
+    /// listener ループは ConnectGate を取らず背景で独立に State を進めるため、gate を保持したまま待っても deadlock しない。
+    /// ct (新規接続要求/Disconnect) 発火時は OCE を伝播させ上位の後始末に委ねる。
+    /// Stage 4: 旧版は単数 <c>State</c> を読んでいたため、別 peer の connect が並走すると挙動が混線していた。
+    /// per-Session の <see cref="ConnectionSession.State"/> を読むことで当該 peer の listener 進捗だけを観測する。
     /// </summary>
-    private async Task<bool> WaitForListenerConnectedAsync(int timeoutMs, CancellationToken ct)
+    private async Task<bool> WaitForListenerConnectedAsync(string peerId, int timeoutMs, CancellationToken ct)
     {
         const int PollMs = 200;
         var waited = 0;
@@ -1106,7 +1248,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         while (waited < timeoutMs)
         {
             ct.ThrowIfCancellationRequested();
-            var s = State;
+            var s = _sessions.TryGetValue(peerId, out var session) ? session.State : PeerState.Disconnected;
             if (s == PeerState.Connected) return true;
             if (s == PeerState.Connecting) sawConnecting = true;
             // 一度 Connecting を観測した後で Disconnected/Error に落ちたら listener 失敗 → 即フォールバック。
@@ -1115,7 +1257,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             await Task.Delay(PollMs, ct);
             waited += PollMs;
         }
-        return State == PeerState.Connected;
+        return _sessions.TryGetValue(peerId, out var s2) && s2.State == PeerState.Connected;
     }
 
     /// <summary>
@@ -1175,7 +1317,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             // 同じ pair で real connection と probe が同時に走っても互いに干渉しない
 
             // ① TCP リスナー起動 → probe 専用 offer 送信
-            tcpTransport = new TcpDirectTransport();
+            // 複数ペア同時接続対応 Stage 1: probe 経路でも peerId(SessionId) を transport に注入。
+            // probe transient は _transport へ昇格しないが、PeerId を埋めておくと将来の意図が明確。
+            tcpTransport = new TcpDirectTransport { PeerId = peerId };
             var port = tcpTransport.StartListener();
             var localIps = TcpDirectTransport.GetLocalIpAddresses();
             var offerInfo = new ConnectionInfo
@@ -1305,16 +1449,57 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     public async Task SendAsync(byte[] data, CancellationToken ct = default)
     {
-        var transport = _transport;
+        // Stage 5: 旧 API は「現在の単数 _transport」を引いて per-peer 経路へ委譲する。
+        // 並列接続が解禁された後（Stage 4）も旧 API を使う呼び出し側は単数前提を維持。
+        var session = LookupActiveSession();
+        if (session == null) throw new InvalidOperationException("接続されていません");
+        await SendAsyncCore(session, data, ct);
+    }
+
+    /// <summary>
+    /// P-1: ArrayPool 借用バッファをコピーなしで transport の Memory 版に流す送信パス。
+    /// 1GB 転送で約 1GB の Gen0 alloc 削減（チャンクメッセージごとの new byte[] 解消）。
+    /// 暗号有効時のみ封筒化のためコピーが入る（暗号化の本質的コスト）。
+    /// </summary>
+    public async Task SendAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default)
+    {
+        var session = LookupActiveSession();
+        if (session == null) throw new InvalidOperationException("接続されていません");
+        await SendAsyncCore(session, data, ct);
+    }
+
+    /// <summary>Stage 5: peerId 指定の送信。指定 peer の Session.Transport へ直送する。</summary>
+    public async Task SendAsync(string peerId, byte[] data, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(peerId)) throw new ArgumentNullException(nameof(peerId));
+        if (!_sessions.TryGetValue(peerId, out var session) || session.Transport == null)
+            throw new InvalidOperationException($"指定 peer は接続されていません: {Util.Logger.MaskDeviceId(peerId)}");
+        await SendAsyncCore(session, data, ct);
+    }
+
+    /// <summary>Stage 5: peerId 指定の <see cref="ReadOnlyMemory{T}"/> 版送信。</summary>
+    public async Task SendAsync(string peerId, ReadOnlyMemory<byte> data, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(peerId)) throw new ArgumentNullException(nameof(peerId));
+        if (!_sessions.TryGetValue(peerId, out var session) || session.Transport == null)
+            throw new InvalidOperationException($"指定 peer は接続されていません: {Util.Logger.MaskDeviceId(peerId)}");
+        await SendAsyncCore(session, data, ct);
+    }
+
+    /// <summary>Stage 5: 共通化された送信コア。暗号ハンドシェイク完了を待ち、必要なら封筒化して transport に流す。
+    /// 各 SendAsync オーバーロードが <see cref="ConnectionSession"/> を解決した後に委譲する。</summary>
+    private async Task SendAsyncCore(ConnectionSession session, byte[] data, CancellationToken ct)
+    {
+        var transport = session.Transport;
         if (transport == null || !transport.IsConnected)
             throw new InvalidOperationException("接続されていません");
 
         // rere #D-001(b): 暗号有効時はハンドシェイク完了を待ってから封筒化する。
-        // channel==null（フラグ OFF / 非対応ペア）は下の平文パスへ直行＝現状と完全同一。
-        var channel = _secureChannel;
+        SecureChannel? channel;
+        TaskCompletionSource<bool>? ready;
+        lock (session.SecureLock) { channel = session.SecureChannel; ready = session.SecureReadyTcs; }
         if (channel != null)
         {
-            var ready = _secureReadyTcs;
             if (ready != null) await ready.Task.WaitAsync(ct);
             if (channel.IsSecure)
             {
@@ -1325,21 +1510,18 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         await transport.SendAsync(data, ct);
     }
 
-    /// <summary>
-    /// P-1: ArrayPool 借用バッファをコピーなしで transport の Memory 版に流す送信パス。
-    /// 1GB 転送で約 1GB の Gen0 alloc 削減（チャンクメッセージごとの new byte[] 解消）。
-    /// 暗号有効時のみ封筒化のためコピーが入る（暗号化の本質的コスト）。
-    /// </summary>
-    public async Task SendAsync(ReadOnlyMemory<byte> data, CancellationToken ct = default)
+    /// <summary>Stage 5: 共通化された送信コア（<see cref="ReadOnlyMemory{T}"/> 版）。</summary>
+    private async Task SendAsyncCore(ConnectionSession session, ReadOnlyMemory<byte> data, CancellationToken ct)
     {
-        var transport = _transport;
+        var transport = session.Transport;
         if (transport == null || !transport.IsConnected)
             throw new InvalidOperationException("接続されていません");
 
-        var channel = _secureChannel;
+        SecureChannel? channel;
+        TaskCompletionSource<bool>? ready;
+        lock (session.SecureLock) { channel = session.SecureChannel; ready = session.SecureReadyTcs; }
         if (channel != null)
         {
-            var ready = _secureReadyTcs;
             if (ready != null) await ready.Task.WaitAsync(ct);
             if (channel.IsSecure)
             {
@@ -1353,36 +1535,151 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     public async Task DisconnectAsync(CancellationToken ct = default)
     {
         Util.Logger.Log("切断処理開始");
-        // in-flight のオンデマンド接続 (孤児ポーラー含む) を中断する。Gate は await しない
-        // (Disconnect→Connect の順で呼ばれる経路で自己デッドロックを避けるため、Cancel のみ)。
-        _connectCts?.Cancel();
+        // Stage 4: 全 session の in-flight をキャンセル（Gate は await しない＝Disconnect→Connect 自己デッドロック回避）。
+        foreach (var kvp in _sessions)
+        {
+            try { kvp.Value.ConnectCts?.Cancel(); } catch { /* 既に Dispose 済み等 */ }
+        }
         StopListeningForConnection();
-        ResetSecureChannel(); // rere #D-001(b): 暗号チャネルを破棄して待機中送信を解放
-        DetachTransportEvents();
+        ResetAllSecureChannels(); // Stage 3c: 全 Session の暗号チャネルを破棄
+
+        // Stage 4: 各 Session の transport / signaling を畳む。pairId 別 cleanup は session.PairId を使う。
+        var disconnectedPeers = new System.Collections.Generic.List<string>();
+        foreach (var kvp in _sessions)
+        {
+            var s = kvp.Value;
+            var wasConnected = s.State == PeerState.Connected;
+            var t = s.Transport;
+            if (t != null)
+            {
+                DetachSessionHandlers(s, t);
+                try { t.Close(); } catch { }
+                try { t.Dispose(); } catch { }
+                s.Transport = null;
+            }
+            if (s.Signaling != null)
+            {
+                try { await s.Signaling.CleanupAsync(s.PairId, ct); }
+                catch (Exception ex) { Util.Logger.Log($"Session signaling cleanup 失敗（無視）: {ex.Message}", Util.LogLevel.Debug); }
+                s.Signaling.Dispose();
+                s.Signaling = null;
+            }
+            s.State = PeerState.Disconnected;
+            s.ConnectedPeer = null;
+            s.Route = ConnectionRoute.Unknown;
+            s.PairId = null;
+            if (wasConnected) disconnectedPeers.Add(kvp.Key);
+        }
+
+        // 単数フィールド (primary alias) も掃除する。
         _transport?.Close();
         _transport?.Dispose();
         _transport = null;
-
-        if (_signaling != null)
-        {
-            await _signaling.CleanupAsync(_currentPairId, ct);
-            _signaling.Dispose();
-            _signaling = null;
-        }
-
         _currentPairId = null;
         ConnectedPeer = null;
         Route = ConnectionRoute.Unknown;
         SetState(PeerState.Disconnected);
+
+        // Pairing 用 signaling は connect 経路と独立。Disconnect 全体ではここも撤去する（旧挙動と一致）。
+        if (_signaling != null)
+        {
+            try { await _signaling.CleanupAsync(null, ct); }
+            catch (Exception ex) { Util.Logger.Log($"Pairing signaling cleanup 失敗（無視）: {ex.Message}", Util.LogLevel.Debug); }
+            _signaling.Dispose();
+            _signaling = null;
+        }
+
+        // 切断された peer 群へまとめて ConnectionLost を通知する（TransferService が当該 peer の transfer を畳む）。
+        foreach (var pid in disconnectedPeers)
+            ConnectionLost?.Invoke(this, new Infrastructure.ConnectionLostEventArgs(pid));
+
         Util.Logger.Log("切断処理完了");
+    }
+
+    /// <summary>Stage 5: 指定 peer の接続だけを切断する（他 peer の接続と _signaling は維持）。
+    /// この peer が「現在の単数 _transport の権威（primary）」だった場合のみ単数フィールドも掃除し、
+    /// 単数 State を Disconnected に遷移させる。primary 以外なら ConnectionLost を単発で発火するのみ。
+    /// Stage 4 で並列接続が解禁されたあとに、片方の peer だけ閉じるユースケースを支える。</summary>
+    public async Task DisconnectAsync(string peerId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(peerId)) throw new ArgumentNullException(nameof(peerId));
+        Util.Logger.Log($"切断処理開始: peer={Util.Logger.MaskDeviceId(peerId)}");
+
+        if (!_sessions.TryGetValue(peerId, out var session))
+        {
+            Util.Logger.Log($"切断処理: 該当 Session 無し（既に切断済）peer={Util.Logger.MaskDeviceId(peerId)}", Util.LogLevel.Debug);
+            return;
+        }
+
+        // Stage 4: 当該 Session の in-flight connect を先にキャンセルする。これで Connect ループが
+        // session.Transport を新しい transport で上書きする race 窓を閉じる（StopSessionListener / ResetSecureChannel
+        // → TryRemove の順序に影響しない）。
+        try { session.ConnectCts?.Cancel(); } catch { /* 既に Dispose 済み等 */ }
+
+        // listener も先に停止（listener が新しい transport を attach する race 窓も閉じる）。
+        StopSessionListener(session);
+
+        var transport = session.Transport;
+        var wasPrimary = ReferenceEquals(_transport, transport);
+        var wasConnected = session.State == PeerState.Connected;
+        var pairIdForCleanup = session.PairId;
+
+        ResetSecureChannel(session);
+
+        if (transport != null)
+        {
+            DetachSessionHandlers(session, transport);
+            session.Transport = null;
+            try { transport.Close(); } catch (Exception ex) { Util.Logger.Log($"transport.Close 失敗（無視）: {ex.Message}", Util.LogLevel.Debug); }
+            transport.Dispose();
+        }
+
+        // Stage 4: per-Session の signaling を撤去する（pairId 別 cleanup も session.PairId を使う）。
+        var sessionSig = session.Signaling;
+        if (sessionSig != null)
+        {
+            try { await sessionSig.CleanupAsync(pairIdForCleanup, ct); }
+            catch (Exception ex) { Util.Logger.Log($"Session signaling cleanup 失敗（無視）: {ex.Message}", Util.LogLevel.Debug); }
+            sessionSig.Dispose();
+            session.Signaling = null;
+        }
+
+        session.State = PeerState.Disconnected;
+        session.ConnectedPeer = null;
+        session.Route = ConnectionRoute.Unknown;
+        session.PairId = null;
+
+        if (_sessions.TryRemove(peerId, out var removed))
+            DisposeSessionSilent(removed);
+
+        // primary だった場合は単数フィールドを掃除して、外向き API（ConnectedPeer/State/Route）を整合させる。
+        if (wasPrimary)
+        {
+            _transport = null;
+            ConnectedPeer = null;
+            Route = ConnectionRoute.Unknown;
+            if (string.Equals(_currentPairId, pairIdForCleanup, StringComparison.Ordinal))
+                _currentPairId = null;
+            SetState(PeerState.Disconnected);
+            if (wasConnected)
+                ConnectionLost?.Invoke(this, new Infrastructure.ConnectionLostEventArgs(peerId));
+        }
+        else if (wasConnected)
+        {
+            ConnectionLost?.Invoke(this, new Infrastructure.ConnectionLostEventArgs(peerId));
+        }
+
+        // pairing 用 _signaling は触らない（他 peer の connect/pairing watch がまだ使っている可能性がある）。
+        // 全 peer 切断時は呼び出し側が DisconnectAsync()（peerId 無し）を呼ぶ運用。
     }
 
     // === 接続ヘルパー ===
 
     /// <summary>
     /// TCP 直接接続を試行する（Answer 側が使用）。
+    /// Stage 4: session を受けて当該 peer の Session.Transport を権威に書く（別 peer の transport を壊さない）。
     /// </summary>
-    private async Task<bool> TryTcpConnectAsync(string[] ips, int port, CancellationToken ct)
+    private async Task<bool> TryTcpConnectAsync(ConnectionSession session, string[] ips, int port, string peerId, CancellationToken ct)
     {
         if (ips.Length == 0 || port <= 0)
         {
@@ -1392,17 +1689,25 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
         try
         {
-            var tcpTransport = new TcpDirectTransport();
+            // 複数ペア同時接続対応 Stage 1: 1 transport = 1 peer の対応関係を peerId で結ぶ。
+            // DataReceivedEventArgs.PeerId に常時付帯される。
+            var tcpTransport = new TcpDirectTransport { PeerId = peerId };
 
             using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             connectCts.CancelAfter(TimeSpan.FromSeconds(TcpConnectTimeoutSeconds));
 
             await tcpTransport.ConnectAsync(ips, port, connectCts.Token);
 
-            DetachTransportEvents();
-            _transport?.Dispose();
-            _transport = tcpTransport;
-            AttachTransportEvents();
+            // Stage 4: 当該 Session 内の旧 transport だけ detach/Dispose する（別 peer の transport を巻き込まない）。
+            var prev = session.Transport;
+            if (prev != null && !ReferenceEquals(prev, tcpTransport))
+            {
+                DetachTransportEvents(peerId, prev);
+                prev.Dispose();
+            }
+            session.Transport = tcpTransport;
+            _transport = tcpTransport;  // 単数は primary alias
+            AttachTransportEvents(peerId, tcpTransport);
             return true;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -1420,8 +1725,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// <summary>
     /// UDP ホールパンチを試行する（Offer 側）。
     /// Answer 側の外部エンドポイントを Firebase からポーリングし、取得後にホールパンチを実行する。
+    /// Stage 4: per-session の signaling / Session を受けて当該 peer 専用の経路として動かす（_signaling 直参照を撤去）。
     /// </summary>
-    private async Task<bool> TryUdpHolePunchOfferAsync(UdpHolePunchTransport udpTransport, string pairId, string peerId, CancellationToken ct)
+    private async Task<bool> TryUdpHolePunchOfferAsync(UdpHolePunchTransport udpTransport, ISignalingService sig, ConnectionSession session, string pairId, string peerId, CancellationToken ct)
     {
         try
         {
@@ -1435,7 +1741,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             try
             {
                 // rere #D-001: ペア相手 (peerId) 由来の endpoint だけ採用する (偽 endpoint による UDP 誘導を防ぐ)
-                endpointStr = await _signaling!.WaitForEndpointAsync(pairId, peerId, epCts.Token);
+                endpointStr = await sig.WaitForEndpointAsync(pairId, peerId, epCts.Token);
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
@@ -1461,10 +1767,16 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             // (FileMeta/SecureHello)を取りこぼさない。確立前に届く DATA は HandleData の !IsConnected ガードで
             // ドロップされ送信側の再送に委ねられる。UDP 失敗時は attach 済み udpTransport が残るが、次経路
             // (リレー)の DetachTransportEvents+Dispose で確実に掃除される。
-            DetachTransportEvents();
-            _transport?.Dispose();
-            _transport = udpTransport;
-            AttachTransportEvents();
+            // Stage 4: 当該 Session 内の旧 transport だけ畳む（別 peer の transport を巻き込まない）。
+            var prev = session.Transport;
+            if (prev != null && !ReferenceEquals(prev, udpTransport))
+            {
+                DetachTransportEvents(peerId, prev);
+                prev.Dispose();
+            }
+            session.Transport = udpTransport;
+            _transport = udpTransport;  // 単数は primary alias
+            AttachTransportEvents(peerId, udpTransport);
             await udpTransport.HolePunchAsync(parts[0], remotePort, punchCts.Token);
             return true;
         }
@@ -1532,14 +1844,16 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// <summary>
     /// UDP ホールパンチを試行する（Answer 側）。
     /// STUN で自身の外部エンドポイントを取得し、Firebase に書き込んでからホールパンチを実行する。
+    /// Stage 4: per-session の signaling / Session を受けて当該 peer 専用の経路として動かす。
     /// </summary>
-    private async Task<bool> TryUdpHolePunchAnswerAsync(ConnectionInfo offer, string pairId, CancellationToken ct)
+    private async Task<bool> TryUdpHolePunchAnswerAsync(ConnectionInfo offer, ISignalingService sig, ConnectionSession session, string pairId, string peerId, CancellationToken ct)
     {
         UdpHolePunchTransport? udpTransport = null;
         try
         {
             Util.Logger.Log("UDP ホールパンチ（Answer 側）開始: STUN クエリ実行中…");
-            udpTransport = new UdpHolePunchTransport();
+            // 複数ペア同時接続対応 Stage 1: peerId を transport へ伝播。
+            udpTransport = new UdpHolePunchTransport { PeerId = peerId };
             var stunResult = await udpTransport.GetExternalEndpointAsync(ct: ct);
 
             if (stunResult == null)
@@ -1553,7 +1867,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
             // 自身の外部エンドポイントを Firebase に書き込み（Offer 側が読む）。
             // rere #D-001: 送信元 deviceId を埋め込み、Offer 側が MITM 検証できるようにする。
-            await _signaling!.SendEndpointAsync(pairId, _deviceId, $"{stunResult.Value.ip}:{stunResult.Value.port}", ct);
+            await sig.SendEndpointAsync(pairId, _deviceId, $"{stunResult.Value.ip}:{stunResult.Value.port}", ct);
 
             // Offer 側の外部エンドポイントに向けてホールパンチ実行
             using var punchCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -1561,10 +1875,16 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
             // attach を HolePunchAsync の前に行う（理由は Offer 側と同じ。SetConnected〜attach の窓に届く
             // 最初のアプリデータを取りこぼさない。確立前 DATA は HandleData の !IsConnected ガードでドロップ）。
-            DetachTransportEvents();
-            _transport?.Dispose();
-            _transport = udpTransport;
-            AttachTransportEvents();
+            // Stage 4: 当該 Session 内の旧 transport だけ畳む。
+            var prev = session.Transport;
+            if (prev != null && !ReferenceEquals(prev, udpTransport))
+            {
+                DetachTransportEvents(peerId, prev);
+                prev.Dispose();
+            }
+            session.Transport = udpTransport;
+            _transport = udpTransport;  // 単数は primary alias
+            AttachTransportEvents(peerId, udpTransport);
             await udpTransport.HolePunchAsync(offer.ExternalIp!, offer.ExternalPort, punchCts.Token);
             return true;
         }
@@ -1592,8 +1912,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     /// <summary>
     /// WebSocket リレー接続を試行する。
+    /// Stage 4: session を受けて当該 peer の Session.Transport を権威に書く。
     /// </summary>
-    private async Task<bool> TryRelayConnectAsync(string pairId, string role, CancellationToken ct)
+    private async Task<bool> TryRelayConnectAsync(ConnectionSession session, string pairId, string role, string peerId, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(RelayUrl))
         {
@@ -1605,17 +1926,24 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         try
         {
             Util.Logger.Log($"WebSocket リレー接続試行: role={role}");
-            relayTransport = new WebSocketRelayTransport(RelayUrl, pairId, role);
+            // 複数ペア同時接続対応 Stage 1: peerId を transport へ伝播。
+            relayTransport = new WebSocketRelayTransport(RelayUrl, pairId, role, peerId);
 
             using var relayCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             relayCts.CancelAfter(TimeSpan.FromSeconds(RelayPeerWaitSeconds));
 
             await relayTransport.ConnectAsync(relayCts.Token);
 
-            DetachTransportEvents();
-            _transport?.Dispose();
-            _transport = relayTransport;
-            AttachTransportEvents();
+            // Stage 4: 当該 Session 内の旧 transport だけ畳む。
+            var prev = session.Transport;
+            if (prev != null && !ReferenceEquals(prev, relayTransport))
+            {
+                DetachTransportEvents(peerId, prev);
+                prev.Dispose();
+            }
+            session.Transport = relayTransport;
+            _transport = relayTransport;  // 単数は primary alias
+            AttachTransportEvents(peerId, relayTransport);
             return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -1635,127 +1963,243 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     // === イベントハンドラ ===
 
-    private void AttachTransportEvents()
+    // === 複数ペア同時接続対応 Stage 3b: クロージャ束縛 Attach/Detach + per-Session イベントルーティング ===
+    //
+    // 旧実装はメソッド参照 (OnChannelClosed 等) を _transport の各イベントに attach していたため、
+    // 「どの peer の transport から飛んだイベントか」を sender 経由でしか復元できなかった。
+    // Stage 3b では Attach 時に peerId と transport を捕捉した lambda を生成し、Session に保存する。
+    // 各ハンドラは内部で `ReferenceEquals(transport, session.Transport)` ガードを通り、張り替え済みの
+    // 古い transport から漂着したイベントを無視する（Stage 4 で並列接続が解禁されたとき、別 peer の
+    // OnChannelClosed が手元の Session を踏み潰さないための防御）。
+
+    private void AttachTransportEvents(string peerId, ITransport transport)
     {
-        if (_transport == null) return;
-        _transport.ChannelOpened += OnChannelOpened;
-        _transport.ChannelClosed += OnChannelClosed;
-        _transport.DataReceived += OnDataReceived;
-        _transport.RouteChanged += OnTransportRouteChanged;
+        if (string.IsNullOrEmpty(peerId)) throw new ArgumentNullException(nameof(peerId));
+        if (transport == null) throw new ArgumentNullException(nameof(transport));
+
+        var session = _sessions.GetOrAdd(peerId, id => new ConnectionSession(id));
+
+        // 同 Session に Detach 無しで再 Attach されたら、古いハンドラを掃除してから差し替える（防御）。
+        var oldTransport = session.Transport;
+        if (oldTransport != null && oldTransport != transport)
+            DetachSessionHandlers(session, oldTransport);
+
+        session.Transport = transport;
+        // 単数フィールド (_transport) は呼び出し側で既に書かれているはず。整合のため SyncShadowSession を呼ぶと
+        // 別 Session を巻き込む（単数 State が他 peer 由来）危険があるので、Session.Transport の直接書込で済ます。
+
+        // クロージャ生成: peerId と transport を捕捉。`this` も暗黙キャプチャされ、内部メソッドへ委譲する。
+        EventHandler opened = (_, _) => OnSessionChannelOpened(peerId, transport);
+        EventHandler closed = (_, _) => OnSessionChannelClosed(peerId, transport);
+        EventHandler<Infrastructure.DataReceivedEventArgs> dataReceived = (_, e) => OnSessionDataReceived(peerId, transport, e);
+        EventHandler<ConnectionRoute> routeChanged = (_, route) => OnSessionRouteChanged(peerId, transport, route);
+
+        session.OnChannelOpenedHandler = opened;
+        session.OnChannelClosedHandler = closed;
+        session.OnDataReceivedHandler = dataReceived;
+        session.OnRouteChangedHandler = routeChanged;
+
+        transport.ChannelOpened += opened;
+        transport.ChannelClosed += closed;
+        transport.DataReceived += dataReceived;
+        transport.RouteChanged += routeChanged;
+
         // PR#5 Codex 指摘: transport が ConnectAsync 中（Attach 前）に RouteChanged を発火済みだと
         // Route が Unknown のまま残り、リレー経路のフロー制御ガードが誤って無効化される。
-        // Attach 時点の現在値を即時同期して取りこぼしを防ぐ
-        if (_transport.Route != ConnectionRoute.Unknown && _transport.Route != Route)
-            OnTransportRouteChanged(_transport, _transport.Route);
+        // Attach 時点の現在値を即時同期して取りこぼしを防ぐ。Stage 3b では Session.Route 経由で判定する。
+        if (transport.Route != ConnectionRoute.Unknown && transport.Route != session.Route)
+            OnSessionRouteChanged(peerId, transport, transport.Route);
     }
 
-    private void DetachTransportEvents()
+    private void DetachTransportEvents(string peerId, ITransport? transport)
     {
-        if (_transport == null) return;
-        _transport.ChannelOpened -= OnChannelOpened;
-        _transport.ChannelClosed -= OnChannelClosed;
-        _transport.DataReceived -= OnDataReceived;
-        _transport.RouteChanged -= OnTransportRouteChanged;
+        if (transport == null) return;
+        if (string.IsNullOrEmpty(peerId)) return;
+        if (!_sessions.TryGetValue(peerId, out var session)) return;
+
+        // 別 transport に張り替え済みなら触らない（古い close が新 transport のハンドラを巻き込まない）。
+        if (!ReferenceEquals(session.Transport, transport)) return;
+
+        DetachSessionHandlers(session, transport);
+        session.Transport = null;
     }
 
-    private void OnChannelOpened(object? sender, EventArgs e)
+    /// <summary>Stage 3b: <see cref="ConnectionSession"/> に保存したクロージャ参照で transport から
+    /// イベントハンドラを解除し、参照をクリアする。Attach 時の生成と対称な解除経路を 1 ヶ所に集約。</summary>
+    private static void DetachSessionHandlers(ConnectionSession session, ITransport transport)
     {
-        Util.Logger.Log("データチャネル接続完了");
+        if (session.OnChannelOpenedHandler != null) transport.ChannelOpened -= session.OnChannelOpenedHandler;
+        if (session.OnChannelClosedHandler != null) transport.ChannelClosed -= session.OnChannelClosedHandler;
+        if (session.OnDataReceivedHandler != null) transport.DataReceived -= session.OnDataReceivedHandler;
+        if (session.OnRouteChangedHandler != null) transport.RouteChanged -= session.OnRouteChangedHandler;
+        session.OnChannelOpenedHandler = null;
+        session.OnChannelClosedHandler = null;
+        session.OnDataReceivedHandler = null;
+        session.OnRouteChangedHandler = null;
     }
 
-    private void OnTransportRouteChanged(object? sender, ConnectionRoute route)
+    /// <summary>Stage 3b: peerId 不明な経路（DisconnectAsync 等）から、指定 transport に attach 済みの
+    /// 全 Session ハンドラを掃除する。<see cref="_sessions"/> を走査して該当 Session を見つけて detach する
+    /// （Stage 4 で並列接続が解禁されても、転送中の transport を取り違えない）。</summary>
+    private void DetachTransportEventsForTransport(ITransport? transport)
     {
-        Route = route;
-        Util.Logger.Log($"接続経路確定: {route}");
-        RouteChanged?.Invoke(this, route);
-    }
-
-    private void OnChannelClosed(object? sender, EventArgs e)
-    {
-        Util.Logger.Log($"データチャネル切断検知: currentState={State}", Util.LogLevel.Warning);
-        ResetSecureChannel(); // rere #D-001(b): 切断で宙吊りの暗号送信を解放
-        if (State == PeerState.Connected)
+        if (transport == null) return;
+        foreach (var kvp in _sessions)
         {
-            ConnectionLost?.Invoke(this, EventArgs.Empty);
-            SetState(PeerState.Disconnected);
+            if (ReferenceEquals(kvp.Value.Transport, transport))
+            {
+                DetachSessionHandlers(kvp.Value, transport);
+                kvp.Value.Transport = null;
+            }
         }
     }
 
-    private void OnDataReceived(object? sender, byte[] data)
+    private void OnSessionChannelOpened(string peerId, ITransport transport)
     {
-        // 暗号無効（フラグ OFF / 非対応ペア）なら従来どおり素通し＝現状と完全に同一パス。
-        SecureChannelStep? step = null;
-        lock (_secureLock)
+        // 張り替え済み transport は無視（古い transport の delayed open イベント等）。
+        if (!_sessions.TryGetValue(peerId, out var session) || !ReferenceEquals(session.Transport, transport))
+            return;
+        Util.Logger.Log($"データチャネル接続完了: peer={Util.Logger.MaskDeviceId(peerId)}");
+    }
+
+    private void OnSessionRouteChanged(string peerId, ITransport transport, ConnectionRoute route)
+    {
+        if (!_sessions.TryGetValue(peerId, out var session) || !ReferenceEquals(session.Transport, transport))
+            return;
+        session.Route = route;
+
+        // この Session が単数フィールド _transport の権威（primary）なら、単数 Route も同期する。
+        // primary 以外（Stage 4 で並列接続が解禁された後の secondary）は単数 Route を触らず、外向きイベントだけ
+        // 発火する（VM 側は単数 Route と RouteOf(peerId) を使い分ける設計）。
+        if (ReferenceEquals(_transport, transport))
         {
-            var channel = _secureChannel;
+            Route = route;
+            Util.Logger.Log($"接続経路確定: {route}");
+        }
+        else
+        {
+            Util.Logger.Log($"接続経路確定（secondary）: peer={Util.Logger.MaskDeviceId(peerId)} {route}");
+        }
+        RouteChanged?.Invoke(this, route);
+    }
+
+    private void OnSessionChannelClosed(string peerId, ITransport transport)
+    {
+        Util.Logger.Log($"データチャネル切断検知: peer={Util.Logger.MaskDeviceId(peerId)} currentState={State}", Util.LogLevel.Warning);
+        // 張り替え済み transport（既に Session.Transport != transport）の close は無視 — 新 transport の
+        // ハンドラを巻き込まない。Session が見つからない場合（既に Dispose 済み等）も同様に何もしない。
+        if (!_sessions.TryGetValue(peerId, out var session) || !ReferenceEquals(session.Transport, transport))
+        {
+            Util.Logger.Log("（古い transport の close。Session は別 transport へ張り替え済み）", Util.LogLevel.Debug);
+            return;
+        }
+
+        var wasConnected = session.State == PeerState.Connected;
+        session.State = PeerState.Disconnected;
+
+        // Stage 3c: 当該 Session の暗号チャネルを per-peer reset（宙吊りの送信を解放）。
+        // 単数 _transport が同じ transport を指していれば（primary）、単数 State も Disconnected へ
+        // 遷移し ConnectionLost を発火する。secondary（Stage 4 で並列接続解禁後）は session.State
+        // だけ動かして ConnectionLost を単発で出す（VM 側で peer 区別は別経路）。
+        ResetSecureChannel(session);
+        if (ReferenceEquals(_transport, transport))
+        {
+            if (State == PeerState.Connected)
+            {
+                ConnectionLost?.Invoke(this, new Infrastructure.ConnectionLostEventArgs(peerId));
+                SetState(PeerState.Disconnected);
+            }
+        }
+        else if (wasConnected)
+        {
+            ConnectionLost?.Invoke(this, new Infrastructure.ConnectionLostEventArgs(peerId));
+        }
+    }
+
+    private void OnSessionDataReceived(string peerId, ITransport transport, Infrastructure.DataReceivedEventArgs e)
+    {
+        // 張り替え済み transport から漂着したデータは無視（幽霊フレームで暗号状態機械を壊さない）。
+        if (!_sessions.TryGetValue(peerId, out var session) || !ReferenceEquals(session.Transport, transport))
+            return;
+
+        // 複数ペア同時接続対応 Stage 2: transport が運んだ peerId を IConnectionService.DataReceived へ貫通させる。
+        // Stage 3c: 暗号チャネルは Session.SecureChannel（Session.SecureLock 配下）を権威で使う。
+        var data = e.Data;
+        SecureChannelStep? step = null;
+        lock (session.SecureLock)
+        {
+            var channel = session.SecureChannel;
             if (channel != null)
                 step = channel.OnFrame(data);
         }
         if (step == null)
         {
-            DataReceived?.Invoke(this, data); // 平文（現状パス）
+            DataReceived?.Invoke(this, e); // 平文（現状パス）。peerId 付きのまま貫通。
             return;
         }
-        ApplySecureStep(step); // 副作用（送信/配送/遷移）はロック外で
+        ApplySecureStep(session, step); // 副作用（送信/配送/遷移）はロック外で。
     }
 
-    // === rere #D-001(b): セッション暗号ハンドシェイクの駆動 ===
+    // === rere #D-001(b) / 複数ペア同時接続対応 Stage 3c: per-peer セッション暗号ハンドシェイクの駆動 ===
 
     /// <summary>
     /// 接続確立に先立って（transport を attach する前に）暗号チャネルを用意する。E2E 暗号は常時有効化済み
     /// （旧 EnableSecureChannel トグルは v1.0.48 で撤去）で、相手の PairSecret を保有していれば自動的に
     /// <see cref="SecureChannel"/> を Init 状態で生成する。この時点では Hello を送らず、DataReceived 購読より
     /// 先にチャネルを立てておくことで、確立直後に先着する相手 Hello を Init バッファで取りこぼさない
-    /// （attach レース対策）。PairSecret 無し（古い peer / 未交換）の相手は _secureChannel=null のままで
-    /// 送受信は平文の現状パスに自然フォールバックする。
+    /// （attach レース対策）。PairSecret 無し（古い peer / 未交換）の相手は Session.SecureChannel=null のままで
+    /// 送受信は平文の現状パスに自然フォールバックする。Stage 3c で per-peer 化済（Session に保存）。
     /// </summary>
     private void CreateSecureChannel(string peerId)
     {
-        ResetSecureChannel();
+        var session = _sessions.GetOrAdd(peerId, id => new ConnectionSession(id));
+        ResetSecureChannel(session);
 
-        if (_peerRegistry == null)
-            return;
+        if (_peerRegistry == null) return;
 
         var b64 = _peerRegistry.FindPeer(peerId)?.PairSecret;
-        if (string.IsNullOrEmpty(b64))
-            return;
+        if (string.IsNullOrEmpty(b64)) return;
 
         byte[] pairSecret;
         try { pairSecret = Convert.FromBase64String(b64); }
         catch (FormatException) { return; }
 
-        lock (_secureLock)
+        lock (session.SecureLock)
         {
-            _secureReadyTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _secureChannel = new SecureChannel(_deviceId, peerId, pairSecret, secureEnabled: true);
+            session.SecureReadyTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            session.SecureChannel = new SecureChannel(_deviceId, peerId, pairSecret, secureEnabled: true);
         }
     }
 
     /// <summary>
     /// 接続確立直後（ConnectedPeer 設定後）に Hello を送ってハンドシェイクを開始する。
     /// CreateSecureChannel でチャネルが立っていなければ何もしない（平文）。両接続経路から呼ぶ。
+    /// Stage 3c: peerId 直引きの per-peer 化済。
     /// </summary>
-    private void StartSecureHandshake()
+    private void StartSecureHandshake(string peerId)
     {
+        if (!_sessions.TryGetValue(peerId, out var session)) return;
+
         SecureChannelStep step;
-        lock (_secureLock)
+        lock (session.SecureLock)
         {
-            var channel = _secureChannel;
+            var channel = session.SecureChannel;
             if (channel == null) return;
 
             var timeoutCts = new CancellationTokenSource();
-            _secureTimeoutCts = timeoutCts;
-            _ = SecureTimeoutAsync(channel, timeoutCts.Token);
+            session.SecureTimeoutCts = timeoutCts;
+            _ = SecureTimeoutAsync(session, channel, timeoutCts.Token);
 
             step = channel.Start(); // Hello 生成 + 先着フレームのドレイン
         }
-        ApplySecureStep(step); // 送信/配送/遷移はロック外で
+        ApplySecureStep(session, step); // 送信/配送/遷移はロック外で
     }
 
-    /// <summary>状態機械の 1 ステップ（送るフレーム・配送平文・遷移）を実行する。</summary>
-    private void ApplySecureStep(SecureChannelStep step)
+    /// <summary>状態機械の 1 ステップ（送るフレーム・配送平文・遷移）を実行する。
+    /// Stage 3c: peer ごとの Session に紐づく transport / Deliver peerId / TCS を使う。</summary>
+    private void ApplySecureStep(ConnectionSession session, SecureChannelStep step)
     {
-        var transport = _transport;
+        var transport = session.Transport;
         foreach (var f in step.Send)
         {
             // ハンドシェイクフレーム(0x30/0x31)は SendAsync ゲートを通さず transport へ直送する。
@@ -1763,25 +2207,26 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 _ = SafeSendRawAsync(transport, f);
         }
 
+        // 復号後の Deliver は Session の peerId を権威で付帯する。
         foreach (var d in step.Deliver)
-            DataReceived?.Invoke(this, d);
+            DataReceived?.Invoke(this, new Infrastructure.DataReceivedEventArgs(session.PeerId, d));
 
         switch (step.Outcome)
         {
             case SecureOutcome.Established:
-                Util.Logger.Log("暗号セッション確立（HMAC 相互認証成功）");
-                _secureTimeoutCts?.Cancel();
-                _secureReadyTcs?.TrySetResult(true);
+                Util.Logger.Log($"暗号セッション確立（HMAC 相互認証成功）: peer={Util.Logger.MaskDeviceId(session.PeerId)}");
+                session.SecureTimeoutCts?.Cancel();
+                session.SecureReadyTcs?.TrySetResult(true);
                 break;
             case SecureOutcome.FellBackToPlaintext:
-                Util.Logger.Log("暗号ハンドシェイク非成立 → 平文フォールバック", Util.LogLevel.Warning);
-                _secureTimeoutCts?.Cancel();
-                _secureReadyTcs?.TrySetResult(false);
+                Util.Logger.Log($"暗号ハンドシェイク非成立 → 平文フォールバック: peer={Util.Logger.MaskDeviceId(session.PeerId)}", Util.LogLevel.Warning);
+                session.SecureTimeoutCts?.Cancel();
+                session.SecureReadyTcs?.TrySetResult(false);
                 break;
             case SecureOutcome.Failed:
-                Util.Logger.Log("暗号ハンドシェイク失敗（HMAC 不一致）→ 切断", Util.LogLevel.Error);
-                _secureTimeoutCts?.Cancel();
-                _secureReadyTcs?.TrySetException(new InvalidOperationException("ペア相互認証に失敗しました（HMAC 不一致）"));
+                Util.Logger.Log($"暗号ハンドシェイク失敗（HMAC 不一致）→ 切断: peer={Util.Logger.MaskDeviceId(session.PeerId)}", Util.LogLevel.Error);
+                session.SecureTimeoutCts?.Cancel();
+                session.SecureReadyTcs?.TrySetException(new InvalidOperationException("ペア相互認証に失敗しました（HMAC 不一致）"));
                 _ = DisconnectAsync();
                 break;
         }
@@ -1793,41 +2238,104 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         catch (Exception ex) { Util.Logger.Log($"ハンドシェイクフレーム送信失敗: {ex.Message}", Util.LogLevel.Warning); }
     }
 
-    private async Task SecureTimeoutAsync(SecureChannel channel, CancellationToken ct)
+    /// <summary>複数ペア同時接続対応: 現在の <see cref="_transport"/> から PeerId を引く便宜ヘルパー。
+    /// Stage 5 で SendAsync(peerId) になったら本ヘルパーは削除し peerId 直引きに置換する。</summary>
+    private string? GetCurrentTransportPeerId() => _transport switch
+    {
+        TcpDirectTransport t when !string.IsNullOrEmpty(t.PeerId) => t.PeerId,
+        UdpHolePunchTransport u when !string.IsNullOrEmpty(u.PeerId) => u.PeerId,
+        WebSocketRelayTransport w when !string.IsNullOrEmpty(w.PeerId) => w.PeerId,
+        _ => null,
+    };
+
+    /// <summary>Stage 3c: 現在の単数 <see cref="_transport"/> に対応する <see cref="ConnectionSession"/> を引く
+    /// （SendAsync など peerId を持たない経路向け）。Stage 5 で SendAsync が peerId 直引きになったら本ヘルパーは
+    /// 撤去する。</summary>
+    private ConnectionSession? LookupActiveSession()
+    {
+        var transport = _transport;
+        if (transport == null) return null;
+        foreach (var kvp in _sessions)
+        {
+            if (ReferenceEquals(kvp.Value.Transport, transport)) return kvp.Value;
+        }
+        return null;
+    }
+
+    private async Task SecureTimeoutAsync(ConnectionSession session, SecureChannel channel, CancellationToken ct)
     {
         try { await Task.Delay(TimeSpan.FromSeconds(SecureHandshakeTimeoutSeconds), ct); }
         catch (OperationCanceledException) { return; }
 
         SecureChannelStep? step = null;
-        lock (_secureLock)
+        lock (session.SecureLock)
         {
             // 別接続に張り替わっていたら無視（古いタイマーの暴発防止）。
-            if (ReferenceEquals(_secureChannel, channel))
+            if (ReferenceEquals(session.SecureChannel, channel))
                 step = channel.OnTimeout();
         }
-        if (step != null) ApplySecureStep(step);
+        if (step != null) ApplySecureStep(session, step);
     }
 
-    /// <summary>暗号チャネルを破棄し、待機中の送信を平文として解放する（切断/再接続時）。</summary>
-    private void ResetSecureChannel()
+    /// <summary>Stage 3c: 指定 Session の暗号チャネルを破棄し、待機中の送信を平文として解放する
+    /// （切断 / 再接続時の per-peer reset）。</summary>
+    private static void ResetSecureChannel(ConnectionSession session)
     {
-        lock (_secureLock)
+        lock (session.SecureLock)
         {
-            _secureTimeoutCts?.Cancel();
-            _secureTimeoutCts?.Dispose();
-            _secureTimeoutCts = null;
-            // 宙吊りの SendAsync を解放（切断後は次段の _transport 操作で自然に例外化する）。
-            _secureReadyTcs?.TrySetResult(false);
-            _secureReadyTcs = null;
-            _secureChannel = null;
+            session.SecureTimeoutCts?.Cancel();
+            session.SecureTimeoutCts?.Dispose();
+            session.SecureTimeoutCts = null;
+            // 宙吊りの SendAsync を解放（切断後は次段の transport 操作で自然に例外化する）。
+            session.SecureReadyTcs?.TrySetResult(false);
+            session.SecureReadyTcs = null;
+            session.SecureChannel = null;
         }
+    }
+
+    /// <summary>Stage 3c: 全 Session の暗号チャネルを破棄する（DisconnectAsync 等 peerId 不明な経路向け）。
+    /// Stage 5 で DisconnectAsync が peerId を受けるようになったら、per-peer 経路に置換する。</summary>
+    private void ResetAllSecureChannels()
+    {
+        foreach (var kvp in _sessions)
+            ResetSecureChannel(kvp.Value);
     }
 
     private void SetState(PeerState state)
     {
         Util.Logger.Log($"状態遷移: {State} → {state}");
         State = state;
+        // 複数ペア同時接続対応 Stage 3a: 単数 State の遷移を Session(現在/便宜セッション)にミラーする。
+        // 単数 ConnectedPeer / _currentPairId / _transport 等の context から Session を解決する。
+        SyncShadowSession();
         StateChanged?.Invoke(this, state);
+    }
+
+    /// <summary>複数ペア同時接続対応 Stage 3a: 単数フィールド (_transport / _signaling / _currentPairId /
+    /// Route / State / _secureChannel / ConnectedPeer) を <see cref="_sessions"/> へミラーする。
+    /// Stage 3a では単数フィールドが権威で、_sessions は ConnectedPeers / RouteOf 等の集合 API の表に
+    /// 整合させる用途。Stage 3b 以降で参照ごと _sessions へ移管し、このミラー処理は除去する。</summary>
+    private void SyncShadowSession()
+    {
+        var peer = ConnectedPeer;
+        // Stage 4: 単数 _transport / ConnectedPeer / Route / State の権威を「primary Session」に同期する。
+        // Stage 4 から複数 Session が並列に存在するため、ここでは「peer の SessionId が分かる場合だけ
+        // その Session を最新化」し、他 Session は触らない（listener / connect が独立に走る前提）。
+        var peerId = peer?.SessionId ?? _currentListeningPeerId;
+        if (string.IsNullOrEmpty(peerId))
+            return; // 単数 ConnectedPeer / Listening もないなら、他 Session の独立状態を尊重する
+
+        var session = _sessions.GetOrAdd(peerId, id => new ConnectionSession(id));
+        session.Transport = _transport;
+        session.Signaling = _signaling;
+        session.PairId = _currentPairId;
+        session.Route = Route;
+        session.State = State;
+        session.ConnectedPeer = peer;
+        // SecureChannel / SecureLock は Stage 3c で Session 権威化済み（ここではミラーしない）。
+        // Stage 4 の listener-only Session（StartListeningForConnection だけ呼ばれて単数 _transport が
+        // 別 peer のもの）は session.Transport を上書きするとマイラ破壊につながるため、上記の peerId が
+        // 「接続中 / 単数 listening の peer」のみに対応する Session 限定で同期する。
     }
 
     /// <summary>
@@ -2064,12 +2572,196 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     public void Dispose()
     {
-        _connectCts?.Cancel();
-        _connectCts?.Dispose();
-        _connectGate.Dispose();
+        // Stage 4: 全 Session の in-flight connect を先にキャンセル。
+        foreach (var kvp in _sessions)
+        {
+            try { kvp.Value.ConnectCts?.Cancel(); } catch { /* 既に Dispose 済み等 */ }
+        }
         StopListeningForConnection();
         _transport?.Dispose();
         _signaling?.Dispose();
+
+        // 複数ペア同時接続対応 Stage 3a: 残存セッションを一括 Dispose する。
+        // Stage 4 で ConnectionSession.Dispose が ConnectGate / ConnectCts / Signaling まで含めて掃除する。
+        foreach (var kvp in _sessions)
+            DisposeSessionSilent(kvp.Value);
+        _sessions.Clear();
+    }
+
+    /// <summary>複数ペア同時接続対応 Stage 3a: Session を安全に Dispose する単一ヘルパー。
+    /// 二重 Dispose は <see cref="ConnectionSession.Dispose"/> 側の Interlocked ガードで無害化される。</summary>
+    private static void DisposeSessionSilent(ConnectionSession session)
+    {
+        try { session.Dispose(); }
+        catch (Exception ex) { Util.Logger.Log($"Session Dispose 失敗（無視）: {ex.Message}", Util.LogLevel.Debug); }
+    }
+
+    /// <summary>
+    /// 複数ペア同時接続対応 Stage 3a: 接続中ペアごとに集約する入れ物。
+    /// Stage 3a ではフィールドの入れ物のみ（参照は単数フィールドのまま）でシャドウ運用する。
+    /// Stage 3b で単数フィールドの参照を Session 経由に置換、Stage 3c で AttachTransportEvents /
+    /// OnChannelClosed / OnTransportRouteChanged を per-peer 化、Stage 4 で gate/CTS を per-peer 化する。
+    ///
+    /// IDisposable の二重発火は <see cref="_disposed"/> の Interlocked ガードで無害化する
+    /// （OnChannelClosed と DisconnectAsync が同時に Dispose する競合への防御）。
+    /// </summary>
+    private sealed class ConnectionSession : IDisposable
+    {
+        /// <summary>このセッションが代表する相手 peer の SessionId(32hex)。<see cref="_sessions"/> の辞書キーと一致。</summary>
+        public string PeerId { get; }
+
+        /// <summary>このセッションの pairId（<see cref="ConnectionService._currentPairId"/> の Stage 3a シャドウ）。</summary>
+        public string? PairId { get; set; }
+
+        /// <summary>このセッションの transport。Stage 3a 時点では <see cref="ConnectionService._transport"/> のミラーで、
+        /// 単数フィールド側を Disposable の権威として扱う（二重 Dispose 防止のため Session.Dispose は
+        /// 自分が保持する参照のみ触る・単数 _transport は外側で別途破棄される）。</summary>
+        public ITransport? Transport { get; set; }
+
+        /// <summary>このセッションの signaling client。Stage 3a 時点では Mirror。</summary>
+        public ISignalingService? Signaling { get; set; }
+
+        /// <summary>このセッションの接続経路。Stage 3a 時点では <see cref="ConnectionService.Route"/> のミラー。</summary>
+        public ConnectionRoute Route { get; set; } = ConnectionRoute.Unknown;
+
+        /// <summary>このセッションの接続状態。Stage 3a 時点では <see cref="ConnectionService.State"/> のミラー。</summary>
+        public PeerState State { get; set; } = PeerState.Disconnected;
+
+        /// <summary>このセッションの相手 PeerInfo（接続成立後に設定）。<see cref="ConnectionService.ConnectedPeer"/> の Stage 3a シャドウ。</summary>
+        public PeerInfo? ConnectedPeer { get; set; }
+
+        /// <summary>このセッションの暗号チャネル。Stage 3c から per-peer 暗号セッションの権威ストレージ。
+        /// OnSessionDataReceived（受信）と Stage 5 で per-peer 化される送信 API の両側がここを読む。</summary>
+        public SecureChannel? SecureChannel { get; set; }
+
+        /// <summary>暗号チャネル状態機械の直列化ロック（Session 単位）。
+        /// OnFrame / Start / OnTimeout / ApplySecureStep の各経路が並行しうるためチャネル操作を直列化する。</summary>
+        public readonly object SecureLock = new();
+
+        /// <summary>Stage 3c: 暗号ハンドシェイク完了通知。true=確立 / false=平文フォールバック / 例外=HMAC 失敗。
+        /// 送信側はこれを待ってから封筒化要否を判断する。</summary>
+        public TaskCompletionSource<bool>? SecureReadyTcs { get; set; }
+
+        /// <summary>Stage 3c: ハンドシェイクタイムアウト用 CTS（確立/フォールバックで Cancel する）。</summary>
+        public CancellationTokenSource? SecureTimeoutCts { get; set; }
+
+        // === 複数ペア同時接続対応 Stage 4: per-peer 着信監視 ===
+
+        /// <summary>このセッションの着信監視 CTS（StartListeningForConnection で生成、StopListeningForConnection で Cancel/Dispose）。
+        /// Stage 4 で per-Session 化し、全ペア常時 listen を支える。</summary>
+        public CancellationTokenSource? ListeningCts { get; set; }
+
+        /// <summary>このセッションの着信監視タスク参照。role 調停フォールバック時に Cancel 後の完了 await に使う
+        /// （listener と本体のテアダウン競合防御）。Stage 4 で per-Session 化。</summary>
+        public Task? ListeningTask { get; set; }
+
+        // === 複数ペア同時接続対応 Stage 4: per-peer 並列接続解禁 ===
+        // 旧単数 _connectGate / _connectCts / _connectingByListener / _currentPairId / _signaling は
+        // 「同時 ConnectToPeerAsync は直列」前提で、ペアごとの並列接続が組めなかった。Stage 4 で全て per-Session に
+        // 移管し、別ペアの connect/listen は互いに干渉しないようにする。同 peer の多重 connect は ConnectGate で
+        // 直列化、in-flight 接続は ConnectCts で割り込みキャンセルする。
+        //
+        // Pairing 用 ISignalingService（StartPairingSessionAsync / OnPairingDetected で使う _signaling）は
+        // 「接続フローと寿命が直交する 1 本だけのインスタンス」として ConnectionService 側の単数フィールドのまま
+        // 残す（connect 経路は触らない）。Stage 4 ではこの分離で pairing watcher と並列 connect が両立する。
+
+        /// <summary>このセッションの ConnectToPeerAsync を直列化するゲート。同 peer の多重 connect は順次処理する。
+        /// 別 peer の Session は別ゲートなので、Y と Z の connect は完全並列に走る。</summary>
+        public readonly SemaphoreSlim ConnectGate = new(1, 1);
+
+        /// <summary>このセッションの ConnectToPeerAsync の所有 CTS。Cancel すると孤児ポーラー含め in-flight が中断する。
+        /// 別 Session の ConnectCts には影響しない（peer X の connect 取消で peer Y の connect を巻き込まない）。</summary>
+        public CancellationTokenSource? ConnectCts { get; set; }
+
+        /// <summary>このセッションの State=Connecting を立てたのが listener かどうか。listener の OCE 復旧
+        /// ブロックが ConnectToPeerAsync 側で立て直された Connecting を踏み潰さないための所有権フラグ。
+        /// volatile 相当を int バッキングで実現（Volatile.Read/Write で可視性保証）。</summary>
+        private int _connectingByListenerFlag;
+        public bool ConnectingByListener
+        {
+            get => Volatile.Read(ref _connectingByListenerFlag) != 0;
+            set => Volatile.Write(ref _connectingByListenerFlag, value ? 1 : 0);
+        }
+
+        // === 複数ペア同時接続対応 Stage 3b: クロージャ束縛されたトランスポートイベントハンドラ ===
+        //
+        // AttachTransportEvents(peerId, transport) が peerId と transport を捕捉した
+        // クロージャ（lambda）を生成し、ここに保存する。DetachTransportEvents は
+        // 保存したクロージャ参照を使って `_=` 解除する（メソッド参照だと自然に解除できるが、
+        // クロージャは生成のたびに別インスタンスになるため、Attach 時に保存して同じ参照で
+        // Detach する必要がある）。各ハンドラは内部で
+        // `ReferenceEquals(transport, session.Transport)` ガードを通し、張り替え済みの
+        // 古い transport から漂着したイベントを無視する（Stage 4 で並列接続が解禁されたとき、
+        // 古い peer の OnChannelClosed が新 peer の Session を破壊しないための防御）。
+
+        /// <summary>このセッションの transport.ChannelOpened に attach 済みのハンドラ。</summary>
+        public EventHandler? OnChannelOpenedHandler { get; set; }
+
+        /// <summary>このセッションの transport.ChannelClosed に attach 済みのハンドラ。</summary>
+        public EventHandler? OnChannelClosedHandler { get; set; }
+
+        /// <summary>このセッションの transport.DataReceived に attach 済みのハンドラ。</summary>
+        public EventHandler<Infrastructure.DataReceivedEventArgs>? OnDataReceivedHandler { get; set; }
+
+        /// <summary>このセッションの transport.RouteChanged に attach 済みのハンドラ。</summary>
+        public EventHandler<ConnectionRoute>? OnRouteChangedHandler { get; set; }
+
+        private int _disposed;
+
+        public ConnectionSession(string peerId)
+        {
+            PeerId = peerId ?? throw new ArgumentNullException(nameof(peerId));
+        }
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+
+            // Stage 3b: 古い transport が残っていればハンドラ解除（DetachTransportEvents 通常経路で
+            // 既に解除済みのはずだが、二重防御として Session.Dispose 経路でも掃除する）。
+            var t = Transport;
+            if (t != null)
+            {
+                if (OnChannelOpenedHandler != null) t.ChannelOpened -= OnChannelOpenedHandler;
+                if (OnChannelClosedHandler != null) t.ChannelClosed -= OnChannelClosedHandler;
+                if (OnDataReceivedHandler != null) t.DataReceived -= OnDataReceivedHandler;
+                if (OnRouteChangedHandler != null) t.RouteChanged -= OnRouteChangedHandler;
+            }
+            OnChannelOpenedHandler = null;
+            OnChannelClosedHandler = null;
+            OnDataReceivedHandler = null;
+            OnRouteChangedHandler = null;
+            Transport = null;
+
+            // Stage 4: per-Session signaling は Session.Dispose 経路でも Dispose する（DisconnectAsync 経路で
+            // 既に Dispose 済みなら null。最後の Service.Dispose で残骸を回収する保険）。
+            try { Signaling?.Dispose(); } catch { /* ignore */ }
+            Signaling = null;
+
+            // Stage 3c: 暗号リソースを解放。Channel は IDisposable ではないが、
+            // CTS と TCS は宙吊りの SendAsync を解放するためにここでも掃除する（防御）。
+            lock (SecureLock)
+            {
+                SecureTimeoutCts?.Cancel();
+                SecureTimeoutCts?.Dispose();
+                SecureTimeoutCts = null;
+                SecureReadyTcs?.TrySetResult(false);
+                SecureReadyTcs = null;
+                SecureChannel = null;
+            }
+
+            // Stage 4: per-Session 着信監視 CTS を解放する。
+            try { ListeningCts?.Cancel(); } catch { /* 既に Dispose 済み等 */ }
+            ListeningCts?.Dispose();
+            ListeningCts = null;
+            ListeningTask = null;
+
+            // Stage 4: per-Session 接続用 CTS / Gate を解放する。
+            try { ConnectCts?.Cancel(); } catch { /* 既に Dispose 済み等 */ }
+            ConnectCts?.Dispose();
+            ConnectCts = null;
+            try { ConnectGate.Dispose(); } catch { /* ignore */ }
+        }
     }
 }
 

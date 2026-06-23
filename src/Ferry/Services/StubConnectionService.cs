@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Ferry.Infrastructure;
 using Ferry.Models;
 
 namespace Ferry.Services;
@@ -21,8 +22,8 @@ public sealed class StubConnectionService : IConnectionService
     public event EventHandler<PeerState>? StateChanged;
     public event EventHandler<ConnectionRoute>? RouteChanged;
     public event EventHandler<PairedPeer>? PairingCompleted;
-    public event EventHandler<byte[]>? DataReceived;
-    public event EventHandler? ConnectionLost;
+    public event EventHandler<DataReceivedEventArgs>? DataReceived;
+    public event EventHandler<Ferry.Infrastructure.ConnectionLostEventArgs>? ConnectionLost;
     public event EventHandler<string>? StatusMessageChanged;
 
     public Task<string> StartPairingSessionAsync(CancellationToken ct = default)

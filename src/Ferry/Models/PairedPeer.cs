@@ -78,6 +78,19 @@ public sealed partial class PairedPeer : ObservableObject
     [JsonIgnore]
     public partial bool IsOnline { get; set; }
 
+    /// <summary>複数ペア同時接続対応 Stage 0: このピアに紐づく進行中転送が 1 件以上あるか（ランタイム専用）。
+    /// 左ペインの転送中バッジ用。TransferViewModel が Transfers を PeerId グルーピングして集計 set する
+    /// （Stage 6 で配線）。現状(Stage 0)は誰も set しないので false 固定で挙動不変。</summary>
+    [ObservableProperty]
+    [JsonIgnore]
+    public partial bool IsTransferring { get; set; }
+
+    /// <summary>複数ペア同時接続対応 Stage 0: このピアに紐づく進行中転送の件数（ランタイム専用）。
+    /// 左ペインの件数バッジ用。Stage 6 で TransferViewModel が集計 set する。</summary>
+    [ObservableProperty]
+    [JsonIgnore]
+    public partial int ActiveTransferCount { get; set; }
+
     /// <summary>
     /// IsOnline が false → true に切り替わった瞬間に発火するエッジトリガーイベント。
     /// ConnectionViewModel がこれを購読して、Online になった瞬間に経路 Probe を 1 回だけ走らせる。

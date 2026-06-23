@@ -260,16 +260,53 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         return list.FirstOrDefault(t => !t.IsTerminal) ?? list[0];
     }
 
-    private void RecomputeIsTransferring() =>
-        IsTransferring = Transfers.Any(t => t.State == TransferState.InProgress);
-
-    /// <summary>受信時の宛先（接続中 or 着信監視中のピア）を解決する。</summary>
-    private (string PeerId, string PeerName) ResolveReceivePeer()
+    private void RecomputeIsTransferring()
     {
-        var peerId = _connectionService.ConnectedPeer?.SessionId
-                     ?? _connectionService.CurrentListeningPeerId
-                     ?? _connectionViewModel.SelectedPeer?.PeerId
-                     ?? string.Empty;
+        IsTransferring = Transfers.Any(t => t.State == TransferState.InProgress);
+        // 複数ペア同時接続対応 Stage 6: PairedPeer ごとに進行中転送件数を集計し、
+        // PairedPeer.IsTransferring / ActiveTransferCount を set する（左ペインのバッジ用）。
+        // 集計は Transfers の全行を peerId でグルーピングする線形走査（通常 ~10 行）。
+        // 一覧外（PairedPeers に居ない peerId）はスキップする。
+        RecomputePerPeerTransferCounts();
+    }
+
+    /// <summary>複数ペア同時接続対応 Stage 6: TransferItem.PeerId 別に進行中件数を集計して
+    /// 該当 <see cref="PairedPeer"/> の <see cref="PairedPeer.IsTransferring"/> / <see cref="PairedPeer.ActiveTransferCount"/>
+    /// を更新する。AddTransfer / 完了/エラー/キャンセル/状態遷移時に <see cref="RecomputeIsTransferring"/> 経由で呼ばれ、
+    /// 左ペインのピアリストに per-peer 転送バッジを反映する。</summary>
+    private void RecomputePerPeerTransferCounts()
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var t in Transfers)
+        {
+            if (t.State != TransferState.InProgress) continue;
+            var pid = t.PeerId;
+            if (string.IsNullOrEmpty(pid)) continue;
+            counts[pid] = counts.TryGetValue(pid, out var c) ? c + 1 : 1;
+        }
+        foreach (var peer in _connectionViewModel.PairedPeers)
+        {
+            var n = counts.TryGetValue(peer.PeerId, out var c) ? c : 0;
+            // ObservableProperty の setter は値が同じなら通知しない（生成済 generator がガード）。
+            peer.ActiveTransferCount = n;
+            peer.IsTransferring = n > 0;
+        }
+    }
+
+    /// <summary>受信時の宛先を解決する。
+    /// 複数ペア同時接続対応 Stage 2: service 側 HandleFileMeta が transport 由来 peerId を権威設定するため、
+    /// VM では <paramref name="suggestedPeerId"/>(イベント引数の TransferItem.PeerId) を最優先する。
+    /// 空のときだけ旧来の単数 ConnectedPeer / CurrentListeningPeerId / SelectedPeer の逆引きへフォールバックする
+    /// （複数ペア同時受信で取り違える経路は service 側で peerId が必ず付帯するため死に経路だが、
+    /// テスト経路や旧 transport 互換のために残す）。</summary>
+    private (string PeerId, string PeerName) ResolveReceivePeer(string? suggestedPeerId = null)
+    {
+        var peerId = !string.IsNullOrEmpty(suggestedPeerId)
+            ? suggestedPeerId
+            : (_connectionService.ConnectedPeer?.SessionId
+               ?? _connectionService.CurrentListeningPeerId
+               ?? _connectionViewModel.SelectedPeer?.PeerId
+               ?? string.Empty);
         var peer = _connectionViewModel.PairedPeers.FirstOrDefault(p => p.PeerId == peerId);
         var name = peer?.DisplayName ?? _connectionViewModel.SelectedPeer?.DisplayName ?? string.Empty;
         return (peerId, name);
@@ -436,7 +473,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
 
                     try
                     {
-                        await EnsureConnectedAsync(peer, cts.Token);
+                        await EnsureConnectedToPeerAsync(peer, cts.Token);
                     }
                     catch (OperationCanceledException) when (!cts.IsCancellationRequested)
                     {
@@ -445,8 +482,10 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                         // 確定させるため、一過性エラーに変換してリトライ分岐へ回す
                         throw new InvalidOperationException(App.Text("Transfer.ConnectFailed"));
                     }
-                    // UI 行と同じ TransferId を渡し、進捗・キャンセル・一時停止を対応付ける
-                    await _transferService.SendFileAsync(absolutePath, relativePath, item.TransferId, cts.Token);
+                    // 複数ペア同時接続対応 Stage 5: UI 行と同じ TransferId に加え、宛先 peerId も明示する。
+                    // _connectionService 側で per-peer の transport へ流れ、Stage 4 で並列接続が解禁された後も
+                    // 「宛先取り違え」が起きない。
+                    await _transferService.SendFileAsync(absolutePath, relativePath, item.TransferId, peer.PeerId, cts.Token);
 
                     item.State = TransferState.Completed;
                     item.TransferredBytes = item.FileSize;
@@ -507,28 +546,24 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         }
     }
 
-    /// <summary>指定ピアへ接続済みであることを保証する。別ピアに接続中なら切り替える。確立できなければ例外。
-    /// 複数ピア + 複数ファイル + UI 選択切り替えが混ざっても、各 item が「自分の宛先」に必ず行くようにする。
-    /// 旧実装は <c>State==Connected</c> なら相手ピアを確認せず素通りし、selection 切替で別ピア B 宛に
-    /// item A が送られる事故があった。ct は CancelTransfer 経由で渡され、接続待ち中もキャンセルで抜けられる。</summary>
-    private async Task EnsureConnectedAsync(PairedPeer peer, CancellationToken ct)
+    /// <summary>複数ペア同時接続対応 Stage 5: 指定 peer に接続済みであることを保証する。
+    /// 旧 <c>EnsureConnectedAsync</c> は SelectedPeer を書き換えて
+    /// <see cref="ConnectionViewModel.ConnectToSelectedPeerAsync"/> 経由で接続していたが、
+    /// 並列接続が解禁されると「item A 送信中の selection 切替が item A の宛先を踏み潰す」race の根が残る。
+    /// Stage 5 は SelectedPeer を触らず、<see cref="IConnectionService.ConnectToPeerAsync"/> を peerId 指定で
+    /// 直接呼ぶ。接続済みかは <see cref="IConnectionService.ConnectedPeers"/> 集合で判定する。
+    /// ct は CancelTransfer 経由で渡され、接続待ち中もキャンセルで抜けられる。</summary>
+    private async Task EnsureConnectedToPeerAsync(PairedPeer peer, CancellationToken ct)
     {
-        // 既に「対象ピアそのものに」接続済みなら何もしない
-        if (_connectionService.State == PeerState.Connected
-            && _connectionService.ConnectedPeer?.SessionId == peer.PeerId)
+        // 既に対象 peer へ接続済みなら何もしない（並列接続が解禁された Stage 4 でも安全）。
+        if (_connectionService.ConnectedPeers.ContainsKey(peer.PeerId))
             return;
 
-        // 別ピアに接続中なら宛先を peer に切り替えてから接続を張り直す
-        if (_connectionViewModel.SelectedPeer?.PeerId != peer.PeerId)
-            _connectionViewModel.SelectedPeer = peer;
+        Util.Logger.Log($"未接続のためオンデマンド接続を開始… 宛先={peer.DisplayName}");
+        await _connectionService.ConnectToPeerAsync(peer.PeerId, ct);
+        Util.Logger.Log($"オンデマンド接続完了: 宛先={peer.DisplayName}");
 
-        Util.Logger.Log($"未接続/別ピア接続中のためオンデマンド接続を開始… 宛先={peer.DisplayName}");
-        // CT を渡して接続待ち中の CancelTransfer に応答できるようにする（offline / NAT 越えで張り付くケースを救う）
-        await _connectionViewModel.ConnectToSelectedPeerAsync(ct);
-        Util.Logger.Log($"オンデマンド接続完了: State={_connectionService.State}");
-
-        if (_connectionService.State != PeerState.Connected
-            || _connectionService.ConnectedPeer?.SessionId != peer.PeerId)
+        if (!_connectionService.ConnectedPeers.ContainsKey(peer.PeerId))
             throw new InvalidOperationException(App.Text("Transfer.ConnectFailed"));
     }
 
@@ -732,8 +767,9 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 if (e.Direction != TransferDirection.Receive)
                     return; // 送信は VM 側で必ず先に行を作る
 
-                // 進捗が承認イベントより先に来た受信の保険
-                var (peerId, peerName) = ResolveReceivePeer();
+                // 進捗が承認イベントより先に来た受信の保険。
+                // 複数ペア同時接続対応 Stage 2: service 側 HandleFileMeta が e.PeerId を権威設定済みなので最優先。
+                var (peerId, peerName) = ResolveReceivePeer(e.PeerId);
                 item = new TransferItem
                 {
                     TransferId = e.TransferId,
@@ -777,7 +813,8 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             }
             else
             {
-                var (peerId, peerName) = ResolveReceivePeer();
+                // 複数ペア同時接続対応 Stage 2: service 側 e.PeerId を優先。
+                var (peerId, peerName) = ResolveReceivePeer(e.PeerId);
                 e.PeerId = peerId;
                 e.PeerName = peerName;
                 e.CompletedAt = DateTime.UtcNow;
@@ -826,7 +863,8 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 // 進捗より先に来た受信エラーの保険（送信は VM 側に必ず行があるので追加しない）
                 if (e.State is TransferState.InProgress or TransferState.Pending)
                     e.State = TransferState.Error;
-                var (peerId, peerName) = ResolveReceivePeer();
+                // 複数ペア同時接続対応 Stage 2: service 側 e.PeerId を優先（既存ロジックの『空時のみ補完』を踏襲）。
+                var (peerId, peerName) = ResolveReceivePeer(e.PeerId);
                 if (string.IsNullOrEmpty(e.PeerId)) e.PeerId = peerId;
                 if (string.IsNullOrEmpty(e.PeerName)) e.PeerName = peerName;
                 AddTransfer(CreateDisplayCopy(e));  // rere #B1-001: サービス instance を bind しない
@@ -844,9 +882,10 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     {
         Dispatcher.UIThread.Post(() =>
         {
-            var (peerId, peerName) = ResolveReceivePeer();
-            // PeerId は service 側 HandleFileMeta が FileMeta 到着時点で確定させているのでそれを優先し、
-            // 空のときだけ VM 側の推測で補完する（宛先別履歴のピア混入防止）。PeerName は表示名解決を持つ VM 側で常に設定。
+            // 複数ペア同時接続対応 Stage 2: service 側 HandleFileMeta が FileMeta 到着時点で
+            // transport 由来 peerId を権威設定しているので、e.PeerId を ResolveReceivePeer 第1引数に渡して
+            // 必ず優先採用させる（既存挙動を踏襲）。PeerName は表示名解決を持つ VM 側で常に設定。
+            var (peerId, peerName) = ResolveReceivePeer(e.PeerId);
             if (string.IsNullOrEmpty(e.PeerId)) e.PeerId = peerId;
             e.PeerName = peerName;
 

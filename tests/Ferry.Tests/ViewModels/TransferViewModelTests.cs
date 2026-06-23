@@ -47,9 +47,12 @@ public class TransferViewModelTests : IDisposable
         if (withSelectedPeer)
         {
             _connectionViewModel.SelectedPeer = new PairedPeer { PeerId = "test-peer", DisplayName = "TestPeer" };
+            var peerInfo = new PeerInfo { SessionId = "test-peer", DisplayName = "TestPeer", State = PeerState.Connected };
             // v1.0.47: EnsureConnectedAsync が ConnectedPeer.SessionId == peer.PeerId を要求するため、
             // 接続済みシナリオでは ConnectedPeer も同じ SessionId を返すよう mock を整える。
-            _connectionService.ConnectedPeer.Returns(new PeerInfo { SessionId = "test-peer", DisplayName = "TestPeer", State = PeerState.Connected });
+            _connectionService.ConnectedPeer.Returns(peerInfo);
+            // 複数ペア対応 Stage 5: EnsureConnectedToPeerAsync は ConnectedPeers 集合で接続済みを判定する。
+            _connectionService.ConnectedPeers.Returns(new Dictionary<string, PeerInfo> { ["test-peer"] = peerInfo });
         }
         // v1.0.38: TransferViewModel が ISettingsService に依存するようになった (AutoAccept チェック用)
         return new TransferViewModel(_connectionService, _transferService, _connectionViewModel, _settingsService);
@@ -109,7 +112,7 @@ public class TransferViewModelTests : IDisposable
         await vm.SendFilesCommand.ExecuteAsync(new[] { filePath });
 
         Assert.Empty(vm.Transfers);
-        await _transferService.DidNotReceive().SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await _transferService.DidNotReceive().SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -132,7 +135,7 @@ public class TransferViewModelTests : IDisposable
         await vm.SendFilesCommand.ExecuteAsync(new[] { @"C:\nonexistent\file.txt" });
 
         Assert.Empty(vm.Transfers);
-        await _transferService.DidNotReceive().SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await _transferService.DidNotReceive().SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -158,7 +161,7 @@ public class TransferViewModelTests : IDisposable
     {
         _connectionService.State.Returns(PeerState.Connected);
         var filePath = CreateTempFile("error.txt");
-        _transferService.SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+        _transferService.SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new IOException("ディスクエラー"));
 
         using var vm = CreateViewModel(withSelectedPeer: true);
@@ -216,7 +219,7 @@ public class TransferViewModelTests : IDisposable
     {
         _connectionService.State.Returns(PeerState.Connected);
         var filePath = CreateTempFile();
-        _transferService.SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+        _transferService.SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new Exception("err"));
 
         using var vm = CreateViewModel(withSelectedPeer: true);
@@ -400,6 +403,77 @@ public class TransferViewModelTests : IDisposable
         vm.ClearHistoryCommand.Execute(null);
 
         Assert.Empty(vm.Transfers);
+    }
+
+    // === Stage 6: per-peer 集計 (PairedPeer.IsTransferring / ActiveTransferCount) ===
+
+    /// <summary>Stage 6: 進行中転送が peer A に 2 件、peer B に 1 件、peer C に 0 件のとき、
+    /// 各 PairedPeer の IsTransferring / ActiveTransferCount が正しく集計されること。
+    /// 集計トリガは ResumeTransferAsync 経由（Suspended→Completed で RecomputeIsTransferring が走る）で起こす。</summary>
+    [Fact]
+    public async Task RecomputePerPeerTransferCounts_進行中件数がPeerIdで集計されること()
+    {
+        // PairedPeer A/B/C を ConnectionViewModel.PairedPeers に登録
+        var peerA = new PairedPeer { PeerId = "peer-A", DisplayName = "PeerA" };
+        var peerB = new PairedPeer { PeerId = "peer-B", DisplayName = "PeerB" };
+        var peerC = new PairedPeer { PeerId = "peer-C", DisplayName = "PeerC" };
+        _connectionViewModel.PairedPeers.Add(peerA);
+        _connectionViewModel.PairedPeers.Add(peerB);
+        _connectionViewModel.PairedPeers.Add(peerC);
+
+        // ResumeTransferAsync が走ると最後に RecomputeIsTransferring 経由で集計が走る。
+        // テスト対象の peer/state 構成を事前に Transfers に並べておく。
+        _transferService.ResumeTransferAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        using var vm = CreateViewModel();
+        vm.Transfers.Add(new TransferItem { FileName = "a1.txt", PeerId = "peer-A", State = TransferState.InProgress });
+        vm.Transfers.Add(new TransferItem { FileName = "a2.txt", PeerId = "peer-A", State = TransferState.InProgress });
+        vm.Transfers.Add(new TransferItem { FileName = "b1.txt", PeerId = "peer-B", State = TransferState.InProgress });
+        // peer-C には進行中なし
+        vm.Transfers.Add(new TransferItem { FileName = "a-done.txt", PeerId = "peer-A", State = TransferState.Completed });
+
+        // ResumeTransferAsync 経由で RecomputeIsTransferring → RecomputePerPeerTransferCounts を発火させる。
+        // Suspended な dummy item を Resume 完了 (Completed) させると、最後の RecomputeIsTransferring で集計が走る。
+        var trigger = new TransferItem { FileName = "trigger.txt", PeerId = "peer-A", FileSize = 1, State = TransferState.Suspended };
+        vm.Transfers.Add(trigger);
+        await vm.ResumeTransferCommand.ExecuteAsync(trigger.TransferId);
+
+        // 集計結果を検証。trigger は最終的に Completed なので peer-A は依然 InProgress 2 件のまま。
+        Assert.Equal(2, peerA.ActiveTransferCount);
+        Assert.True(peerA.IsTransferring);
+        Assert.Equal(1, peerB.ActiveTransferCount);
+        Assert.True(peerB.IsTransferring);
+        Assert.Equal(0, peerC.ActiveTransferCount);
+        Assert.False(peerC.IsTransferring);
+    }
+
+    /// <summary>Stage 6: 全ての進行中転送が完了したら全 peer の IsTransferring が false に戻ること。</summary>
+    [Fact]
+    public async Task RecomputePerPeerTransferCounts_全完了で全PeerのIsTransferringがfalseに戻ること()
+    {
+        var peerA = new PairedPeer { PeerId = "peer-A", DisplayName = "PeerA", IsTransferring = true, ActiveTransferCount = 3 };
+        var peerB = new PairedPeer { PeerId = "peer-B", DisplayName = "PeerB", IsTransferring = true, ActiveTransferCount = 1 };
+        _connectionViewModel.PairedPeers.Add(peerA);
+        _connectionViewModel.PairedPeers.Add(peerB);
+
+        _transferService.ResumeTransferAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        using var vm = CreateViewModel();
+        // 全て Completed/Error/Cancelled — InProgress 0 件で集計
+        vm.Transfers.Add(new TransferItem { FileName = "a1.txt", PeerId = "peer-A", State = TransferState.Completed });
+        vm.Transfers.Add(new TransferItem { FileName = "b1.txt", PeerId = "peer-B", State = TransferState.Error });
+
+        // Resume 経由で集計を発火
+        var trigger = new TransferItem { FileName = "t.txt", PeerId = "peer-A", FileSize = 1, State = TransferState.Suspended };
+        vm.Transfers.Add(trigger);
+        await vm.ResumeTransferCommand.ExecuteAsync(trigger.TransferId);
+
+        Assert.Equal(0, peerA.ActiveTransferCount);
+        Assert.False(peerA.IsTransferring);
+        Assert.Equal(0, peerB.ActiveTransferCount);
+        Assert.False(peerB.IsTransferring);
     }
 
     // === OnProgressChanged ===

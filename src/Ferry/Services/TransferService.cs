@@ -76,6 +76,14 @@ public sealed class TransferService : ITransferService, IDisposable
     /// PauseSendTransfer で追加、ResumeSendTransfer で除去。SendChunksAsync のループがここを見て待機する。</summary>
     private readonly ConcurrentDictionary<Guid, byte> _pausedSends = new();
 
+    /// <summary>複数ペア同時接続対応 Stage 0: TransferId → 宛先/受信元 peerId(SessionId) の索引。
+    /// 送信は SendFileAsync が記入、受信は HandleFileMeta が記入する（Stage 2 で配線）。
+    /// Stage 2 以降で SendFlowAckAsync / SendRejectFireAndForget / フロー制御 Route 判定が
+    /// この索引から transfer の宛先 peer を引いて返送・判定する（受信中の FlowAck が他 peer に
+    /// 漏れる blocker の根治）。OnConnectionLost(peerId) も当該 peer の transfer のみに絞り込む。
+    /// 現状(Stage 0)は誰も参照しないので挙動不変。</summary>
+    private readonly ConcurrentDictionary<Guid, string> _transferPeerId = new();
+
     public event EventHandler<TransferItem>? ProgressChanged;
     public event EventHandler<TransferItem>? FileReceived;
     public event EventHandler<TransferItem>? TransferError;
@@ -145,19 +153,32 @@ public sealed class TransferService : ITransferService, IDisposable
     /// 切断で最大 60 秒 Pending が残り UX が悪化する。TCS を TrySetResult(false) で完了させて
     /// WaitForApprovalAsync が Cancelled に遷移するようにする。
     /// </summary>
-    private void OnConnectionLost(object? sender, EventArgs e)
+    private void OnConnectionLost(object? sender, Infrastructure.ConnectionLostEventArgs e)
     {
-        Util.Logger.Log($"接続切断検知: 受信中 {_receiveStates.Count} 件 + 承認待ち(受) {_pendingApprovals.Count} 件 + 承認待ち(送) {_pendingSendApprovals.Count} 件 + 送信中 {_activeTransfers.Count} 件を cleanup", Util.LogLevel.Warning);
+        // 複数ペア同時接続対応 Stage 5: ConnectionLost に peerId が付帯する（旧 EventHandler? は撤廃）。
+        // peerId 空文字は『全 peer 切断 / 不明』を表し、旧挙動どおり全 transfers を cleanup する。
+        // peerId 付きは当該 peer 由来の transfer のみに絞り込む（Stage 4 で並列接続が解禁されたあと、
+        // peer A の切断で peer B の進行中転送を巻き込まないため）。
+        var peerId = e.PeerId;
+        var scopeLabel = string.IsNullOrEmpty(peerId) ? "全 peer" : $"peer={Util.Logger.MaskDeviceId(peerId)}";
+        Util.Logger.Log($"接続切断検知 ({scopeLabel}): 受信中 {_receiveStates.Count} 件 + 承認待ち(受) {_pendingApprovals.Count} 件 + 承認待ち(送) {_pendingSendApprovals.Count} 件 + 送信中 {_activeTransfers.Count} 件を cleanup", Util.LogLevel.Warning);
+
+        // peerId 指定時のスコープ判定ヘルパー。peerId 空ならすべて対象（旧挙動）。
+        bool BelongsTo(Guid tid)
+        {
+            if (string.IsNullOrEmpty(peerId)) return true;
+            return _transferPeerId.TryGetValue(tid, out var tpid)
+                && string.Equals(tpid, peerId, StringComparison.Ordinal);
+        }
 
         // v1.0.47: 「一時停止中だった」送信だけを抜けさせる（CTS Cancel）。それ以外の進行中送信は
         // SendChunksAsync の _connectionService.SendAsync(...) が転送断で IOException を投げ、
         // SendItemAsync の transient catch（MaxSendAttempts までリトライ）に乗るのが望ましい。
-        // ここで全 _sendCts を一括 Cancel すると OperationCanceled になり、リトライ機構を素通りして
-        // 即 Cancelled で履歴が終わってしまう（接続断 = 即諦め）ので、対象を paused に限定する。
-        var pausedTids = _pausedSends.Keys.ToArray();
-        _pausedSends.Clear();
-        foreach (var tid in pausedTids)
+        // Stage 5: 当該 peer に紐づく一時停止中送信のみ対象。
+        foreach (var tid in _pausedSends.Keys.ToArray())
         {
+            if (!BelongsTo(tid)) continue;
+            _pausedSends.TryRemove(tid, out _);
             if (_sendCts.TryGetValue(tid, out var cts))
             {
                 try { cts.Cancel(); } catch { /* ignore */ }
@@ -167,6 +188,7 @@ public sealed class TransferService : ITransferService, IDisposable
         // 受信中の部分ファイルを削除
         foreach (var tid in _receiveStates.Keys.ToArray())
         {
+            if (!BelongsTo(tid)) continue;
             if (_receiveStates.TryRemove(tid, out var state))
             {
                 state.Item.State = TransferState.Cancelled;
@@ -179,10 +201,14 @@ public sealed class TransferService : ITransferService, IDisposable
         // 受信側承認待ちもキャンセル扱い (送信側はもう存在しないので承認しても無意味)
         foreach (var tid in _pendingApprovals.Keys.ToArray())
         {
+            if (!BelongsTo(tid)) continue;
             if (_pendingApprovals.TryRemove(tid, out var pending))
             {
                 pending.Item.State = TransferState.Cancelled;
                 pending.Item.ErrorMessage = "接続が切断されました";
+                // 複数ペア同時接続対応 Stage 2 leak fix (PR #12 review): pending approval は
+                // CleanupReceiveState に到達しないため、_transferPeerId 索引を直接掃除する。
+                _transferPeerId.TryRemove(tid, out _);
                 TransferError?.Invoke(this, pending.Item);
             }
         }
@@ -198,6 +224,7 @@ public sealed class TransferService : ITransferService, IDisposable
         //      MaxSendAttempts まで自動リトライが走る（接続復帰後の再送信に対応）
         foreach (var tid in _pendingSendApprovals.Keys.ToArray())
         {
+            if (!BelongsTo(tid)) continue;
             if (_pendingSendApprovals.TryRemove(tid, out var tcs))
             {
                 // ErrorMessage は WaitForApprovalAsync の fallback ("相手が受信を拒否しました") を上書き
@@ -216,7 +243,7 @@ public sealed class TransferService : ITransferService, IDisposable
     /// <param name="filePath">送信するファイルの絶対パス。</param>
     /// <param name="relativePath">フォルダ送信時の相対パス（例: "フォルダ名/サブフォルダ/ファイル名"）。null で単独ファイル。</param>
     /// <param name="ct">キャンセルトークン。</param>
-    public async Task SendFileAsync(string filePath, string? relativePath = null, Guid? requestedTransferId = null, CancellationToken ct = default)
+    public async Task SendFileAsync(string filePath, string? relativePath = null, Guid? requestedTransferId = null, string peerId = "", CancellationToken ct = default)
     {
         var fileInfo = new FileInfo(filePath);
         if (!fileInfo.Exists)
@@ -250,6 +277,17 @@ public sealed class TransferService : ITransferService, IDisposable
         };
         _activeTransfers[transferId] = item;
 
+        // 複数ペア同時接続対応 Stage 5: 送信先 peerId を権威化。引数で明示されたなら採用し、
+        // 空文字なら旧経路の <see cref="IConnectionService.ConnectedPeer"/> 逆引きに fallback する。
+        var sendPeerId = !string.IsNullOrEmpty(peerId)
+            ? peerId
+            : (_connectionService.ConnectedPeer?.SessionId ?? string.Empty);
+        if (!string.IsNullOrEmpty(sendPeerId))
+        {
+            _transferPeerId[transferId] = sendPeerId;
+            item.PeerId = sendPeerId;
+        }
+
         // 送信側の承認待ち TCS を準備 (FileMeta 送信前に登録する)
         var approvalTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pendingSendApprovals[transferId] = approvalTcs;
@@ -264,7 +302,7 @@ public sealed class TransferService : ITransferService, IDisposable
             item.State = TransferState.Pending;
             ProgressChanged?.Invoke(this, item);
 
-            await _connectionService.SendAsync(metaMessage, ct);
+            await SendToPeerAsync(sendPeerId, metaMessage, ct);
             Util.Logger.Log("ファイルメタデータ送信完了、相手の承認待ち…");
 
             // 2. 相手側の承認 (FileApprove) または拒否 (FileReject) を待つ
@@ -286,13 +324,13 @@ public sealed class TransferService : ITransferService, IDisposable
             // 3. チャンクを順次送信しつつハッシュを並行計算
             using var hashSink = System.Security.Cryptography.IncrementalHash.CreateHash(
                 System.Security.Cryptography.HashAlgorithmName.SHA256);
-            await SendChunksAsync(filePath, transferId, startChunk: 0, item, ct, hashSink);
+            await SendChunksAsync(filePath, transferId, startChunk: 0, item, sendPeerId, ct, hashSink);
 
             // 4. 確定したハッシュを後送り
             var sha256Bytes = hashSink.GetHashAndReset();
             item.Sha256Hash = Convert.ToHexString(sha256Bytes).ToLowerInvariant();
             var hashMessage = FileChunker.CreateFileHashMessage(transferId, sha256Bytes);
-            await _connectionService.SendAsync(hashMessage, ct);
+            await SendToPeerAsync(sendPeerId, hashMessage, ct);
 
             Util.Logger.Log($"ファイル送信完了: {displayName}, SHA256={item.Sha256Hash[..16]}…");
         }
@@ -314,6 +352,7 @@ public sealed class TransferService : ITransferService, IDisposable
             _pendingSendApprovals.TryRemove(transferId, out _);
             _activeTransfers.TryRemove(transferId, out _);
             _pausedSends.TryRemove(transferId, out _);
+            _transferPeerId.TryRemove(transferId, out _); // 複数ペア対応 Stage 2: 送信終了時に索引も解放
             if (_sendCts.TryRemove(transferId, out var cts))
                 cts.Dispose();
         }
@@ -355,11 +394,17 @@ public sealed class TransferService : ITransferService, IDisposable
         item.State = TransferState.Pending;
         ProgressChanged?.Invoke(this, item);
 
+        // Stage 5: レジューム経路でも transferId に紐づく peerId を引いて per-peer 送信に流す。
+        // _transferPeerId は SendFileAsync 初回で埋めているが、念のため空ならフォールバック。
+        var resumePeerId = ResolvePeerIdForTransfer(item.TransferId);
+        if (string.IsNullOrEmpty(resumePeerId) && !string.IsNullOrEmpty(item.PeerId))
+            resumePeerId = item.PeerId;
+
         try
         {
             var metaMessage = FileChunker.CreateFileMetaMessage(
                 item.FileName, item.FileSize, item.TotalChunks, item.Sha256Hash ?? "", item.TransferId);
-            await _connectionService.SendAsync(metaMessage, ct);
+            await SendToPeerAsync(resumePeerId, metaMessage, ct);
             Util.Logger.Log($"レジューム: メタデータ送信完了、相手の承認待ち…");
 
             bool approved = await WaitForApprovalAsync(item.FileName, item, approvalTcs, ct);
@@ -373,7 +418,7 @@ public sealed class TransferService : ITransferService, IDisposable
             item.State = TransferState.InProgress;
             ProgressChanged?.Invoke(this, item);
 
-            await SendChunksAsync(item.SourceFilePath, item.TransferId, startChunk, item, ct);
+            await SendChunksAsync(item.SourceFilePath, item.TransferId, startChunk, item, resumePeerId, ct);
             return true;
         }
         catch (Exception ex)
@@ -453,8 +498,11 @@ public sealed class TransferService : ITransferService, IDisposable
 
     /// <summary>
     /// 受信データを処理する。ConnectionService の DataReceived から呼び出される。
+    /// 複数ペア同時接続対応 Stage 2: <paramref name="peerId"/> を権威値として
+    /// HandleFileMeta が TransferItem.PeerId と _transferPeerId 索引に書き込む。
+    /// 後方互換のため peerId 既定値 "" を許容する（旧テスト/旧呼び出し経路は逆引きにフォールバックする）。
     /// </summary>
-    public void HandleReceivedData(byte[] data)
+    public void HandleReceivedData(byte[] data, string peerId = "")
     {
         if (data.Length == 0) return;
 
@@ -466,7 +514,7 @@ public sealed class TransferService : ITransferService, IDisposable
         // SafePath の NUL 制御文字対策と同じ「細工 1 通で受信ループを殺せない」不変条件をプロトコル全体へ拡張。
         try
         {
-            DispatchMessage(messageType, data);
+            DispatchMessage(messageType, data, peerId);
         }
         catch (Exception ex)
         {
@@ -474,12 +522,12 @@ public sealed class TransferService : ITransferService, IDisposable
         }
     }
 
-    private void DispatchMessage(byte messageType, byte[] data)
+    private void DispatchMessage(byte messageType, byte[] data, string peerId)
     {
         switch (messageType)
         {
             case TransferProtocol.FileMeta:
-                HandleFileMeta(data);
+                HandleFileMeta(data, peerId);
                 break;
 
             case TransferProtocol.FileChunk:
@@ -507,7 +555,7 @@ public sealed class TransferService : ITransferService, IDisposable
                 break;
 
             case TransferProtocol.Ping:
-                HandlePing();
+                HandlePing(peerId);
                 break;
 
             case TransferProtocol.Pong:
@@ -515,7 +563,7 @@ public sealed class TransferService : ITransferService, IDisposable
                 break;
 
             case TransferProtocol.ResumeRequest:
-                HandleResumeRequest(data);
+                HandleResumeRequest(data, peerId);
                 break;
 
             case TransferProtocol.ResumeResponse:
@@ -537,10 +585,30 @@ public sealed class TransferService : ITransferService, IDisposable
 
     // === 送信ヘルパー ===
 
+    /// <summary>複数ペア同時接続対応 Stage 5: peerId 指定での送信ヘルパー。peerId が空文字なら旧経路に fallback
+    /// （後方互換）。並列接続が解禁された後（Stage 4）でも、送信先 peer を明示する経路が常に正しい transport を選ぶ。</summary>
+    private Task SendToPeerAsync(string peerId, byte[] data, CancellationToken ct = default)
+        => string.IsNullOrEmpty(peerId)
+            ? _connectionService.SendAsync(data, ct)
+            : _connectionService.SendAsync(peerId, data, ct);
+
+    /// <summary>Stage 5: <see cref="ReadOnlyMemory{T}"/> 版の peerId 指定送信ヘルパー。</summary>
+    private Task SendToPeerAsync(string peerId, ReadOnlyMemory<byte> data, CancellationToken ct = default)
+        => string.IsNullOrEmpty(peerId)
+            ? _connectionService.SendAsync(data, ct)
+            : _connectionService.SendAsync(peerId, data, ct);
+
+    /// <summary>Stage 5: 送信側 transferId から peerId を引く（既知なら 32hex、不明なら空文字）。
+    /// FileReject / FlowAck などの制御メッセージで、紐づく転送の宛先 transport を確実に選ぶための逆引き。</summary>
+    private string ResolvePeerIdForTransfer(Guid transferId)
+        => _transferPeerId.TryGetValue(transferId, out var p) ? p : string.Empty;
+
     /// <summary>
     /// チャンクを順次送信する。バックプレッシャーとして一定間隔で進捗を通知する。
+    /// 複数ペア同時接続対応 Stage 5: <paramref name="peerId"/> を受け、フロー制御 Route 判定と
+    /// チャンクメッセージ送信を per-peer の API へ流す。
     /// </summary>
-    private async Task SendChunksAsync(string filePath, Guid transferId, int startChunk, TransferItem item, CancellationToken ct, System.Security.Cryptography.IncrementalHash? hashSink = null)
+    private async Task SendChunksAsync(string filePath, Guid transferId, int startChunk, TransferItem item, string peerId, CancellationToken ct, System.Security.Cryptography.IncrementalHash? hashSink = null)
     {
         // P-11: 進捗通知の throttle (UI スレッドへの Post と PropertyChanged 発火を抑制)。
         // 時間ベース (60ms = 16fps 相当) に切り替え、UI から見える滑らかさは維持しつつ通知頻度を一定化
@@ -600,7 +668,12 @@ public sealed class TransferService : ITransferService, IDisposable
             // 食い違いによる stall が構造的に起きない) ので、ここでの判定だけで安全に無効化できる。
             // PR#5 Codex 指摘: Route が確定できていない (Unknown) 場合は安全側に倒してフロー制御を有効にする
             // (実際はリレーなのに Unknown のままだと ~55秒切断が再発するため)
-            if (_connectionService.Route is not (ConnectionRoute.Direct or ConnectionRoute.StunAssisted))
+            // Stage 5: peerId が指定されていれば per-peer の Route を引く（Stage 4 で並列接続が解禁された後の
+            // 正しい判定）。空文字なら単数 Route（旧経路）にフォールバック。
+            var routeForFlow = string.IsNullOrEmpty(peerId)
+                ? _connectionService.Route
+                : _connectionService.RouteOf(peerId);
+            if (routeForFlow is not (ConnectionRoute.Direct or ConnectionRoute.StunAssisted))
             {
                 var flowWaitStart = Environment.TickCount64;
                 // v1.0.47: 発火を一度だけ Info ログに残す。これが出ていれば「送信が受信ドレインに律速された＝
@@ -636,7 +709,7 @@ public sealed class TransferService : ITransferService, IDisposable
             try
             {
                 FileChunker.WriteChunkMessage(buffer.AsSpan(0, messageSize), transferId, index, chunkData);
-                await _connectionService.SendAsync(buffer.AsMemory(0, messageSize), ct);
+                await SendToPeerAsync(peerId, buffer.AsMemory(0, messageSize), ct);
             }
             finally
             {
@@ -677,20 +750,22 @@ public sealed class TransferService : ITransferService, IDisposable
     /// HandleFileMeta の early-return パス（パストラバーサル / 保存先異常等）で送信側に
     /// FileReject を投げて 60 秒の approval タイムアウト + 「相手が旧バージョン」誤エラーを防ぐためのヘルパー。
     /// fire-and-forget で握り潰してハンドラ側をブロックしない。
+    /// Stage 5: transferId から peerId を引いて per-peer 送信に流す（不明なら旧単数経路に fallback）。
     /// </summary>
     private void SendRejectFireAndForget(Guid transferId, string reason)
-        => SendFireAndForget(FileChunker.CreateRejectMessage(transferId, reason), "FileReject");
+        => SendFireAndForget(ResolvePeerIdForTransfer(transferId), FileChunker.CreateRejectMessage(transferId, reason), "FileReject");
 
     /// <summary>
     /// opop C-6: 制御メッセージ (Reject / ACK / Pong / ResumeResponse / Approve) の fire-and-forget
     /// 送信を統一するヘルパー。例外は握り潰してログのみ (受信スレッドをブロックしない +
     /// UnobservedTaskException 防止) という方針をここ 1 箇所で保証する。
+    /// Stage 5: peerId 指定の per-peer 送信に切替（空文字なら旧単数経路に fallback）。
     /// </summary>
-    private void SendFireAndForget(byte[] message, string label)
+    private void SendFireAndForget(string peerId, byte[] message, string label)
     {
         _ = Task.Run(async () =>
         {
-            try { await _connectionService.SendAsync(message); }
+            try { await SendToPeerAsync(peerId, message); }
             catch (Exception ex) { Util.Logger.Log($"{label} 送信エラー: {ex.Message}", Util.LogLevel.Warning); }
         });
     }
@@ -698,13 +773,14 @@ public sealed class TransferService : ITransferService, IDisposable
     /// <summary>
     /// v1.0.46: 受信側 → 送信側のフロー制御 ACK (FileFlowAck) を送る。受信スレッドから fire-and-forget で
     /// 呼ばれるため、例外は内部で握り潰してタスクが faulted にならないようにする (UnobservedTaskException 防止)。
+    /// Stage 5: transferId 紐付けの peerId に per-peer 送信。
     /// </summary>
     private async Task SendFlowAckAsync(Guid transferId, int receivedChunkCount)
     {
         try
         {
             var msg = FileChunker.CreateFlowAckMessage(transferId, receivedChunkCount);
-            await _connectionService.SendAsync(msg);
+            await SendToPeerAsync(ResolvePeerIdForTransfer(transferId), msg);
         }
         catch (Exception ex)
         {
@@ -712,7 +788,7 @@ public sealed class TransferService : ITransferService, IDisposable
         }
     }
 
-    private void HandleFileMeta(byte[] data)
+    private void HandleFileMeta(byte[] data, string peerIdFromTransport = "")
     {
         var meta = FileChunker.ParseFileMeta(data);
         if (meta == null)
@@ -759,9 +835,21 @@ public sealed class TransferService : ITransferService, IDisposable
         var saveDir = _settingsService.Settings.SaveDirectory;
 
         // 接続元ピアを FileMeta 到着時点で確定（フォルダ構造マッピングのキーと ReceiveState の双方で使う）。
-        var receivePeerId = _connectionService.ConnectedPeer?.SessionId
-                            ?? _connectionService.CurrentListeningPeerId
-                            ?? string.Empty;
+        // 複数ペア同時接続対応 Stage 2: transport から運ばれた peerId を権威値として優先採用。
+        // 空文字（後方互換経路、テスト経路）の場合のみ旧 ConnectedPeer 単数の逆引きにフォールバックする。
+        // Stage 4 で並行接続が解禁された時点で逆引きは取り違える可能性があるが、その時点では
+        // 必ず transport から peerId が運ばれてくる（Stage 1 で配線済み）ので逆引きは事実上死に経路。
+        var receivePeerId = !string.IsNullOrEmpty(peerIdFromTransport)
+            ? peerIdFromTransport
+            : (_connectionService.ConnectedPeer?.SessionId
+               ?? _connectionService.CurrentListeningPeerId
+               ?? string.Empty);
+
+        // 複数ペア同時接続対応 Stage 2: TransferId→peerId 索引を記入。
+        // Stage 5 の SendFlowAckAsync / SendRejectFireAndForget / フロー制御 Route 判定がこの索引から
+        // 返送先 peer を引いて、受信中の FlowAck が他 peer に漏れる blocker を根治する。
+        if (!string.IsNullOrEmpty(receivePeerId))
+            _transferPeerId[transferIdGuid] = receivePeerId;
 
         // 送信元 OS のパス区切りに依存しないよう、受信した相対パスを '/' へ正規化してから分解・検証する
         // （Windows 送信 → mac/Linux 受信の混在を吸収。区切り/トラバーサル判定は Util.SafePath に集約）。
@@ -1108,7 +1196,8 @@ public sealed class TransferService : ITransferService, IDisposable
                 state.Item.TransferredBytes = state.FileSize;
                 state.Item.SavedFilePath = state.SavePath;
                 // ACK を送信（送信側に結果を通知）— fire-and-forget でブロッキングを回避
-                SendFireAndForget(FileChunker.CreateAckMessage(true, sha256Bytes!), "ACK");
+                // Stage 5: 送信元 peer (state.Item.PeerId) に per-peer 送信。
+                SendFireAndForget(state.Item.PeerId ?? string.Empty, FileChunker.CreateAckMessage(true, sha256Bytes!), "ACK");
                 FileReceived?.Invoke(this, state.Item);
                 MaybePlayReceiveNotification(state.Item.PeerId);
             }
@@ -1117,7 +1206,7 @@ public sealed class TransferService : ITransferService, IDisposable
                 // SHA-256 不一致（検証は完了したが内容が壊れている）
                 state.Item.State = TransferState.Error;
                 state.Item.ErrorMessage = "ファイルの整合性検証に失敗しました（SHA-256 不一致）";
-                SendFireAndForget(FileChunker.CreateAckMessage(false, sha256Bytes!), "ACK");
+                SendFireAndForget(state.Item.PeerId ?? string.Empty, FileChunker.CreateAckMessage(false, sha256Bytes!), "ACK");
                 TransferError?.Invoke(this, state.Item);
                 // 不正なファイルを削除
                 try { File.Delete(state.SavePath); }
@@ -1273,6 +1362,9 @@ public sealed class TransferService : ITransferService, IDisposable
             Util.Logger.Log($"受信側 pending approval を expire (送信側通知): {pendingState.FileName} / 理由={reason}");
             pendingState.Item.State = TransferState.Cancelled;
             pendingState.Item.ErrorMessage = $"送信側がキャンセル: {reason}";
+            // 複数ペア同時接続対応 Stage 2 leak fix (PR #12 review): pending approval 経路は
+            // CleanupReceiveState に到達しないため、_transferPeerId 索引を直接掃除する。
+            _transferPeerId.TryRemove(transferId, out _);
             TransferError?.Invoke(this, pendingState.Item);
             return;
         }
@@ -1329,21 +1421,21 @@ public sealed class TransferService : ITransferService, IDisposable
         }
     }
 
-    private void HandlePing()
+    private void HandlePing(string peerId)
     {
-        // fire-and-forget でブロッキングを回避
-        SendFireAndForget(FileChunker.CreatePongMessage(), "Pong");
+        // Stage 5: Ping を受けた peer に Pong を返す（per-peer 送信。Stage 4 で並列接続が解禁された後の正しい宛先選択）。
+        SendFireAndForget(peerId, FileChunker.CreatePongMessage(), "Pong");
     }
 
-    private void HandleResumeRequest(byte[] data)
+    private void HandleResumeRequest(byte[] data, string peerId)
     {
         // [type(1)][TransferId(16)][lastChunkIndex(4)] = 21byte 未満は破棄（短いメッセージでのパース例外を防ぐ）
         if (data.Length < 21) return;
         var (transferId, lastChunkIndex) = FileChunker.ParseResumeRequest(data);
         Util.Logger.Log($"レジュームリクエスト受信: transferId={transferId}, lastChunk={lastChunkIndex}");
 
-        // レジューム応答（現時点では非対応として拒否）— fire-and-forget でブロッキングを回避
-        SendFireAndForget(FileChunker.CreateResumeResponseMessage(transferId, false, lastChunkIndex), "レジューム応答");
+        // Stage 5: レジューム応答もリクエスト元 peer に per-peer 送信。
+        SendFireAndForget(peerId, FileChunker.CreateResumeResponseMessage(transferId, false, lastChunkIndex), "レジューム応答");
     }
 
     private void HandleResumeResponse(byte[] data)
@@ -1418,7 +1510,8 @@ public sealed class TransferService : ITransferService, IDisposable
 
         // v1.0.38: 送信側に FileApprove を送って、チャンク送信を開始させる
         // (送信側は FileMeta 送信後にこれを待っている)
-        SendFireAndForget(FileChunker.CreateApproveMessage(tid), "FileApprove");
+        // Stage 5: 受信ロジックは sender の peerId (state.Item.PeerId) に per-peer 送信。
+        SendFireAndForget(state.Item.PeerId ?? string.Empty, FileChunker.CreateApproveMessage(tid), "FileApprove");
     }
 
     /// <summary>受信承認待ちの転送を拒否する。送信側に FileReject を送信する。</summary>
@@ -1438,7 +1531,10 @@ public sealed class TransferService : ITransferService, IDisposable
         // FileReject メッセージを送信側に通知 — fire-and-forget でブロッキングを回避
         // v1.0.38: TransferId プレフィックス付きに変更 (同時複数転送の区別のため)
         // v1.0.38 review fix v9: SendRejectFireAndForget ヘルパーに統一 (重複削減)
+        // 複数ペア同時接続対応 Stage 2 leak fix (PR #12 review): SendRejectFireAndForget は
+        // 内部で _transferPeerId から peerId を引いて送るため、Remove はこの後で行う。
         SendRejectFireAndForget(tid, "受信側が拒否しました");
+        _transferPeerId.TryRemove(tid, out _);
     }
 
     /// <summary>進行中の転送をキャンセルする。送受信どちら側からでも呼べ、相手にも FileReject で通知して
@@ -1465,7 +1561,10 @@ public sealed class TransferService : ITransferService, IDisposable
             Util.Logger.Log($"承認待ちキャンセル: {pendingState.FileName}");
             pendingState.Item.State = TransferState.Cancelled;
             pendingState.Item.ErrorMessage = "キャンセルされました";
+            // 複数ペア同時接続対応 Stage 2 leak fix (PR #12 review): SendRejectFireAndForget 内で
+            // _transferPeerId 索引から peerId を引くので、Remove はこの後で行う。
             SendRejectFireAndForget(tid, "受信側がキャンセルしました");
+            _transferPeerId.TryRemove(tid, out _);
             TransferError?.Invoke(this, pendingState.Item);
             return;
         }
@@ -1546,6 +1645,8 @@ public sealed class TransferService : ITransferService, IDisposable
         var fs = Interlocked.Exchange(ref state.FileStream, null);
         fs?.Dispose();
         _receiveStates.TryRemove(state.TransferId, out _);
+        // 複数ペア同時接続対応 Stage 2: 受信終了時に索引も解放。
+        _transferPeerId.TryRemove(state.TransferId, out _);
 
         // 不完全な受信ファイルを削除
         try
@@ -1556,9 +1657,12 @@ public sealed class TransferService : ITransferService, IDisposable
         catch { /* 削除失敗は無視 */ }
     }
 
-    private void OnDataReceived(object? sender, byte[] data)
+    private void OnDataReceived(object? sender, Infrastructure.DataReceivedEventArgs e)
     {
-        HandleReceivedData(data);
+        // 複数ペア同時接続対応 Stage 2: transport→ConnectionService 経由で運ばれた peerId を
+        // 受信ルーティングに直結。HandleReceivedData が _transferPeerId 索引と
+        // TransferItem.PeerId / _folderMappings キーへ権威値として設定する。
+        HandleReceivedData(e.Data, e.PeerId);
     }
 
     /// <summary>

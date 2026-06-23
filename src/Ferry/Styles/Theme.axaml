@@ -143,6 +143,10 @@
             <SolidColorBrush x:Key="BlueBrushBorder" Color="#AA00F0FF" />
             <SolidColorBrush x:Key="OrangeBrushSoft" Color="#35FF8800" />
             <SolidColorBrush x:Key="OrangeBrushBorder" Color="#AAFF8800" />
+            <!-- Stage 6: 進行中転送バッジ（ピンクで目立たせる）。AccentPinkBrush 系と同色相 -->
+            <SolidColorBrush x:Key="PinkBrush" Color="#FF3D7F" />
+            <SolidColorBrush x:Key="PinkBrushSoft" Color="#35FF3D7F" />
+            <SolidColorBrush x:Key="PinkBrushBorder" Color="#AAFF3D7F" />
 
             <!-- === BORDERS (glow) / BADGE === -->
             <SolidColorBrush x:Key="BorderGlowBrush" Color="#5500F0FF" />
@@ -592,6 +596,18 @@
         <Setter Property="FontSize" Value="11" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="Margin" Value="0,0,3,0" />
+    </Style>
+
+    <!-- Stage 6: 進行中転送バッジ (peer 並列転送の視覚的フィードバック) — neon pink で目立たせる -->
+    <Style Selector="Border.route-badge.transferring-badge">
+        <Setter Property="Background" Value="{DynamicResource PinkBrushSoft}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource PinkBrushBorder}" />
+        <Setter Property="Effect">
+            <DropShadowEffect Color="#FF3D7F" BlurRadius="8" Opacity="0.6" OffsetX="0" OffsetY="0" />
+        </Setter>
+    </Style>
+    <Style Selector="Border.route-badge.transferring-badge TextBlock.route-badge-text">
+        <Setter Property="Foreground" Value="{DynamicResource PinkBrush}" />
     </Style>
 
     <!--

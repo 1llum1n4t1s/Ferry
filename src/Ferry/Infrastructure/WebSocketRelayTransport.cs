@@ -36,7 +36,11 @@ public sealed class WebSocketRelayTransport : ITransport
     public bool IsConnected { get; private set; }
     public ConnectionRoute Route => ConnectionRoute.Relay;
 
-    public event EventHandler<byte[]>? DataReceived;
+    /// <summary>複数ペア同時接続対応 Stage 1: 1 transport = 1 peer の対応関係を保持する。
+    /// <see cref="DataReceivedEventArgs.PeerId"/> に常時付帯される。ctor で必須。</summary>
+    public string PeerId { get; }
+
+    public event EventHandler<DataReceivedEventArgs>? DataReceived;
     public event EventHandler? ChannelOpened;
     public event EventHandler? ChannelClosed;
     public event EventHandler<ConnectionRoute>? RouteChanged;
@@ -47,11 +51,14 @@ public sealed class WebSocketRelayTransport : ITransport
     /// <param name="relayUrl">リレーサーバーの WebSocket URL (wss://...)。</param>
     /// <param name="pairId">ペアリング ID（ルームキー）。</param>
     /// <param name="role">役割（"offer" または "answer"）。</param>
-    public WebSocketRelayTransport(string relayUrl, string pairId, string role)
+    /// <param name="peerId">複数ペア同時接続対応 Stage 1: 受信元 peerId(SessionId) を DataReceivedEventArgs に付帯させるため。
+    /// テスト互換のため既定値 ""（後段の逆引きフォールバック用）を許容する。</param>
+    public WebSocketRelayTransport(string relayUrl, string pairId, string role, string peerId = "")
     {
         _relayUrl = relayUrl;
         _pairId = pairId;
         _role = role;
+        PeerId = peerId;
     }
 
     /// <summary>
@@ -224,7 +231,7 @@ public sealed class WebSocketRelayTransport : ITransport
                     {
                         // M-4: Buffer.BlockCopy (レガシー API) を Span.ToArray に統一
                         var data = frameBuffer.AsSpan(0, result.Count).ToArray();
-                        DataReceived?.Invoke(this, data);
+                        DataReceived?.Invoke(this, new DataReceivedEventArgs(PeerId, data));
                     }
                     continue;
                 }
@@ -259,7 +266,7 @@ public sealed class WebSocketRelayTransport : ITransport
                     var data = aggregate.ToArray();
                     aggregate.Dispose();
                     aggregate = null;
-                    DataReceived?.Invoke(this, data);
+                    DataReceived?.Invoke(this, new DataReceivedEventArgs(PeerId, data));
                 }
             }
         }
