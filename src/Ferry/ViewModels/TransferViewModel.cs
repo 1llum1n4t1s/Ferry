@@ -395,7 +395,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         // length-prefix フレームの交錯は起こらない。受信側は TransferId キーの ConcurrentDictionary で
         // 複数受信を独立管理できる。await 継続は UI スレッドに戻るので ObservableCollection / RecomputeIsTransferring
         // は UI スレッドでシリアル化される (Task.WhenAll 並列でもこの不変条件は維持される)。
-        var parallelism = Math.Clamp(_settingsService.Settings.ParallelTransferCount, 1, 8);
+        var parallelism = Math.Clamp(_settingsService.Settings.ParallelTransferCount, 1, 10);
         using var sem = new SemaphoreSlim(parallelism, parallelism);
 
         var sendTasks = items.Select(async item =>

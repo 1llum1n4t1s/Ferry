@@ -696,8 +696,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 // rere #D-001(b): transport を attach する前に暗号チャネルを用意（先着 Hello の取りこぼし防止）。
                 CreateSecureChannel(peerId);
 
-                // ① TCP 直接接続を試行
-                var connected = await TryTcpConnectAsync(session, offer.Ips, offer.Port, peerId, ct);
+                // マルチストリーム PoC 計測用: ForceRelay 時は TCP/UDP を skip して必ず Relay へ落とす。
+                var forceRelay = _settings?.Settings.ForceRelay ?? false;
+
+                // ① TCP 直接接続を試行（ForceRelay 時は skip → connected=false で needRelay を返す）
+                var connected = !forceRelay && await TryTcpConnectAsync(session, offer.Ips, offer.Port, peerId, ct);
 
                 // TCP 結果を即座に Answer として送信（Offer 側が待機中）
                 var answerInfo = new ConnectionInfo
@@ -711,13 +714,13 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 var answerJson = SerializeConnectionInfo(answerInfo);
                 await sig.SendSdpAnswerAsync(pairId, _deviceId, answerJson, ct);
 
-                // ② TCP 失敗時: UDP ホールパンチを試行
+                // ② TCP 失敗時: UDP ホールパンチを試行（ForceRelay 時は skip）
                 // offer-v1 には STUN 情報が無い（Offer 側は answer=needRelay を受信した後に STUN し、
                 // ExternalIp 付きの offer を同じノードへ上書き再送する遅延 STUN 設計）。ここで offer を
                 // 読み直して ExternalIp が載るのを待ってから UDP を試みる。これが無いと最初に読んだ
                 // offer-v1 の ExternalIp が常に空 → UDP を一切起動せず（自分の endpoint も publish せず）
                 // cross-NAT では必ずリレーへ落ちていた（Answer 側が UDP ホールパンチに到達しない構造バグの修正）。
-                if (!connected)
+                if (!connected && !forceRelay)
                 {
                     var udpOffer = await WaitForOfferExternalIpAsync(sig, pairId, offer, peerId, ct);
                     if (udpOffer != null)
@@ -1124,38 +1127,48 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     throw new InvalidOperationException("Answer を受信できませんでした");
                 }
 
-                Util.Logger.Log("Answer が TCP 失敗報告 → STUN/UDP ホールパンチ試行");
-                StatusMessageChanged?.Invoke(this, "Status.Phase.StunQuery");
+                // マルチストリーム PoC 計測用: ForceRelay 時は STUN/UDP を skip して必ず Relay へ落とす。
+                var forceRelay = _settings?.Settings.ForceRelay ?? false;
 
-                // ③ STUN + UDP ホールパンチを試行
-                // 複数ペア同時接続対応 Stage 1: peerId(SessionId) を transport に注入。
-                udpTransport = new UdpHolePunchTransport { PeerId = peerId };
-                var stunResult = await udpTransport.GetExternalEndpointAsync(ct: linked);
-
-                if (stunResult != null)
+                if (!forceRelay)
                 {
-                    Util.Logger.Log($"STUN 外部エンドポイント取得: {Util.Logger.MaskIp(stunResult.Value.ip)}:{stunResult.Value.port}");
+                    Util.Logger.Log("Answer が TCP 失敗報告 → STUN/UDP ホールパンチ試行");
+                    StatusMessageChanged?.Invoke(this, "Status.Phase.StunQuery");
 
-                    // 外部エンドポイントを offer に追加送信
-                    var updatedOffer = new ConnectionInfo
+                    // ③ STUN + UDP ホールパンチを試行
+                    // 複数ペア同時接続対応 Stage 1: peerId(SessionId) を transport に注入。
+                    udpTransport = new UdpHolePunchTransport { PeerId = peerId };
+                    var stunResult = await udpTransport.GetExternalEndpointAsync(ct: linked);
+
+                    if (stunResult != null)
                     {
-                        Ips = localIps,
-                        Port = port,
-                        ExternalIp = stunResult.Value.ip,
-                        ExternalPort = stunResult.Value.port,
-                        RelayUrl = RelayUrl,
-                        From = _deviceId,  // v1.0.38 review fix v2
-                    };
-                    await sessionSig.SendSdpOfferAsync(pairId, _deviceId, SerializeConnectionInfo(updatedOffer), linked);
+                        Util.Logger.Log($"STUN 外部エンドポイント取得: {Util.Logger.MaskIp(stunResult.Value.ip)}:{stunResult.Value.port}");
 
-                    StatusMessageChanged?.Invoke(this, "Status.Phase.UdpHolePunch");
-                    // Stage 4: per-session sig + session 引数で UDP ホールパンチを駆動。session.Transport を権威に書く。
-                    connected = await TryUdpHolePunchOfferAsync(udpTransport, sessionSig, session, pairId, peerId, linked);
+                        // 外部エンドポイントを offer に追加送信
+                        var updatedOffer = new ConnectionInfo
+                        {
+                            Ips = localIps,
+                            Port = port,
+                            ExternalIp = stunResult.Value.ip,
+                            ExternalPort = stunResult.Value.port,
+                            RelayUrl = RelayUrl,
+                            From = _deviceId,  // v1.0.38 review fix v2
+                        };
+                        await sessionSig.SendSdpOfferAsync(pairId, _deviceId, SerializeConnectionInfo(updatedOffer), linked);
+
+                        StatusMessageChanged?.Invoke(this, "Status.Phase.UdpHolePunch");
+                        // Stage 4: per-session sig + session 引数で UDP ホールパンチを駆動。session.Transport を権威に書く。
+                        connected = await TryUdpHolePunchOfferAsync(udpTransport, sessionSig, session, pairId, peerId, linked);
+                    }
+                    else
+                    {
+                        Util.Logger.Log("STUN 外部エンドポイント取得失敗（UDP ホールパンチ不可）");
+                        udpTransport.Dispose();
+                    }
                 }
                 else
                 {
-                    Util.Logger.Log("STUN 外部エンドポイント取得失敗（UDP ホールパンチ不可）");
-                    udpTransport.Dispose();
+                    Util.Logger.Log("ForceRelay 有効 → TCP/UDP を skip して Relay へ直行");
                 }
 
                 // ④ WebSocket リレーにフォールバック
@@ -1910,9 +1923,15 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         }
     }
 
+    /// <summary>マルチストリーム転送 PoC: Relay 経路の WebSocket 本数の上限（Cloudflare の per-IP 同時接続上限や
+    /// 乱用防止のための安全キャップ）。AppSettings.RelayStreamCount をこの範囲に clamp する。</summary>
+    private const int MaxRelayStreams = 8;
+
     /// <summary>
     /// WebSocket リレー接続を試行する。
     /// Stage 4: session を受けて当該 peer の Session.Transport を権威に書く。
+    /// マルチストリーム PoC: AppSettings.RelayStreamCount&gt;1 なら N 本の WS を束ねた MultiStreamRelayTransport を、
+    /// 1（既定）なら従来どおり単一 WebSocketRelayTransport を確立する。どちらも ITransport なので以降の swap は共通。
     /// </summary>
     private async Task<bool> TryRelayConnectAsync(ConnectionSession session, string pairId, string role, string peerId, CancellationToken ct)
     {
@@ -1922,17 +1941,25 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             return false;
         }
 
-        WebSocketRelayTransport? relayTransport = null;
+        var streamCount = Math.Clamp(_settings?.Settings.RelayStreamCount ?? 1, 1, MaxRelayStreams);
+        ITransport? relayTransport = null;
         try
         {
-            Util.Logger.Log($"WebSocket リレー接続試行: role={role}");
-            // 複数ペア同時接続対応 Stage 1: peerId を transport へ伝播。
-            relayTransport = new WebSocketRelayTransport(RelayUrl, pairId, role, peerId);
-
-            using var relayCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            relayCts.CancelAfter(TimeSpan.FromSeconds(RelayPeerWaitSeconds));
-
-            await relayTransport.ConnectAsync(relayCts.Token);
+            if (streamCount <= 1)
+            {
+                Util.Logger.Log($"WebSocket リレー接続試行: role={role}");
+                // 複数ペア同時接続対応 Stage 1: peerId を transport へ伝播。
+                var single = new WebSocketRelayTransport(RelayUrl, pairId, role, peerId);
+                using var relayCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                relayCts.CancelAfter(TimeSpan.FromSeconds(RelayPeerWaitSeconds));
+                await single.ConnectAsync(relayCts.Token);
+                relayTransport = single;
+            }
+            else
+            {
+                // マルチストリーム PoC: N 本確立して束ねる。失敗時はヘルパ内で確立済みを掃除して throw する。
+                relayTransport = await ConnectMultiStreamRelayAsync(streamCount, pairId, role, peerId, ct);
+            }
 
             // Stage 4: 当該 Session 内の旧 transport だけ畳む。
             var prev = session.Transport;
@@ -1958,6 +1985,51 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             relayTransport?.Dispose();
             Util.Logger.Log($"WebSocket リレー接続失敗: {ex.Message}", Util.LogLevel.Warning);
             return false;
+        }
+    }
+
+    /// <summary>
+    /// マルチストリーム転送 PoC: N 本の <see cref="WebSocketRelayTransport"/> を sub-pairId <c>{pairId}#s{i}</c> で
+    /// 並列に確立し、<see cref="MultiStreamRelayTransport"/> で束ねて返す。各 <c>#s{i}</c> は relay の
+    /// <c>idFromName</c> で別 Durable Object ルーム（別 2-peer room）になるため、relay Worker は無改修で N&gt;2 を
+    /// 扱える（1 ルーム N 接続ではなく N ルーム×2 接続に分割するのが肝）。両端が同じ派生規則と同じ N を使うこと。
+    /// 1 本でも確立に失敗したら確立済み/確立中を全て Dispose し、孤児タスクを観測してから例外を投げる
+    /// （呼び出し側が単本リレー/Error へフォールバックする）。
+    /// </summary>
+    private async Task<ITransport> ConnectMultiStreamRelayAsync(int streamCount, string pairId, string role, string peerId, CancellationToken ct)
+    {
+        Util.Logger.Log($"マルチストリームリレー接続試行: role={role}, streams={streamCount}");
+        var streams = new WebSocketRelayTransport[streamCount];
+        var connectTasks = new Task[streamCount];
+        using var relayCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        relayCts.CancelAfter(TimeSpan.FromSeconds(RelayPeerWaitSeconds));
+        try
+        {
+            for (var i = 0; i < streamCount; i++)
+            {
+                var subPairId = $"{pairId}#s{i}";
+                var s = new WebSocketRelayTransport(RelayUrl!, subPairId, role, peerId);
+                streams[i] = s;
+                connectTasks[i] = s.ConnectAsync(relayCts.Token);
+            }
+            await Task.WhenAll(connectTasks);
+            Util.Logger.Log($"マルチストリームリレー {streamCount} 本確立完了");
+            return new MultiStreamRelayTransport(streams, peerId);
+        }
+        catch
+        {
+            // 1 本でも失敗したら全本撤収。先に Cancel して残りの ConnectAsync を中断 → Dispose（Close）→
+            // 孤児タスクの例外を観測（disposed WS への in-flight connect が UnobservedTaskException 化するのを防ぐ）。
+            try { relayCts.Cancel(); } catch { /* 既に Dispose 済み等 */ }
+            foreach (var s in streams)
+            {
+                try { s?.Dispose(); } catch { /* ignore */ }
+            }
+            foreach (var t in connectTasks)
+            {
+                if (t != null) _ = ObserveTaskAsync(t);
+            }
+            throw;
         }
     }
 

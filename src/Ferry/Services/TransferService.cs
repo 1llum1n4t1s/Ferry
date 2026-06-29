@@ -1043,30 +1043,46 @@ public sealed class TransferService : ITransferService, IDisposable
 
         try
         {
-            // chunkIndex をオフセットに変換して書き込む（順不同到着でも正しい位置に置く）。重複チャンクは無視
-            if (state.ReceivedChunkSet != null && !state.ReceivedChunkSet[chunkIndex])
+            // マルチストリーム PoC: N 本受信での並行 Write 競合を防ぐため、check-and-set（重複判定→Seek→
+            // Write→ビットマップ→カウンタ）を per-state lock で原子化する。スナップショットを取ってロック外で
+            // 帯域制限/FlowAck/進捗を扱い、throttle 中に他 stream の書き込みを止めない。
+            var wrote = false;
+            var receivedSnapshot = 0;
+            long writtenSnapshot;
+            lock (state.WriteLock)
             {
-                state.FileStream!.Seek(offset, SeekOrigin.Begin);
-                state.FileStream.Write(data.AsSpan(TransferProtocol.ChunkHeaderSize));
-                state.ReceivedChunkSet[chunkIndex] = true;
-                state.ReceivedChunks++;
-                state.WrittenBytes += chunkLength;
+                // chunkIndex をオフセットに変換して書き込む（順不同到着でも正しい位置に置く）。重複チャンクは無視
+                if (state.ReceivedChunkSet != null && !state.ReceivedChunkSet[chunkIndex])
+                {
+                    state.FileStream!.Seek(offset, SeekOrigin.Begin);
+                    state.FileStream.Write(data.AsSpan(TransferProtocol.ChunkHeaderSize));
+                    state.ReceivedChunkSet[chunkIndex] = true;
+                    state.ReceivedChunks++;
+                    state.WrittenBytes += chunkLength;
+                    wrote = true;
+                }
+                receivedSnapshot = state.ReceivedChunks;
+                writtenSnapshot = state.WrittenBytes;
+            }
 
+            if (wrote)
+            {
                 // ダウンロード帯域制限。重複でないチャンクだけカウントする。同期 Wait で受信ループを
                 // 直接減速させ、TCP/WebSocket のバックプレッシャーを上流 (送信側) へ伝える。
-                // 0 (無制限) なら即 return。
+                // 0 (無制限) なら即 return。ロック外で待つことで他 stream の書き込みをブロックしない。
                 _downloadBucket.Wait(chunkLength);
 
                 // v1.0.46: 一定チャンクごとに送信側へ「書き込み済みチャンク数」を FlowAck で返す。
                 // 送信側はこれを credit にウィンドウ制御し、リレー中継バッファの溢れ (~55秒切断) を防ぐ。
                 // 末尾の端数チャンク (TotalChunks が間隔の倍数でない場合) でも確実に最終 ACK が届くよう、
                 // 全チャンク書き込み完了時にも送る (送信側ウィンドウ待機の取りこぼし防止の安全網)。
-                if (state.ReceivedChunks % TransferProtocol.FlowAckIntervalChunks == 0
-                    || state.ReceivedChunks == state.TotalChunks)
-                    _ = SendFlowAckAsync(transferId, state.ReceivedChunks);
+                // FlowAck は累積カウントなので、スナップショットが多少ずれても次の ACK で回復する。
+                if (receivedSnapshot % TransferProtocol.FlowAckIntervalChunks == 0
+                    || receivedSnapshot == state.TotalChunks)
+                    _ = SendFlowAckAsync(transferId, receivedSnapshot);
             }
 
-            state.Item.TransferredBytes = state.WrittenBytes;
+            state.Item.TransferredBytes = writtenSnapshot;
 
             // 進捗通知（P-11: 時間ベース throttle、60ms 経過時のみ。送信側と統一）
             var nowTick = Environment.TickCount64;
@@ -1690,6 +1706,12 @@ public sealed class TransferService : ITransferService, IDisposable
         public bool[]? ReceivedChunkSet { get; set; }
         /// <summary>実書き込みバイト数（Seek 書き込みのため Position と別管理）。</summary>
         public long WrittenBytes { get; set; }
+        /// <summary>マルチストリーム転送 PoC: 受信側の per-state 排他ロック。Relay 経路を N 本の WS に分散すると
+        /// 複数受信ループが同一 ReceiveState の FileStream(Seek+Write) / ReceivedChunkSet / カウンタを同時更新
+        /// しうる（従来は受信 1 本＝直列前提）。check-and-set（重複判定→Seek→Write→ビットマップ→カウンタ）を
+        /// このロックで critical section 化し、二重書き込み/カウンタ過大計上による早期完了誤判定を防ぐ。
+        /// 単一ストリーム経路では競合しないので実質 no-op（軽量 uncontended lock）。</summary>
+        public readonly object WriteLock = new();
         /// <summary>承認前に到着したチャンクのバッファ。</summary>
         public List<byte[]>? BufferedChunks { get; set; }
         /// <summary>承認待ちバッファの累積バイト数（OOM 防止の上限管理用）。</summary>

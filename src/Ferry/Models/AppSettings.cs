@@ -66,8 +66,17 @@ public sealed class AppSettings
     // 次回 SaveAsync で自然に消える（#D-004 と同じ互換パターン）。
 
     /// <summary>CF 単独完結移行 (dual-path): true で signaling/presence/pairing を Cloudflare 経路にする。
-    /// 既定 false（Firebase 経路）。実機検証が済むまでの実験的フラグ。設計は docs/design/cf-only-migration.md。</summary>
-    public bool UseCloudflareSignaling { get; set; } = false;
+    /// Step 5 で既定 true（Cloudflare 経路）へ反転。false にすると旧 Firebase 経路へ rollback できる。
+    /// Firebase コードは数バージョン残置（実機検証 OK 後に Step 6 で撤去）。設計は docs/design/cf-only-migration.md。</summary>
+    public bool UseCloudflareSignaling { get; set; } = true;
+
+    /// <summary>CF 単独完結移行 Step 5 の一度きりマイグレーション済みフラグ。既定 false。
+    /// 旧 settings.json には <see cref="UseCloudflareSignaling"/>=false が永続化されており、コード既定の
+    /// 反転だけでは既存クライアントが Firebase 経路に残るため、<see cref="Ferry.Services.SettingsService"/> 起動時に
+    /// このフラグが false なら <see cref="UseCloudflareSignaling"/> を一度だけ true へ引き上げてフラグを立てる。
+    /// 立った後はユーザーが明示的に false へ戻した値を上書きしない（rollback の可逆性を保つ）。
+    /// Step 6 で Firebase 経路ごと撤去する際にこのフラグも不要になる。</summary>
+    public bool MigratedToCloudflareDefault { get; set; } = false;
 
     /// <summary>アップロード帯域制限 (KB/s)。0 で無制限。
     /// 送信側 SendChunksAsync の各チャンク送信前に TokenBucket でレート整形する。</summary>
@@ -78,10 +87,23 @@ public sealed class AppSettings
     /// 受信ループが減速すると TCP/WebSocket のバックプレッシャーが上流へ伝わる。</summary>
     public int DownloadKBps { get; set; } = 0;
 
-    /// <summary>同時並列転送数 (1〜8)。複数ファイル選択時の同時送信本数。
+    /// <summary>同時並列転送数 (1〜10)。複数ファイル選択時の同時送信本数。
     /// 1 は従来動作（直列）、N>1 で N 個まで同時に送信する。各 transport の SendAsync は
     /// SemaphoreSlim でフレーム単位に直列化済みなので、メッセージ交錯は起こらない。</summary>
     public int ParallelTransferCount { get; set; } = 1;
+
+    /// <summary>マルチストリーム転送 PoC 計測用: true で TCP/UDP 経路を skip し必ず Relay 経由にする (既定 false)。
+    /// 同一 LAN でも Relay を強制でき、N=1 vs N&gt;1 のスループット比較を再現性よく取れる。本番影響を避けるため
+    /// 既定 false。両端で ON にすると確実に Relay 接続になる（offer 側は STUN/UDP を skip、answer 側は TCP/UDP を skip）。</summary>
+    public bool ForceRelay { get; set; } = false;
+
+    /// <summary>マルチストリーム転送 PoC: Relay 経路で 1 ファイルのチャンクを分散する WebSocket 本数 (1〜8)。
+    /// 1 は従来動作（単一 WS）で完全後方互換。N&gt;1 で sub-pairId <c>pairId#s{i}</c> を使い N 本の独立 WS
+    /// （各々別 Cloudflare DO ルーム）へ FileChunk(0x02) を round-robin 分散し、単一 WS の送信直列化と単一 DO
+    /// 中継の頭打ちを解消して実効スループット向上を狙う。Relay 以外の経路 (TCP/UDP) には影響しない。
+    /// 暗号有効時の per-stream nonce 名前空間問題があるため、現状は平文フォールバック経路での PoC 用。
+    /// 速度向上が確認できなければ 1 に戻すだけで撤退できる。</summary>
+    public int RelayStreamCount { get; set; } = 1;
 
     // N-1: 旧 Theme / AccentColor / FontSize は ThemeMode と二重定義 + 未実装だったため削除済み
     // テーマは ThemeMode で一元管理する

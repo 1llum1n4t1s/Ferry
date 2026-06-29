@@ -1,8 +1,10 @@
 # Cloudflare 単独完結 移行設計（Firebase 撤去）
 
-**ステータス**: Step 1-4 実装済（feature/cf-only-signaling）。サーバ基盤 + クライアント dual-path + CF 版 Bridge まで完了。残るは D1/secret プロビジョン + `wrangler deploy` + cold start 実測 + 2 台実機検証（Step 5 以降）。
-**前提**: v1.0.62 で Firebase Custom Token Auth + pairs SSoT 済（PR #10）。CF 側は relay Worker + Durable Objects(Hibernation) を本番運用中。
+**ステータス**: Step 1-4 は **main にマージ済**（サーバ基盤 + クライアント dual-path + CF 版 Bridge）。**Step 5 = 既定フラグ反転（`UseCloudflareSignaling` 既定 false→true）をコード上で適用済**（次リリースで CF が既定経路になる。`false` 明示で Firebase へ rollback 可）。**CF インフラはライブで整備完了**（2026-06-29 実地確認: D1 `ferry_ledger` schema 適用済 / Worker secret 4 件 SESSION_HMAC_SECRET・SALT・FIREBASE_CLIENT_EMAIL・FIREBASE_PRIVATE_KEY 投入済 / ferry-relay Worker は PairDO+DeviceDO+RelayDO + auth/pair/pairs/sig/presence/inbox 全ルート込みで 2026-06-23 デプロイ済 / Bridge Static Assets 配信 200）。**残るゲートは Step 3.5/4.5 の「cold start 実測（東京 pin で p50/p95 を Firebase と比較）+ dual-path 2 台実機検証」**（いずれも 2 台実機が必要。Step 6 のコード撤去はこの検証 OK が前提）。手順は [`verify-cf-path.md`](verify-cf-path.md) 参照。
+**前提**: v1.0.62 で Firebase Custom Token Auth + pairs SSoT 済（PR #10）。CF 側は relay Worker + Durable Objects(Hibernation) を本番運用中。**v1.0.64 出荷時点の既定は依然 Firebase 経路**（`AppSettings.UseCloudflareSignaling=false`）= 現行ユーザーは Firebase で接続している。
 **判断根拠**: 10 エージェント Workflow 調査（棚卸し→CF一次資料→設計→4観点敵対批判）。要約は memory-bank `Ferry/design-proposals.md` の「CF 単独完結化の実現性調査」節。
+
+> ⚠️ **Step 6（Firebase コード撤去）着手禁止ガード**: `FirebaseSignaling.cs` / `FirebaseAuthClient.cs` / `FirebasePresenceServiceFactory.cs` / `src/Ferry.Bridge/` / `database.rules.json` / `FirebaseDatabase.net` 参照 / `firebase-cleanup.yml` / `release.yml` の firebase-deploy job / Firebase 系 Secret の削除は、**Step 3.5/4.5 ゲート通過 → Step 5 既定切替 → dual-path 観測期間（数バージョン）** をすべて経るまで着手しない。v1.0.64 では Firebase が production 既定経路のため、今これらを消すと現行配布クライアント全員が起動直後に signaling 不能になる。
 
 ---
 
@@ -130,7 +132,7 @@ PairDO storage キー: `offer:{sender}`→`{data,createdAt}` / `answer:{sender}`
 | 3 ✅ | クライアント dual-path（`UseCloudflareSignaling` フラグ・`37cb81f`）。既定 Firebase | 完全可逆（フラグ） |
 | 4 ✅ | **Bridge 二系統**: CF 版 Bridge（`infra/cloudflare/relay/public/` を Workers Static Assets で配信、同一オリジン `/pair/create` 直叩き・Firebase SDK 不使用）を追加。旧 Firebase Bridge（`src/Ferry.Bridge/`）は温存。QR は `UseCloudflareSignaling` で `CfBridgePageUrl` に切替 | 完全可逆 |
 | 3.5 / 4.5 | **cold start 実測ゲート**（東京 pin、Firebase と p50/p95 比較）+ dual-path 2 台実機 + D1/SESSION_HMAC_SECRET プロビジョン + `wrangler deploy` | — |
-| 5 | 既定を CF に切替（フラグ反転）。Firebase 経路はコードに数バージョン残置 | フラグ戻しで可逆 |
+| 5 🔶 | 既定を CF に切替（`UseCloudflareSignaling` 既定 false→true・コード適用済）。Firebase 経路はコードに数バージョン残置。実機検証 OK を確認してから出荷 | フラグ戻しで可逆 |
 | 6 | Firebase コード撤去（FirebaseSignaling/AuthClient/SDK/rules/firebase.json）+ cleanup を DO alarm に置換 | git revert で可逆 |
 | 7 | **Firebase プロジェクト無効化**（RTDB/Auth/Hosting）。**read-only 化 → N ヶ月放置 → アクセスログが閾値以下で削除**（Velopack R2 は配信統計を持たないため「全台更新確認」は観測不能 → 観測可能な放置プロトコルに差し替え） | **不可逆**（事前に pairs 台帳エクスポート） |
 

@@ -151,7 +151,7 @@ public class ConnectionViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task StartSessionAsync_既定ではFirebaseBridgeのURLが使われること()
+    public async Task StartSessionAsync_既定ではCFBridgeのURLが使われること()
     {
         _connectionService.StartPairingSessionAsync(Arg.Any<CancellationToken>())
             .Returns("sid123");
@@ -160,7 +160,27 @@ public class ConnectionViewModelTests : IDisposable
         using var vm = CreateViewModel();
         await vm.StartSessionCommand.ExecuteAsync(null);
 
-        // 既定（UseCloudflareSignaling=false）は Firebase 版 Bridge を向く
+        // Step 5: 既定（UseCloudflareSignaling=true）は CF 版 Bridge を向く
+        _qrCodeService.Received(1).GenerateQrBitmap(
+            Arg.Is<string>(url => url.StartsWith(Ferry.AppConstants.CfBridgePageUrl)));
+    }
+
+    [Fact]
+    public async Task StartSessionAsync_Firebaseロールバック時は旧BridgeのURLが使われること()
+    {
+        // UseCloudflareSignaling=false へ戻すと旧 Firebase 版 Bridge へ rollback できる
+        _settingsService.Settings.Returns(new AppSettings
+        {
+            DisplayName = "TestPC",
+            UseCloudflareSignaling = false,
+        });
+        _connectionService.StartPairingSessionAsync(Arg.Any<CancellationToken>())
+            .Returns("sid123");
+        _qrCodeService.GenerateQrBitmap(Arg.Any<string>()).Returns((Bitmap?)null);
+
+        using var vm = CreateViewModel();
+        await vm.StartSessionCommand.ExecuteAsync(null);
+
         _qrCodeService.Received(1).GenerateQrBitmap(
             Arg.Is<string>(url => url.StartsWith(Ferry.AppConstants.BridgePageUrl)));
     }
