@@ -256,12 +256,12 @@
         </div>
     </div>
 
-    <!-- CF 単独完結移行 (docs/design/cf-only-migration.md §5 Step 4):
-         このページは relay Worker の Static Assets で配信される CF 版 Bridge。
+    <!-- CF 単独完結 (docs/design/cf-only-migration.md §5):
+         このページは relay Worker の Static Assets で配信される唯一の Bridge。
          Firebase SDK は使わず、2 つの QR (sid+nonce) を読み取って同一オリジンの
          POST /pair/create を 1 回叩くだけでペアリングが成立する (nonce 所有が認可)。
          Worker が両 sid の nonce を D1 で server 検証し、両 PC の DeviceDO inbox(WS)へ push する。
-         旧 Firebase 版 (src/Ferry.Bridge/) は dual-path 期間中も Firebase Hosting に並存する。 -->
+         旧 Firebase 版 (src/Ferry.Bridge/) は Step 7 で撤去済み。 -->
 
     <!-- html5-qrcode ライブラリ（ページ内カメラでペアリング先の QR を読み取る） -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"

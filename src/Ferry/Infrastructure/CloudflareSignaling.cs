@@ -15,8 +15,7 @@ using Ferry.Services;
 namespace Ferry.Infrastructure;
 
 /// <summary>
-/// CF 単独完結移行: Cloudflare Workers + Durable Objects + D1 を使うシグナリング実装。
-/// <see cref="FirebaseSignaling"/> の drop-in（<see cref="ISignalingService"/>）。
+/// CF 単独完結: Cloudflare Workers + Durable Objects + D1 を使うシグナリング実装（<see cref="ISignalingService"/>）。
 ///
 /// - signaling(offer/answer/endpoint/probe): PairDO へ HTTP polling（律速は STUN/ホールパンチで poll 維持が妥当）
 /// - presence: DeviceDO へ poll + ETag/304（帯域節約）
@@ -95,14 +94,45 @@ public sealed class CloudflareSignaling : ISignalingService
         return _sessionId;
     }
 
-    public Task SubmitPairingAsync(string sidA, string nameA, string sidB, string nameB, string pkA = "", string pkB = "", CancellationToken ct = default)
+    /// <summary>
+    /// PC コード貼付ペアリング（QR/Bridge を介さずアプリ内でコードを貼り付けて直接ペア成立させる経路）。
+    /// CF 単独完結 Step 7: relay Worker の POST /pair/link を叩く。認可は「自分の bearer (cfToken) で
+    /// sidA=本人をサーバーが保証 + 相手 (sidB) はセッションが現在アクティブであることだけを要求」
+    /// （相手の nonce 値の所有は不要）。旧 Firebase rules の `pairing_nonces/{sidB}.exists()` 条件と
+    /// 同じセキュリティレベルで、QR/Bridge 専用の /pair/create（両 nonce 値所有）とは別の認可経路。
+    /// sidA 引数はサーバーに送らない（claims.deviceId のみを信頼の源にするため。呼び出し元
+    /// ConnectionService は常に自分の _deviceId を渡す契約）。
+    /// </summary>
+    public async Task SubmitPairingAsync(string sidA, string nameA, string sidB, string nameB, string pkA = "", string pkB = "", CancellationToken ct = default)
     {
-        // CF の /pair/create は「両 sid の nonce 所有」を認可の源とする（ghost peer 注入防止）。URL ペースト経路は
-        // 相手 nonce を持たないため、安易な bearer 単独許可は ghost peer 穴を開ける。CF モードでは QR/Bridge 経路に
-        // 寄せ、本経路は未対応とする（実験フラグ既定 OFF なので本番影響なし）。将来 CF 向けに再設計する。
-        throw new NotSupportedException(
-            "CF モードでは URL ペーストによる PC 間直接ペアリングは未対応です（QR / Bridge ペアリングを使ってください）。" +
-            "docs/design/cf-only-migration.md の code-paste 課題を参照。");
+        var body = JsonSerializer.Serialize(
+            new PairLinkPostDto { SidB = sidB, NameA = nameA, NameB = nameB, PkA = pkA, PkB = pkB },
+            CfJsonContext.Default.PairLinkPostDto);
+        using var resp = await SendAsync(HttpMethod.Post, Url("/pair/link"), body, ct);
+        if (resp.IsSuccessStatusCode) return;
+
+        var errorCode = await TryReadErrorCodeAsync(resp, ct);
+        throw new HttpRequestException(errorCode switch
+        {
+            "SESSION_NOT_FOUND" or "EXPIRED_SESSION" =>
+                "ペアリング先のセッションが見つかりません。相手の PC でアプリが起動していることを確認してください。",
+            "SAME_SID" => "これは自分の PC のコードです。もう片方の PC のコードを貼り付けてください。",
+            "BAD_TOKEN" => "認証に失敗しました。アプリを再起動して再試行してください。",
+            _ => $"ペアリングに失敗しました (HTTP {(int)resp.StatusCode})。",
+        });
+    }
+
+    /// <summary>relay Worker のエラーレスポンス（<c>{ error, message }</c>）からエラーコードだけ取り出す。
+    /// DTO は <see cref="AuthErrorResponse"/>（CfTokenProvider と共有、二重定義しない）。</summary>
+    private static async Task<string?> TryReadErrorCodeAsync(HttpResponseMessage resp, CancellationToken ct)
+    {
+        try
+        {
+            var json = await resp.Content.ReadAsStringAsync(ct);
+            var dto = JsonSerializer.Deserialize(json, CfAuthJsonContext.Default.AuthErrorResponse);
+            return dto?.Error;
+        }
+        catch { return null; }
     }
 
     public async Task<(bool Exists, string? DisplayName, string? PublicKey)> CheckSessionAsync(string sessionId, CancellationToken ct = default)
@@ -613,6 +643,14 @@ internal sealed class SessionGetDto
     [JsonPropertyName("displayName")] public string DisplayName { get; set; } = string.Empty;
     [JsonPropertyName("publicKey")] public string PublicKey { get; set; } = string.Empty;
 }
+internal sealed class PairLinkPostDto
+{
+    [JsonPropertyName("sidB")] public string SidB { get; set; } = string.Empty;
+    [JsonPropertyName("nameA")] public string NameA { get; set; } = string.Empty;
+    [JsonPropertyName("nameB")] public string NameB { get; set; } = string.Empty;
+    [JsonPropertyName("pkA")] public string PkA { get; set; } = string.Empty;
+    [JsonPropertyName("pkB")] public string PkB { get; set; } = string.Empty;
+}
 internal sealed class InboxEventDto
 {
     [JsonPropertyName("type")] public string? Type { get; set; }
@@ -641,6 +679,7 @@ internal sealed class InboxEventDto
 [JsonSerializable(typeof(PairGetDto))]
 [JsonSerializable(typeof(SessionRegisterDto))]
 [JsonSerializable(typeof(SessionGetDto))]
+[JsonSerializable(typeof(PairLinkPostDto))]
 [JsonSerializable(typeof(InboxEventDto))]
 [JsonSourceGenerationOptions(WriteIndented = false)]
 internal partial class CfJsonContext : JsonSerializerContext { }

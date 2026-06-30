@@ -143,4 +143,15 @@
   <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
   <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
   <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Number of files sent simultaneously (1 = legacy serial)</x:String>
+
+  <!-- Peer: destination list sorting/section headers -->
+  <x:String x:Key="Text.Member.TogglePin" xml:space="preserve">釘選 / 取消釘選</x:String>
+  <x:String x:Key="Text.Peer.Sort" xml:space="preserve">排序</x:String>
+  <x:String x:Key="Text.Peer.Sort.Name" xml:space="preserve">依名稱</x:String>
+  <x:String x:Key="Text.Peer.Sort.LastTransfer" xml:space="preserve">依最近傳輸</x:String>
+  <x:String x:Key="Text.Peer.Sort.Route" xml:space="preserve">依連線路徑</x:String>
+  <x:String x:Key="Text.Peer.Sort.Transferring" xml:space="preserve">傳輸中優先</x:String>
+  <x:String x:Key="Text.Peer.Section.Pinned" xml:space="preserve">已釘選</x:String>
+  <x:String x:Key="Text.Peer.Section.Online" xml:space="preserve">線上</x:String>
+  <x:String x:Key="Text.Peer.Section.Offline" xml:space="preserve">離線</x:String>
 </ResourceDictionary>

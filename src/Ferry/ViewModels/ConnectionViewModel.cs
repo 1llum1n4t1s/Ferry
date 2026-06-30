@@ -48,6 +48,10 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     /// <summary>② 選択ピア優先ポーリングのサイクルカウンタ。FullPollEveryNCycles の剰余で全ピア取得回を決める。</summary>
     private long _pollCycle;
 
+    /// <summary>宛先リスト投影の初期化完了フラグ。ctor 中の PeerSortMode 代入で
+    /// OnPeerSortModeChanged が redundant な永続化/再構築を走らせないためのガード。</summary>
+    private bool _peerProjectionReady;
+
     /// <summary>Codex P2 fix (第4弾 verify): 手動 RemovePeerAsync 経路が PeerRegistry の PeerRemoved event を再 trigger
     /// するのを抑制する。TryAdd してから RemovePeerAsync を呼び、handler 側で TryRemove() の戻り値が true なら skip。
     /// これで手動経路と handler 経路で StartSessionAsync が二重発火するのを防ぐ。
@@ -89,6 +93,19 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
 
     /// <summary>ペアリング済みピアの一覧。</summary>
     public ObservableCollection<PairedPeer> PairedPeers { get; } = [];
+
+    /// <summary>宛先リストに実表示する投影（📌ピン/🟢オンライン/⚪オフラインの <see cref="PeerListSection"/> 見出しと
+    /// <see cref="PairedPeer"/> を混在）。検索フィルタ + セクション分割 + セクション内ソートを適用して
+    /// <see cref="RebuildVisiblePeers"/> が再構築する。ListBox はこちらを ItemsSource に bind する。</summary>
+    public ObservableCollection<object> VisiblePeers { get; } = [];
+
+    /// <summary>宛先リストの検索テキスト（表示名の部分一致・大文字小文字無視でフィルタ）。空で全件。</summary>
+    [ObservableProperty]
+    public partial string PeerSearchText { get; set; } = string.Empty;
+
+    /// <summary>各セクション内のソート基準。変更で settings.json に永続化し、リストを再構築する。</summary>
+    [ObservableProperty]
+    public partial PeerSortMode PeerSortMode { get; set; } = PeerSortMode.Name;
 
     /// <summary>ペアリング済みピアが存在するか。QR/宛先リストの表示切替に使用。</summary>
     [ObservableProperty]
@@ -139,9 +156,18 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         foreach (var peer in _peerRegistry.GetPairedPeers())
         {
             peer.WentOnline += OnPeerWentOnline;
+            peer.PropertyChanged += OnPeerPropertyChanged;  // 宛先リストの再ソートトリガー（IsOnline/IsPinned/Route 等）
             PairedPeers.Add(peer);
         }
         UpdateHasPairedPeers();
+
+        // 宛先リストの投影（検索フィルタ + セクション分割 + セクション内ソート）を初期化する。
+        // ソート基準は設定から復元。_peerProjectionReady を立ててから RebuildVisiblePeers を呼ぶことで、
+        // ctor 中の PeerSortMode 代入で OnPeerSortModeChanged が redundant な永続化を走らせないようにする。
+        PairedPeers.CollectionChanged += OnPairedPeersCollectionChanged;
+        PeerSortMode = _settingsService.Settings.PeerListSortMode;
+        _peerProjectionReady = true;
+        RebuildVisiblePeers();
         // 複数ペア同時接続対応 Stage 4: 全 paired peer の listener を即時起動する（旧実装は SelectedPeer の listener のみ）。
         // peer ごとに <see cref="IConnectionService.StartListeningForConnection"/> が加算的に呼ばれるため、
         // 別 peer の listener を巻き込まずに並列稼働する。これで「ペア済みの誰からでも着信を受け付ける」基本動作を担保する。
@@ -172,12 +198,11 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
 
             // Bridge ページ URL に sessionId / PC 名 / 公開鍵(rere #D-001(b)) / 認証 nonce(#D-001a Phase B) を付与して QR コード生成。
             // pk は base64url・nonce は 32hex なので URL 安全。空のときは &pk= となり Bridge 側は単に無視する。
-            // CF 単独完結移行: CF モードでは QR の宛先を CF 版 Bridge（relay Worker の Static Assets）に向ける。
-            // Firebase 版 Bridge とは別オリジンで dual-path 並存する（§5 Step 4）。
+            // CF 単独完結: QR の宛先は CF 版 Bridge（relay Worker の Static Assets）固定（Step 6 で Firebase 版を撤去）。
             var displayName = Uri.EscapeDataString(settings.DisplayName);
             var pk = _connectionService.PublicKeyForQr;
             var nonce = _connectionService.LastPairingNonce;
-            var bridgeBase = settings.UseCloudflareSignaling ? AppConstants.CfBridgePageUrl : AppConstants.BridgePageUrl;
+            var bridgeBase = AppConstants.CfBridgePageUrl;
             var bridgeUrl = $"{bridgeBase}?sid={SessionId}&name={displayName}&pk={pk}&nonce={nonce}";
             PairingUrl = bridgeUrl;
             QrCodeImage = _qrCodeService.GenerateQrBitmap(bridgeUrl);
@@ -673,6 +698,152 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
 
     private void UpdateHasPairedPeers() => HasPairedPeers = PairedPeers.Count > 0;
 
+    // === 宛先リストの検索 / ソート / セクション分割（VisiblePeers 投影）===
+
+    /// <summary>再ソートを誘発する PairedPeer のプロパティ名集合（IsOnline 切替・ピン・経路変化など）。</summary>
+    private static readonly HashSet<string> PeerResortTriggers =
+    [
+        nameof(PairedPeer.DisplayName), nameof(PairedPeer.IsOnline), nameof(PairedPeer.IsPinned),
+        nameof(PairedPeer.Route), nameof(PairedPeer.IsTransferring), nameof(PairedPeer.ActiveTransferCount),
+    ];
+
+    partial void OnPeerSearchTextChanged(string value)
+    {
+        if (_peerProjectionReady) RebuildVisiblePeers();
+    }
+
+    partial void OnPeerSortModeChanged(PeerSortMode value)
+    {
+        if (!_peerProjectionReady) return;
+        _settingsService.Settings.PeerListSortMode = value;
+        _ = _settingsService.SaveAsync();  // 選択を永続化（次回起動で復元）
+        RebuildVisiblePeers();
+    }
+
+    /// <summary>PairedPeers への add/remove に応じて PropertyChanged 購読を張り替え、投影を再構築する。</summary>
+    private void OnPairedPeersCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems != null)
+            foreach (PairedPeer p in e.OldItems) p.PropertyChanged -= OnPeerPropertyChanged;
+        if (e.NewItems != null)
+            foreach (PairedPeer p in e.NewItems) p.PropertyChanged += OnPeerPropertyChanged;
+        RebuildVisiblePeers();
+    }
+
+    private void OnPeerPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != null && PeerResortTriggers.Contains(e.PropertyName))
+            RebuildVisiblePeers();
+    }
+
+    /// <summary>検索フィルタ → 📌ピン/🟢オンライン/⚪オフラインのセクション分割 → セクション内ソートで VisiblePeers を再構築する。
+    /// ObservableCollection は UI スレッド専用なので、別スレッドからの呼び出しは UI スレッドへ marshal する。</summary>
+    private void RebuildVisiblePeers()
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(RebuildVisiblePeers);
+            return;
+        }
+
+        // VisiblePeers を全消し（Clear）すると ListBox.SelectedItem→null→SelectedPeer→null が TwoWay で伝播し、
+        // OnSelectedPeerChanged の副作用だけでなく外部購読者（TransferViewModel/MainWindow）にも SelectedPeer 変更が
+        // 飛んで、転送パネルが空になる等の退行を招く。そのため全消しせず in-place の差分更新で寄せる。
+        // さらに「選択中ピアは検索フィルタを無視して常に表示」することで、検索入力中も選択がコレクションから
+        // 外れず（= SelectedPeer が null 化されず）、進行中転送 UI を維持する。
+        var target = BuildPeerProjection(PairedPeers, PeerSearchText, PeerSortMode, static k => App.Text(k), SelectedPeer);
+        ReconcileVisiblePeers(target);
+    }
+
+    /// <summary>VisiblePeers を <paramref name="target"/> に最小差分で寄せる（全 Clear しない）。
+    /// 選択中の <see cref="PairedPeer"/> は target に残る限りコレクションから外れないため、
+    /// ListBox.SelectedItem→SelectedPeer の null churn が起きない。<see cref="PeerListSection"/> は record の
+    /// 値等価なので、再構築をまたいで同じ見出しは同一視され不要な削除・再追加が避けられる。</summary>
+    private void ReconcileVisiblePeers(List<object> target)
+    {
+        // 1) target に無い項目を後ろから除去（PairedPeer は参照等価、PeerListSection は値等価）。
+        for (int i = VisiblePeers.Count - 1; i >= 0; i--)
+            if (!target.Contains(VisiblePeers[i]))
+                VisiblePeers.RemoveAt(i);
+        // 2) target の順序に合わせて挿入 / 移動。
+        for (int i = 0; i < target.Count; i++)
+        {
+            var item = target[i];
+            int cur = VisiblePeers.IndexOf(item);
+            if (cur < 0) VisiblePeers.Insert(i, item);
+            else if (cur != i) VisiblePeers.Move(cur, i);
+        }
+        // 3) 末尾の余剰を除去（通常は発生しないが安全側）。
+        while (VisiblePeers.Count > target.Count)
+            VisiblePeers.RemoveAt(VisiblePeers.Count - 1);
+    }
+
+    /// <summary>純関数: 検索フィルタ → 📌ピン/🟢オンライン/⚪オフラインのセクション分割 → セクション内ソートで
+    /// 表示用の混在リスト（<see cref="PeerListSection"/> 見出し + <see cref="PairedPeer"/> 行）を組み立てる。
+    /// Dispatcher 非依存なのでユニットテスト可能。<paramref name="label"/> はセクション見出しの
+    /// ローカライズ解決（本番は App.Text、テストは恒等関数）。<paramref name="keep"/> は検索フィルタに
+    /// 一致しなくても必ず残すピア（= 選択中ピア。検索入力で選択が消えて転送 UI が飛ぶ退行を防ぐ）。</summary>
+    internal static List<object> BuildPeerProjection(
+        IEnumerable<PairedPeer> peers, string? search, PeerSortMode mode, Func<string, string> label, PairedPeer? keep = null)
+    {
+        var result = new List<object>();
+        var s = search?.Trim();
+        bool hasSearch = !string.IsNullOrEmpty(s);
+        var filtered = peers
+            .Where(p => !hasSearch
+                        || p.DisplayName.Contains(s!, StringComparison.OrdinalIgnoreCase)
+                        || ReferenceEquals(p, keep))
+            .ToList();
+
+        // ピンは online/offline を問わず最上位セクションへ。残りを online/offline に分割。
+        AddPeerSection(result, "📌", label("Peer.Section.Pinned"), filtered.Where(p => p.IsPinned), mode);
+        AddPeerSection(result, "🟢", label("Peer.Section.Online"), filtered.Where(p => !p.IsPinned && p.IsOnline), mode);
+        AddPeerSection(result, "⚪", label("Peer.Section.Offline"), filtered.Where(p => !p.IsPinned && !p.IsOnline), mode);
+        return result;
+    }
+
+    /// <summary>セクション内のソートを適用し、メンバーが 1 件以上あるときだけ見出し + 行を積む。</summary>
+    private static void AddPeerSection(List<object> dst, string icon, string label, IEnumerable<PairedPeer> members, PeerSortMode mode)
+    {
+        var sorted = SortPeersWithin(members, mode);
+        if (sorted.Count == 0) return;
+        dst.Add(new PeerListSection { Icon = icon, Label = label });
+        dst.AddRange(sorted);
+    }
+
+    private static List<PairedPeer> SortPeersWithin(IEnumerable<PairedPeer> peers, PeerSortMode mode) => mode switch
+    {
+        PeerSortMode.LastTransfer => [.. peers.OrderByDescending(p => p.LastTransferAt ?? DateTime.MinValue)
+                                               .ThenBy(p => p.DisplayName, StringComparer.CurrentCultureIgnoreCase)],
+        PeerSortMode.Route => [.. peers.OrderBy(p => RouteSortRank(p.Route))
+                                       .ThenBy(p => p.DisplayName, StringComparer.CurrentCultureIgnoreCase)],
+        PeerSortMode.Transferring => [.. peers.OrderByDescending(p => p.IsTransferring)
+                                              .ThenByDescending(p => p.ActiveTransferCount)
+                                              .ThenBy(p => p.DisplayName, StringComparer.CurrentCultureIgnoreCase)],
+        _ => [.. peers.OrderBy(p => p.DisplayName, StringComparer.CurrentCultureIgnoreCase)],
+    };
+
+    private static int RouteSortRank(ConnectionRoute route) => route switch
+    {
+        ConnectionRoute.Direct => 0,
+        ConnectionRoute.StunAssisted => 1,
+        ConnectionRoute.Relay => 2,
+        _ => 3,
+    };
+
+    /// <summary>ピン留めの切替。peers.json に永続化し、IsPinned 変更通知で宛先リストを再構築する。</summary>
+    [RelayCommand]
+    private async Task TogglePinAsync(PairedPeer? peer)
+    {
+        if (peer is null) return;
+        peer.IsPinned = !peer.IsPinned;  // PropertyChanged → RebuildVisiblePeers
+        await _peerRegistry.UpdatePeerIfPresentAsync(peer);
+    }
+
+    /// <summary>ソート基準を切り替える（ソートメニューから呼ぶ）。OnPeerSortModeChanged が永続化 + 再構築する。</summary>
+    [RelayCommand]
+    private void SetSortMode(PeerSortMode mode) => PeerSortMode = mode;
+
     /// <summary>
     /// Codex P2 fix: <see cref="IPeerRegistryService.PeerRemoved"/> ハンドラ。PairSyncService が remote unpair を
     /// 検知して peerRegistry から peer を消したとき、UI 側 PairedPeers と presence 監視も同期的に外す。
@@ -796,7 +967,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     /// <summary>
     /// 定期的にペアリング済みピアの lastSeen をチェックし、IsOnline を更新する。
     /// 帯域節約のため、① 非前面時は停止、② 選択中ピアは毎サイクル・他は数サイクルに1回、
-    /// ④⑤ 取得は LastSeen のみの ETag 条件付き GET（<see cref="FirebaseSignaling.GetPresenceLastSeenAsync"/>）。
+    /// ④⑤ 取得は LastSeen のみの ETag 条件付き GET（<see cref="Services.IPresenceService.GetPresenceLastSeenAsync"/>）。
     /// </summary>
     private async Task PresencePollLoopAsync(CancellationToken ct)
     {

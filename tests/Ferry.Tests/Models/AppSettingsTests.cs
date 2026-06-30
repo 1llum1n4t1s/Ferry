@@ -46,22 +46,24 @@ public class AppSettingsTests
     public void AppConstantsの接続先URLが非空で期待スキームであること()
     {
         // rere #D-004: 接続先 URL は settings から AppConstants(const) へ移行。空文字化や URL タイポの回帰を固定化。
-        Assert.StartsWith("https://", Ferry.AppConstants.FirebaseDatabaseUrl);
-        Assert.StartsWith("https://", Ferry.AppConstants.BridgePageUrl);
+        // CF 単独完結 Step 6: Firebase 系定数は撤去し、CF 経路の定数のみ検証する。
+        Assert.StartsWith("https://", Ferry.AppConstants.CfApiBaseUrl);
+        Assert.StartsWith("https://", Ferry.AppConstants.CfBridgePageUrl);
         Assert.StartsWith("wss://", Ferry.AppConstants.RelayUrl);
     }
 
     [Fact]
-    public void 旧settingsの撤去済みURLキーを含むJSONも例外なくロードできること()
+    public void 旧settingsの撤去済みキーを含むJSONも例外なくロードできること()
     {
-        // rere #D-004: AppSettings から削除した FirebaseDatabaseUrl / BridgePageUrl が旧 settings.json に
-        // 残っていても、未知キーとして無視され DeviceId 等は正しく読めること（次回 SaveAsync で自然に消える）。
+        // rere #D-004 / CF 単独完結 Step 6: AppSettings から削除したキー（FirebaseDatabaseUrl / BridgePageUrl /
+        // dual-path の UseCloudflareSignaling / MigratedToCloudflareDefault）が旧 settings.json に残っていても、
+        // 未知キーとして無視され DeviceId 等は正しく読めること（次回 SaveAsync で自然に消える）。
         // 実際のロード経路（SettingsService が AppSettingsJsonContext で読む）を通して検証する。
         var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"ferry_test_{System.Guid.NewGuid():N}.json");
-        System.IO.File.WriteAllText(path, "{\"DeviceId\":\"abc123\",\"DisplayName\":\"OldPC\",\"FirebaseDatabaseUrl\":\"https://old.example.com\",\"BridgePageUrl\":\"https://old.web.app\"}");
+        System.IO.File.WriteAllText(path, "{\"DeviceId\":\"abc123\",\"DisplayName\":\"OldPC\",\"FirebaseDatabaseUrl\":\"https://old.example.com\",\"BridgePageUrl\":\"https://old.web.app\",\"UseCloudflareSignaling\":false,\"MigratedToCloudflareDefault\":true}");
         try
         {
-            var svc = new Ferry.Services.SettingsService(path);
+            using var svc = new Ferry.Services.SettingsService(path);
             Assert.Equal("abc123", svc.Settings.DeviceId);
             Assert.Equal("OldPC", svc.Settings.DisplayName);
         }
@@ -79,60 +81,6 @@ public class AppSettingsTests
         Assert.False(settings.StartMinimized);
         Assert.False(settings.MinimizeToTray);
         Assert.False(settings.AutoStartWithWindows);
-    }
-
-    [Fact]
-    public void Step5既定はCloudflareかつ移行フラグはデフォルトfalseであること()
-    {
-        var settings = new AppSettings();
-        // Step 5: 既定 signaling 経路は Cloudflare
-        Assert.True(settings.UseCloudflareSignaling);
-        // 一度きりマイグレーションフラグは未設定（永続化済みフラグなので素のモデルでは false）
-        Assert.False(settings.MigratedToCloudflareDefault);
-    }
-
-    [Fact]
-    public void 旧FirebaseクライアントはCF既定へ一度だけ自動移行され永続化されること()
-    {
-        // 旧 settings.json: UseCloudflareSignaling=false が永続化され、移行フラグは未設定
-        var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"ferry_test_{System.Guid.NewGuid():N}.json");
-        System.IO.File.WriteAllText(path, "{\"DeviceId\":\"abc123\",\"UseCloudflareSignaling\":false}");
-        try
-        {
-            var svc = new Ferry.Services.SettingsService(path);
-            // 起動時マイグレーションで CF 既定へ引き上げ + フラグが立つ
-            Assert.True(svc.Settings.UseCloudflareSignaling);
-            Assert.True(svc.Settings.MigratedToCloudflareDefault);
-
-            // 永続化されており、再ロードしても移行済み状態が保たれる（多重移行・ログ重複を防ぐ）
-            using var reloaded = new Ferry.Services.SettingsService(path);
-            Assert.True(reloaded.Settings.UseCloudflareSignaling);
-            Assert.True(reloaded.Settings.MigratedToCloudflareDefault);
-            svc.Dispose();
-        }
-        finally
-        {
-            System.IO.File.Delete(path);
-        }
-    }
-
-    [Fact]
-    public void 移行後にFirebaseへ戻したrollback値は上書きされないこと()
-    {
-        // 移行済み (MigratedToCloudflareDefault=true) かつユーザーが明示的に false へ rollback した状態
-        var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"ferry_test_{System.Guid.NewGuid():N}.json");
-        System.IO.File.WriteAllText(path, "{\"DeviceId\":\"abc123\",\"UseCloudflareSignaling\":false,\"MigratedToCloudflareDefault\":true}");
-        try
-        {
-            using var svc = new Ferry.Services.SettingsService(path);
-            // フラグが立っているので false が尊重される（CF へ強制上書きしない＝rollback 可逆性を保つ）
-            Assert.False(svc.Settings.UseCloudflareSignaling);
-            Assert.True(svc.Settings.MigratedToCloudflareDefault);
-        }
-        finally
-        {
-            System.IO.File.Delete(path);
-        }
     }
 
     [Fact]
@@ -156,16 +104,20 @@ public class AppSettingsTests
     }
 
     [Fact]
-    public void 新規インストールは移行済みフラグが立ちCF既定で保存されること()
+    public void 新規インストールは初回Saveでsettingsjsonが生成されDeviceIdが確定すること()
     {
-        // settings.json が存在しない初回起動: 初回 Save で移行済みフラグ + CF 既定が書き出される
+        // settings.json が存在しない初回起動: 初回 Save でファイルが生成され DeviceId が永続化される。
+        // WindowX/Y の NaN を書けず初回 Save が落ちて永続化されない回帰（AllowNamedFloatingPointLiterals）を固定化する。
         var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"ferry_test_{System.Guid.NewGuid():N}.json");
         try
         {
             using var svc = new Ferry.Services.SettingsService(path);
-            Assert.True(svc.Settings.UseCloudflareSignaling);
-            Assert.True(svc.Settings.MigratedToCloudflareDefault);
             Assert.True(System.IO.File.Exists(path)); // 初回 Save で生成される
+            Assert.Equal(32, svc.Settings.DeviceId.Length);
+
+            // 再ロードしても同じ DeviceId が読める（永続化が成立している）
+            using var reloaded = new Ferry.Services.SettingsService(path);
+            Assert.Equal(svc.Settings.DeviceId, reloaded.Settings.DeviceId);
         }
         finally
         {

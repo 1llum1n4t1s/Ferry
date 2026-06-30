@@ -27,10 +27,10 @@ Cloudflare R2 (`https://ferry.nephilim.jp`) から配信。**Setup インスト�
 |---|---|---|
 | x64 | AppImage | <https://ferry.nephilim.jp/Ferry-linux-x64.AppImage> |
 | ARM64 | AppImage | <https://ferry.nephilim.jp/Ferry-linux-arm64.AppImage> |
-| x64 (Debian/Ubuntu) | .deb | <https://ferry.nephilim.jp/ferry_1.0.65-1_amd64.deb> |
-| ARM64 (Debian/Ubuntu) | .deb | <https://ferry.nephilim.jp/ferry_1.0.65-1_arm64.deb> |
-| x86_64 (RHEL/Fedora) | .rpm | <https://ferry.nephilim.jp/ferry-1.0.65-1.x86_64.rpm> |
-| aarch64 (RHEL/Fedora) | .rpm | <https://ferry.nephilim.jp/ferry-1.0.65-1.aarch64.rpm> |
+| x64 (Debian/Ubuntu) | .deb | <https://ferry.nephilim.jp/ferry_1.0.66-1_amd64.deb> |
+| ARM64 (Debian/Ubuntu) | .deb | <https://ferry.nephilim.jp/ferry_1.0.66-1_arm64.deb> |
+| x86_64 (RHEL/Fedora) | .rpm | <https://ferry.nephilim.jp/ferry-1.0.66-1.x86_64.rpm> |
+| aarch64 (RHEL/Fedora) | .rpm | <https://ferry.nephilim.jp/ferry-1.0.66-1.aarch64.rpm> |
 
 > 💡 .deb / .rpm は **バージョン入りファイル名** で配信されます。最新バージョン番号は [`releases.linux-x64.json`](https://ferry.nephilim.jp/releases.linux-x64.json) などの manifest を参照してください。
 
@@ -49,9 +49,9 @@ Cloudflare R2 (`https://ferry.nephilim.jp`) から配信。**Setup インスト�
 ## 使い方
 
 1. **2 台の PC でそれぞれ Ferry を起動** し、「ペアリング追加」を選択
-2. **手元のスマートフォン** で PC-A の QR をスキャン → Bridge ページ (`https://ferry-edf09.web.app`) が開く
+2. **手元のスマートフォン** で PC-A の QR をスキャン → Bridge ページ (`https://relay.ferry.nephilim.jp`) が開く
 3. Bridge ページ内のカメラで **PC-B の QR** をスキャン → 両 PC にペアリング完了通知
-4. 以降、ピア一覧から相手を選んでファイル / フォルダをドラッグ & ドロップで送信
+4. 以降、ピア一覧から相手を選んでファイル / フォルダをドラッグ & ドロップで送信（検索・ソート・ピン留めで一覧を整理可能）
 5. PC 再起動後も保存済みペア一覧から再接続できます
 
 ## 技術スタック
@@ -62,8 +62,8 @@ Cloudflare R2 (`https://ferry.nephilim.jp`) から配信。**Setup インスト�
 | アーキテクチャ | MVVM (CommunityToolkit.Mvvm) |
 | ランタイム | .NET 10 / Native AOT (win-x64 / win-arm64 / osx-arm64 / linux-x64 / linux-arm64) |
 | P2P 通信 | TCP 直接接続 / UDP ホールパンチ (STUN: Cloudflare + Google) / WebSocket リレー |
-| シグナリング | Firebase Realtime Database (FirebaseDatabase.net) |
-| ペアリング | QR コード (QRCoder) → Firebase Hosting Bridge ページ |
+| シグナリング | Cloudflare Workers + Durable Objects + D1 |
+| ペアリング | QR コード (QRCoder) → Cloudflare Workers Static Assets Bridge ページ |
 | 自動更新 | Velopack (Cloudflare R2 ferry-updates) |
 | リレー | Cloudflare Workers + Durable Objects (Hibernation 対応) |
 | ログ | SuperLightLogger (Native AOT 互換のローリングファイル) |
@@ -74,23 +74,22 @@ Cloudflare R2 (`https://ferry.nephilim.jp`) から配信。**Setup インスト�
 ```
 Ferry/
 ├── src/
-│   ├── Ferry/                    # デスクトップアプリ (Avalonia)
-│   │   ├── Models/               # データモデル
-│   │   ├── ViewModels/           # MVVM ViewModel
-│   │   ├── Views/                # XAML ビュー
-│   │   ├── Services/             # サービスインターフェース & 実装
-│   │   ├── Infrastructure/       # TCP/UDP/WebSocket トランスポート, Firebase, STUN, ファイルチャンカー
-│   │   ├── Converters/           # XAML コンバーター
-│   │   └── Util/                 # ログユーティリティ
-│   └── Ferry.Bridge/             # Firebase Hosting (QR ペアリング用 Web ページ)
+│   └── Ferry/                    # デスクトップアプリ (Avalonia)
+│       ├── Models/               # データモデル
+│       ├── ViewModels/           # MVVM ViewModel
+│       ├── Views/                # XAML ビュー
+│       ├── Services/             # サービスインターフェース & 実装
+│       ├── Infrastructure/       # TCP/UDP/WebSocket トランスポート, Cloudflare signaling, STUN, ファイルチャンカー
+│       ├── Converters/           # XAML コンバーター
+│       └── Util/                 # ログユーティリティ
 ├── infra/
-│   └── cloudflare/relay/         # Cloudflare Workers + Durable Objects WebSocket リレー (TypeScript)
+│   └── cloudflare/relay/         # Cloudflare Workers + Durable Objects + D1 (WebSocket リレー / signaling / QR Bridge ページを TypeScript で実装)
 ├── tests/
 │   └── Ferry.Tests/              # ユニットテスト (xUnit v3 + NSubstitute)
 ├── .github/workflows/            # CI/CD
 │   ├── dotnet-build.yml          # PR ビルド
 │   ├── release.yml               # リリースパッケージ作成
-│   └── firebase-cleanup.yml      # Firebase ゴミデータ定期削除
+│   └── deploy-relay.yml          # Cloudflare relay Worker 自動デプロイ
 └── docs/                         # 設計書
 ```
 
@@ -103,15 +102,15 @@ Ferry/
 1. **PC-A** がセッション登録 → QR コード表示（Bridge ページ URL + セッション ID）
 2. **スマートフォン** で QR スキャン → Bridge ページが開く
 3. Bridge ページ内の **カメラ** で **PC-B** の QR をスキャン
-4. Bridge が Firebase `pairings/` に両セッション書き込み → 両 PC に通知
-5. ペア情報をローカル保存 (`%APPDATA%\Ferry\peers.json`) → Firebase セッション即削除
+4. Bridge が relay Worker の `/pair/create` を叩く → D1 で両セッションを検証し両 PC の Durable Object inbox に push
+5. ペア情報をローカル保存 (`%APPDATA%\Ferry\peers.json`) → セッションは TTL 経過で自動失効
 
 ### ペアリングと接続の分離
 
 「誰と繋がるか」(ペアリング) と「実際の通信」(接続) を分離:
 
-- **初回ペアリング**: QR スキャン → Firebase で一時ハンドシェイク → ペア情報をローカル保存 → Firebase 切断
-- **ファイル送信時**: オンデマンドで Firebase シグナリング → 接続確立 → チャンク送信 → 転送完了後に切断
+- **初回ペアリング**: QR スキャン → Cloudflare 経由で一時ハンドシェイク → ペア情報をローカル保存
+- **ファイル送信時**: オンデマンドで Cloudflare シグナリング → 接続確立 → チャンク送信 → 転送完了後に切断
 - **PC 再起動後**: 保存済みペア一覧から選択するだけで再接続可能
 
 ### 接続フロー（3 階層フォールバック）
@@ -157,10 +156,10 @@ UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レ
 
 接続断時に転送を `Suspended` 状態で保持し、再接続後に先頭から再送して復旧。
 
-### Firebase データのクリーンアップ
+### シグナリングデータのクリーンアップ
 
-- **正常時**: 接続確立後に `sessions/`, `pairings/`, `signaling/` を即削除
-- **異常時**: GitHub Actions で毎時、`CreatedAt` が 1 時間超の古いデータを自動削除
+- **正常時**: 接続確立後にセッション・signaling データを即削除
+- **異常時**: D1 のセッション/nonce は 1 時間 TTL で自動失効（古いデータは次回アクセス時に無効化）
 
 ## ビルド (開発者向け)
 
@@ -177,20 +176,17 @@ dotnet test tests/Ferry.Tests/Ferry.Tests.csproj
 
 リリースは `release/X.Y.Z` ブランチへの push で GitHub Actions が 5 ランタイム (win-x64 / win-arm64 / osx-arm64 / linux-x64 / linux-arm64) を Native AOT 発行 → Velopack パッケージ化 → Cloudflare R2 にアップロードします。`/vava` スキルが版数管理・ブランチ作成・古いブランチ掃除を一括実行します。
 
-Bridge ページの手動デプロイ (Service Account JSON 経由、`FirebaseExtended/action-hosting-deploy@v0` が CI 経路):
+relay Worker (signaling + Bridge ページ) は `infra/cloudflare/relay/**` を main に push すると CI が自動デプロイします。手動デプロイも可能:
 
 ```bash
-# Service Account を ADC として展開
-export GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa.json
-cd src/Ferry.Bridge && firebase deploy --only hosting --project ferry-edf09
+cd infra/cloudflare/relay && pnpm dlx wrangler deploy
 ```
 
 ### 前提条件
 
 - .NET 10 SDK
 - クロスプラットフォーム: Windows 10/11 (x64 / arm64), macOS (arm64), Linux (x64 / arm64)
-- Firebase CLI + Service Account JSON（Bridge ページを手動デプロイする場合のみ）
-- Cloudflare wrangler CLI（リレー Worker をデプロイ・更新する場合のみ）
+- Cloudflare wrangler CLI（リレー Worker / Bridge ページをデプロイ・更新する場合のみ）
 
 ## ライセンス
 

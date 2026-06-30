@@ -74,7 +74,6 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// <summary>Answer 側が TCP 失敗を通知する route 値（STUN/リレーへ遷移）。</summary>
     private const string RouteNeedRelay = "needRelay";
 
-    private readonly string _databaseUrl;
     private readonly string _deviceId;
     private readonly string _displayName;
     /// <summary>rere #D-001(b): 長期 ECDH 鍵。QR の公開鍵 + ペア相手の公開鍵から PairSecret を導出する。
@@ -218,19 +217,15 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     // （per-peer 化）。LookupActiveSession() で現在の単数 _transport に対応する Session を引いて読み書きする。
     // Stage 5 で SendAsync/DisconnectAsync が peerId を受けるようになったら lookup を peerId 直引きへ置換する。
 
-    private readonly FirebaseAuthClient? _authClient;
+    /// <summary>signaling 実装の生成ファクトリ（CF 単独完結: CloudflareSignaling を生成）。
+    /// コンストラクタで null チェック済みのため非 null（唯一の生成元 App.axaml.cs が常に注入する）。</summary>
+    private readonly Func<ISignalingService> _signalingFactory;
 
-    /// <summary>CF 単独完結移行 (dual-path): signaling 実装の生成ファクトリ。
-    /// null なら従来どおり <see cref="FirebaseSignaling"/> を生成する（テスト・旧経路の後方互換）。</summary>
-    private readonly Func<ISignalingService>? _signalingFactory;
-
-    /// <summary>CF 単独完結移行: 認証完了を待つデリゲート（Firebase=EnsureSignInAsync / CF=EnsureTokenAsync）。
-    /// null なら <see cref="_authClient"/> 経由でフォールバックする。</summary>
+    /// <summary>認証完了を待つデリゲート（CF=CfTokenProvider.EnsureTokenAsync）。</summary>
     private readonly Func<CancellationToken, Task>? _ensureAuthAsync;
 
-    /// <summary>signaling 実装を生成する。factory があれば CF/Firebase いずれか、無ければ FirebaseSignaling。</summary>
-    private ISignalingService NewSignaling() =>
-        _signalingFactory?.Invoke() ?? new FirebaseSignaling(_databaseUrl, _authClient);
+    /// <summary>signaling 実装を生成する。</summary>
+    private ISignalingService NewSignaling() => _signalingFactory();
 
     /// <summary>
     /// Codex P2 fix (第4弾): pairs/{pairId} の SSoT 書込成功時に、同一 pairId の queued delete を
@@ -245,20 +240,18 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// </summary>
     public const int SeenPairingIdsCap = 200;
 
-    public ConnectionService(string databaseUrl, string deviceId, string displayName,
+    public ConnectionService(string deviceId, string displayName,
         DeviceIdentity? identity = null, IPeerRegistryService? peerRegistry = null, ISettingsService? settings = null,
-        FirebaseAuthClient? authClient = null, PendingPairDeleteQueue? pendingPairDeleteQueue = null,
+        PendingPairDeleteQueue? pendingPairDeleteQueue = null,
         Func<ISignalingService>? signalingFactory = null, Func<CancellationToken, Task>? ensureAuthAsync = null)
     {
-        _databaseUrl = databaseUrl;
         _deviceId = deviceId;
         _displayName = displayName;
         _identity = identity;
         _peerRegistry = peerRegistry;
         _settings = settings;
-        _authClient = authClient;
         _pendingPairDeleteQueue = pendingPairDeleteQueue;
-        _signalingFactory = signalingFactory;
+        _signalingFactory = signalingFactory ?? throw new ArgumentNullException(nameof(signalingFactory), "signalingFactory は必須です（CF 単独完結移行で App.axaml.cs が常に注入する）");
         _ensureAuthAsync = ensureAuthAsync;
 
         // Codex 第12弾 #4 (P2) fix: 起動時に AppSettings.SeenPairingIds (永続) を _seenPairingIds (in-memory)
@@ -292,15 +285,6 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         if (_ensureAuthAsync != null)
         {
             try { await _ensureAuthAsync(ct); }
-            catch (Exception ex) when (ex is not IdentityLostException)
-            {
-                Util.Logger.Log($"StartPairingSession: 認証完了待ちで失敗 (rethrow): {ex.Message}", Util.LogLevel.Warning);
-                throw;
-            }
-        }
-        else if (_authClient != null)
-        {
-            try { await _authClient.EnsureSignInAsync(ct); }
             catch (Exception ex) when (ex is not IdentityLostException)
             {
                 Util.Logger.Log($"StartPairingSession: 認証完了待ちで失敗 (rethrow): {ex.Message}", Util.LogLevel.Warning);

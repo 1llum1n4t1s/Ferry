@@ -146,4 +146,15 @@
   <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
   <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
   <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Number of files sent simultaneously (1 = legacy serial)</x:String>
+
+  <!-- Peer: destination list sorting/section headers -->
+  <x:String x:Key="Text.Member.TogglePin" xml:space="preserve">ध्वजाङ्कनम् / निष्कासनम्</x:String>
+  <x:String x:Key="Text.Peer.Sort" xml:space="preserve">क्रमीकरणम्</x:String>
+  <x:String x:Key="Text.Peer.Sort.Name" xml:space="preserve">नामानुसारम्</x:String>
+  <x:String x:Key="Text.Peer.Sort.LastTransfer" xml:space="preserve">अन्तिमस्थानान्तरणानुसारम्</x:String>
+  <x:String x:Key="Text.Peer.Sort.Route" xml:space="preserve">संयोजनमार्गानुसारम्</x:String>
+  <x:String x:Key="Text.Peer.Sort.Transferring" xml:space="preserve">स्थानान्तरमाणं प्रथमम्</x:String>
+  <x:String x:Key="Text.Peer.Section.Pinned" xml:space="preserve">ध्वजाङ्कितम्</x:String>
+  <x:String x:Key="Text.Peer.Section.Online" xml:space="preserve">सक्रियम्</x:String>
+  <x:String x:Key="Text.Peer.Section.Offline" xml:space="preserve">निष्क्रियम्</x:String>
 </ResourceDictionary>

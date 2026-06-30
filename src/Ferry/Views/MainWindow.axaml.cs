@@ -9,6 +9,7 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Reactive; // AnonymousObserver<T>。旧来 FirebaseDatabase.net→System.Reactive が transitive 提供していた Subscribe(Action<T>) 拡張が Step 6 のパッケージ撤去で消えたため、Avalonia 自前の observer で明示購読する
 using Avalonia.Threading;
 using Ferry.Infrastructure;
 using Ferry.Models;
@@ -64,14 +65,18 @@ public partial class MainWindow : Window
         if (this.FindControl<GridSplitter>("PaneSplitter") is { } paneSplitter)
             paneSplitter.DragCompleted += OnSplitterDragCompleted;
 
+        // 宛先リストのセクション見出し（PeerListSection）行を選択・フォーカス・hover 不可にする。
+        // VisiblePeers は見出しとピアを混在させるため、見出しコンテナだけ無効化する（コンテナ再利用にも追従）。
+        PeerListBox.ContainerPrepared += OnPeerListContainerPrepared;
+
         // ドラッグ＆ドロップ
         AddHandler(DragDrop.DragEnterEvent, OnDragEnter, RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(DragDrop.DragOverEvent, OnDragOver, RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(DragDrop.DragLeaveEvent, OnDragLeave, RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(DragDrop.DropEvent, OnDrop, RoutingStrategies.Bubble, handledEventsToo: true);
 
-        // 最小化→トレイ監視（M-9: 自作 WindowStateObserver を Avalonia 標準の Subscribe(Action<T>) に統一）
-        this.GetObservable(WindowStateProperty).Subscribe(state =>
+        // 最小化→トレイ監視（M-9: 自作 WindowStateObserver を Avalonia 標準の observer 購読に統一）
+        this.GetObservable(WindowStateProperty).Subscribe(new AnonymousObserver<WindowState>(state =>
         {
             // macOS は最小化=Dock 格納が OS 慣習なので、トレイ格納(Hide)は Windows/Linux のみで行う。
             if (state == WindowState.Minimized
@@ -83,10 +88,10 @@ public partial class MainWindow : Window
             }
             // ① ウィンドウが前面か（表示中かつ非最小化）に応じて presence ポーリングを開閉する
             UpdatePresenceForeground();
-        });
+        }));
 
         // ① トレイ格納(Hide)/復帰(Show) は IsVisible 変化として届くのでこちらも監視
-        this.GetObservable(IsVisibleProperty).Subscribe(_ => UpdatePresenceForeground());
+        this.GetObservable(IsVisibleProperty).Subscribe(new AnonymousObserver<bool>(_ => UpdatePresenceForeground()));
 
         // 初期最小化起動
         Loaded += (_, _) =>
@@ -439,6 +444,28 @@ public partial class MainWindow : Window
     private void OnDotMenuPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// 宛先リスト行のサブメニュー → 「ピン留め / 解除」クリック。VM のトグルコマンドへ委譲する。
+    /// </summary>
+    private void OnTogglePinClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem mi && mi.DataContext is PairedPeer peer)
+            ConnectionVm?.TogglePinCommand.Execute(peer);
+    }
+
+    /// <summary>
+    /// VisiblePeers のセクション見出し（PeerListSection）行を選択・フォーカス・hover 不可にする。
+    /// コンテナはピア行と見出し行の間で再利用されうるので、DataContext の型を毎回見て出し分ける。
+    /// </summary>
+    private void OnPeerListContainerPrepared(object? sender, ContainerPreparedEventArgs e)
+    {
+        if (e.Container is not ListBoxItem item) return;
+        bool isHeader = item.DataContext is PeerListSection;
+        item.IsHitTestVisible = !isHeader;
+        item.Focusable = !isHeader;
+        item.Classes.Set("sectionHeader", isHeader);
     }
 
     /// <summary>

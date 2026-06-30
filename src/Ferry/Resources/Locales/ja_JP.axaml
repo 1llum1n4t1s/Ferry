@@ -167,6 +167,17 @@
   <x:String x:Key="Text.Member.Delete" xml:space="preserve">削除</x:String>
   <x:String x:Key="Text.Member.Delete.Confirm" xml:space="preserve">"{0}" をメンバーから削除しますか？
 この操作は取り消せません。</x:String>
+  <x:String x:Key="Text.Member.TogglePin" xml:space="preserve">ピン留め / 解除</x:String>
+
+  <!-- Peer: 宛先リストの並び替え・セクション見出し -->
+  <x:String x:Key="Text.Peer.Sort" xml:space="preserve">並び替え</x:String>
+  <x:String x:Key="Text.Peer.Sort.Name" xml:space="preserve">名前順</x:String>
+  <x:String x:Key="Text.Peer.Sort.LastTransfer" xml:space="preserve">最終転送順</x:String>
+  <x:String x:Key="Text.Peer.Sort.Route" xml:space="preserve">接続経路順</x:String>
+  <x:String x:Key="Text.Peer.Sort.Transferring" xml:space="preserve">転送中優先</x:String>
+  <x:String x:Key="Text.Peer.Section.Pinned" xml:space="preserve">ピン留め</x:String>
+  <x:String x:Key="Text.Peer.Section.Online" xml:space="preserve">オンライン</x:String>
+  <x:String x:Key="Text.Peer.Section.Offline" xml:space="preserve">オフライン</x:String>
 
   <!-- v1.0.47: 行ごとの転送操作・受信保存先バー -->
   <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">再送</x:String>

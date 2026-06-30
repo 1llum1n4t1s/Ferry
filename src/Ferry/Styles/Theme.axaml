@@ -404,6 +404,15 @@
     <Style Selector="ListBox.peerList ListBoxItem:pointerover">
         <Setter Property="BorderBrush" Value="#88FF2D8A" />
     </Style>
+    <!-- セクション見出し行（📌ピン/🟢オンライン/⚪オフライン）。code-behind の OnPeerListContainerPrepared が
+         DataContext=PeerListSection の ListBoxItem にこの class を付ける。ピア行のような padding/カーソル/枠を
+         打ち消し、見出しらしく詰める（選択・hover 抑止は IsHitTestVisible/Focusable=false 側で成立）。 -->
+    <Style Selector="ListBox.peerList ListBoxItem.sectionHeader">
+        <Setter Property="Padding" Value="2,0" />
+        <Setter Property="Cursor" Value="Arrow" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="MinHeight" Value="0" />
+    </Style>
 
     <Style Selector="ListBox.messageList">
         <Setter Property="Background" Value="Transparent" />

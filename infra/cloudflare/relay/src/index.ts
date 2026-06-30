@@ -29,19 +29,12 @@ export interface Env {
   /** pairId ハッシュ化用ソルト。`wrangler secret put SALT` で登録する。 */
   SALT: string;
 
-  // === #D-001a Phase B: Firebase Custom Token Auth (auth.ts) ===
+  // === device 鍵バインディング (auth.ts) ===
   /** deviceId ↔ pubKeySpki first-write-wins binding KV (wrangler kv namespace create で作成)。 */
   DEVICE_KEY_BINDING: KVNamespace;
-  /** Firebase SA PKCS#8 PEM (改行込み)。`cat sa.pem | wrangler secret put FIREBASE_PRIVATE_KEY`。 */
-  FIREBASE_PRIVATE_KEY: string;
-  /** Firebase SA client_email。`wrangler secret put FIREBASE_CLIENT_EMAIL`。 */
-  FIREBASE_CLIENT_EMAIL: string;
-  /** Firebase Realtime DB URL (vars)。例: https://ferry-edf09-default-rtdb.firebaseio.com */
-  FIREBASE_DATABASE_URL: string;
 
   // === CF 単独完結 (docs/design/cf-only-migration.md) ===
-  /** cfToken (自前 HMAC bearer) 署名用シークレット。`wrangler secret put SESSION_HMAC_SECRET`。
-   *  未設定なら /auth/token は cfToken を発行せず Firebase 経路のみで動作する (dual-path)。 */
+  /** cfToken (自前 HMAC bearer) 署名用シークレット。`wrangler secret put SESSION_HMAC_SECRET`。本番必須。 */
   SESSION_HMAC_SECRET: string;
 
   /** Rate limit bindings (unsafe.bindings)。 */
@@ -68,23 +61,14 @@ export default {
       return new Response('OK', { status: 200 });
     }
 
-    // #D-001a Phase B: Firebase Custom Token Auth エンドポイント
-    //
-    // Codex P1 指摘: Bridge は https://ferry-edf09.web.app から POST application/json を投げるため、
-    // ブラウザは事前に CORS preflight (OPTIONS) を送る。本 Worker が OPTIONS を扱わないと
-    // Access-Control-Allow-* が返らず Bridge から /pair/token が呼べない (本番 /auth/token も
-    // 直接ブラウザ呼出を想定するならガード必要)。Allowed origins は Firebase Hosting 由来のみ。
-    if (url.pathname === '/auth/token' || url.pathname === '/pair/token') {
-      if (req.method === 'OPTIONS') {
-        return corsPreflightResponse(req);
-      }
+    // 認証トークン発行エンドポイント (CF 単独完結: 自前 HMAC bearer cfToken)。
+    // C# desktop クライアントからの呼出なので CORS は不要 (旧 Firebase Bridge 用 /pair/token は Step 7 で撤去)。
+    if (url.pathname === '/auth/token') {
       if (req.method === 'POST') {
-        const { handleAuthToken, handlePairToken } = await import('./auth');
-        const handler = url.pathname === '/auth/token' ? handleAuthToken : handlePairToken;
-        const resp = await handler(req, env);
-        return withCorsHeaders(resp, req);
+        const { handleAuthToken } = await import('./auth');
+        return handleAuthToken(req, env);
       }
-      return new Response('Method Not Allowed', { status: 405, headers: { 'allow': 'POST, OPTIONS' } });
+      return new Response('Method Not Allowed', { status: 405, headers: { 'allow': 'POST' } });
     }
 
     // CF 単独完結移行 Step 1: signaling HTTP ルート (`/sig/{pairId}/...`)。
@@ -106,20 +90,27 @@ export default {
       return handlePresence(req, env, url);
     }
 
-    // CF 単独完結移行 Step 2: ペアリング / ペア台帳。
-    // /pair/create は Bridge(browser) から呼ぶので CORS 対応 (dual-path 中は web.app オリジン)。
+    // CF 単独完結 Step 2: ペアリング / ペア台帳。
+    // /pair/create は Bridge から呼ぶが、Bridge は relay Worker の Static Assets で同一オリジン配信のため CORS 不要。
     if (url.pathname === '/pair/create') {
-      if (req.method === 'OPTIONS') return corsPreflightResponse(req);
       if (req.method === 'POST') {
         const { handlePairCreate } = await import('./pairing-routes');
-        return withCorsHeaders(await handlePairCreate(req, env), req);
+        return handlePairCreate(req, env);
       }
-      return new Response('Method Not Allowed', { status: 405, headers: { allow: 'POST, OPTIONS' } });
+      return new Response('Method Not Allowed', { status: 405, headers: { allow: 'POST' } });
     }
-    // /pair/session と /pairs/* は PC (bearer) からのみ。CORS 不要。
+    // /pair/session・/pair/link・/pairs/* は PC (bearer) からのみ。CORS 不要。
     if (url.pathname.startsWith('/pair/session')) {
       const { handlePairSession } = await import('./pairing-routes');
       return handlePairSession(req, env, url);
+    }
+    // PC コード貼付ペアリング (CF 単独完結 Step 7)。bearer 必須・相手セッション存在のみ要求。
+    if (url.pathname === '/pair/link') {
+      if (req.method === 'POST') {
+        const { handlePairLink } = await import('./pairing-routes');
+        return handlePairLink(req, env);
+      }
+      return new Response('Method Not Allowed', { status: 405, headers: { allow: 'POST' } });
     }
     if (url.pathname.startsWith('/pairs/')) {
       const { handlePairs } = await import('./pairing-routes');
@@ -148,49 +139,6 @@ export default {
     return stub.fetch(forwarded);
   },
 };
-
-/**
- * CORS preflight / レスポンスへのヘッダ付与。
- *
- * Allowed origins: 開発の利便で Firebase Hosting の通常ドメイン (web.app / firebaseapp.com) を許可。
- * 不一致なら ACAO を付けない (= ブラウザがブロック)。Credentials は使わないので Allow-Credentials は不要。
- */
-const ALLOWED_ORIGIN_SUFFIXES = ['.web.app', '.firebaseapp.com'];
-
-function resolveAllowedOrigin(req: Request): string | null {
-  const origin = req.headers.get('Origin');
-  if (!origin) return null;
-  try {
-    const o = new URL(origin);
-    if (o.protocol !== 'https:') return null;
-    if (ALLOWED_ORIGIN_SUFFIXES.some((sfx) => o.hostname.endsWith(sfx))) return origin;
-  } catch {
-    // invalid URL → no CORS
-  }
-  return null;
-}
-
-function corsPreflightResponse(req: Request): Response {
-  const allowed = resolveAllowedOrigin(req);
-  const headers: Record<string, string> = {
-    'access-control-allow-methods': 'POST, OPTIONS',
-    'access-control-allow-headers': 'content-type',
-    'access-control-max-age': '600',
-    'vary': 'Origin',
-  };
-  if (allowed) headers['access-control-allow-origin'] = allowed;
-  return new Response(null, { status: 204, headers });
-}
-
-function withCorsHeaders(resp: Response, req: Request): Response {
-  const allowed = resolveAllowedOrigin(req);
-  if (!allowed) return resp;
-  // Response は immutable なので新規生成して header を足す
-  const headers = new Headers(resp.headers);
-  headers.set('access-control-allow-origin', allowed);
-  headers.set('vary', 'Origin');
-  return new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers });
-}
 
 export async function hashPairId(pairId: string, salt: string): Promise<string> {
   const data = new TextEncoder().encode(pairId + '|' + salt);

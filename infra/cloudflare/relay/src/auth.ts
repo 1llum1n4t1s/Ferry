@@ -1,23 +1,23 @@
 /**
- * Ferry Custom Token Auth (rere #D-001a Phase B)
+ * Ferry 認証 (CF 単独完結)
  *
- * 2 つのエンドポイント:
- *   POST /auth/token  - PC 用 (1h): ECDSA P-256 IEEE P1363 raw 署名チャレンジで deviceId 所有を証明
- *   POST /pair/token  - Bridge 用 (5min): sessions/{sid}/PairingNonce 一致で QR と紐付け
+ * エンドポイント:
+ *   POST /auth/token  - PC 用 (1h): ECDSA P-256 IEEE P1363 raw 署名チャレンジで deviceId 所有を証明し、
+ *                       自前 HMAC bearer (cfToken) を発行する。
  *
- * 設計詳細は docs/design/firebase-auth-pair-ssot.md §4。
+ * cfToken は Worker が自前 HMAC で検証するので外部 ID プロバイダへのログインが要らない。
+ * /signaling・/presence・/pairs・/inbox の認可入口で verifySessionToken により検証する。
  *
- * Firebase Custom Token JWT 仕様: https://firebase.google.com/docs/auth/admin/create-custom-tokens
- *   - 必須 claims: iss, sub (= SA client_email), aud (Identity Toolkit), iat, exp, uid
- *   - 署名: RS256 (SA private_key PKCS#8 PEM を Web Crypto API に import)
- *   - firebase-admin は Cloudflare Workers 非対応 → 手書き JWT で実装
+ * 設計詳細は docs/design/cf-only-migration.md §2。
+ * （旧 Firebase Custom Token 経路 /pair/token と mintCustomToken は CF 単独完結 Step 7 で撤去済み。
+ *   Bridge のペアリングは同一オリジンの /pair/create（D1 nonce 認可）に一本化した。）
  */
 
 import type { Env } from './index';
 
 // ---------- Public handlers ----------
 
-/** PC 用: 署名チャレンジ検証 + KV first-write-wins binding + 1h Custom Token */
+/** PC 用: 署名チャレンジ検証 + KV first-write-wins binding + 1h cfToken */
 export async function handleAuthToken(req: Request, env: Env): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
   if (env.RATELIMIT_IP) {
@@ -90,255 +90,20 @@ export async function handleAuthToken(req: Request, env: Env): Promise<Response>
     await env.DEVICE_KEY_BINDING.put(kvKey, pubKeySpki);
   }
 
-  // Custom Token 発行 (uid = deviceId, exp = iat+3600, src=pc) — Firebase dual-path 用に当面併存。
-  const customToken = await mintCustomToken(deviceId, 3600, env, 'pc');
-  // CF 単独完結用の自前 HMAC bearer (cfToken)。/signaling・/presence・/pairs・/inbox の認可に使う。
-  // SESSION_HMAC_SECRET 未設定時は省略 (Firebase 経路のみで動作・dual-path 段階の後方互換)。
-  const cfToken = env.SESSION_HMAC_SECRET ? await mintSessionToken(deviceId, 3600, env) : undefined;
-  return jsonOk(
-    cfToken ? { customToken, cfToken, expiresIn: 3600 } : { customToken, expiresIn: 3600 },
-  );
-}
-
-/** Bridge 用: sessions/{sid}/PairingNonce 一致 → 5min Custom Token */
-export async function handlePairToken(req: Request, env: Env): Promise<Response> {
-  const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
-  if (env.RATELIMIT_IP) {
-    const { success } = await env.RATELIMIT_IP.limit({ key: ip });
-    if (!success) return jsonError(429, 'IP_RATE_LIMIT', 'IP rate limit exceeded');
+  // CF 単独完結: 自前 HMAC bearer (cfToken) を発行 (uid = deviceId, exp = iat+3600)。
+  // /signaling・/presence・/pairs・/inbox の認可に使う。SESSION_HMAC_SECRET は本番必須。
+  if (!env.SESSION_HMAC_SECRET) {
+    return jsonError(500, 'SERVER_MISCONFIGURED', 'SESSION_HMAC_SECRET is not configured');
   }
-
-  const body = await readJsonBody(req);
-  if ('error' in body) return body.error;
-
-  // Codex P1 (第2弾) fix: Bridge は QR スキャンで「自分の sid+nonce」と「相手 (scanned) の sid+nonce」の
-  // 4 値を持つ。旧仕様は sidA+nonceA だけを verify していたので、攻撃者が他人の sidB を知っていれば自分の
-  // sidA で auth → pairings/{sidB}/{pid} に好きなデータを書ける (rules は片側 nonce 検証しかしていなかった
-  // ペアリング起点を強制できず Ghost peer 注入可能だった)。peer* が提供されたら両方の nonce を verify する。
-  // peer* を省略した場合は従来どおり片側 verify のみ (PC コード貼付ペアリング経路の後方互換)。
-  const { sessionId, pairingNonce, peerSessionId, peerPairingNonce } = body.value as Record<string, unknown>;
-  if (typeof sessionId !== 'string' || !/^[a-f0-9]{32}$/.test(sessionId)) {
-    return jsonError(400, 'INVALID_SESSION_ID', 'sessionId must be 32 hex chars');
-  }
-  if (typeof pairingNonce !== 'string' || !/^[a-f0-9]{32}$/.test(pairingNonce)) {
-    return jsonError(400, 'INVALID_NONCE', 'pairingNonce must be 32 hex chars');
-  }
-  const hasPeer = peerSessionId !== undefined || peerPairingNonce !== undefined;
-  if (hasPeer) {
-    if (typeof peerSessionId !== 'string' || !/^[a-f0-9]{32}$/.test(peerSessionId)) {
-      return jsonError(400, 'INVALID_PEER_SESSION_ID', 'peerSessionId must be 32 hex chars');
-    }
-    if (typeof peerPairingNonce !== 'string' || !/^[a-f0-9]{32}$/.test(peerPairingNonce)) {
-      return jsonError(400, 'INVALID_PEER_NONCE', 'peerPairingNonce must be 32 hex chars');
-    }
-    if (peerSessionId === sessionId) {
-      return jsonError(400, 'PEER_SAME_AS_SELF', 'peerSessionId must differ from sessionId');
-    }
-  }
-
-  // Codex 第6弾 #2 fix: session-scoped rate limit は **nonce 検証後** に移動。
-  // 未検証段階で sessionId に課金すると、攻撃者が他人の sessionId で /pair/token を
-  // 不正 nonce で叩き続けて RATELIMIT_SESSION を枯渇させ、本物 Bridge tab の token
-  // 発行を 429 で止める DoS が成立する。検証前の保護は前段の RATELIMIT_IP (per-IP)
-  // が担当する。なお Firebase REST に対する fetch のコストはあるが、IP rate limit
-  // (60req/60s) で flood は抑えられる前提。
-
-  // Codex P1 fix: PairingNonce は sessions/ ではなく pairing_nonces/ (rules で .read=false の server-only ノード) に分離。
-  // SA access_token で pairing_nonces/{sid} を読んで一致確認する。
-  const accessToken = await getServiceAccountAccessToken(env);
-
-  async function verifyNonce(sid: string, expectedNonce: string, label: string): Promise<Response | null> {
-    const url = `${env.FIREBASE_DATABASE_URL}/pairing_nonces/${sid}.json?access_token=${encodeURIComponent(accessToken)}`;
-    const r = await fetch(url);
-    if (!r.ok) return jsonError(502, 'FIREBASE_ERROR', `Firebase GET pairing_nonces/${sid} (${label}) -> ${r.status}`);
-    const record = (await r.json()) as { CreatedAt?: number; Nonce?: string } | null;
-    if (!record || typeof record.Nonce !== 'string') return jsonError(404, 'SESSION_NOT_FOUND', `${label} pairing_nonces not present`);
-    if (record.Nonce !== expectedNonce) return jsonError(401, 'INVALID_NONCE_MATCH', `${label} PairingNonce does not match`);
-    if (typeof record.CreatedAt !== 'number' || Date.now() - record.CreatedAt > 3_600_000) {
-      return jsonError(401, 'EXPIRED_SESSION', `${label} session expired (>1h)`);
-    }
-    return null;
-  }
-
-  const selfErr = await verifyNonce(sessionId, pairingNonce, 'self');
-  if (selfErr) return selfErr;
-  if (hasPeer) {
-    const peerErr = await verifyNonce(peerSessionId as string, peerPairingNonce as string, 'peer');
-    if (peerErr) return peerErr;
-  }
-
-  // nonce 検証成功後に session rate limit を消費 (正規 Bridge tab のみカウント)
-  if (env.RATELIMIT_SESSION) {
-    const { success } = await env.RATELIMIT_SESSION.limit({ key: sessionId });
-    if (!success) return jsonError(429, 'SESSION_RATE_LIMIT', 'sessionId rate limit exceeded');
-  }
-
-  // 5min Custom Token (uid = sessionId, src=bridge → rules で pairing_nonces/sessions 書込不可)
-  // Codex 第8弾 #2 fix (P1): 2-nonce verified (hasPeer=true) のときだけ `pairAuth: true` を claim に埋める。
-  // 1-QR の bridge token (sessions read のみで pairings には書かせない) には pairAuth を載せない。
-  // rules で `pairings/{$deviceId}/{$pid}.write` に `auth.token.pairAuth == true` を AND し、
-  // QR 1 枚だけで取った bridge token で他人 inbox に pairing 注入する経路を構造的に塞ぐ。
-  //
-  // Codex 第9弾 #1 fix (P1): pairAuth claim だけだと「どの peer sid が verify されたか」を rules で
-  // 判定できず、attacker が「victim A + attacker-controlled X」の 2-nonce で /pair/token を呼べば
-  // SidA=A, SidB=任意 で knownDeviceC の inbox に書込可能だった (ghost pairing 再開)。verified peer sid
-  // を `peerSid` claim にも埋め、rules で `$deviceId` と `SidA/SidB` が `auth.uid` か `auth.token.peerSid`
-  // のいずれかに一致することを必須化する。これで「自分 + verified peer 以外」の inbox に書けない。
-  //
-  // Codex 第11弾 #1 fix (P2): verified nonce 値 (selfNonce / peerNonce) も extraClaims に含めて
-  // rules で pairing_nonces/{sid}/Nonce 値との一致を必須化する。第10弾 #4 では「nonce node の存在」
-  // だけを check していたため、peer が cancel/pair 後に Add peer (= 新 nonce 作成) で再 open すると
-  // 古い 2-QR token が「新 nonce node 存在」だけで通過し、cross-inbox 書込が再成立する穴があった。
-  // nonce 値一致まで強制すれば、新 nonce が作られた時点で古い token は失効する (TTL 依存ゼロ)。
-  const customToken = await mintCustomToken(
-    sessionId,
-    300,
-    env,
-    'bridge',
-    hasPeer
-      ? {
-          pairAuth: true,
-          peerSid: peerSessionId as string,
-          selfNonce: pairingNonce,
-          peerNonce: peerPairingNonce as string,
-        }
-      : undefined,
-  );
-  return jsonOk({ customToken, expiresIn: 300 });
-}
-
-// ---------- Custom Token / OAuth ----------
-
-/**
- * Firebase Custom Token JWT を SA 鍵で署名して発行する。
- * 必須 claims (iss, sub, aud, iat, exp, uid) を満たさないと Identity Toolkit が 400 を返す。
- *
- * Codex P1 fix (第3弾): `src` を Custom Token の追加 claims に埋め、Firebase rules 側で
- * `auth.token.src` として PC/Bridge を区別できるようにする。Bridge token (src="bridge") は
- * pairing_nonces を書けない / sessions を書けない 等を rules で禁じ、PC token (src="pc") のみが
- * セッション関連 state を作成・更新できるようにする (Bridge tab が tab 残存中に nonce rotation
- * で session を蘇生する穴を塞ぐ)。
- *
- * Codex 第8弾 #2 fix (P1): `extraClaims` で `pairAuth: true` を bridge token に埋める経路を追加。
- * handlePairToken は **2-nonce verified** (= hasPeer=true) の path でだけ `pairAuth: true` を渡し、
- * 1-QR path (sessions read only) では渡さない。rules 側で pairings 書込時に
- * `auth.token.pairAuth == true` を必須化し、「QR 1 枚だけで取った bridge token で他人 inbox に
- * pairing 注入」を構造的に防ぐ。
- *
- * Codex 第9弾 #1 fix (P1): 2-nonce verified path では `peerSid` (= verified peer sessionId)
- * も extraClaims に含める。rules 側で「$deviceId / SidA / SidB が auth.uid または
- * auth.token.peerSid のいずれかに一致」を必須化し、attacker が自分の controlled session を
- * peer に立てて第 3 者 C の inbox に pairing を注入する経路を閉じる。
- *
- * Codex 第11弾 #1 fix (P2): verify 時の nonce 値 (selfNonce / peerNonce) も extraClaims に含める。
- * rules 側で pairing_nonces/{auth.uid}/Nonce, pairing_nonces/{auth.token.peerSid}/Nonce との
- * 「値一致」を必須化することで、peer が cancel/pair 後の Add peer で nonce 再作成しても、
- * 古い stale token は新 nonce 値と一致せず write 拒否される (nonce node 存在 check のみだと、
- * 新 nonce が作成された直後に古い token が通過する race が残っていた)。
- */
-export async function mintCustomToken(
-  uid: string,
-  expiresInSec: number,
-  env: Env,
-  source: 'pc' | 'bridge' = 'pc',
-  extraClaims?: Record<string, unknown>,
-): Promise<string> {
-  const iat = Math.floor(Date.now() / 1000);
-  const exp = iat + expiresInSec;
-  const header = { alg: 'RS256', typ: 'JWT' };
-  const payload = {
-    iss: env.FIREBASE_CLIENT_EMAIL,
-    sub: env.FIREBASE_CLIENT_EMAIL,
-    aud: 'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit',
-    iat,
-    exp,
-    uid,
-    // Firebase Custom Token は `claims` 直下の任意フィールドを ID token の `auth.token.<key>` に伝搬する。
-    // extraClaims が undefined のときは spread が no-op になるので 1-QR path では src のみが残る。
-    claims: { src: source, ...(extraClaims ?? {}) },
-  };
-  return rs256Sign(header, payload, env.FIREBASE_PRIVATE_KEY);
-}
-
-/**
- * SA を OAuth 2.0 JWT-bearer で交換して REST 用 access_token を取得。
- *
- * モジュールレベルでトークンをキャッシュする（Cloudflare Workers の同一 isolate 内で再利用）。
- * `expires_in` から 60s のマージンを引いた時刻まで再利用し、それ以降は新規取得する。
- * 同一 isolate 内で /pair/token が連続呼出されるケースで Google OAuth 200-500ms RTT と
- * QPS リミット消費を削減する目的（Gemini code review 指摘）。新 isolate では再取得が走る。
- */
-let cachedAccessToken: { token: string; expiresAt: number } | null = null;
-
-export async function getServiceAccountAccessToken(env: Env): Promise<string> {
-  const now = Date.now();
-  if (cachedAccessToken && cachedAccessToken.expiresAt > now) {
-    return cachedAccessToken.token;
-  }
-  const iat = Math.floor(now / 1000);
-  const exp = iat + 3600;
-  const header = { alg: 'RS256', typ: 'JWT' };
-  const payload = {
-    iss: env.FIREBASE_CLIENT_EMAIL,
-    // Codex P1 fix (第3弾): Firebase Realtime Database REST は firebase.database + userinfo.email の
-    // 両 scope を要求する (https://firebase.google.com/docs/database/rest/auth)。userinfo.email が欠落
-    // すると DB read が permission_denied になり Bridge token 発行が連鎖失敗する。cleanup workflow と揃える。
-    scope: 'https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/userinfo.email',
-    aud: 'https://oauth2.googleapis.com/token',
-    iat,
-    exp,
-  };
-  const assertion = await rs256Sign(header, payload, env.FIREBASE_PRIVATE_KEY);
-  const body = new URLSearchParams({
-    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-    assertion,
-  });
-  const r = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body,
-  });
-  const j = (await r.json()) as { access_token?: string; expires_in?: number; error?: string };
-  if (!j.access_token) {
-    throw new Error('OAuth token exchange failed: ' + JSON.stringify(j));
-  }
-  const lifetimeMs = (j.expires_in ?? 3600) * 1000;
-  cachedAccessToken = { token: j.access_token, expiresAt: now + lifetimeMs - 60_000 };
-  return j.access_token;
-}
-
-/** テスト用: モジュールキャッシュを強制クリアする（本番経路では使わない）。 */
-export function _resetAccessTokenCacheForTests(): void {
-  cachedAccessToken = null;
-}
-
-/** RS256 JWT を SA PEM PKCS#8 で署名 */
-export async function rs256Sign(
-  header: object,
-  payload: object,
-  privateKeyPem: string,
-): Promise<string> {
-  const enc = new TextEncoder();
-  const headerB64 = base64UrlEncode(enc.encode(JSON.stringify(header)));
-  const payloadB64 = base64UrlEncode(enc.encode(JSON.stringify(payload)));
-  const unsigned = `${headerB64}.${payloadB64}`;
-  const der = pemPkcs8ToDer(privateKeyPem);
-  const key = await crypto.subtle.importKey(
-    'pkcs8',
-    der,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const sigBuf = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, enc.encode(unsigned));
-  return `${unsigned}.${base64UrlEncode(new Uint8Array(sigBuf))}`;
+  const cfToken = await mintSessionToken(deviceId, 3600, env);
+  return jsonOk({ cfToken, expiresIn: 3600 });
 }
 
 // ---------- CF 単独完結: device 署名検証 + 自前 HMAC bearer (cfToken) ----------
 //
 // docs/design/cf-only-migration.md §2。Firebase の「Worker が Custom Token mint → クライアントが
 // Firebase ログイン → idToken」二段を「Worker が ECDSA 検証して自前 HMAC bearer を発行 →
-// クライアントが Bearer で DO/D1 を叩く」一段に畳むための土台。Firebase RTDB 撤去後もそのまま生きる。
+// クライアントが Bearer で DO/D1 を叩く」一段に畳んだ。Firebase RTDB 撤去後もそのまま生きる。
 
 /** verifyEcdsaSig の結果。decode/import 失敗は INVALID_SIG_FORMAT、検証不成立は BAD_SIGNATURE。 */
 export type EcdsaSigResult = { ok: true } | { ok: false; code: 'INVALID_SIG_FORMAT' | 'BAD_SIGNATURE' };
@@ -374,7 +139,7 @@ export async function verifyEcdsaSig(
 }
 
 /**
- * cfToken (自前 HMAC bearer) を HS256 で発行。Firebase idToken の置換。
+ * cfToken (自前 HMAC bearer) を HS256 で発行。
  * payload は最小 `{ sub: deviceId, iat, exp }`。クライアントは decode 不要
  * (uid は自分の deviceId として自明、exp はレスポンス値) なので AOT セーフ。
  */
@@ -444,14 +209,6 @@ async function hs256Sign(header: object, payload: object, secret: string): Promi
 
 // ---------- Helpers ----------
 
-function pemPkcs8ToDer(pem: string): ArrayBuffer {
-  const body = pem
-    .replace(/-----BEGIN PRIVATE KEY-----/g, '')
-    .replace(/-----END PRIVATE KEY-----/g, '')
-    .replace(/\s+/g, '');
-  return base64Decode(body);
-}
-
 export function base64UrlEncode(buf: Uint8Array): string {
   let s = '';
   for (const b of buf) s += String.fromCharCode(b);
@@ -465,13 +222,6 @@ export function base64UrlDecode(s: string): Uint8Array {
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
-}
-
-function base64Decode(s: string): ArrayBuffer {
-  const bin = atob(s);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out.buffer;
 }
 
 async function readJsonBody(req: Request): Promise<{ value: unknown } | { error: Response }> {

@@ -164,6 +164,17 @@
   <x:String x:Key="Text.Member.Delete" xml:space="preserve">Delete</x:String>
   <x:String x:Key="Text.Member.Delete.Confirm" xml:space="preserve">Remove "{0}" from your members?
 This cannot be undone.</x:String>
+  <x:String x:Key="Text.Member.TogglePin" xml:space="preserve">Pin / Unpin</x:String>
+
+  <!-- Peer: destination list sorting and section headers -->
+  <x:String x:Key="Text.Peer.Sort" xml:space="preserve">Sort</x:String>
+  <x:String x:Key="Text.Peer.Sort.Name" xml:space="preserve">By name</x:String>
+  <x:String x:Key="Text.Peer.Sort.LastTransfer" xml:space="preserve">By last transfer</x:String>
+  <x:String x:Key="Text.Peer.Sort.Route" xml:space="preserve">By connection route</x:String>
+  <x:String x:Key="Text.Peer.Sort.Transferring" xml:space="preserve">Transferring first</x:String>
+  <x:String x:Key="Text.Peer.Section.Pinned" xml:space="preserve">Pinned</x:String>
+  <x:String x:Key="Text.Peer.Section.Online" xml:space="preserve">Online</x:String>
+  <x:String x:Key="Text.Peer.Section.Offline" xml:space="preserve">Offline</x:String>
 
   <!-- v1.0.47: 行ごとの転送操作・受信保存先バー -->
   <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">Resend</x:String>

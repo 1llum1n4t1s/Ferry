@@ -55,12 +55,6 @@ new_sqlite_classes = ["DeviceDO"]
 pattern = "relay.ferry.nephilim.jp"
 custom_domain = true
 
-# === #D-001a Phase B: Firebase Custom Token Auth ===
-
-# Firebase Realtime DB URL (vars - 秘密ではないので環境変数として埋め込み)
-[vars]
-FIREBASE_DATABASE_URL = "https://ferry-edf09-default-rtdb.firebaseio.com"
-
 # === CF 単独完結移行 Step 2: ペア台帳 D1 ===
 # sessions / pairing_nonces / pairs を保持 (pairs は永続 SSoT、他は 1h stale)。
 # 作成手順 (deploy 前に必須):
@@ -104,12 +98,11 @@ namespace_id = "1003"
 simple = { limit = 5, period = 60 }
 
 # secret は手動投入:
-#   SA_PATH=$(node -p "require('C:/Users/IMT/dev/Secret/secrets.json').firebase.sa_key_path")
-#   node -p "require('$SA_PATH').private_key" | pnpm dlx wrangler secret put FIREBASE_PRIVATE_KEY
-#   node -p "require('$SA_PATH').client_email" | pnpm dlx wrangler secret put FIREBASE_CLIENT_EMAIL
-#   # CF 単独完結 (cf-only-migration): cfToken (自前 HMAC bearer) 署名鍵。ランダム 32 byte を投入。
-#   #   未設定でも deploy は通る (/auth/token は cfToken を省略し Firebase 経路のみで動作)。
+#   # CF 単独完結 (cf-only-migration): cfToken (自前 HMAC bearer) 署名鍵。ランダム 32 byte を投入（本番必須）。
 #   openssl rand -hex 32 | pnpm dlx wrangler secret put SESSION_HMAC_SECRET
+#
+# 旧 Firebase Custom Token 用の FIREBASE_PRIVATE_KEY / FIREBASE_CLIENT_EMAIL は CF 単独完結 Step 7 で撤去済み。
+# デプロイ後に `pnpm dlx wrangler secret delete FIREBASE_PRIVATE_KEY` / `... FIREBASE_CLIENT_EMAIL` で消すこと。
 
 # === Observability ===
 # Workers 標準のメトリクス + Logpush 連携時の保管設定。

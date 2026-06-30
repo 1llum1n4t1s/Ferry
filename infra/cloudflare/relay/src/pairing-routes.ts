@@ -1,11 +1,16 @@
 /**
- * Ferry pairing / pairs ルート — CF 単独完結移行 Step 2。
+ * Ferry pairing / pairs ルート — CF 単独完結移行 Step 2 / Step 7。
  *
  *   POST   /pair/session            — PC が自分のセッション+nonce を登録 (bearer self)
  *   GET    /pair/session/{sid}      — セッションの displayName/publicKey 取得 (bearer 任意・コード貼付用)
  *   DELETE /pair/session/{sid}      — セッション+nonce を revoke (bearer self)
- *   POST   /pair/create             — **nonce 所有が認可** (bearer なし)。両 sid の nonce を D1 で server 検証し
- *                                     両 DeviceDO inbox へペア成立を push。Bridge(browser) から CORS 付きで呼ぶ
+ *   POST   /pair/create             — **両 sid の nonce 値所有が認可** (bearer なし)。D1 で server 検証し
+ *                                     両 DeviceDO inbox へペア成立を push。Bridge(browser) から同一オリジンで呼ぶ
+ *   POST   /pair/link               — **自分の bearer + 相手セッションの存在**が認可 (PC コード貼付ペアリング用)。
+ *                                     sidA は cfToken の claims から (=本人性は HMAC 署名が担保)、相手 sidB は
+ *                                     「pairing_nonces に行がありセッションが 1h 以内」であることだけを要求する
+ *                                     (相手の nonce 値の所有は不要)。旧 Firebase rules の
+ *                                     `pairing_nonces/{sidB}.exists()` 条件と同じセキュリティレベル。
  *   PUT    /pairs/{pairId}          — pairs SSoT 書込 (bearer 当事者)
  *   GET    /pairs/{pairId}          — pairs SSoT 取得 (bearer 当事者)。404 で remote-unpair 検出
  *   DELETE /pairs/{pairId}          — unpair (bearer 当事者)。相手 inbox へ unpair push も送る
@@ -85,6 +90,14 @@ export async function handlePairSession(req: Request, env: Env, url: URL): Promi
 // ---------- /pair/create (nonce 所有が認可・bearer なし) ----------
 
 export async function handlePairCreate(req: Request, env: Env): Promise<Response> {
+  // bearer 不要の公開エンドポイント (Bridge から呼ぶ) なので IP rate limit で乱打を抑える
+  // (/auth/token の handleAuthToken と同じパターン)。
+  const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
+  if (env.RATELIMIT_IP) {
+    const { success } = await env.RATELIMIT_IP.limit({ key: ip });
+    if (!success) return jsonError(429, 'IP_RATE_LIMIT', 'IP rate limit exceeded');
+  }
+
   const body = (await req.json()) as Record<string, unknown>;
   const sidA = str(body.sidA);
   const sidB = str(body.sidB);
@@ -100,21 +113,7 @@ export async function handlePairCreate(req: Request, env: Env): Promise<Response
   const errB = await verifyNonce(env, sidB, nonceB, 'B');
   if (errB) return errB;
 
-  const now = Date.now();
-  const pairingId = derivePairId(sidA, sidB);
-  const event = {
-    pairingId,
-    sidA,
-    nameA: str(body.nameA) || 'PC-A',
-    sidB,
-    nameB: str(body.nameB) || 'PC-B',
-    pkA: str(body.pkA),
-    pkB: str(body.pkB),
-    createdAt: now,
-  };
-  // 両 deviceId の DeviceDO inbox に push (接続中なら WS で即時、未接続なら未読キューへ)。
-  await notifyInbox(env, sidA, event);
-  await notifyInbox(env, sidB, event);
+  const pairingId = await notifyPairEstablished(env, sidA, str(body.nameA), sidB, str(body.nameB), str(body.pkA), str(body.pkB));
   return jsonOk({ ok: true, pairingId });
 }
 
@@ -126,6 +125,82 @@ async function verifyNonce(env: Env, sid: string, nonce: string, label: string):
   if (row.nonce !== nonce) return jsonError(401, 'INVALID_NONCE_MATCH', `${label}: nonce mismatch`);
   if (Date.now() - row.created_at > NONCE_TTL_MS) return jsonError(401, 'EXPIRED_SESSION', `${label}: session expired`);
   return null;
+}
+
+/** sid のセッションが現在アクティブ（pairing_nonces に行があり 1h 以内）か、nonce 値を問わずに確認する。
+ *  verifyNonce との違いは「値の一致」を見ない点のみ (handlePairLink の「相手の nonce 値所有は不要」要件用)。 */
+async function verifySessionActive(env: Env, sid: string, label: string): Promise<Response | null> {
+  const row = await env.DB.prepare('SELECT created_at FROM pairing_nonces WHERE sid=?')
+    .bind(sid)
+    .first<{ created_at: number }>();
+  if (!row) return jsonError(404, 'SESSION_NOT_FOUND', `${label}: pairing_nonces not present`);
+  if (Date.now() - row.created_at > NONCE_TTL_MS) return jsonError(401, 'EXPIRED_SESSION', `${label}: session expired`);
+  return null;
+}
+
+/** pairingId を導出し、両 deviceId の DeviceDO inbox にペア成立イベントを push する
+ *  (handlePairCreate / handlePairLink で共通)。2 つの DO は互いに独立しているため並列実行する。 */
+async function notifyPairEstablished(
+  env: Env,
+  sidA: string,
+  nameA: string,
+  sidB: string,
+  nameB: string,
+  pkA: string,
+  pkB: string,
+): Promise<string> {
+  const pairingId = derivePairId(sidA, sidB);
+  const event = {
+    pairingId,
+    sidA,
+    nameA: nameA || 'PC-A',
+    sidB,
+    nameB: nameB || 'PC-B',
+    pkA,
+    pkB,
+    createdAt: Date.now(),
+  };
+  await Promise.all([notifyInbox(env, sidA, event), notifyInbox(env, sidB, event)]);
+  return pairingId;
+}
+
+// ---------- /pair/link (bearer 必須・PC コード貼付ペアリング用) ----------
+
+/**
+ * 自分の bearer (cfToken) で sidA=本人を保証し、相手 (sidB) は「セッションが現在アクティブ
+ * (pairing_nonces に行があり 1h 以内)」であることだけを要求する。相手の nonce 値の所有は不要。
+ *
+ * 攻撃者が被害者 C の sidC（コード）を知っているだけで C の inbox にペアリングを注入できないか:
+ * - claims.deviceId は cfToken の HMAC 署名で保証されるため、攻撃者は「自分自身」としてしか
+ *   sidA を名乗れない (sidA == claims.deviceId を強制)。
+ * - 攻撃者は自分 (sidA=攻撃者) と sidB=C の組で /pair/link を呼べるが、これは
+ *   「攻撃者が C とペアリングしようとした」というだけの事象で、C 側ユーザーが PairingDetected を
+ *   受けて新規ピアとして表示される (rere #D-001(b) の通常のペアリング成立と同じ)。第三者 X の
+ *   inbox に「sidA=攻撃者, sidB=X」以外の組（例えば被害者 Y と Z を勝手にペアリングする等）を
+ *   注入することはできない（sidA は常に claims.deviceId 固定）。
+ */
+export async function handlePairLink(req: Request, env: Env): Promise<Response> {
+  const claims = await authBearer(req, env);
+  if (!claims) return jsonError(401, 'BAD_TOKEN', 'cfToken invalid or expired');
+
+  // bearer 検証済み (本人確認済み) なので deviceId-scoped rate limit で sidB 総当たり探索や
+  // notifyInbox 経由のペアリング通知スパムを抑える (/auth/token の RATELIMIT_DEVICE と同じパターン)。
+  if (env.RATELIMIT_DEVICE) {
+    const { success } = await env.RATELIMIT_DEVICE.limit({ key: claims.deviceId });
+    if (!success) return jsonError(429, 'DEVICE_RATE_LIMIT', 'deviceId rate limit exceeded');
+  }
+
+  const body = (await req.json()) as Record<string, unknown>;
+  const sidA = claims.deviceId;
+  const sidB = str(body.sidB);
+  if (!HEX32.test(sidB)) return jsonError(400, 'BAD_SID', 'sidB must be 32 hex');
+  if (sidA === sidB) return jsonError(400, 'SAME_SID', 'sidB must differ from caller deviceId');
+
+  const sessionErr = await verifySessionActive(env, sidB, 'sidB');
+  if (sessionErr) return sessionErr;
+
+  const pairingId = await notifyPairEstablished(env, sidA, str(body.nameA), sidB, str(body.nameB), str(body.pkA), str(body.pkB));
+  return jsonOk({ ok: true, pairingId });
 }
 
 // ---------- /pairs/{pairId} (SSoT) ----------

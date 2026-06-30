@@ -53,9 +53,6 @@ public sealed class SettingsService : ISettingsService, IDisposable
         if (!File.Exists(_filePath))
         {
             // 初回起動: デフォルト設定を保存して DeviceId を確定させる。
-            // 新規インストールは UseCloudflareSignaling 既定 true なので移行済み扱いにしておく
-            // （次回起動でマイグレーションが無駄に走るのを防ぐ）。
-            Settings.MigratedToCloudflareDefault = true;
             Save();
             return;
         }
@@ -68,7 +65,6 @@ public sealed class SettingsService : ISettingsService, IDisposable
             {
                 Settings = loaded;
             }
-            MigrateToCloudflareDefaultIfNeeded();
         }
         catch (Exception ex)
         {
@@ -106,36 +102,6 @@ public sealed class SettingsService : ISettingsService, IDisposable
             }
             catch { /* 退避失敗は無視 */ }
         }
-    }
-
-    /// <summary>
-    /// CF 単独完結移行 Step 5 の一度きりマイグレーション。
-    /// 旧 settings.json には <c>UseCloudflareSignaling=false</c> が永続化されているため、コード既定を
-    /// true へ反転しただけでは既存クライアントが Firebase 経路に残る。<see cref="AppSettings.MigratedToCloudflareDefault"/>
-    /// が未設定（=旧クライアント）なら Cloudflare 既定へ一度だけ引き上げ、フラグを立てて永続化する。
-    /// フラグが立った後はユーザーが明示的に false へ戻した値を上書きしない（rollback の可逆性を保つ）。
-    /// </summary>
-    private void MigrateToCloudflareDefaultIfNeeded()
-    {
-        if (Settings.MigratedToCloudflareDefault) return;
-
-        // 旧クライアント（永続値 false）からの引き上げのみログに残す。
-        // 新規インストールや既に true の早期検証クライアントはフラグだけ立てて静かに保存する。
-        bool flipped = !Settings.UseCloudflareSignaling;
-        Settings.UseCloudflareSignaling = true;
-        Settings.MigratedToCloudflareDefault = true;
-        if (flipped)
-        {
-            Util.Logger.Log(
-                "設定マイグレーション: signaling 経路を Cloudflare 既定へ移行しました (UseCloudflareSignaling=true)。" +
-                "Firebase へ戻す場合は settings.json で false に設定してください。",
-                Util.LogLevel.Info);
-        }
-        // ここは Load()（コンストラクタ内・単一スレッド初期化経路）からのみ呼ばれるため、
-        // SaveAsync の _saveLock を経由しない同期 Save() で安全（並行 SaveAsync を呼ぶ VM/MainWindow/
-        // ConnectionService はまだ生成されておらず、List/HashSet enumerate との競合は起こらない）。
-        // 起動後の経路からこの helper を呼ぶ場合は SaveAsync 側の直列化を経由させること。
-        Save();
     }
 
     private void Save()

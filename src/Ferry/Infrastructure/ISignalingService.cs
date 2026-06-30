@@ -8,9 +8,9 @@ using Ferry.Services;
 namespace Ferry.Infrastructure;
 
 /// <summary>
-/// CF 単独完結移行 (dual-path): シグナリング / ペアリング / pairs SSoT の抽象。
-/// <see cref="FirebaseSignaling"/>（Firebase RTDB 経路）と <see cref="CloudflareSignaling"/>（CF DO/D1 経路）の
-/// 両実装が満たし、<see cref="Services.ConnectionService"/> はファクトリ越しにこの抽象だけに依存する。
+/// シグナリング / ペアリング / pairs SSoT の抽象。
+/// <see cref="CloudflareSignaling"/>（CF DO/D1 経路）が実装し、
+/// <see cref="Services.ConnectionService"/> はファクトリ越しにこの抽象だけに依存する。
 /// presence は <see cref="IPresenceService"/> を継承（同じインスタンスが presence も担う）。
 ///
 /// レイヤ逆転回避のため Ferry.Infrastructure に置く（PairingInfo / PairRecord を参照するため）。

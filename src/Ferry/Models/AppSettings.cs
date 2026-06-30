@@ -64,19 +64,10 @@ public sealed class AppSettings
     // PairSecret を保有するペアとは自動的に HMAC + AES-GCM 暗号化、未交換ペアは平文フォールバック。
     // 旧 settings.json に残る `EnableSecureChannel` キーは System.Text.Json が未知キーとして無視し、
     // 次回 SaveAsync で自然に消える（#D-004 と同じ互換パターン）。
-
-    /// <summary>CF 単独完結移行 (dual-path): true で signaling/presence/pairing を Cloudflare 経路にする。
-    /// Step 5 で既定 true（Cloudflare 経路）へ反転。false にすると旧 Firebase 経路へ rollback できる。
-    /// Firebase コードは数バージョン残置（実機検証 OK 後に Step 6 で撤去）。設計は docs/design/cf-only-migration.md。</summary>
-    public bool UseCloudflareSignaling { get; set; } = true;
-
-    /// <summary>CF 単独完結移行 Step 5 の一度きりマイグレーション済みフラグ。既定 false。
-    /// 旧 settings.json には <see cref="UseCloudflareSignaling"/>=false が永続化されており、コード既定の
-    /// 反転だけでは既存クライアントが Firebase 経路に残るため、<see cref="Ferry.Services.SettingsService"/> 起動時に
-    /// このフラグが false なら <see cref="UseCloudflareSignaling"/> を一度だけ true へ引き上げてフラグを立てる。
-    /// 立った後はユーザーが明示的に false へ戻した値を上書きしない（rollback の可逆性を保つ）。
-    /// Step 6 で Firebase 経路ごと撤去する際にこのフラグも不要になる。</summary>
-    public bool MigratedToCloudflareDefault { get; set; } = false;
+    //
+    // CF 単独完結 Step 6: 旧 dual-path フラグ `UseCloudflareSignaling` / `MigratedToCloudflareDefault` は
+    // 撤去（常時 Cloudflare 経路）。旧 settings.json に残るこれらのキーも上記と同じく未知キーとして無視され
+    // 次回保存で自然に消える（#D-004 互換パターン）。v1.0.65 で全クライアントが CF へ移行済み。
 
     /// <summary>アップロード帯域制限 (KB/s)。0 で無制限。
     /// 送信側 SendChunksAsync の各チャンク送信前に TokenBucket でレート整形する。</summary>
@@ -91,6 +82,11 @@ public sealed class AppSettings
     /// 1 は従来動作（直列）、N>1 で N 個まで同時に送信する。各 transport の SendAsync は
     /// SemaphoreSlim でフレーム単位に直列化済みなので、メッセージ交錯は起こらない。</summary>
     public int ParallelTransferCount { get; set; } = 1;
+
+    /// <summary>宛先リストの各セクション内ソート基準（既定 Name）。📌ピン/🟢オンライン/⚪オフラインの
+    /// セクション分割は固定で、この値は各セクション内の並び順を決める。System.Text.Json は enum を数値で
+    /// 永続化する（AOT source-gen 対応）。旧 settings.json に無ければ既定 Name(0)。</summary>
+    public PeerSortMode PeerListSortMode { get; set; } = PeerSortMode.Name;
 
     /// <summary>マルチストリーム転送 PoC 計測用: true で TCP/UDP 経路を skip し必ず Relay 経由にする (既定 false)。
     /// 同一 LAN でも Relay を強制でき、N=1 vs N&gt;1 のスループット比較を再現性よく取れる。本番影響を避けるため

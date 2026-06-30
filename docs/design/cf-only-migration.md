@@ -97,7 +97,8 @@ PairDO storage キー: `offer:{sender}`→`{data,createdAt}` / `answer:{sender}`
 |---|---|---|
 | `RegisterSessionAsync(deviceId, name, pk)` | `POST /pair/session` `{displayName, publicKey, pairingNonce}` | D1 sessions + pairing_nonces upsert。authz uid==deviceId |
 | `CheckSessionAsync(sid)` | `GET /pair/session/{sid}` | `{displayName, publicKey}` / 404 |
-| `SubmitPairingAsync` / Bridge `performPairing` | `POST /pair/create` `{sidA,nameA,pkA,sidB,nameB,pkB,nonceA,nonceB}` | 両 nonce を D1 で server 検証 → 両 sid の DeviceDO inbox に pairing push |
+| Bridge `performPairing`（QR/Bridge 経路） | `POST /pair/create` `{sidA,nameA,pkA,sidB,nameB,pkB,nonceA,nonceB}` | bearer なし。両 nonce 値所有を D1 で server 検証 → 両 sid の DeviceDO inbox に pairing push |
+| `SubmitPairingAsync`（PC コード貼付ペアリング、Step 7 で CF 対応） | `POST /pair/link` `{sidB,nameA,nameB,pkA,pkB}` | bearer 必須（sidA は claims.deviceId）。相手 sidB は「セッションがアクティブ」のみ要求（nonce 値所有は不要） |
 | `StartWatchingPairing()` 購読 | `GET /inbox?deviceId={id}` (WS) | DeviceDO が pairing イベントを push。接続時に未読 flush(connect-60s gate) |
 | `RevokePairingTokensAsync(sid)` | `DELETE /pair/session/{sid}` | sessions + pairing_nonces 削除 |
 

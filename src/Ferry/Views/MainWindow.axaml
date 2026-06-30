@@ -72,11 +72,38 @@
                     </Border.Effect>
                     <Grid RowDefinitions="Auto,*,Auto">
 
-                        <!-- 検索ボックス + 手動更新ボタン (v1.0.38) -->
-                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="8,8">
+                        <!-- 検索ボックス + 並び替えメニュー + 手動更新ボタン -->
+                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="8,8">
                             <TextBox Grid.Column="0" Classes="search"
+                                     Text="{Binding Connection.PeerSearchText, Mode=TwoWay}"
                                      PlaceholderText="{DynamicResource Text.Transfer.SearchPeer}" />
+                            <!-- 並び替えメニュー。アイコンはフォント非依存のベクター（幅の減る 3 本線＝ソート） -->
                             <Button Grid.Column="1" Classes="icon"
+                                    Margin="6,0,0,0"
+                                    ToolTip.Tip="{DynamicResource Text.Peer.Sort}">
+                                <StackPanel Spacing="2" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <Rectangle Width="14" Height="2" RadiusX="1" RadiusY="1" Fill="{DynamicResource TextSecondaryBrush}" />
+                                    <Rectangle Width="10" Height="2" RadiusX="1" RadiusY="1" Fill="{DynamicResource TextSecondaryBrush}" />
+                                    <Rectangle Width="6" Height="2" RadiusX="1" RadiusY="1" Fill="{DynamicResource TextSecondaryBrush}" />
+                                </StackPanel>
+                                <Button.Flyout>
+                                    <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                        <MenuItem Header="{DynamicResource Text.Peer.Sort.Name}"
+                                                  Command="{Binding Connection.SetSortModeCommand}"
+                                                  CommandParameter="{x:Static m:PeerSortMode.Name}" />
+                                        <MenuItem Header="{DynamicResource Text.Peer.Sort.LastTransfer}"
+                                                  Command="{Binding Connection.SetSortModeCommand}"
+                                                  CommandParameter="{x:Static m:PeerSortMode.LastTransfer}" />
+                                        <MenuItem Header="{DynamicResource Text.Peer.Sort.Route}"
+                                                  Command="{Binding Connection.SetSortModeCommand}"
+                                                  CommandParameter="{x:Static m:PeerSortMode.Route}" />
+                                        <MenuItem Header="{DynamicResource Text.Peer.Sort.Transferring}"
+                                                  Command="{Binding Connection.SetSortModeCommand}"
+                                                  CommandParameter="{x:Static m:PeerSortMode.Transferring}" />
+                                    </MenuFlyout>
+                                </Button.Flyout>
+                            </Button>
+                            <Button Grid.Column="2" Classes="icon"
                                     Content="🔄"
                                     FontSize="14"
                                     Margin="6,0,0,0"
@@ -86,10 +113,20 @@
 
                         <!-- ピアリスト -->
                         <ListBox Grid.Row="1" Classes="peerList"
-                                 ItemsSource="{Binding Connection.PairedPeers}"
+                                 ItemsSource="{Binding Connection.VisiblePeers}"
                                  SelectedItem="{Binding Connection.SelectedPeer, Mode=TwoWay}"
                                  x:Name="PeerListBox">
-                            <ListBox.ItemTemplate>
+                            <ListBox.DataTemplates>
+                                <!-- セクション見出し（📌ピン / 🟢オンライン / ⚪オフライン）。
+                                     行は選択・フォーカス不可（code-behind OnPeerListContainerPrepared で抑止）-->
+                                <DataTemplate x:DataType="m:PeerListSection">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="2,8,2,2">
+                                        <TextBlock Text="{Binding Icon}" FontSize="10" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding Label}" FontSize="10" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextTertiaryBrush}"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </DataTemplate>
                                 <DataTemplate x:DataType="m:PairedPeer">
                                     <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2">
                                         <!-- オンラインインジケーター -->
@@ -152,20 +189,31 @@
                                         </StackPanel>
 
                                         <!-- 3 点リーダー → サブメニュー（削除など）。
-                                             ListBoxItem へのバブルを止めて SelectedPeer 書き換えを防ぐ -->
+                                             ListBoxItem へのバブルを止めて SelectedPeer 書き換えを防ぐ。
+                                             旧 Content="&#x22EF;"(U+22EF) はフォントグリフ依存で、既定フォント Inter が
+                                             当該グリフを持たず環境によって ≡ 状に化けた。フォント非依存・AOT 安全・
+                                             クロス OS 同一表示のため Ellipse 3 個のベクター横 3 点に差し替えた。 -->
                                         <Button Grid.Column="2"
-                                                Content="&#x22EF;"
                                                 ToolTip.Tip="{DynamicResource Text.Member.Menu}"
                                                 VerticalAlignment="Center"
                                                 MinWidth="28" Height="28"
                                                 Padding="6,0"
                                                 Background="Transparent"
                                                 BorderThickness="0"
-                                                FontSize="16"
-                                                Foreground="{DynamicResource TextSecondaryBrush}"
                                                 PointerPressed="OnDotMenuPointerPressed">
+                                            <StackPanel Orientation="Horizontal"
+                                                        VerticalAlignment="Center"
+                                                        Spacing="3">
+                                                <Ellipse Width="4" Height="4" Fill="{DynamicResource TextSecondaryBrush}" />
+                                                <Ellipse Width="4" Height="4" Fill="{DynamicResource TextSecondaryBrush}" />
+                                                <Ellipse Width="4" Height="4" Fill="{DynamicResource TextSecondaryBrush}" />
+                                            </StackPanel>
                                             <Button.Flyout>
                                                 <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                                    <!-- ピン留め / 解除（VM のトグルコマンドへ委譲・peers.json 永続化）-->
+                                                    <MenuItem Header="{DynamicResource Text.Member.TogglePin}"
+                                                              Click="OnTogglePinClick" />
+                                                    <Separator />
                                                     <!-- 削除前に確認ダイアログを出すため、Command バインドではなく Click を介す -->
                                                     <MenuItem Header="{DynamicResource Text.Member.Delete}"
                                                               Click="OnDeletePeerClick" />
@@ -174,7 +222,7 @@
                                         </Button>
                                     </Grid>
                                 </DataTemplate>
-                            </ListBox.ItemTemplate>
+                            </ListBox.DataTemplates>
                         </ListBox>
 
                         <!-- v1.0.38: サイドバー下部メニューをリスト風に (下詰めアイコン + ラベル) -->

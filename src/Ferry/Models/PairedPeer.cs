@@ -26,6 +26,18 @@ public sealed partial class PairedPeer : ObservableObject
         set => SetProperty(ref _displayName, value);
     }
 
+    private bool _isPinned;
+
+    /// <summary>ピン留め（お気に入り上部固定）。宛先リストで「📌 ピン留め」セクションに集約する。
+    /// peers.json に永続化（PeerRegistryJsonContext が List&lt;PairedPeer&gt; を丸ごとシリアライズするため、
+    /// 通常プロパティとして追加するだけで永続対象になる。旧 peers.json は欠落＝既定 false）。
+    /// 切替で宛先リストの再ソートを促すため変更通知を出す（DisplayName と同じ明示バッキング）。</summary>
+    public bool IsPinned
+    {
+        get => _isPinned;
+        set => SetProperty(ref _isPinned, value);
+    }
+
     /// <summary>ペアリング日時 (UTC)。</summary>
     public DateTime PairedAt { get; init; } = DateTime.UtcNow;
 

@@ -145,4 +145,15 @@
   <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
   <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Number of files sent simultaneously (1 = legacy serial)</x:String>
 
+  <!-- Peer: destination list sorting/section headers -->
+  <x:String x:Key="Text.Member.TogglePin" xml:space="preserve">Anheften / Lösen</x:String>
+  <x:String x:Key="Text.Peer.Sort" xml:space="preserve">Sortieren</x:String>
+  <x:String x:Key="Text.Peer.Sort.Name" xml:space="preserve">Nach Name</x:String>
+  <x:String x:Key="Text.Peer.Sort.LastTransfer" xml:space="preserve">Nach letzter Übertragung</x:String>
+  <x:String x:Key="Text.Peer.Sort.Route" xml:space="preserve">Nach Verbindungsweg</x:String>
+  <x:String x:Key="Text.Peer.Sort.Transferring" xml:space="preserve">Aktive Übertragungen zuerst</x:String>
+  <x:String x:Key="Text.Peer.Section.Pinned" xml:space="preserve">Angeheftet</x:String>
+  <x:String x:Key="Text.Peer.Section.Online" xml:space="preserve">Online</x:String>
+  <x:String x:Key="Text.Peer.Section.Offline" xml:space="preserve">Offline</x:String>
+
 </ResourceDictionary>

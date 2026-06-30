@@ -5,8 +5,8 @@
 #
 # ⚠️ Ferry はクロスプラットフォーム配信 (win-x64 / win-arm64 / osx-arm64 / linux-x64 / linux-arm64)。
 #    本スクリプトが扱うのは Authenticode 署名対象の Windows 2 チャンネルのみ。
-#    macOS / Linux チャンネルと Bridge ページ (Firebase Hosting) は引き続き
-#    .github/workflows/release.yml (release/** push) が配信する。
+#    macOS / Linux チャンネルは引き続き .github/workflows/release.yml (release/** push) が配信する。
+#    Bridge ページは CF 単独完結 (Step 6) で relay Worker の Static Assets 配信へ移行済み (deploy-relay.yml)。
 #    クリーンアップは「Windows 以外のチャンネルの manifest を R2 から取得して保護」するため、
 #    他チャンネルの nupkg を誤削除しない。
 #

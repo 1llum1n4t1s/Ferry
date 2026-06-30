@@ -252,48 +252,23 @@ public partial class App : Application
                     }
                 });
             };
-            // CF 単独完結移行 (dual-path): settings.UseCloudflareSignaling で signaling 経路を切り替える。
-            //   Firebase = FirebaseAuthClient(/auth/token → idToken) + FirebaseSignaling(REST)
-            //   CF       = CfTokenProvider(/auth/token → cfToken)   + CloudflareSignaling(REST + inbox WS)
-            // どちらの auth provider も IdentityLost (401 DEVICE_PUBKEY_MISMATCH) で同じ clean slate を発火する。
+            // CF 単独完結: signaling/auth/presence は Cloudflare 経路のみ（Step 6 で Firebase 経路を撤去）。
+            //   CfTokenProvider(/auth/token → cfToken) + CloudflareSignaling(REST + inbox WS) + CloudflarePresenceServiceFactory。
             // 下流（ConnectionService / PairSyncService / DeleteOne / presence）は具象に依存せず
-            // signalingFactory / ensureAuthAsync / presenceFactory 経由で経路非依存に動く。
-            IPresenceServiceFactory presenceFactory;
-            Func<Infrastructure.ISignalingService> signalingFactory;
-            Func<System.Threading.CancellationToken, System.Threading.Tasks.Task> ensureAuthAsync;
-            IDisposable authProvider;
-            System.Net.Http.HttpClient? cfHttp = null;
-            Func<System.Threading.Tasks.Task> initialEnsureAsync;
-            Action onInitialEnsureFailure;
-            if (settings.UseCloudflareSignaling)
-            {
-                // CF 経路: CfTokenProvider が /auth/token で cfToken (HS256 JWT) を取得し 50min ごとに refresh。
-                // CloudflareSignaling は共有 HttpClient で REST + inbox WS を張る。
-                var cfTokenProvider = new Infrastructure.CfTokenProvider(deviceIdentity, settings.DeviceId);
-                cfHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-                cfTokenProvider.IdentityLost += onIdentityLost;
-                signalingFactory = () => new Infrastructure.CloudflareSignaling(cfTokenProvider, settings.DeviceId, cfHttp);
-                ensureAuthAsync = cfTokenProvider.EnsureTokenAsync;
-                presenceFactory = new Infrastructure.CloudflarePresenceServiceFactory(cfTokenProvider, settings.DeviceId, cfHttp);
-                authProvider = cfTokenProvider;
-                initialEnsureAsync = () => cfTokenProvider.EnsureTokenAsync();
-                // CfTokenProvider.EnsureTokenAsync 自体が成功時に refresh ループを起動する。失敗時は次の signaling op が再試行。
-                onInitialEnsureFailure = () => { };
-                Util.Logger.Log("signaling 経路: Cloudflare (CF 単独完結)");
-            }
-            else
-            {
-                // Firebase 経路（既定）: #D-001a Phase B の Custom Token Auth。
-                var firebaseAuthClient = new Infrastructure.FirebaseAuthClient(deviceIdentity, settings.DeviceId);
-                firebaseAuthClient.IdentityLost += onIdentityLost;
-                signalingFactory = () => new Infrastructure.FirebaseSignaling(AppConstants.FirebaseDatabaseUrl, firebaseAuthClient);
-                ensureAuthAsync = firebaseAuthClient.EnsureSignInAsync;
-                presenceFactory = new FirebasePresenceServiceFactory(AppConstants.FirebaseDatabaseUrl, firebaseAuthClient);
-                authProvider = firebaseAuthClient;
-                initialEnsureAsync = () => firebaseAuthClient.EnsureSignInAsync();
-                onInitialEnsureFailure = () => firebaseAuthClient.EnsureRefreshLoopStarted(startWithBackoff: true);
-                Util.Logger.Log("signaling 経路: Firebase");
-            }
+            // signalingFactory / ensureAuthAsync / presenceFactory 経由で動く。
+            // IdentityLost (401 DEVICE_PUBKEY_MISMATCH) で clean slate を発火する。
+            var cfTokenProvider = new Infrastructure.CfTokenProvider(deviceIdentity, settings.DeviceId);
+            var cfHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            cfTokenProvider.IdentityLost += onIdentityLost;
+            Func<Infrastructure.ISignalingService> signalingFactory =
+                () => new Infrastructure.CloudflareSignaling(cfTokenProvider, settings.DeviceId, cfHttp);
+            Func<System.Threading.CancellationToken, System.Threading.Tasks.Task> ensureAuthAsync = cfTokenProvider.EnsureTokenAsync;
+            IPresenceServiceFactory presenceFactory = new Infrastructure.CloudflarePresenceServiceFactory(cfTokenProvider, settings.DeviceId, cfHttp);
+            IDisposable authProvider = cfTokenProvider;
+            // CfTokenProvider.EnsureTokenAsync 自体が成功時に refresh ループを起動する。失敗時は次の signaling op が再試行。
+            Func<System.Threading.Tasks.Task> initialEnsureAsync = () => cfTokenProvider.EnsureTokenAsync();
+            Action onInitialEnsureFailure = () => { };
+            Util.Logger.Log("signaling 経路: Cloudflare (CF 単独完結)");
 
             // 初回 SignIn を fire-and-forget で開始。完了前の signaling 操作は auth 例外になり、
             // 既存リトライ経路で吸収される（実装の段階性を保つ）。
@@ -319,12 +294,11 @@ public partial class App : Application
             });
             // peerRegistry / settingsService は暗号チャネルの PairSecret 引き当て・フラグ参照に使うため先に生成して注入する。
             // peerRegistry は上の IdentityLost ハンドラより前で宣言済み。
-            // #D-001a Phase B §6.3: Firebase pairs DELETE が失敗したときの再試行キュー（pending-pair-deletes.json）。
+            // #D-001a Phase B §6.3: pairs/{pairId} の SSoT DELETE が失敗したときの再試行キュー（pending-pair-deletes.json）。
             // Codex P2 fix (第4弾): ConnectionService に注入して pairs/{pairId} 書込成功時に queued delete を取り消す。
             var pendingPairDeletes = new PendingPairDeleteQueue();
-            // CF 単独完結移行: authClient は具象 FirebaseAuthClient を渡さず（CF 経路では存在しない）、
-            // signalingFactory / ensureAuthAsync で経路非依存に注入する。
-            var connectionService = new ConnectionService(AppConstants.FirebaseDatabaseUrl, settings.DeviceId, settings.DisplayName, deviceIdentity, peerRegistry, settingsService, null, pendingPairDeletes, signalingFactory, ensureAuthAsync)
+            // CF 単独完結: signaling/auth は signalingFactory / ensureAuthAsync 経由で経路非依存に注入する。
+            var connectionService = new ConnectionService(settings.DeviceId, settings.DisplayName, deviceIdentity, peerRegistry, settingsService, pendingPairDeletes, signalingFactory, ensureAuthAsync)
             {
                 RelayUrl = AppConstants.RelayUrl,
             };

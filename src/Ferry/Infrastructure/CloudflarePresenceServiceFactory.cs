@@ -4,8 +4,8 @@ using Ferry.Services;
 namespace Ferry.Infrastructure;
 
 /// <summary>
-/// CF 単独完結移行: Cloudflare 実装の presence サービス（<see cref="CloudflareSignaling"/>）を生成するファクトリ。
-/// <see cref="FirebasePresenceServiceFactory"/> の CF 版。共有 HttpClient と CfTokenProvider を構築時に固定する。
+/// CF 単独完結: Cloudflare 実装の presence サービス（<see cref="CloudflareSignaling"/>）を生成するファクトリ。
+/// 共有 HttpClient と CfTokenProvider を構築時に固定する。
 /// </summary>
 public sealed class CloudflarePresenceServiceFactory : IPresenceServiceFactory
 {

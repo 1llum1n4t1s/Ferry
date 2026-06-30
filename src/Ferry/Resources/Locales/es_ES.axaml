@@ -136,6 +136,16 @@
   <x:String x:Key="Text.State.Paused" xml:space="preserve">En pausa</x:String>
   <x:String x:Key="Text.SaveBar.Tooltip" xml:space="preserve">Ubicación donde se guardan los archivos recibidos</x:String>
   <x:String x:Key="Text.SaveBar.Open" xml:space="preserve">Abrir carpeta</x:String>
+  <!-- Peer: destination list sorting/section headers -->
+  <x:String x:Key="Text.Member.TogglePin" xml:space="preserve">Fijar / Quitar</x:String>
+  <x:String x:Key="Text.Peer.Sort" xml:space="preserve">Ordenar</x:String>
+  <x:String x:Key="Text.Peer.Sort.Name" xml:space="preserve">Por nombre</x:String>
+  <x:String x:Key="Text.Peer.Sort.LastTransfer" xml:space="preserve">Por última transferencia</x:String>
+  <x:String x:Key="Text.Peer.Sort.Route" xml:space="preserve">Por ruta de conexión</x:String>
+  <x:String x:Key="Text.Peer.Sort.Transferring" xml:space="preserve">Transfiriendo primero</x:String>
+  <x:String x:Key="Text.Peer.Section.Pinned" xml:space="preserve">Fijados</x:String>
+  <x:String x:Key="Text.Peer.Section.Online" xml:space="preserve">En línea</x:String>
+  <x:String x:Key="Text.Peer.Section.Offline" xml:space="preserve">Sin conexión</x:String>
   <!-- v1.0.48: 帯域制限と並列転送数（英語フォールバック） -->
   <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">Upload Limit (KB/s)</x:String>
   <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">Outbound bandwidth cap. 0 = unlimited</x:String>

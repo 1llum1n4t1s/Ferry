@@ -160,47 +160,7 @@ public class ConnectionViewModelTests : IDisposable
         using var vm = CreateViewModel();
         await vm.StartSessionCommand.ExecuteAsync(null);
 
-        // Step 5: 既定（UseCloudflareSignaling=true）は CF 版 Bridge を向く
-        _qrCodeService.Received(1).GenerateQrBitmap(
-            Arg.Is<string>(url => url.StartsWith(Ferry.AppConstants.CfBridgePageUrl)));
-    }
-
-    [Fact]
-    public async Task StartSessionAsync_Firebaseロールバック時は旧BridgeのURLが使われること()
-    {
-        // UseCloudflareSignaling=false へ戻すと旧 Firebase 版 Bridge へ rollback できる
-        _settingsService.Settings.Returns(new AppSettings
-        {
-            DisplayName = "TestPC",
-            UseCloudflareSignaling = false,
-        });
-        _connectionService.StartPairingSessionAsync(Arg.Any<CancellationToken>())
-            .Returns("sid123");
-        _qrCodeService.GenerateQrBitmap(Arg.Any<string>()).Returns((Bitmap?)null);
-
-        using var vm = CreateViewModel();
-        await vm.StartSessionCommand.ExecuteAsync(null);
-
-        _qrCodeService.Received(1).GenerateQrBitmap(
-            Arg.Is<string>(url => url.StartsWith(Ferry.AppConstants.BridgePageUrl)));
-    }
-
-    [Fact]
-    public async Task StartSessionAsync_CFモードではCFBridgeのURLが使われること()
-    {
-        // CF 単独完結移行: UseCloudflareSignaling=true のとき QR の宛先を CF 版 Bridge に切り替える
-        _settingsService.Settings.Returns(new AppSettings
-        {
-            DisplayName = "TestPC",
-            UseCloudflareSignaling = true,
-        });
-        _connectionService.StartPairingSessionAsync(Arg.Any<CancellationToken>())
-            .Returns("sid123");
-        _qrCodeService.GenerateQrBitmap(Arg.Any<string>()).Returns((Bitmap?)null);
-
-        using var vm = CreateViewModel();
-        await vm.StartSessionCommand.ExecuteAsync(null);
-
+        // CF 単独完結: QR の宛先は常に CF 版 Bridge（relay Worker の Static Assets）固定
         _qrCodeService.Received(1).GenerateQrBitmap(
             Arg.Is<string>(url => url.StartsWith(Ferry.AppConstants.CfBridgePageUrl) && url.Contains("sid=sid123")));
     }

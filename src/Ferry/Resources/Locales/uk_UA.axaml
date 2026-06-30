@@ -146,4 +146,15 @@
   <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
   <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
   <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Number of files sent simultaneously (1 = legacy serial)</x:String>
+
+  <!-- Peer: destination list sorting/section headers -->
+  <x:String x:Key="Text.Member.TogglePin" xml:space="preserve">Закріпити / Відкріпити</x:String>
+  <x:String x:Key="Text.Peer.Sort" xml:space="preserve">Сортування</x:String>
+  <x:String x:Key="Text.Peer.Sort.Name" xml:space="preserve">За іменем</x:String>
+  <x:String x:Key="Text.Peer.Sort.LastTransfer" xml:space="preserve">За останньою передачею</x:String>
+  <x:String x:Key="Text.Peer.Sort.Route" xml:space="preserve">За маршрутом з'єднання</x:String>
+  <x:String x:Key="Text.Peer.Sort.Transferring" xml:space="preserve">Спочатку активні передачі</x:String>
+  <x:String x:Key="Text.Peer.Section.Pinned" xml:space="preserve">Закріплені</x:String>
+  <x:String x:Key="Text.Peer.Section.Online" xml:space="preserve">У мережі</x:String>
+  <x:String x:Key="Text.Peer.Section.Offline" xml:space="preserve">Поза мережею</x:String>
 </ResourceDictionary>

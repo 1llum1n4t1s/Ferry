@@ -8,14 +8,13 @@ using System.Threading.Tasks;
 namespace Ferry.Infrastructure;
 
 /// <summary>
-/// CF 単独完結移行: Workers <c>/auth/token</c> から自前 HMAC bearer (cfToken) を取得・refresh するクライアント。
+/// CF 単独完結: Workers <c>/auth/token</c> から自前 HMAC bearer (cfToken) を取得・refresh するクライアント。
 ///
-/// <see cref="FirebaseAuthClient"/> の Firebase ログイン leg（signInWithCustomToken）を除いた版。
-/// cfToken は Worker が自前 HMAC で検証するので Firebase へのログインが要らず、idToken のような
-/// SSE 再購読も不要。同じ ECDSA P-256 IEEE P1363 署名チャレンジと 401 DEVICE_PUBKEY_MISMATCH 検出を共有する。
+/// cfToken は Worker が自前 HMAC で検証するので外部 ID プロバイダへのログインが要らず、idToken のような
+/// SSE 再購読も不要。ECDSA P-256 IEEE P1363 署名チャレンジと 401 DEVICE_PUBKEY_MISMATCH 検出で本人性を担保する。
 ///
 /// AOT セーフ: JWT を decode しない（uid は自分の deviceId として自明、exp はレスポンス値）。
-/// JSON は <see cref="FirebaseAuthJsonContext"/>（AuthTokenRequest / AuthTokenResponse）を流用。
+/// JSON は <see cref="CfAuthJsonContext"/>（AuthTokenRequest / AuthTokenResponse / AuthErrorResponse）を使う。
 /// </summary>
 public sealed class CfTokenProvider : IDisposable
 {
@@ -88,12 +87,12 @@ public sealed class CfTokenProvider : IDisposable
 
         var req = new AuthTokenRequest { DeviceId = _deviceId, PubKeySpki = pubKeySpki, Ts = ts, Sig = sig };
         using var resp = await _http.PostAsJsonAsync(
-            AppConstants.WorkersAuthTokenUrl, req, FirebaseAuthJsonContext.Default.AuthTokenRequest, ct);
+            AppConstants.WorkersAuthTokenUrl, req, CfAuthJsonContext.Default.AuthTokenRequest, ct);
 
         if (!resp.IsSuccessStatusCode)
         {
             AuthErrorResponse? err = null;
-            try { err = await resp.Content.ReadFromJsonAsync(FirebaseAuthJsonContext.Default.AuthErrorResponse, ct); }
+            try { err = await resp.Content.ReadFromJsonAsync(CfAuthJsonContext.Default.AuthErrorResponse, ct); }
             catch { /* body 無し */ }
             if (resp.StatusCode == HttpStatusCode.Unauthorized && err?.Error == "DEVICE_PUBKEY_MISMATCH")
             {
@@ -104,7 +103,7 @@ public sealed class CfTokenProvider : IDisposable
             throw new HttpRequestException($"/auth/token (cf) failed: {(int)resp.StatusCode} {err?.Error}: {err?.Message}");
         }
 
-        var body = await resp.Content.ReadFromJsonAsync(FirebaseAuthJsonContext.Default.AuthTokenResponse, ct);
+        var body = await resp.Content.ReadFromJsonAsync(CfAuthJsonContext.Default.AuthTokenResponse, ct);
         if (body == null || string.IsNullOrEmpty(body.CfToken))
             throw new HttpRequestException("/auth/token が cfToken を返しません（Worker の SESSION_HMAC_SECRET 未設定の可能性）");
 

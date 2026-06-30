@@ -138,6 +138,17 @@
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Iniciar ao fazer login</x:String>
   <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Iniciar o Ferry automaticamente ao fazer login</x:String>
 
+  <!-- Peer: destination list sorting/section headers -->
+  <x:String x:Key="Text.Member.TogglePin" xml:space="preserve">Fixar / Desafixar</x:String>
+  <x:String x:Key="Text.Peer.Sort" xml:space="preserve">Ordenar</x:String>
+  <x:String x:Key="Text.Peer.Sort.Name" xml:space="preserve">Por nome</x:String>
+  <x:String x:Key="Text.Peer.Sort.LastTransfer" xml:space="preserve">Por última transferência</x:String>
+  <x:String x:Key="Text.Peer.Sort.Route" xml:space="preserve">Por rota de conexão</x:String>
+  <x:String x:Key="Text.Peer.Sort.Transferring" xml:space="preserve">Transferindo primeiro</x:String>
+  <x:String x:Key="Text.Peer.Section.Pinned" xml:space="preserve">Fixados</x:String>
+  <x:String x:Key="Text.Peer.Section.Online" xml:space="preserve">Online</x:String>
+  <x:String x:Key="Text.Peer.Section.Offline" xml:space="preserve">Offline</x:String>
+
   <!-- v1.0.47: 行ごとの転送操作・受信保存先バー -->
   <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">Reenviar</x:String>
   <x:String x:Key="Text.Transfer.Pause" xml:space="preserve">Pausar</x:String>
