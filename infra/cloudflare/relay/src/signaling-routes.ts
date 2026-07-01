@@ -14,6 +14,7 @@
 import type { Env } from './index';
 import { hashPairId } from './index';
 import { verifySessionToken } from './auth';
+import { notifyInbox } from './device-routes';
 
 const PAIR_ID_RE = /^[a-f0-9]{32}_[a-f0-9]{32}$/;
 
@@ -23,6 +24,7 @@ export async function handleSignaling(req: Request, env: Env, url: URL): Promise
   if (segs.length < 2) return jsonError(400, 'BAD_PATH', 'expected /sig/{pairId}/...');
   const pairId = segs[1];
   const rest = segs.slice(2).join('/');
+  const action = segs[2] ?? '';
 
   // 1. Bearer 認可
   const authz = req.headers.get('Authorization');
@@ -52,7 +54,21 @@ export async function handleSignaling(req: Request, env: Env, url: URL): Promise
   }
   const fwdUrl = `https://do/${rest}${url.search}`;
   const fwdReq = new Request(fwdUrl, { method: req.method, headers: fwdHeaders, body });
-  return stub.fetch(fwdReq);
+  const resp = await stub.fetch(fwdReq);
+
+  // CF 使用量削減: offer / probe-offer の書込成功時、ペア相手の DeviceDO inbox へ「接続ノック」を
+  // push する（type=knock・transient、DeviceDO は storage に積まず接続中 WS にだけ送る）。
+  // クライアント listener はこのノックを主検知経路にして、常時 400ms ポーリング（~20万 req/日/ペア）を
+  // 低頻度の安全網ポーリングへ落とす。answer/endpoint は送信側が能動ポーリング（数秒で有界）なので不要。
+  if (resp.ok && req.method === 'POST' && (action === 'offer' || action === 'probe-offer')) {
+    const peer = claims.deviceId === a ? b : a;
+    try {
+      await notifyInbox(env, peer, { type: 'knock', pairId, from: claims.deviceId, createdAt: Date.now() });
+    } catch {
+      /* ノック失敗は無害（listener の安全網ポーリングが拾う）。offer 書込自体は成功済み */
+    }
+  }
+  return resp;
 }
 
 function jsonError(status: number, code: string, message: string): Response {

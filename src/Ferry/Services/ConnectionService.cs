@@ -74,6 +74,16 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// <summary>Answer 側が TCP 失敗を通知する route 値（STUN/リレーへ遷移）。</summary>
     private const string RouteNeedRelay = "needRelay";
 
+    /// <summary>CF 使用量削減: 着信 listener のアイドルポーリング間隔（ms）。
+    /// 接続ノック（relay Worker が offer/probe 書込時に inbox WS へ push する合図）が主検知経路で、
+    /// このポーリングはノック欠落時の安全網。旧実装の常時 400ms ポーリングは 1 ペアあたり
+    /// ~20 万 req/日を relay Worker に流しており（2026-07 実測）、これを ~1.2 万 req/日へ落とす。</summary>
+    private const int IdleListenPollMs = 15_000;
+
+    /// <summary>CF 使用量削減: inbox WS 切断中（ノックが届かない）の安全網ポーリング間隔（ms）。
+    /// WS が使えない網（プロキシ等）でも着信検知が数秒で済むよう短めに保つ。</summary>
+    private const int IdleListenPollNoInboxMs = 3_000;
+
     private readonly string _deviceId;
     private readonly string _displayName;
     /// <summary>rere #D-001(b): 長期 ECDH 鍵。QR の公開鍵 + ペア相手の公開鍵から PairSecret を導出する。
@@ -113,6 +123,14 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     //   - <see cref="ConnectionSession.ConnectCts"/>: 同 peer の in-flight connect を割り込みキャンセル
     //   - <see cref="ConnectionSession.ConnectingByListener"/>: 当該 peer の Connecting 所有権（listener vs ConnectToPeerAsync）
     // これにより peer Y と peer Z の ConnectToPeerAsync は完全並列に走り、片方の取消は他方を巻き込まない。
+
+    // === CF 使用量削減: 接続ノック監視（inbox WS 1 本を全 listener で共有） ===
+
+    /// <summary>接続ノック購読用の signaling（inbox WS を 1 本張る）。最初の listener 開始時に遅延生成し、
+    /// Dispose まで生かす。ノック（相手の offer/probe 書込の合図）を受けたら該当 Session の listener を
+    /// 即時に起こす。これが主検知経路で、listener 自身のポーリングは低頻度の安全網に落とす。</summary>
+    private ISignalingService? _knockWatcher;
+    private readonly object _knockWatcherLock = new();
 
     /// <summary>
     /// v1.0.38 review fix: 現在 StartListeningForConnection で監視中のピア ID。
@@ -500,6 +518,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     {
         if (string.IsNullOrEmpty(peerId)) throw new ArgumentNullException(nameof(peerId));
 
+        EnsureKnockWatcherStarted();
+
         var session = _sessions.GetOrAdd(peerId, id => new ConnectionSession(id));
 
         // 同 peer に既存 listener があれば停止して張り替える（再起動）。他 peer は触らない。
@@ -548,6 +568,45 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         cts.Dispose();
         session.ListeningCts = null;
         session.ListeningTask = null;
+    }
+
+    /// <summary>CF 使用量削減: 接続ノック監視（inbox WS）を開始する。冪等・失敗しても listener は
+    /// 安全網ポーリング（<see cref="IdleListenPollNoInboxMs"/>）だけで動くため throw しない。</summary>
+    private void EnsureKnockWatcherStarted()
+    {
+        lock (_knockWatcherLock)
+        {
+            if (_knockWatcher != null) return;
+            try
+            {
+                var watcher = NewSignaling();
+                watcher.ConnectKnockReceived += OnConnectKnock;
+                // StartWatchingPairing = inbox WS 購読の開始。PairingDetected はこの watcher では未購読
+                // なので、flush されるペア成立イベントは無害に捨てられる（本来のペアリング watcher は別インスタンス）。
+                watcher.StartWatchingPairing();
+                _knockWatcher = watcher;
+                Util.Logger.Log("接続ノック監視開始（inbox WS）", Util.LogLevel.Debug);
+            }
+            catch (Exception ex)
+            {
+                Util.Logger.Log($"接続ノック監視の開始に失敗（安全網ポーリングのみで運用）: {ex.Message}", Util.LogLevel.Warning);
+            }
+        }
+    }
+
+    /// <summary>接続ノック受信: pairId からペア相手を割り出し、該当 Session の listener を即時に起こす。</summary>
+    private void OnConnectKnock(object? sender, string pairId)
+    {
+        if (string.IsNullOrEmpty(pairId)) return;
+        var parts = pairId.Split('_');
+        if (parts.Length != 2) return;
+        var peerId = string.Equals(parts[0], _deviceId, StringComparison.Ordinal) ? parts[1] : parts[0];
+        if (string.Equals(peerId, _deviceId, StringComparison.Ordinal)) return;
+        if (_sessions.TryGetValue(peerId, out var session))
+        {
+            Util.Logger.Log($"接続ノック受信: peer={Util.Logger.MaskDeviceId(peerId)}", Util.LogLevel.Debug);
+            session.SignalKnock();
+        }
     }
 
     /// <summary>
@@ -616,18 +675,18 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 // 過剰な memory 占有を避けるため、最大 100 nonce で打ち切り (5min cooldown と整合)
                 if (processedProbeNonces.Count > 100) processedProbeNonces.Clear();
 
-                // 通常 offer は WaitForSdpAsync で長く待つが、最大 5 秒で抜けて probe offer 側も
-                // 定期的にチェックできるようにする (両者の polling を交互に進める)
-                using var offerCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                offerCts.CancelAfter(TimeSpan.FromSeconds(5));
-                string offerJson;
-                try
+                // CF 使用量削減: 旧実装は WaitForOfferAsync が 400ms 間隔で常時ポーリングし、アイドルでも
+                // 1 ペアあたり ~20 万 req/日を relay Worker に流していた（2026-07 実測）。着信検知の主経路は
+                // 「接続ノック」（relay Worker が offer/probe 書込時に inbox WS へ push → OnConnectKnock →
+                // SignalKnock で即時に起こされる）に移し、ここは単発読み + 低頻度の安全網待機に落とす。
+                // ノック経路なら旧 400ms ポーリングより速く検知できる（WS push は ms オーダー）。
+                var offerJson = await pollingSignaling.TryReadOfferOnceAsync(pairId, peerId, minCreatedAt, ct);
+                if (offerJson == null)
                 {
-                    offerJson = await pollingSignaling.WaitForOfferAsync(pairId, peerId, minCreatedAt, offerCts.Token);
-                }
-                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-                {
-                    // 5 秒タイムアウト → 次の iteration で probe + offer 両方再 polling
+                    // ノックが来たら即時に次 iteration（probe + offer 再読み）。来なければ安全網間隔で再読み。
+                    // inbox WS 切断中はノックが届かないため間隔を詰めて検知遅延を数秒に抑える。
+                    var idleMs = (_knockWatcher?.InboxConnected ?? false) ? IdleListenPollMs : IdleListenPollNoInboxMs;
+                    await session.WaitForKnockAsync(idleMs, ct);
                     continue;
                 }
 
@@ -917,7 +976,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 if (createdAt.HasValue && ageMs >= 0 && ageMs < RoleDeferFreshnessMs)
                 {
                     string? peekJson = null;
-                    try { peekJson = await peekSig.TryReadOfferOnceAsync(pairId, peerId, linked); }
+                    try { peekJson = await peekSig.TryReadOfferOnceAsync(pairId, peerId, ct: linked); }
                     catch (Exception ex) when (ex is not OperationCanceledException) { }
                     var peekOffer = peekJson == null ? null : DeserializeConnectionInfo(peekJson);
                     if (peekOffer != null && peekOffer.From == peerId)
@@ -1817,7 +1876,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         {
             while (!pollCts.IsCancellationRequested)
             {
-                var json = await sig.TryReadOfferOnceAsync(pairId, peerId, pollCts.Token);
+                var json = await sig.TryReadOfferOnceAsync(pairId, peerId, ct: pollCts.Token);
                 var updated = json == null ? null : DeserializeConnectionInfo(json);
                 if (updated != null
                     && updated.From == peerId   // 再読み込みにも MITM 防御を適用（偽 offer すり替え対策）
@@ -2634,6 +2693,18 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             try { kvp.Value.ConnectCts?.Cancel(); } catch { /* 既に Dispose 済み等 */ }
         }
         StopListeningForConnection();
+
+        // CF 使用量削減: 接続ノック監視（inbox WS）を畳む。
+        lock (_knockWatcherLock)
+        {
+            if (_knockWatcher != null)
+            {
+                _knockWatcher.ConnectKnockReceived -= OnConnectKnock;
+                try { _knockWatcher.Dispose(); } catch { /* ignore */ }
+                _knockWatcher = null;
+            }
+        }
+
         _transport?.Dispose();
         _signaling?.Dispose();
 
@@ -2702,6 +2773,26 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         public CancellationTokenSource? SecureTimeoutCts { get; set; }
 
         // === 複数ペア同時接続対応 Stage 4: per-peer 着信監視 ===
+
+        /// <summary>CF 使用量削減: 接続ノック待機シグナル（0/1 に coalesce）。listener のアイドル待機を
+        /// ノック受信で即時解除する。多重ノックは 1 回の wake に合流する（次 iteration が probe + offer を
+        /// まとめて読むため取りこぼしは起きない）。</summary>
+        private readonly SemaphoreSlim _knockSignal = new(0, 1);
+
+        /// <summary>接続ノックを通知して listener のアイドル待機を解除する（ノック監視スレッドから呼ばれる）。</summary>
+        public void SignalKnock()
+        {
+            try { _knockSignal.Release(); }
+            catch (SemaphoreFullException) { /* 既に signal 済み → coalesce */ }
+            catch (ObjectDisposedException) { /* Session 破棄後のノックは無視 */ }
+        }
+
+        /// <summary>ノックまたはタイムアウトまで待機する（listener の安全網アイドル待ち）。</summary>
+        public async Task<bool> WaitForKnockAsync(int timeoutMs, CancellationToken ct)
+        {
+            try { return await _knockSignal.WaitAsync(timeoutMs, ct); }
+            catch (ObjectDisposedException) { return false; }
+        }
 
         /// <summary>このセッションの着信監視 CTS（StartListeningForConnection で生成、StopListeningForConnection で Cancel/Dispose）。
         /// Stage 4 で per-Session 化し、全ペア常時 listen を支える。</summary>
@@ -2817,6 +2908,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             ConnectCts?.Dispose();
             ConnectCts = null;
             try { ConnectGate.Dispose(); } catch { /* ignore */ }
+
+            // CF 使用量削減: ノック待機シグナルを解放（SignalKnock / WaitForKnockAsync 側は
+            // ObjectDisposedException を握って無害化する）。
+            try { _knockSignal.Dispose(); } catch { /* ignore */ }
         }
     }
 }

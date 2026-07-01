@@ -38,10 +38,17 @@ public sealed class CloudflareSignaling : ISignalingService
     private Task? _inboxLoop;
     private long _pairingWatchStartedAtMs;
 
+    /// <summary>inbox WS の接続状態（1=接続中）。listener が安全網ポーリング間隔の調整に読む。</summary>
+    private int _inboxConnected;
+
     /// <summary>presence ETag キャッシュ（peerId → (ETag, LastSeen)）。Firebase 版と同じ帯域節約。</summary>
     private readonly ConcurrentDictionary<string, (string ETag, long LastSeen)> _presenceCache = new();
 
     public event EventHandler<PairingInfo>? PairingDetected;
+
+    public event EventHandler<string>? ConnectKnockReceived;
+
+    public bool InboxConnected => Volatile.Read(ref _inboxConnected) != 0;
 
     public string LastPairingNonce => _lastPairingNonce;
 
@@ -180,6 +187,7 @@ public sealed class CloudflareSignaling : ISignalingService
                 ws.Options.SetRequestHeader("Authorization", "Bearer " + token);
                 await ws.ConnectAsync(new Uri(AppConstants.CfInboxWsUrl), ct);
                 attempt = 0;
+                Volatile.Write(ref _inboxConnected, 1);
                 Util.Logger.Log("CF inbox WebSocket 接続成立", Util.LogLevel.Debug);
 
                 var buf = new byte[16 * 1024];
@@ -201,10 +209,12 @@ public sealed class CloudflareSignaling : ISignalingService
                     if (result.MessageType == WebSocketMessageType.Close) break;
                     HandleInboxMessage(sb.ToString());
                 }
+                Volatile.Write(ref _inboxConnected, 0);
             }
-            catch (OperationCanceledException) { return; }
+            catch (OperationCanceledException) { Volatile.Write(ref _inboxConnected, 0); return; }
             catch (Exception ex)
             {
+                Volatile.Write(ref _inboxConnected, 0);
                 attempt++;
                 var backoff = Math.Min(Math.Pow(2, attempt - 1), 30);
                 Util.Logger.Log($"CF inbox WS 切断（{backoff:F0}s 後に再接続）: {ex.Message}", Util.LogLevel.Debug);
@@ -212,6 +222,7 @@ public sealed class CloudflareSignaling : ISignalingService
                 catch (OperationCanceledException) { return; }
             }
         }
+        Volatile.Write(ref _inboxConnected, 0);
     }
 
     private void HandleInboxMessage(string json)
@@ -220,6 +231,15 @@ public sealed class CloudflareSignaling : ISignalingService
         try { e = JsonSerializer.Deserialize(json, CfJsonContext.Default.InboxEventDto); }
         catch { return; }
         if (e == null) return;
+
+        // 接続ノック: ペア相手が offer / probe-offer を書いた合図（relay Worker が push）。
+        // listener（ConnectionService）がこれを購読して即時にシグナリングを読みに行く。
+        if (string.Equals(e.Type, "knock", StringComparison.Ordinal))
+        {
+            if (!string.IsNullOrEmpty(e.PairId))
+                ConnectKnockReceived?.Invoke(this, e.PairId);
+            return;
+        }
 
         // unpair 通知は将来クライアント側 peer 削除に配線する（現状は PairSyncService の GET ポーリングが拾う）。
         if (string.Equals(e.Type, "unpair", StringComparison.Ordinal)) return;
@@ -250,17 +270,15 @@ public sealed class CloudflareSignaling : ISignalingService
         if (!resp.IsSuccessStatusCode) throw new HttpRequestException($"offer 送信失敗: HTTP {(int)resp.StatusCode}");
     }
 
-    public async Task<string> WaitForOfferAsync(string pairId, string fromDeviceId, long minCreatedAt = 0, CancellationToken ct = default)
-    {
-        var url = Url($"/sig/{Esc(pairId)}/offer?from={Esc(fromDeviceId)}&minCreatedAt={minCreatedAt}");
-        return await PollForDataAsync(url, "offer", pairId, 400, ct);
-    }
+    // 旧 WaitForOfferAsync（400ms 常時ポーリング）は CF 使用量削減で撤去。着信 offer の検知は
+    // 「接続ノック（inbox WS push）→ TryReadOfferOnceAsync 単発読み」+ 低頻度の安全網ポーリングに移行した。
 
-    public async Task<string?> TryReadOfferOnceAsync(string pairId, string fromDeviceId, CancellationToken ct = default)
+    public async Task<string?> TryReadOfferOnceAsync(string pairId, string fromDeviceId, long minCreatedAt = 0, CancellationToken ct = default)
     {
         try
         {
-            using var resp = await SendAsync(HttpMethod.Get, Url($"/sig/{Esc(pairId)}/offer?from={Esc(fromDeviceId)}"), null, ct);
+            // minCreatedAt は PairDO 側で鮮度ゲート（0 なら無条件）。listener の replay 防御に使う。
+            using var resp = await SendAsync(HttpMethod.Get, Url($"/sig/{Esc(pairId)}/offer?from={Esc(fromDeviceId)}&minCreatedAt={minCreatedAt}"), null, ct);
             if (resp.StatusCode != HttpStatusCode.OK) return null;
             var dto = JsonSerializer.Deserialize(await resp.Content.ReadAsStringAsync(ct), CfJsonContext.Default.TimedDataDto);
             return string.IsNullOrEmpty(dto?.Data) ? null : dto!.Data;
@@ -654,6 +672,8 @@ internal sealed class PairLinkPostDto
 internal sealed class InboxEventDto
 {
     [JsonPropertyName("type")] public string? Type { get; set; }
+    /// <summary>接続ノック（type=knock）が運ぶ pairId（{a}_{b} 形式）。</summary>
+    [JsonPropertyName("pairId")] public string PairId { get; set; } = string.Empty;
     [JsonPropertyName("pairingId")] public string PairingId { get; set; } = string.Empty;
     [JsonPropertyName("sidA")] public string SidA { get; set; } = string.Empty;
     [JsonPropertyName("nameA")] public string NameA { get; set; } = string.Empty;

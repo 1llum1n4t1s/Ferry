@@ -34,18 +34,26 @@ public interface ISignalingService : IPresenceService
     /// <summary>指定 sessionId の存在と表示名 / 公開鍵を取得する（URL ペアリング前の事前チェック）。</summary>
     Task<(bool Exists, string? DisplayName, string? PublicKey)> CheckSessionAsync(string sessionId, CancellationToken ct = default);
 
-    /// <summary>ペアリング監視（成立通知の購読）を開始する。</summary>
+    /// <summary>ペアリング監視（成立通知の購読）を開始する。inbox WebSocket の購読開始でもあり、
+    /// <see cref="ConnectKnockReceived"/> の受信にも同じ購読を使う。</summary>
     void StartWatchingPairing();
 
     /// <summary>ペアリング監視を停止する。</summary>
     void StopWatching();
 
+    /// <summary>接続ノック（ペア相手が offer / probe-offer を書いた合図。relay Worker が inbox WS へ push する）。
+    /// 引数は pairId。listener はこれを主検知経路にして安全網ポーリングを低頻度化する（CF 使用量削減）。</summary>
+    event EventHandler<string>? ConnectKnockReceived;
+
+    /// <summary>inbox WebSocket が現在接続中か（ノック即時性の目安）。切断中は listener 側が
+    /// ポーリング間隔を詰めてノック欠落を補う。</summary>
+    bool InboxConnected { get; }
+
     // === SDP / ICE シグナリング（per-sender ノード） ===
 
-    Task<string> WaitForOfferAsync(string pairId, string fromDeviceId, long minCreatedAt = 0, CancellationToken ct = default);
     Task<string> WaitForAnswerAsync(string pairId, string fromDeviceId, CancellationToken ct = default);
     Task SendSdpOfferAsync(string pairId, string senderDeviceId, string sdp, CancellationToken ct = default);
-    Task<string?> TryReadOfferOnceAsync(string pairId, string fromDeviceId, CancellationToken ct = default);
+    Task<string?> TryReadOfferOnceAsync(string pairId, string fromDeviceId, long minCreatedAt = 0, CancellationToken ct = default);
     Task<long?> TryReadOfferCreatedAtAsync(string pairId, string fromDeviceId, CancellationToken ct = default);
     Task SendSdpAnswerAsync(string pairId, string answererDeviceId, string sdp, CancellationToken ct = default);
     Task SendEndpointAsync(string pairId, string senderDeviceId, string endpoint, CancellationToken ct = default);

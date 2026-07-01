@@ -69,7 +69,7 @@ Bridge は PC のような長期鍵を持たない。**nonce 所有が認可の�
 | C# (FirebaseSignaling) | CF エンドポイント | 備考 |
 |---|---|---|
 | `SendSdpOfferAsync(pairId, sender, sdp)` | `POST /sig/{pairId}/offer` `{sdp, createdAt}` | sender=token.sub。createdAt も更新（cleanup 用） |
-| `WaitForOfferAsync` / `TryReadOfferOnceAsync` | `GET /sig/{pairId}/offer?from={peer}&minCreatedAt=` | 200 `{data, createdAt}` / 404。client がポーリング |
+| `TryReadOfferOnceAsync` | `GET /sig/{pairId}/offer?from={peer}&minCreatedAt=` | 200 `{data, createdAt}` / 404。**着信検知は接続ノック（offer/probe-offer POST 時に Worker がペア相手の inbox WS へ type=knock を push）が主経路**で、client のポーリングは低頻度の安全網（15s / WS 切断中 3s）。旧 `WaitForOfferAsync`（400ms 常時ポーリング）は CF 使用量削減で撤去 |
 | `TryReadOfferCreatedAtAsync` | 上と同じ（createdAt のみ利用） | role 調停 deferral 用 |
 | `SendSdpAnswerAsync` | `POST /sig/{pairId}/answer` `{sdp}` | answerer=token.sub |
 | `WaitForAnswerAsync` | `GET /sig/{pairId}/answer?from={peer}` | 200 `{data}` / 404 |

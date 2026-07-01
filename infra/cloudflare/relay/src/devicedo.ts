@@ -127,14 +127,20 @@ export class DeviceDO {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  /** Worker 内部呼出: ペア成立を inbox に積み、接続中の WS に即 push する。 */
+  /** Worker 内部呼出: ペア成立を inbox に積み、接続中の WS に即 push する。
+   *  type=knock（接続ノック: offer/probe 書込の即時合図）は transient — storage に積まず
+   *  接続中の WS にだけ送る。積むと高頻度ノックが INBOX_MAX(50) を溢れさせてペア成立イベントを
+   *  押し出す上、次回 inbox 接続時の flush で stale ノックが replay される。 */
   private async notify(req: Request): Promise<Response> {
     const e = (await req.json()) as InboxEvent;
-    const events = (await this.state.storage.get<InboxEvent[]>('inbox')) ?? [];
-    const now = Date.now();
-    events.push(e);
-    const pruned = events.filter((x) => now - x.createdAt < INBOX_TTL_MS).slice(-INBOX_MAX);
-    await this.state.storage.put('inbox', pruned);
+    const transient = e.type === 'knock';
+    if (!transient) {
+      const events = (await this.state.storage.get<InboxEvent[]>('inbox')) ?? [];
+      const now = Date.now();
+      events.push(e);
+      const pruned = events.filter((x) => now - x.createdAt < INBOX_TTL_MS).slice(-INBOX_MAX);
+      await this.state.storage.put('inbox', pruned);
+    }
 
     let delivered = 0;
     for (const ws of this.state.getWebSockets()) {

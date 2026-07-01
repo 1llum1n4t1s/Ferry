@@ -74,6 +74,15 @@ Infrastructure/         → FirebaseSignaling, TcpDirectTransport, UdpHolePunchT
 
 STUN は **Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google STUN (`stun.l.google.com:19302`) を従** の 2 サーバーフォールバック。IPv4 明示指定（`AddressFamily.InterNetwork`）。旧 VPS 自前 coturn (`1llum1n4t1.net:3478`) は Cloudflare 移行に伴い 2026-05 に撤去済み。
 
+### 着信検知（接続ノック）と CF 使用量
+
+着信 listener（`ListenForIncomingConnectionAsync`）は旧実装で `/sig/{pairId}/offer` を **400ms 間隔で常時ポーリング**しており、アイドルでも 1 ペアあたり ~20 万 req/日を relay Worker に流していた（2026-07 実測: 4 ペアで ~50 万 req/日）。v1.0.67 で「**接続ノック**」方式に移行:
+
+- **relay Worker** (`signaling-routes.ts`): offer / probe-offer の POST 成功時、ペア相手の DeviceDO inbox WS へ `{type:"knock", pairId, from}` を push する。knock は **transient**（`devicedo.ts` の notify が storage に積まず接続中 WS にだけ送る。積むと INBOX_MAX=50 を溢れさせてペア成立イベントを押し出す + 次回接続時に stale replay される）
+- **クライアント** (`ConnectionService`): inbox WS を 1 本（`_knockWatcher`、初回 `StartListeningForConnection` で遅延生成・全 listener 共有）張り、ノック受信で該当 Session の listener を `SignalKnock()` で即時に起こす。listener 自身は **単発読み（`TryReadOfferOnceAsync`）+ 安全網待機**（WS 接続中 `IdleListenPollMs`=15s / 切断中 `IdleListenPollNoInboxMs`=3s）に低頻度化。検知レイテンシは WS push で ms オーダー＝旧 400ms ポーリングより速い
+- **answer / endpoint / probe-answer の待機は従来どおり能動ポーリング**（送信側が数秒〜20s で有界に待つ経路。knock 不要）
+- 旧 `WaitForOfferAsync`（400ms 常時ポーラ）は撤去済み。回帰テストは `ConnectionServiceKnockTests`（ノックで即再読み / ノック無しで安全網間隔まで沈黙）と relay 側 `tests/knock.test.ts`
+
 ### ペアリングフロー
 
 1. PC-A がセッション登録 → QR コード表示（Bridge ページ URL + セッションID）
