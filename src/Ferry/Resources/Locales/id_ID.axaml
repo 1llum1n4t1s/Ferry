@@ -145,8 +145,8 @@
   <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
   <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
   <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Number of files sent simultaneously (1 = legacy serial)</x:String>
-
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Multiple files are sent in parallel automatically</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Automatic (up to 10)</x:String>
   <!-- Peer: destination list sorting/section headers -->
   <x:String x:Key="Text.Member.TogglePin" xml:space="preserve">Sematkan / Lepas sematan</x:String>
   <x:String x:Key="Text.Peer.Sort" xml:space="preserve">Urutkan</x:String>
@@ -157,4 +157,29 @@
   <x:String x:Key="Text.Peer.Section.Pinned" xml:space="preserve">Tersemat</x:String>
   <x:String x:Key="Text.Peer.Section.Online" xml:space="preserve">Online</x:String>
   <x:String x:Key="Text.Peer.Section.Offline" xml:space="preserve">Offline</x:String>
+  <!-- macOS メニューバー（App.SetupMacNativeMenus が Text() で参照） -->
+  <x:String x:Key="Text.Menu.About" xml:space="preserve">Tentang Ferry</x:String>
+  <x:String x:Key="Text.Menu.Settings" xml:space="preserve">Pengaturan…</x:String>
+  <x:String x:Key="Text.Menu.File" xml:space="preserve">Berkas</x:String>
+  <x:String x:Key="Text.Menu.CloseWindow" xml:space="preserve">Tutup Jendela</x:String>
+  <x:String x:Key="Text.Menu.Window" xml:space="preserve">Jendela</x:String>
+  <x:String x:Key="Text.Menu.Minimize" xml:space="preserve">Minimalkan</x:String>
+  <x:String x:Key="Text.Menu.Help" xml:space="preserve">Bantuan</x:String>
+  <x:String x:Key="Text.Menu.Website" xml:space="preserve">Situs Web Ferry</x:String>
+  <x:String x:Key="Text.Menu.OpenLogFolder" xml:space="preserve">Buka Folder Log</x:String>
+  <x:String x:Key="Text.About.Tagline" xml:space="preserve">Transfer berkas P2P dengan penyandingan QR</x:String>
+
+  <!-- 転送エラーの UI 文言（Util.ErrorText.Describe が参照。rere #U11） -->
+  <x:String x:Key="Text.Transfer.Error.Io" xml:space="preserve">Gagal membaca/menulis berkas (disk penuh atau terkunci?)</x:String>
+  <x:String x:Key="Text.Transfer.Error.Access" xml:space="preserve">Tidak ada izin untuk mengakses berkas</x:String>
+  <x:String x:Key="Text.Transfer.Error.Generic" xml:space="preserve">Terjadi kesalahan saat transfer</x:String>
+
+  <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">Berkas pengaturan rusak dan telah diatur ulang. Informasi penyandingan Anda dipertahankan jika memungkinkan.</x:String>
+
+  <!-- 確認ダイアログの共通ボタン文言（ConfirmWindow が参照） -->
+  <x:String x:Key="Text.Sure" xml:space="preserve">OK</x:String>
+  <x:String x:Key="Text.Cancel" xml:space="preserve">Batal</x:String>
+  <x:String x:Key="Text.Yes" xml:space="preserve">Ya</x:String>
+  <x:String x:Key="Text.No" xml:space="preserve">Tidak</x:String>
+
 </ResourceDictionary>

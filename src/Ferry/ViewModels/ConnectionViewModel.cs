@@ -205,6 +205,9 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             var bridgeBase = AppConstants.CfBridgePageUrl;
             var bridgeUrl = $"{bridgeBase}?sid={SessionId}&name={displayName}&pk={pk}&nonce={nonce}";
             PairingUrl = bridgeUrl;
+            // 旧 QR Bitmap を破棄してから差し替える（再入時の Bitmap リーク防止。rere #U08）。
+            // 「＋宛先追加」はペア済み後も何度でも押せるため、直接代入だと旧 Bitmap が漏れる。
+            ClearQrCodeImage();
             QrCodeImage = _qrCodeService.GenerateQrBitmap(bridgeUrl);
 
             ConnectionState = PeerState.WaitingForPairing;
@@ -229,7 +232,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     private async Task RemovePeerAsync(string peerId)
     {
         // Codex P2 fix (第4弾 verify): 印付けを関数頭に移動する。PairSyncService が remote unpair を
-        // 観測する race window (DeletePairFromFirebaseAsync 中に PeerRegistry → PeerRemoved 発火) で
+        // 観測する race window (DeletePairFromRelayAsync 中に PeerRegistry → PeerRemoved 発火) で
         // handler が先回りして二重クリーンアップする可能性を防ぐ。
         // finally で TryRemove する: peer 不在で PeerRemoved event が発火しなかったケースでも
         // marker leak しないようにする (通常経路では handler が既に TryRemove 済みなので no-op)。
@@ -246,11 +249,11 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         {
             var peer = PairedPeers.FirstOrDefault(p => p.PeerId == peerId);
 
-            // #D-001a Phase B §6.3: Firebase pairs/{pairId} を SSoT として削除する。
+            // #D-001a Phase B §6.3: pairs/{pairId} を SSoT (D1) から削除する。
             // 失敗（オフライン等）したら PendingPairDeleteQueue に積んで起動時 retry に委ねる。
             try
             {
-                await _connectionService.DeletePairFromFirebaseAsync(peerId);
+                await _connectionService.DeletePairFromRelayAsync(peerId);
             }
             catch (Exception ex)
             {

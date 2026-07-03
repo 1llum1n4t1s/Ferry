@@ -29,6 +29,8 @@ public partial class ConfirmWindow : Window
     public void SetData(string message, ConfirmButtonType buttonType)
     {
         MessageText.Text = message;
+        // Ok 以外で再利用されても破綻しないよう毎回可視に戻してから構成を当てる
+        BtnNo.IsVisible = true;
 
         switch (buttonType)
         {
@@ -39,6 +41,10 @@ public partial class ConfirmWindow : Window
             case ConfirmButtonType.YesNo:
                 BtnYes.Content = App.Text("Yes");
                 BtnNo.Content = App.Text("No");
+                break;
+            case ConfirmButtonType.Ok:
+                BtnYes.Content = App.Text("Sure");
+                BtnNo.IsVisible = false;
                 break;
         }
     }

@@ -5,6 +5,10 @@
 
     <Application.Resources>
         <ResourceDictionary>
+            <!-- 転送履歴の行アイコン（CodeRabbit nitpick: MainWindow/TransferView で重複していた Path Data を集約） -->
+            <StreamGeometry x:Key="Icon.Refresh">M 11.2,6 A 5.2,5.2 0 1 1 6,0.8 L 6,0 L 9,1.7 L 6,3.4 L 6,2.6 A 3.4,3.4 0 1 0 9.4,6 Z</StreamGeometry>
+            <StreamGeometry x:Key="Icon.Play">M 3,1.5 L 10.5,6 L 3,10.5 Z</StreamGeometry>
+
             <!-- ロケールリソース（x:Key でコードから参照、SetLocale で動的に切り替え） -->
             <ResourceInclude x:Key="en_US" Source="/Resources/Locales/en_US.axaml" />
             <ResourceInclude x:Key="ja_JP" Source="/Resources/Locales/ja_JP.axaml" />

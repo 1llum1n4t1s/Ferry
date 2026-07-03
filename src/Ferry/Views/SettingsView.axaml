@@ -109,16 +109,17 @@
                                        MinWidth="140" />
                     </Grid>
 
-                    <!-- 同時並列転送数。複数ファイル選択時の同時送信本数 (1〜8)。 -->
+                    <!-- パラレル転送数。内部固定（TransferViewModel.MaxParallelSends=10）のため
+                         読み取り専用の表示のみ（旧 ComboBox 設定は撤去済み）。 -->
                     <Grid ColumnDefinitions="*,Auto">
                         <StackPanel>
                             <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.ParallelTransfer}" />
                             <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.ParallelTransfer.Desc}" />
                         </StackPanel>
-                        <ComboBox Grid.Column="1"
-                                  ItemsSource="{Binding ParallelTransferOptions}"
-                                  SelectedItem="{Binding ParallelTransferCount, Mode=TwoWay}"
-                                  MinWidth="120" />
+                        <TextBlock Grid.Column="1"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   Text="{DynamicResource Text.Settings.ParallelTransfer.Auto}" />
                     </Grid>
                 </StackPanel>
             </Border>

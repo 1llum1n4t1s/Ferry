@@ -33,6 +33,10 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     /// <summary>送信失敗時の自動リトライ回数。</summary>
     private const int MaxSendAttempts = 3;
 
+    /// <summary>複数ファイル送信の同時並列本数の内部上限。ユーザー設定ではなく固定値
+    /// （設定 UI は撤去済み。設定画面には「自動（最大 10）」の表示のみ残す）。</summary>
+    public const int MaxParallelSends = 10;
+
     [ObservableProperty]
     public partial bool IsDragOver { get; set; }
 
@@ -390,13 +394,40 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         }
         RecomputeIsTransferring();
 
-        // 同時並列転送数。1 で従来通り直列、N>1 で N 個まで同時送信。設定変更は次回 SendFilesAsync から有効。
+        // Codex #3516870395 対応: 各 item が個別に EnsureConnectedToPeerAsync を並列で呼ぶと、
+        // ConnectionService の per-session ゲート取得前に互いの接続試行 CTS を cancel し合い、
+        // 無駄なリトライが発生していた。バッチ全体で 1 回だけ先に接続を確立してから並列送信に
+        // 入ることで同一ピアへの同時接続試行そのものを起こさない（EnsureConnectedToPeerAsync は
+        // 接続済みなら即 return するため、既接続時のオーバーヘッドは無視できる）。
+        try
+        {
+            await EnsureConnectedToPeerAsync(peer, default);
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"送信前の接続確立に失敗: {ex.Message}", Util.LogLevel.Error);
+            foreach (var item in items)
+            {
+                // Codex #3516961668: 接続待ち中にユーザーが個別キャンセル/削除した行を
+                // Error で上書きしない（下の並列送信ループの skip 条件と同じガード）
+                if (item.State is TransferState.Cancelled or TransferState.Error
+                    || FindTransfer(item.TransferId) is null)
+                    continue;
+                item.State = TransferState.Error;
+                item.ErrorMessage = ex is PeerUnreachableException or InvalidOperationException
+                    ? ex.Message
+                    : Util.ErrorText.Describe(ex);
+            }
+            RecomputeIsTransferring();
+            return;
+        }
+
+        // 並列転送は内部固定（最大 MaxParallelSends 本まで自動同時送信、ユーザー設定は撤去済み）。
         // ConnectionService の SendAsync は各 transport (TCP/WebSocket/UDP) で SemaphoreSlim 排他されているため
         // length-prefix フレームの交錯は起こらない。受信側は TransferId キーの ConcurrentDictionary で
         // 複数受信を独立管理できる。await 継続は UI スレッドに戻るので ObservableCollection / RecomputeIsTransferring
         // は UI スレッドでシリアル化される (Task.WhenAll 並列でもこの不変条件は維持される)。
-        var parallelism = Math.Clamp(_settingsService.Settings.ParallelTransferCount, 1, 10);
-        using var sem = new SemaphoreSlim(parallelism, parallelism);
+        using var sem = new SemaphoreSlim(MaxParallelSends, MaxParallelSends);
 
         var sendTasks = items.Select(async item =>
         {
@@ -530,9 +561,9 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 }
                 catch (Exception ex)
                 {
-                    Util.Logger.Log($"ファイル送信エラー ({displayName}): {ex.Message}", Util.LogLevel.Error);
+                    Util.Logger.Log($"ファイル送信エラー ({displayName}): {ex.GetType().Name}: {ex.Message}", Util.LogLevel.Error);
                     item.State = TransferState.Error;
-                    item.ErrorMessage = ex.Message;
+                    item.ErrorMessage = Util.ErrorText.Describe(ex);
                     item.Note = null;
                     break;
                 }
@@ -663,9 +694,9 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            Util.Logger.Log($"転送レジュームエラー ({transferId}): {ex.Message}", Util.LogLevel.Error);
+            Util.Logger.Log($"転送レジュームエラー ({transferId}): {ex.GetType().Name}: {ex.Message}", Util.LogLevel.Error);
             item.State = TransferState.Error;
-            item.ErrorMessage = ex.Message;
+            item.ErrorMessage = Util.ErrorText.Describe(ex);
         }
 
         RecomputeIsTransferring();

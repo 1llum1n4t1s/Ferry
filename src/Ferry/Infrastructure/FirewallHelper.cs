@@ -43,9 +43,6 @@ public static class FirewallHelper
         }
     }
 
-    /// <summary>後方互換用の同期 wrapper（既存の Task.Run 呼び出しを段階的に置換するため）。</summary>
-    public static void EnsureFirewallRule() => EnsureFirewallRuleAsync().GetAwaiter().GetResult();
-
     /// <summary>
     /// netsh で TCP ルールの存在を非同期に確認する（昇格不要）。
     /// 旧バージョンの UDP ルールは無視する。

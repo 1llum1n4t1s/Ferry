@@ -57,12 +57,20 @@ public static class LengthPrefixedStream
     public static async Task<byte[]?> ReadMessageAsync(Stream stream, CancellationToken ct = default)
     {
         // M-11: 自作 ReadExactAsync を .NET 7+ の Stream.ReadExactlyAsync に置換
-        // ヘッダー（4byte 長さ）を読み取る
-        var header = new byte[4];
-        try { await stream.ReadExactlyAsync(header, ct); }
-        catch (EndOfStreamException) { return null; } // 接続が閉じられた
+        // ヘッダー（4byte 長さ）を読み取る。WriteMessageAsync 同様 ArrayPool で毎メッセージのヒープ確保を回避
+        var header = ArrayPool<byte>.Shared.Rent(4);
+        int length;
+        try
+        {
+            try { await stream.ReadExactlyAsync(header.AsMemory(0, 4), ct); }
+            catch (EndOfStreamException) { return null; } // 接続が閉じられた
 
-        var length = BinaryPrimitives.ReadInt32BigEndian(header);
+            length = BinaryPrimitives.ReadInt32BigEndian(header.AsSpan(0, 4));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(header);
+        }
 
         if (length < 0 || length > MaxMessageSize)
             throw new InvalidDataException($"不正なメッセージサイズ: {length}");

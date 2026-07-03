@@ -159,8 +159,8 @@
   <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
   <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
   <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Number of files sent simultaneously (1 = legacy serial)</x:String>
-
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Multiple files are sent in parallel automatically</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Automatic (up to 10)</x:String>
   <!-- Peer: destination list sorting/section headers -->
   <x:String x:Key="Text.Member.TogglePin" xml:space="preserve">Закрепить / Открепить</x:String>
   <x:String x:Key="Text.Peer.Sort" xml:space="preserve">Сортировка</x:String>
@@ -171,4 +171,29 @@
   <x:String x:Key="Text.Peer.Section.Pinned" xml:space="preserve">Закреплённые</x:String>
   <x:String x:Key="Text.Peer.Section.Online" xml:space="preserve">В сети</x:String>
   <x:String x:Key="Text.Peer.Section.Offline" xml:space="preserve">Не в сети</x:String>
+  <!-- macOS メニューバー（App.SetupMacNativeMenus が Text() で参照） -->
+  <x:String x:Key="Text.Menu.About" xml:space="preserve">О Ferry</x:String>
+  <x:String x:Key="Text.Menu.Settings" xml:space="preserve">Настройки…</x:String>
+  <x:String x:Key="Text.Menu.File" xml:space="preserve">Файл</x:String>
+  <x:String x:Key="Text.Menu.CloseWindow" xml:space="preserve">Закрыть окно</x:String>
+  <x:String x:Key="Text.Menu.Window" xml:space="preserve">Окно</x:String>
+  <x:String x:Key="Text.Menu.Minimize" xml:space="preserve">Свернуть</x:String>
+  <x:String x:Key="Text.Menu.Help" xml:space="preserve">Справка</x:String>
+  <x:String x:Key="Text.Menu.Website" xml:space="preserve">Сайт Ferry</x:String>
+  <x:String x:Key="Text.Menu.OpenLogFolder" xml:space="preserve">Открыть папку журналов</x:String>
+  <x:String x:Key="Text.About.Tagline" xml:space="preserve">P2P-передача файлов с сопряжением по QR-коду</x:String>
+
+  <!-- 転送エラーの UI 文言（Util.ErrorText.Describe が参照。rere #U11） -->
+  <x:String x:Key="Text.Transfer.Error.Io" xml:space="preserve">Не удалось прочитать или записать файл (нет места или файл заблокирован)</x:String>
+  <x:String x:Key="Text.Transfer.Error.Access" xml:space="preserve">Нет прав доступа к файлу</x:String>
+  <x:String x:Key="Text.Transfer.Error.Generic" xml:space="preserve">Произошла ошибка во время передачи</x:String>
+
+  <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">Файл настроек был повреждён и сброшен. Данные сопряжения по возможности сохранены.</x:String>
+
+  <!-- 確認ダイアログの共通ボタン文言（ConfirmWindow が参照） -->
+  <x:String x:Key="Text.Sure" xml:space="preserve">OK</x:String>
+  <x:String x:Key="Text.Cancel" xml:space="preserve">Отмена</x:String>
+  <x:String x:Key="Text.Yes" xml:space="preserve">Да</x:String>
+  <x:String x:Key="Text.No" xml:space="preserve">Нет</x:String>
+
 </ResourceDictionary>

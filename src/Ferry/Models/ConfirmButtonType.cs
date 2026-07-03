@@ -10,4 +10,7 @@ public enum ConfirmButtonType
 
     /// <summary>はい / いいえ。Yes/No 二択の問いかけに使う。</summary>
     YesNo,
+
+    /// <summary>OK のみ。バージョン情報などの単純な情報表示に使う。</summary>
+    Ok,
 }

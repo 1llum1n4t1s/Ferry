@@ -153,5 +153,31 @@
   <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
   <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
   <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Number of files sent simultaneously (1 = legacy serial)</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Multiple files are sent in parallel automatically</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Automatic (up to 10)</x:String>
+  <!-- macOS メニューバー（App.SetupMacNativeMenus が Text() で参照） -->
+  <x:String x:Key="Text.Menu.About" xml:space="preserve">关于 Ferry</x:String>
+  <x:String x:Key="Text.Menu.Settings" xml:space="preserve">设置…</x:String>
+  <x:String x:Key="Text.Menu.File" xml:space="preserve">文件</x:String>
+  <x:String x:Key="Text.Menu.CloseWindow" xml:space="preserve">关闭窗口</x:String>
+  <x:String x:Key="Text.Menu.Window" xml:space="preserve">窗口</x:String>
+  <x:String x:Key="Text.Menu.Minimize" xml:space="preserve">最小化</x:String>
+  <x:String x:Key="Text.Menu.Help" xml:space="preserve">帮助</x:String>
+  <x:String x:Key="Text.Menu.Website" xml:space="preserve">Ferry 网站</x:String>
+  <x:String x:Key="Text.Menu.OpenLogFolder" xml:space="preserve">打开日志文件夹</x:String>
+  <x:String x:Key="Text.About.Tagline" xml:space="preserve">通过二维码配对连接的 P2P 文件传输</x:String>
+
+  <!-- 転送エラーの UI 文言（Util.ErrorText.Describe が参照。rere #U11） -->
+  <x:String x:Key="Text.Transfer.Error.Io" xml:space="preserve">文件读写失败（磁盘空间不足或被锁定）</x:String>
+  <x:String x:Key="Text.Transfer.Error.Access" xml:space="preserve">没有访问该文件的权限</x:String>
+  <x:String x:Key="Text.Transfer.Error.Generic" xml:space="preserve">传输过程中发生错误</x:String>
+
+  <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">设置文件已损坏并已重置。已尽可能保留配对信息。</x:String>
+
+  <!-- 確認ダイアログの共通ボタン文言（ConfirmWindow が参照） -->
+  <x:String x:Key="Text.Sure" xml:space="preserve">确定</x:String>
+  <x:String x:Key="Text.Cancel" xml:space="preserve">取消</x:String>
+  <x:String x:Key="Text.Yes" xml:space="preserve">是</x:String>
+  <x:String x:Key="Text.No" xml:space="preserve">否</x:String>
+
 </ResourceDictionary>

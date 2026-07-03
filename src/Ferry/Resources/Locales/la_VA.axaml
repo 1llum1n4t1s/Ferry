@@ -145,8 +145,8 @@
   <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
   <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
   <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Number of files sent simultaneously (1 = legacy serial)</x:String>
-
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Multiple files are sent in parallel automatically</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Automatic (up to 10)</x:String>
   <!-- Peer: destination list sorting/section headers -->
   <x:String x:Key="Text.Member.TogglePin" xml:space="preserve">Affige / Solve</x:String>
   <x:String x:Key="Text.Peer.Sort" xml:space="preserve">Ordina</x:String>
@@ -157,4 +157,29 @@
   <x:String x:Key="Text.Peer.Section.Pinned" xml:space="preserve">Affixa</x:String>
   <x:String x:Key="Text.Peer.Section.Online" xml:space="preserve">In linea</x:String>
   <x:String x:Key="Text.Peer.Section.Offline" xml:space="preserve">Extra lineam</x:String>
+  <!-- macOS メニューバー（App.SetupMacNativeMenus が Text() で参照） -->
+  <x:String x:Key="Text.Menu.About" xml:space="preserve">De Ferry</x:String>
+  <x:String x:Key="Text.Menu.Settings" xml:space="preserve">Optiones…</x:String>
+  <x:String x:Key="Text.Menu.File" xml:space="preserve">Fasciculus</x:String>
+  <x:String x:Key="Text.Menu.CloseWindow" xml:space="preserve">Fenestram claudere</x:String>
+  <x:String x:Key="Text.Menu.Window" xml:space="preserve">Fenestra</x:String>
+  <x:String x:Key="Text.Menu.Minimize" xml:space="preserve">Minuere</x:String>
+  <x:String x:Key="Text.Menu.Help" xml:space="preserve">Auxilium</x:String>
+  <x:String x:Key="Text.Menu.Website" xml:space="preserve">Situs interretialis Ferry</x:String>
+  <x:String x:Key="Text.Menu.OpenLogFolder" xml:space="preserve">Scapum actorum aperire</x:String>
+  <x:String x:Key="Text.About.Tagline" xml:space="preserve">Translatio fasciculorum P2P per iugationem QR</x:String>
+
+  <!-- 転送エラーの UI 文言（Util.ErrorText.Describe が参照。rere #U11） -->
+  <x:String x:Key="Text.Transfer.Error.Io" xml:space="preserve">Fasciculus legi aut scribi non potuit (spatium deest aut clausus est)</x:String>
+  <x:String x:Key="Text.Transfer.Error.Access" xml:space="preserve">Nulla permissio ad fasciculum accedendi</x:String>
+  <x:String x:Key="Text.Transfer.Error.Generic" xml:space="preserve">Error in translatione accidit</x:String>
+
+  <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">Fasciculus optionum corruptus erat et reordinatus est. Notitia iugationis quantum fieri potuit servata est.</x:String>
+
+  <!-- 確認ダイアログの共通ボタン文言（ConfirmWindow が参照） -->
+  <x:String x:Key="Text.Sure" xml:space="preserve">Certe</x:String>
+  <x:String x:Key="Text.Cancel" xml:space="preserve">Cancella</x:String>
+  <x:String x:Key="Text.Yes" xml:space="preserve">Ita</x:String>
+  <x:String x:Key="Text.No" xml:space="preserve">Non</x:String>
+
 </ResourceDictionary>

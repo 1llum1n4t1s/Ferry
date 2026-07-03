@@ -136,46 +136,75 @@
                                                  Foreground="{DynamicResource TahoeAccentBrush}"
                                                  Background="{DynamicResource BorderBrush}" />
 
-                                    <!-- 行ごとの操作ボタン -->
+                                    <!-- 行ごとの操作ボタン。
+                                         旧 Content="⏸/▶/🔄/✕/🗑" はフォントグリフ依存で、mac の既定フォント Inter が
+                                         当該グリフを持たず化けた（宛先リストの 3 点リーダーと同根）。フォント非依存・
+                                         クロス OS 同一表示のためベクター Path (12x12) に差し替え。Fill/Stroke は
+                                         $parent[Button].Foreground バインドで Button.icon:pointerover の白色化に追従する。 -->
                                     <StackPanel Grid.Column="2" Grid.RowSpan="4"
                                                 Orientation="Horizontal" Spacing="2"
                                                 VerticalAlignment="Center">
-                                        <Button Classes="icon" Content="⏸" FontSize="14"
+                                        <Button Classes="icon"
                                                 ToolTip.Tip="{DynamicResource Text.Transfer.Pause}"
                                                 IsVisible="{Binding CanPause}"
                                                 Command="{Binding ((vm:TransferViewModel)DataContext).PauseTransferCommand,
                                                                   RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                CommandParameter="{Binding TransferId}" />
-                                        <Button Classes="icon" Content="▶" FontSize="14"
+                                                CommandParameter="{Binding TransferId}">
+                                            <!-- 一時停止: 縦バー 2 本 -->
+                                            <Path Fill="{Binding $parent[Button].Foreground}"
+                                                  Data="M 2,1 L 5,1 L 5,11 L 2,11 Z M 7,1 L 10,1 L 10,11 L 7,11 Z" />
+                                        </Button>
+                                        <Button Classes="icon"
                                                 ToolTip.Tip="{DynamicResource Text.Transfer.Resume}"
                                                 IsVisible="{Binding CanResumeSend}"
                                                 Command="{Binding ((vm:TransferViewModel)DataContext).ResumeSendCommand,
                                                                   RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                CommandParameter="{Binding TransferId}" />
-                                        <Button Classes="icon" Content="▶" FontSize="14"
+                                                CommandParameter="{Binding TransferId}">
+                                            <!-- 再開: 右向き三角 -->
+                                            <Path Fill="{Binding $parent[Button].Foreground}"
+                                                  Data="{StaticResource Icon.Play}" />
+                                        </Button>
+                                        <Button Classes="icon"
                                                 ToolTip.Tip="{DynamicResource Text.Transfer.ResumeSuspended}"
                                                 IsVisible="{Binding CanResumeSuspended}"
                                                 Command="{Binding ((vm:TransferViewModel)DataContext).ResumeTransferCommand,
                                                                   RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                CommandParameter="{Binding TransferId}" />
-                                        <Button Classes="icon" Content="🔄" FontSize="14"
+                                                CommandParameter="{Binding TransferId}">
+                                            <!-- 中断再開: 右向き三角 -->
+                                            <Path Fill="{Binding $parent[Button].Foreground}"
+                                                  Data="{StaticResource Icon.Play}" />
+                                        </Button>
+                                        <Button Classes="icon"
                                                 ToolTip.Tip="{DynamicResource Text.Transfer.Resend}"
                                                 IsVisible="{Binding CanResend}"
                                                 Command="{Binding ((vm:TransferViewModel)DataContext).ResendCommand,
                                                                   RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                CommandParameter="{Binding TransferId}" />
-                                        <Button Classes="icon" Content="✕" FontSize="14"
+                                                CommandParameter="{Binding TransferId}">
+                                            <!-- 再送: 270° リング矢印（外弧→矢じり→内弧の単一塗りつぶしパス） -->
+                                            <Path Fill="{Binding $parent[Button].Foreground}"
+                                                  Data="{StaticResource Icon.Refresh}" />
+                                        </Button>
+                                        <Button Classes="icon"
                                                 ToolTip.Tip="{DynamicResource Text.Transfer.Cancel}"
                                                 IsVisible="{Binding CanCancel}"
                                                 Command="{Binding ((vm:TransferViewModel)DataContext).CancelTransferCommand,
                                                                   RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                CommandParameter="{Binding TransferId}" />
-                                        <Button Classes="icon" Content="🗑" FontSize="14"
+                                                CommandParameter="{Binding TransferId}">
+                                            <!-- 中止: ✕（ストローク 2 本） -->
+                                            <Path Stroke="{Binding $parent[Button].Foreground}"
+                                                  StrokeThickness="1.7" StrokeLineCap="Round"
+                                                  Data="M 2,2 L 10,10 M 10,2 L 2,10" />
+                                        </Button>
+                                        <Button Classes="icon"
                                                 ToolTip.Tip="{DynamicResource Text.Transfer.Delete}"
                                                 IsVisible="{Binding CanDelete}"
                                                 Command="{Binding ((vm:TransferViewModel)DataContext).DeleteTransferCommand,
                                                                   RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                CommandParameter="{Binding TransferId}" />
+                                                CommandParameter="{Binding TransferId}">
+                                            <!-- 削除: ゴミ箱（取っ手 + 蓋 + 台形ボディ） -->
+                                            <Path Fill="{Binding $parent[Button].Foreground}"
+                                                  Data="M 4.5,0.5 L 7.5,0.5 L 7.5,1.8 L 4.5,1.8 Z M 1,2.4 L 11,2.4 L 11,3.6 L 1,3.6 Z M 2.2,4.6 L 9.8,4.6 L 9.1,11.5 L 2.9,11.5 Z" />
+                                        </Button>
                                     </StackPanel>
                                 </Grid>
                             </Border>

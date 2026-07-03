@@ -44,13 +44,36 @@ public sealed class TcpDirectTransport : ITransport
     /// <returns>待ち受けポート番号。</returns>
     public int StartListener()
     {
-        // OS にポートを自動割り当てさせる（ポート 0 指定）
-        _listener = new TcpListener(IPAddress.Any, 0);
-        _listener.Start();
-
-        var port = ((IPEndPoint)_listener.LocalEndpoint).Port;
-        Util.Logger.Log($"TCP リスナー起動: 0.0.0.0:{port}");
-        return port;
+        // IPv6 デュアルスタックで待ち受ける（1 ポートで IPv4/IPv6 両方の着信を受ける）。
+        // LAN の IPv4 直結に加え、IPoE 等で IPv4 が CGNAT でも end-to-end IPv6 なら直結できる。
+        // IPv6 スタック無効の環境では従来どおり IPv4 のみで待ち受ける。
+        TcpListener? listener = null;
+        try
+        {
+            // コンストラクタも try 内で行う: IPv6 が OS レベルで丸ごと無効な環境では
+            // new TcpListener(IPv6Any, ...) 自体が SocketException を投げうる。try の外で
+            // 生成すると IPv4 フォールバックへ抜けられず起動自体が失敗する（Codex #3516961666）。
+            listener = new TcpListener(IPAddress.IPv6Any, 0);
+            listener.Server.DualMode = true;  // Start 前に設定（IPV6_V6ONLY=0）
+            listener.Start();
+            _listener = listener;
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            Util.Logger.Log($"TCP リスナー起動: [::]:{port} (dual-stack)");
+            return port;
+        }
+        catch (SocketException ex)
+        {
+            // TcpListener はコンストラクタで既にソケットを確保しているため、DualMode 設定 / Start
+            // 失敗時に破棄しないとハンドルがリークする（CodeRabbit #3516884775）。コンストラクタ自体が
+            // 失敗した場合は listener が null のままなので null 条件演算子で安全に済ませる。
+            listener?.Dispose();
+            Util.Logger.Log($"IPv6 dual-stack リスナー起動失敗 → IPv4 のみで待ち受け: {ex.Message}", Util.LogLevel.Warning);
+            _listener = new TcpListener(IPAddress.Any, 0);
+            _listener.Start();
+            var port = ((IPEndPoint)_listener.LocalEndpoint).Port;
+            Util.Logger.Log($"TCP リスナー起動: 0.0.0.0:{port}");
+            return port;
+        }
     }
 
     /// <summary>
@@ -96,16 +119,30 @@ public sealed class TcpDirectTransport : ITransport
         {
             try
             {
-                var client = new TcpClient();
-                ConfigureTcpClient(client);
+                // IPv4/IPv6 混在リストに対応するため、アドレスファミリに合わせてソケットを作る
+                // （パラメータなしの new TcpClient() は IPv4 ソケット固定で IPv6 宛てに接続できない）
+                var address = IPAddress.Parse(ip);
+                var client = new TcpClient(address.AddressFamily);
+                try
+                {
+                    ConfigureTcpClient(client);
 
-                using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                connectCts.CancelAfter(TimeSpan.FromSeconds(3));
+                    using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    connectCts.CancelAfter(TimeSpan.FromSeconds(3));
 
-                await client.ConnectAsync(IPAddress.Parse(ip), port, connectCts.Token);
+                    await client.ConnectAsync(address, port, connectCts.Token);
 
-                _client = client;
-                _stream = _client.GetStream();
+                    _client = client;
+                    _stream = _client.GetStream();
+                }
+                catch
+                {
+                    // 接続失敗時に client を破棄せず次の IP へ進むとソケットがリークするため、
+                    // 複数 IP を順次試行するこのループでは確実に Dispose してから外側の catch へ委譲する
+                    client.Dispose();
+                    throw;
+                }
+
                 IsConnected = true;
 
                 Util.Logger.Log($"TCP 接続成功: {Util.Logger.MaskIp(ip)}:{port}");
@@ -198,8 +235,16 @@ public sealed class TcpDirectTransport : ITransport
         };
     }
 
+    /// <summary>offer に載せる IPv6 アドレスの上限。相手側の TCP 試行は全体 5s / 各 3s の予算内で
+    /// 順次実行されるため、privacy 拡張で大量にある temporary アドレス等を全部載せても試しきれない。</summary>
+    private const int MaxAdvertisedIpv6 = 3;
+
     /// <summary>
-    /// このマシンの LAN 内 IPv4 アドレスを列挙する（30 秒キャッシュ + NIC 変化で無効化）。
+    /// このマシンの直結候補 IP アドレスを列挙する（30 秒キャッシュ + NIC 変化で無効化）。
+    /// IPv4 に加えて IPv6（GUA/ULA）も含む。並び順は「v4[0], v6[0], v4[1], v6[1], …」の
+    /// インターリーブ — 相手側は各 IP を 3s タイムアウトで順次試行し全体予算 5s で打ち切るため、
+    /// LAN の IPv4 即成功を最速に保ちつつ、v4 が不達（cross-NAT の私設 IP 等）でも
+    /// 予算内に必ず IPv6 の試行順が回ってくるようにする。
     /// </summary>
     public static string[] GetLocalIpAddresses()
     {
@@ -210,7 +255,8 @@ public sealed class TcpDirectTransport : ITransport
                 return s_cachedLocalIps;
         }
 
-        var ips = new List<string>();
+        var v4 = new List<string>();
+        var v6 = new List<IPAddress>();
         foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
         {
             if (nic.OperationalStatus != OperationalStatus.Up)
@@ -222,19 +268,64 @@ public sealed class TcpDirectTransport : ITransport
             foreach (var addr in props.UnicastAddresses)
             {
                 if (addr.Address.AddressFamily == AddressFamily.InterNetwork)
-                {
-                    ips.Add(addr.Address.ToString());
-                }
+                    v4.Add(addr.Address.ToString());
+                else if (IsAdvertisableIpv6(addr.Address))
+                    v6.Add(addr.Address);
             }
         }
 
-        var result = ips.ToArray();
+        // GUA（グローバル）を ULA（fc00::/7、LAN 内限定）より先に。cross-NAT で効くのは GUA だけ
+        var v6Ordered = v6
+            .OrderBy(a => IsUniqueLocalIpv6(a) ? 1 : 0)
+            .Take(MaxAdvertisedIpv6)
+            .Select(a => a.ToString())
+            .ToList();
+
+        var result = InterleaveAddresses(v4, v6Ordered);
         lock (s_localIpsLock)
         {
             s_cachedLocalIps = result;
             s_cachedLocalIpsTicks = now;
         }
         return result;
+    }
+
+    /// <summary>
+    /// offer に載せてよい IPv6 アドレスか（純関数・テスト対象）。
+    /// リンクローカル（fe80::/10、scope id が要る）・ループバック・マルチキャスト・
+    /// Teredo・IPv4-mapped を除外し、GUA（2000::/3）と ULA（fc00::/7）だけを通す。
+    /// </summary>
+    public static bool IsAdvertisableIpv6(IPAddress addr)
+    {
+        if (addr.AddressFamily != AddressFamily.InterNetworkV6) return false;
+        if (addr.IsIPv6LinkLocal || addr.IsIPv6Multicast || addr.IsIPv6Teredo) return false;
+        if (addr.IsIPv4MappedToIPv6) return false;
+        if (IPAddress.IPv6Loopback.Equals(addr)) return false;
+        // GUA (2000::/3) または ULA (fc00::/7) のみ許可（サイトローカル等の遺物を弾く）
+        var first = addr.GetAddressBytes()[0];
+        var isGua = (first & 0xE0) == 0x20;       // 2000::/3
+        return isGua || IsUniqueLocalIpv6(addr);
+    }
+
+    /// <summary>ULA (fc00::/7) 判定。</summary>
+    public static bool IsUniqueLocalIpv6(IPAddress addr)
+        => addr.AddressFamily == AddressFamily.InterNetworkV6
+           && (addr.GetAddressBytes()[0] & 0xFE) == 0xFC;
+
+    /// <summary>
+    /// v4/v6 リストを「v4[0], v6[0], v4[1], v6[1], …」に編む（純関数・テスト対象）。
+    /// 順次試行 + 全体タイムアウトの相手側実装を前提に、両ファミリが早い順番で試されることを保証する。
+    /// </summary>
+    public static string[] InterleaveAddresses(List<string> v4, List<string> v6)
+    {
+        var result = new List<string>(v4.Count + v6.Count);
+        var max = Math.Max(v4.Count, v6.Count);
+        for (var i = 0; i < max; i++)
+        {
+            if (i < v4.Count) result.Add(v4[i]);
+            if (i < v6.Count) result.Add(v6[i]);
+        }
+        return result.ToArray();
     }
 
     private static void ConfigureTcpClient(TcpClient client)

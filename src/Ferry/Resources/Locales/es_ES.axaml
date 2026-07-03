@@ -152,5 +152,31 @@
   <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
   <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
   <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Number of files sent simultaneously (1 = legacy serial)</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Multiple files are sent in parallel automatically</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Automatic (up to 10)</x:String>
+  <!-- macOS メニューバー（App.SetupMacNativeMenus が Text() で参照） -->
+  <x:String x:Key="Text.Menu.About" xml:space="preserve">Acerca de Ferry</x:String>
+  <x:String x:Key="Text.Menu.Settings" xml:space="preserve">Ajustes…</x:String>
+  <x:String x:Key="Text.Menu.File" xml:space="preserve">Archivo</x:String>
+  <x:String x:Key="Text.Menu.CloseWindow" xml:space="preserve">Cerrar ventana</x:String>
+  <x:String x:Key="Text.Menu.Window" xml:space="preserve">Ventana</x:String>
+  <x:String x:Key="Text.Menu.Minimize" xml:space="preserve">Minimizar</x:String>
+  <x:String x:Key="Text.Menu.Help" xml:space="preserve">Ayuda</x:String>
+  <x:String x:Key="Text.Menu.Website" xml:space="preserve">Sitio web de Ferry</x:String>
+  <x:String x:Key="Text.Menu.OpenLogFolder" xml:space="preserve">Abrir carpeta de registros</x:String>
+  <x:String x:Key="Text.About.Tagline" xml:space="preserve">Transferencia de archivos P2P con emparejamiento QR</x:String>
+
+  <!-- 転送エラーの UI 文言（Util.ErrorText.Describe が参照。rere #U11） -->
+  <x:String x:Key="Text.Transfer.Error.Io" xml:space="preserve">Error al leer/escribir el archivo (¿disco lleno o bloqueado?)</x:String>
+  <x:String x:Key="Text.Transfer.Error.Access" xml:space="preserve">Sin permiso para acceder al archivo</x:String>
+  <x:String x:Key="Text.Transfer.Error.Generic" xml:space="preserve">Se produjo un error durante la transferencia</x:String>
+
+  <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">El archivo de configuración estaba dañado y se ha restablecido. La información de emparejamiento se ha conservado en la medida de lo posible.</x:String>
+
+  <!-- 確認ダイアログの共通ボタン文言（ConfirmWindow が参照） -->
+  <x:String x:Key="Text.Sure" xml:space="preserve">OK</x:String>
+  <x:String x:Key="Text.Cancel" xml:space="preserve">Cancelar</x:String>
+  <x:String x:Key="Text.Yes" xml:space="preserve">Sí</x:String>
+  <x:String x:Key="Text.No" xml:space="preserve">No</x:String>
+
 </ResourceDictionary>

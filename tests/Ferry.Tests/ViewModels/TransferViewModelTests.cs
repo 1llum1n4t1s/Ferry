@@ -170,7 +170,10 @@ public class TransferViewModelTests : IDisposable
         Assert.Single(vm.Transfers);
         var item = vm.Transfers[0];
         Assert.Equal(TransferState.Error, item.State);
-        Assert.Equal("ディスクエラー", item.ErrorMessage);
+        // ローカライズ後: 生の例外メッセージは漏らさず種別文言に変換される（テスト環境では App.Text() がキーを返す場合がある）
+        Assert.True(
+            item.ErrorMessage == "ファイルの読み書きに失敗しました（容量不足・ロックの可能性）" || item.ErrorMessage == "Text.Transfer.Error.Io",
+            $"ErrorMessage should be IO error text, but was: {item.ErrorMessage}");
     }
 
     [Fact]
@@ -312,7 +315,10 @@ public class TransferViewModelTests : IDisposable
         await vm.ResumeTransferCommand.ExecuteAsync(item.TransferId);
 
         Assert.Equal(TransferState.Error, item.State);
-        Assert.Equal("ネットワークエラー", item.ErrorMessage);
+        // ローカライズ後: 生の例外メッセージは漏らさず種別文言に変換される（テスト環境では App.Text() がキーを返す場合がある）
+        Assert.True(
+            item.ErrorMessage == "転送中にエラーが発生しました" || item.ErrorMessage == "Text.Transfer.Error.Generic",
+            $"ErrorMessage should be generic error text, but was: {item.ErrorMessage}");
     }
 
     [Fact]
