@@ -394,6 +394,29 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         }
         RecomputeIsTransferring();
 
+        // Codex #3516870395 対応: 各 item が個別に EnsureConnectedToPeerAsync を並列で呼ぶと、
+        // ConnectionService の per-session ゲート取得前に互いの接続試行 CTS を cancel し合い、
+        // 無駄なリトライが発生していた。バッチ全体で 1 回だけ先に接続を確立してから並列送信に
+        // 入ることで同一ピアへの同時接続試行そのものを起こさない（EnsureConnectedToPeerAsync は
+        // 接続済みなら即 return するため、既接続時のオーバーヘッドは無視できる）。
+        try
+        {
+            await EnsureConnectedToPeerAsync(peer, default);
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"送信前の接続確立に失敗: {ex.Message}", Util.LogLevel.Error);
+            foreach (var item in items)
+            {
+                item.State = TransferState.Error;
+                item.ErrorMessage = ex is PeerUnreachableException or InvalidOperationException
+                    ? ex.Message
+                    : Util.ErrorText.Describe(ex);
+            }
+            RecomputeIsTransferring();
+            return;
+        }
+
         // 並列転送は内部固定（最大 MaxParallelSends 本まで自動同時送信、ユーザー設定は撤去済み）。
         // ConnectionService の SendAsync は各 transport (TCP/WebSocket/UDP) で SemaphoreSlim 排他されているため
         // length-prefix フレームの交錯は起こらない。受信側は TransferId キーの ConcurrentDictionary で

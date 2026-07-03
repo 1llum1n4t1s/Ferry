@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Net.Sockets;
 
 namespace Ferry.Util;
 
@@ -14,6 +15,10 @@ public static class ErrorText
     public static string Describe(Exception ex) => ex switch
     {
         UnauthorizedAccessException => App.Text("Transfer.Error.Access"),
+        // NetworkStream の切断は IOException が SocketException を内包する形で飛んでくる。
+        // ディスク由来の IOException（容量不足・ロック等）と混同してディスクエラー文言を
+        // 誤表示しないよう、ネットワーク起因は Generic 文言に振り分ける（Codex #3516870401）。
+        IOException { InnerException: SocketException } => App.Text("Transfer.Error.Generic"),
         IOException => App.Text("Transfer.Error.Io"),
         _ => App.Text("Transfer.Error.Generic"),
     };
