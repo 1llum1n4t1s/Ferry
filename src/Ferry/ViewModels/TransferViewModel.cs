@@ -33,6 +33,10 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     /// <summary>送信失敗時の自動リトライ回数。</summary>
     private const int MaxSendAttempts = 3;
 
+    /// <summary>複数ファイル送信の同時並列本数の内部上限。ユーザー設定ではなく固定値
+    /// （設定 UI は撤去済み。設定画面には「自動（最大 10）」の表示のみ残す）。</summary>
+    public const int MaxParallelSends = 10;
+
     [ObservableProperty]
     public partial bool IsDragOver { get; set; }
 
@@ -390,13 +394,12 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         }
         RecomputeIsTransferring();
 
-        // 同時並列転送数。1 で従来通り直列、N>1 で N 個まで同時送信。設定変更は次回 SendFilesAsync から有効。
+        // 並列転送は内部固定（最大 MaxParallelSends 本まで自動同時送信、ユーザー設定は撤去済み）。
         // ConnectionService の SendAsync は各 transport (TCP/WebSocket/UDP) で SemaphoreSlim 排他されているため
         // length-prefix フレームの交錯は起こらない。受信側は TransferId キーの ConcurrentDictionary で
         // 複数受信を独立管理できる。await 継続は UI スレッドに戻るので ObservableCollection / RecomputeIsTransferring
         // は UI スレッドでシリアル化される (Task.WhenAll 並列でもこの不変条件は維持される)。
-        var parallelism = Math.Clamp(_settingsService.Settings.ParallelTransferCount, 1, 10);
-        using var sem = new SemaphoreSlim(parallelism, parallelism);
+        using var sem = new SemaphoreSlim(MaxParallelSends, MaxParallelSends);
 
         var sendTasks = items.Select(async item =>
         {
@@ -530,9 +533,9 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 }
                 catch (Exception ex)
                 {
-                    Util.Logger.Log($"ファイル送信エラー ({displayName}): {ex.Message}", Util.LogLevel.Error);
+                    Util.Logger.Log($"ファイル送信エラー ({displayName}): {ex.GetType().Name}: {ex.Message}", Util.LogLevel.Error);
                     item.State = TransferState.Error;
-                    item.ErrorMessage = ex.Message;
+                    item.ErrorMessage = Util.ErrorText.Describe(ex);
                     item.Note = null;
                     break;
                 }
@@ -663,9 +666,9 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            Util.Logger.Log($"転送レジュームエラー ({transferId}): {ex.Message}", Util.LogLevel.Error);
+            Util.Logger.Log($"転送レジュームエラー ({transferId}): {ex.GetType().Name}: {ex.Message}", Util.LogLevel.Error);
             item.State = TransferState.Error;
-            item.ErrorMessage = ex.Message;
+            item.ErrorMessage = Util.ErrorText.Describe(ex);
         }
 
         RecomputeIsTransferring();

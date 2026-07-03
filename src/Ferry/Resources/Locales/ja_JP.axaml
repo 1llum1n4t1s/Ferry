@@ -146,9 +146,9 @@
   <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">送信速度の上限。0 で無制限</x:String>
   <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">ダウンロード帯域制限 (KB/s)</x:String>
   <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">受信速度の上限。0 で無制限</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">同時並列転送数</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">複数ファイルを同時に送る本数 (1 で従来通り)</x:String>
-
+  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">パラレル転送数</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">複数ファイルは自動で並列送信されます</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">自動（最大 10）</x:String>
   <!-- Settings: Appearance (extended) -->
 
   <!-- Settings: Auto Start -->
@@ -194,5 +194,24 @@
   <x:String x:Key="Text.State.Paused" xml:space="preserve">一時停止中</x:String>
   <x:String x:Key="Text.SaveBar.Tooltip" xml:space="preserve">受信ファイルの保存先</x:String>
   <x:String x:Key="Text.SaveBar.Open" xml:space="preserve">保存先を開く</x:String>
+
+  <!-- macOS メニューバー（App.SetupMacNativeMenus が Text() で参照） -->
+  <x:String x:Key="Text.Menu.About" xml:space="preserve">Ferry について</x:String>
+  <x:String x:Key="Text.Menu.Settings" xml:space="preserve">設定…</x:String>
+  <x:String x:Key="Text.Menu.File" xml:space="preserve">ファイル</x:String>
+  <x:String x:Key="Text.Menu.CloseWindow" xml:space="preserve">ウィンドウを閉じる</x:String>
+  <x:String x:Key="Text.Menu.Window" xml:space="preserve">ウィンドウ</x:String>
+  <x:String x:Key="Text.Menu.Minimize" xml:space="preserve">最小化</x:String>
+  <x:String x:Key="Text.Menu.Help" xml:space="preserve">ヘルプ</x:String>
+  <x:String x:Key="Text.Menu.Website" xml:space="preserve">Ferry の Web サイト</x:String>
+  <x:String x:Key="Text.Menu.OpenLogFolder" xml:space="preserve">ログフォルダを開く</x:String>
+  <x:String x:Key="Text.About.Tagline" xml:space="preserve">QR ペアリングでつながる P2P ファイル転送</x:String>
+
+  <!-- 転送エラーの UI 文言（Util.ErrorText.Describe が参照。rere #U11） -->
+  <x:String x:Key="Text.Transfer.Error.Io" xml:space="preserve">ファイルの読み書きに失敗しました（容量不足・ロックの可能性）</x:String>
+  <x:String x:Key="Text.Transfer.Error.Access" xml:space="preserve">ファイルへのアクセス権限がありません</x:String>
+  <x:String x:Key="Text.Transfer.Error.Generic" xml:space="preserve">転送中にエラーが発生しました</x:String>
+
+  <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">設定ファイルが破損していたため初期化しました。ペア情報は可能な限り保持されています。</x:String>
 
 </ResourceDictionary>

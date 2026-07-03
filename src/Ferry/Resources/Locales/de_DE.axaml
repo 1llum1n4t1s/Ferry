@@ -143,8 +143,8 @@
   <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
   <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
   <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Number of files sent simultaneously (1 = legacy serial)</x:String>
-
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Multiple files are sent in parallel automatically</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Automatic (up to 10)</x:String>
   <!-- Peer: destination list sorting/section headers -->
   <x:String x:Key="Text.Member.TogglePin" xml:space="preserve">Anheften / Lösen</x:String>
   <x:String x:Key="Text.Peer.Sort" xml:space="preserve">Sortieren</x:String>
@@ -155,5 +155,24 @@
   <x:String x:Key="Text.Peer.Section.Pinned" xml:space="preserve">Angeheftet</x:String>
   <x:String x:Key="Text.Peer.Section.Online" xml:space="preserve">Online</x:String>
   <x:String x:Key="Text.Peer.Section.Offline" xml:space="preserve">Offline</x:String>
+
+  <!-- macOS メニューバー（App.SetupMacNativeMenus が Text() で参照） -->
+  <x:String x:Key="Text.Menu.About" xml:space="preserve">Über Ferry</x:String>
+  <x:String x:Key="Text.Menu.Settings" xml:space="preserve">Einstellungen…</x:String>
+  <x:String x:Key="Text.Menu.File" xml:space="preserve">Datei</x:String>
+  <x:String x:Key="Text.Menu.CloseWindow" xml:space="preserve">Fenster schließen</x:String>
+  <x:String x:Key="Text.Menu.Window" xml:space="preserve">Fenster</x:String>
+  <x:String x:Key="Text.Menu.Minimize" xml:space="preserve">Minimieren</x:String>
+  <x:String x:Key="Text.Menu.Help" xml:space="preserve">Hilfe</x:String>
+  <x:String x:Key="Text.Menu.Website" xml:space="preserve">Ferry-Website</x:String>
+  <x:String x:Key="Text.Menu.OpenLogFolder" xml:space="preserve">Log-Ordner öffnen</x:String>
+  <x:String x:Key="Text.About.Tagline" xml:space="preserve">P2P-Dateiübertragung mit QR-Kopplung</x:String>
+
+  <!-- 転送エラーの UI 文言（Util.ErrorText.Describe が参照。rere #U11） -->
+  <x:String x:Key="Text.Transfer.Error.Io" xml:space="preserve">Datei konnte nicht gelesen/geschrieben werden (Speicher voll oder gesperrt?)</x:String>
+  <x:String x:Key="Text.Transfer.Error.Access" xml:space="preserve">Keine Berechtigung für den Dateizugriff</x:String>
+  <x:String x:Key="Text.Transfer.Error.Generic" xml:space="preserve">Bei der Übertragung ist ein Fehler aufgetreten</x:String>
+
+  <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">Die Einstellungsdatei war beschädigt und wurde zurückgesetzt. Ihre Kopplungsinformationen wurden nach Möglichkeit beibehalten.</x:String>
 
 </ResourceDictionary>

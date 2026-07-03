@@ -78,12 +78,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial decimal DownloadKBps { get; set; }
 
-    /// <summary>同時並列転送数。ComboBox とバインド (1〜10)。</summary>
-    [ObservableProperty]
-    public partial int ParallelTransferCount { get; set; } = 1;
-
-    /// <summary>並列転送数 ComboBox の選択肢。</summary>
-    public int[] ParallelTransferOptions { get; } = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    // 旧「同時並列転送数」設定 (ParallelTransferCount ComboBox) は撤去済み。
+    // 並列本数は TransferViewModel.MaxParallelSends の内部固定（最大 10）で、
+    // 設定画面には読み取り専用の「自動（最大 10）」表示だけを残す。
 
     // N-1: 旧 Theme / AccentColor / FontSize は SelectedThemeIndex (ThemeMode) と二重定義のため削除済み
 
@@ -166,7 +163,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
             AutoAcceptFileTransfer = s.AutoAcceptFileTransfer;
             UploadKBps = Math.Max(0, s.UploadKBps);
             DownloadKBps = Math.Max(0, s.DownloadKBps);
-            ParallelTransferCount = s.ParallelTransferCount <= 0 ? 1 : Math.Clamp(s.ParallelTransferCount, 1, 10);
             AutoStartWithWindows = s.AutoStartWithWindows;
 
             // インストール済みバージョンが skip 対象に追い付いた/追い越したら、その skip 設定は陳腐化しているので
@@ -232,7 +228,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         s.AutoAcceptFileTransfer = AutoAcceptFileTransfer;
         s.UploadKBps = (int)Math.Max(0m, UploadKBps);
         s.DownloadKBps = (int)Math.Max(0m, DownloadKBps);
-        s.ParallelTransferCount = Math.Clamp(ParallelTransferCount, 1, 10);
         s.AutoStartWithWindows = AutoStartWithWindows;
         await _settingsService.SaveAsync();
     }
@@ -296,13 +291,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         _ = SaveSettingsAsync();
     }
 
-    partial void OnParallelTransferCountChanged(int value)
-    {
-        if (_isLoading) return;
-        // 設定変更は次回 SendFilesAsync から有効。進行中の SemaphoreSlim には作用しない。
-        _settingsService.Settings.ParallelTransferCount = Math.Clamp(value, 1, 10);
-        _ = SaveSettingsAsync();
-    }
     partial void OnAutoStartWithWindowsChanged(bool value)
     {
         if (!_isLoading)

@@ -19,11 +19,14 @@ dotnet test tests/Ferry.Tests/Ferry.Tests.csproj
 # テスト単体実行（クラス名 or メソッド名でフィルタ）
 dotnet test tests/Ferry.Tests/Ferry.Tests.csproj --filter "FullyQualifiedName~FileChunkerTests"
 
-# Bridge ページのデプロイ (Firebase Hosting)
-cd src/Ferry.Bridge && firebase deploy --only hosting
+# relay Worker（シグナリング / リレー / Bridge ページ）の型チェック + テスト
+cd infra/cloudflare/relay && pnpm exec tsc --noEmit && pnpm test
+
+# relay Worker の手動デプロイ（通常は main push で deploy-relay.yml が自動配信するので不要）
+cd infra/cloudflare/relay && pnpm dlx wrangler deploy
 ```
 
-> Windows 向けリリースは `pwsh scripts/release-local.ps1` でローカル実行する（コード署名のため）。macOS / Linux と Bridge ページは `release/**` ブランチへの push で CI が配信する（後述「自動更新と配信」）。
+> Windows 向けリリースは `pwsh scripts/release-local.ps1` でローカル実行する（コード署名のため）。macOS / Linux は `release/**` ブランチへの push で CI が配信する（後述「自動更新と配信」）。Bridge ページ（QR ペアリング）は relay Worker の Static Assets（`infra/cloudflare/relay/public/`）なので relay と一緒に配信される。
 >
 > PR（→ main）は `.github/workflows/dotnet-build.yml`（".NET Build"）が build + test で検証する。`release/**` トリガーの配信 CI（後述）とは別ワークフローなので、コード変更の正否はこの PR CI で確認する。
 
@@ -34,10 +37,11 @@ cd src/Ferry.Bridge && firebase deploy --only hosting
 Ferry は QR コードでペアリングし、TCP 直接接続（LAN）/ UDP ホールパンチ（NAT 越え P2P）/ WebSocket リレー（最終手段）で PC 間ファイルを P2P 転送するデスクトップアプリ。ファイル転送に特化しており、チャット機能は含まない。
 
 - **`src/Ferry/`** — .NET 10 Avalonia UI デスクトップアプリ（Native AOT、クロスプラットフォーム: win-x64 / win-arm64 / osx-arm64 / linux-x64 / linux-arm64）
-- **`src/Ferry.Bridge/`** — Firebase Hosting にデプロイする Web ページ（スマホでQRスキャン→2台のPCをペアリング。`bridge.js` + `index.html`、ライブラリは CDN 直リンク）
-- **`infra/cloudflare/relay/`** — Cloudflare Workers + Durable Objects の WebSocket リレー実装 (TypeScript)。`wss://relay.ferry.nephilim.jp/ferry-relay` に配信。**`infra/cloudflare/relay/**` を main に push すると `deploy-relay.yml` が `wrangler deploy` で自動配信**（手動 `wrangler deploy` も可）。死活監視は `relay-healthcheck.yml`（15 分ごとの cron）。⚠️ 旧来は手動デプロイのみでリリースに紐づかず、本番が古いまま残り `/auth/token` が 426 を返す事故（2026-06-23）が起きたため CI 化した
-- **`web/`** — ダウンロード用ランディングページ（`index.html` + Cloudflare Worker `worker.js` + `wrangler.toml`）。`src/Ferry.Bridge/` の QR ペアリングページとは別物。`web/` 配下を main に push すると `deploy-landing.yml` が Cloudflare に配信
+- **`infra/cloudflare/relay/`** — バックエンド一式 (TypeScript)。Cloudflare Workers + Durable Objects + D1 で **シグナリング（PairDO）/ プレゼンス + inbox（DeviceDO）/ ペア台帳（D1）/ WebSocket リレー（RelayDO、`wss://relay.ferry.nephilim.jp/ferry-relay`）/ QR ペアリング用 Bridge ページ（`public/` を Static Assets 配信）** を 1 Worker に集約。テストは vitest（`pnpm test`）。**`infra/cloudflare/relay/**` を main に push すると `deploy-relay.yml` が `wrangler deploy` で自動配信**（手動 `wrangler deploy` も可）。死活監視は `relay-healthcheck.yml`（15 分ごとの cron）。⚠️ 旧来は手動デプロイのみでリリースに紐づかず、本番が古いまま残り `/auth/token` が 426 を返す事故（2026-06-23）が起きたため CI 化した
+- **`web/`** — ダウンロード用ランディングページ（`index.html` + Cloudflare Worker `worker.js` + `wrangler.toml`）。QR ペアリングの Bridge ページとは別物。`web/` 配下を main に push すると `deploy-landing.yml` が Cloudflare に配信
 - **`tests/Ferry.Tests/`** — xUnit v3 + NSubstitute によるユニットテスト
+
+> **Firebase は完全撤去済み（2026-07、v1.0.66 の Step 6/7）**。シグナリング・プレゼンス・ペアリング・Bridge 配信はすべて上記 relay Worker に一本化。旧 `src/Ferry.Bridge/`（Firebase Hosting 版 Bridge）・`FirebaseSignaling.cs`・`firebase-cleanup.yml` は削除済み。Firebase プロジェクト `ferry-edf09` 自体もシャットダウン済み（2026-08-01 完全削除予定）で、**v1.0.64 以前の旧バイナリはシグナリング不能**（v1.0.65+ の自動更新で CF 経路へ移行する）。
 
 ### Avalonia UI ネイティブ + MVVM サービス層
 
@@ -47,7 +51,7 @@ UI は Avalonia UI ネイティブ（AXAML）。手動 DI（`App.axaml.cs` で�
 Views/                  → Avalonia AXAML + コードビハインド（MainWindow, TransferView, SettingsView）
 ViewModels/             → CommunityToolkit.Mvvm の ObservableObject / ObservableProperty
 Services/               → インターフェース (I*Service) + 実装 + Stub（テスト・開発用）
-Infrastructure/         → FirebaseSignaling, TcpDirectTransport, UdpHolePunchTransport, WebSocketRelayTransport, StunClient, FileChunker
+Infrastructure/         → CloudflareSignaling（+ CfTokenProvider 認証）, TcpDirectTransport, UdpHolePunchTransport, WebSocketRelayTransport, StunClient, FileChunker
 ```
 
 主要サービスインターフェース:
@@ -60,17 +64,18 @@ Infrastructure/         → FirebaseSignaling, TcpDirectTransport, UdpHolePunchT
 
 イベント駆動で固定タイムアウトに依存しない設計。**STUN は遅延実行**で、LAN で TCP 直結できるケースに STUN レイテンシを乗せない（offer-v1 は STUN 情報なしで即送る）:
 
-1. **Offer 側**: TCP リスナー起動 → **offer-v1 送信（STUN 情報なし）** → TCP accept と Answer ポーリングを `WhenAny` で同時待機
+1. **Offer 側**: TCP リスナー起動（**IPv6 デュアルスタック**、`IPv6Any + DualMode` の 1 ポートで v4/v6 両受け。v6 スタック無しは v4 にフォールバック）→ **offer-v1 送信（STUN 情報なし）** → TCP accept と Answer ポーリングを `WhenAny` で同時待機
 2. **Answer 側**: offer 受信 → TCP 接続試行 → 結果を answer に `route` フィールドで通知
+   - offer の `Ips` は **IPv4 + IPv6（GUA/ULA、リンクローカル等は除外・最大 3 個）を「v4[0], v6[0], v4[1], …」インターリーブ**で並び、Answer は各 IP 3s / 全体 5s 予算で**順次**試行（`TcpDirectTransport.GetLocalIpAddresses` / `IsAdvertisableIpv6`）。LAN の v4 即成功は従来最速のまま、**IPv4 が CGNAT でも end-to-end IPv6 なら UDP/リレーへ行かず TCP 直結**できる（相手側ルータの IPv6 SPI ファイアウォールが inbound を落とす環境では不成立→従来どおり UDP へ）。並列レースにしないのは「Answer が捨てた側の接続を Offer が accept する」不整合を避けるため。旧バージョン Answer は v4 ソケット固定で v6 エントリに即例外→次の IP へ進むだけで無害（プロトコル互換、`ConnectionInfo` 変更なし）
    - TCP 成功 → `route = "direct"` → 両側 TCP で接続完了
    - TCP 失敗 → `route = "needRelay"` → 双方が次ステップ（UDP）へ
-3. **TCP 失敗時（UDP ホールパンチ）**: ここが非対称で**順序が肝**。外部エンドポイントの交換は更に非対称で、**Offer 側の endpoint は offer-v2 ペイロード（`ConnectionInfo.ExternalIp/ExternalPort`）で運ばれ、Answer 側の endpoint だけが `signaling/{pairId}/endpoints/{answererDeviceId}` 経由**で渡る（rere #D-003 で per-sender 化。書き手は自分の deviceId キー、読み手はペア相手の deviceId キー）。
-   - **Offer 側**: answer(needRelay) 受信 → STUN クエリ → **ExternalIp を載せた offer-v2 を自分の offer ノード（`offers/{_deviceId}`）に上書き再送**（`SendSdpOfferAsync(pairId, _deviceId, …)`）→ Answer の外部エンドポイント（`endpoints/{peerId}`）を最大 10 秒待つ（`WaitForEndpointAsync(pairId, peerId)`）→ 取得後ホールパンチ
+3. **TCP 失敗時（UDP ホールパンチ）**: ここが非対称で**順序が肝**。外部エンドポイントの交換は更に非対称で、**Offer 側の endpoint は offer-v2 ペイロード（`ConnectionInfo.ExternalIp/ExternalPort`）で運ばれ、Answer 側の endpoint だけが `/sig/{pairId}/endpoint`（PairDO キー `endpoint:{answererDeviceId}`）経由**で渡る（rere #D-003 で per-sender 化。書き手は自分の deviceId キー、読み手はペア相手の deviceId キー）。
+   - **Offer 側**: answer(needRelay) 受信 → STUN クエリ → **ExternalIp を載せた offer-v2 を自分の offer キー（PairDO `offer:{_deviceId}`）に上書き再送**（`SendSdpOfferAsync(pairId, _deviceId, …)`）→ Answer の外部エンドポイント（`endpoint:{peerId}`）を最大 10 秒待つ（`WaitForEndpointAsync(pairId, peerId)`）→ 取得後ホールパンチ
    - **Answer 側**: 最初に読んだ offer-v1 には ExternalIp が無い。**`WaitForOfferExternalIpAsync` で offer-v2（ExternalIp 付き）を最大 8 秒ポーリングして読み直してから**（`TryReadOfferOnceAsync(pairId, peerId)`）STUN → 自分の外部エンドポイントを publish（`SendEndpointAsync(pairId, _deviceId, …)`）→ ホールパンチ。MITM 防御（`offer.From == ペア相手` ＋ per-sender キー一致）は再読み分にも適用
    - ⚠️ **Answer 側を「最初に読んだ offer の ExternalIp 有無」でゲートしてはいけない**。offer-v1 は常に ExternalIp が空なので、ゲートすると UDP を一切起動せず自分の endpoint も publish しない → Offer 側が endpoint 待ちでタイムアウト → **cross-NAT（別回線・別 NAT）で必ずリレーへ落ちる構造バグ**になる（実際に過去発生・修正済み）
 4. **UDP 失敗時**: WebSocket リレーにフォールバック（`wss://relay.ferry.nephilim.jp/ferry-relay`、Cloudflare Workers + Durable Objects、Hibernation 対応）
 
-> UDP ホールパンチの成功は **NAT タイプ依存**。修正後も両側が CGNAT / symmetric NAT（日本の IPoE 等で多い）だとホールパンチが抜けずリレーに落ちる。「UDP 修正＝必ず P2P」ではない点に注意。
+> UDP ホールパンチの成功は **NAT タイプ依存**。修正後も両側が CGNAT / symmetric NAT（日本の IPoE 等で多い）だとホールパンチが抜けずリレーに落ちる。「UDP 修正＝必ず P2P」ではない点に注意。IPoE 環境の救済としては上記 **IPv6 TCP 直結**が先に効く（NAT 越え不要、相手側 FW の inbound 許可のみが条件）。
 
 STUN は **Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google STUN (`stun.l.google.com:19302`) を従** の 2 サーバーフォールバック。IPv4 明示指定（`AddressFamily.InterNetwork`）。旧 VPS 自前 coturn (`1llum1n4t1.net:3478`) は Cloudflare 移行に伴い 2026-05 に撤去済み。
 
@@ -85,31 +90,33 @@ STUN は **Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google S
 
 ### ペアリングフロー
 
-1. PC-A がセッション登録 → QR コード表示（Bridge ページ URL + セッションID）
-2. スマホで QR スキャン → Bridge ページが開く
+1. PC-A がセッション登録（`POST /pair/session` → D1 の `sessions` + `pairing_nonces`）→ QR コード表示（Bridge ページ URL + sid + nonce + 長期 ECDH 公開鍵）
+2. スマホで QR スキャン → Bridge ページ（`https://relay.ferry.nephilim.jp`、relay Worker の Static Assets・API と同一オリジンなので CORS 不要）が開く
 3. Bridge ページ内カメラで PC-B の QR をスキャン
-4. Bridge が Firebase `pairings/` に両セッション書き込み → 両 PC に通知
-5. ペア情報をローカル保存 → Firebase セッション削除
+4. Bridge が `POST /pair/create`（**両 sid の nonce 値所有を D1 で server 検証** = ghost peer 注入防止・bearer 不要・IP rate limit）→ 両 PC の DeviceDO inbox（WebSocket）へペア成立を即 push
+5. ペア情報 + PairSecret（交換した公開鍵から ECDH 導出）を `peers.json` にローカル保存
 
-### Firebase 構造
+**PC コード貼付ペアリング（スマホ無しの直接ペア）**: 相手の 32hex コードを貼ると `SubmitPairingAsync` → `POST /pair/link`。認可は「自分の bearer（sidA は cfToken の claims 固定＝詐称不能）+ 相手セッションがアクティブ（相手の nonce **値**の所有は不要）」で、QR 経路（`/pair/create`）とは別の認可モデルとして明確に分離（v1.0.67 で CF 対応）。device rate limit 付き。
 
-```
-sessions/{sessionId}                                = { DisplayName, CreatedAt }
-pairings/{pairingId}                                = { SidA, SidB, NameA, NameB, CreatedAt }
-presence/{deviceId}                                 = { LastSeen, DisplayName }   # オンライン検出
-signaling/{pairId}/offers/{senderDeviceId}          = TimedSignalingValue { Data(ConnectionInfo JSON base64), CreatedAt }  # rere #D-003: 送信元 deviceId で per-sender 分離。Data に ips, port, externalIp, externalPort, relayUrl, route, probe, from, nonce を含む
-signaling/{pairId}/answers/{answererDeviceId}       = SignalingValue { Data(ConnectionInfo JSON base64) }  # rere #D-003: answerer の deviceId で per-sender 分離（鮮度なし）
-signaling/{pairId}/endpoints/{senderDeviceId}       = SignalingValue { Data("from|ip:port" base64) }  # rere #D-003: 送信元 deviceId で per-sender 分離（UDP ホールパンチ用）
-signaling/{pairId}/createdAt                        = タイムスタンプ  # cleanup 用に維持（firebase-cleanup.yml が pairId サブツリーの stale 掃除に使う）。offer 鮮度判定自体は offers/{sender}.CreatedAt へ移行
-signaling/{pairId}/probeOffers/{nonce}              = TimedSignalingValue { Data, CreatedAt }  # 経路 Probe v14: per-nonce key
-signaling/{pairId}/probeAnswers/{nonce}             = TimedSignalingValue { Data, CreatedAt }  # 同上
-```
+### Cloudflare バックエンド構造（relay Worker）
 
-**Cleanup ポリシーごとのノード分類**:
+認可は `POST /auth/token` が発行する **cfToken（自前 HMAC bearer、1h）** を全リクエストで検証する。`CfTokenProvider` が ECDSA P-256 署名チャレンジで取得・約 50 分ごとに refresh。deviceId↔公開鍵は KV `DEVICE_KEY_BINDING` に **first-write-wins** で束縛され、鍵不一致は 401 `DEVICE_PUBKEY_MISMATCH` → `IdentityLost` イベント（clean slate UI）。外部 ID プロバイダ非依存で SSE 再購読も不要。
 
-- **`sessions/{sessionId}` / `pairings/{pairingId}` / `signaling/{pairId}/...`**: 各エントリに `CreatedAt` フィールドを含み、GitHub Actions (`firebase-cleanup.yml`、6 時間おき) で 1 時間超の古いデータを自動削除
-- **`presence/{deviceId}`**: `CreatedAt` ではなく `LastSeen` (heartbeat 30 秒で更新) を使う。`FirebaseSignaling.UpdatePresenceAsync` が書き込み、`OfflineThresholdMs=60s` 経過で UI 側で offline 判定。cleanup 対象外 (オンライン検出専用なので時間経過 = 削除でなく、`LastSeen` 老化 = offline 表示)
-- **`signaling/<pairId>/probeOffers/<nonce>` / `probeAnswers/<nonce>`**: probe sender の finally で `CleanupProbeAsync(nonce)` により **即時削除**。タイムアウト経過待ちなし
+| ルート | 実体 | 内容 |
+|---|---|---|
+| `/sig/{pairId}/offer・answer・endpoint`（per-sender）、`probe-offer/{nonce}`・`probe-offers`・`probe-answer/{nonce}`（per-nonce） | **PairDO**（pairId ごと 1 DO） | storage キー `offer:{sender}` / `answer:{sender}` / `endpoint:{sender}` / `probeOffer:{nonce}` / `probeAnswer:{nonce}`。当事者検証 + sender キー強制（`X-Ferry-Device`）は Worker 側（`signaling-routes.ts`）で完結し、旧 Firebase rules の per-sender なりすまし防止（#D-003）をコードで担保 |
+| `/presence/{deviceId}`（POST/DELETE=本人のみ、GET・`/last-seen`=認証済みなら可） | **DeviceDO**（deviceId ごと 1 DO） | presence（`lastSeen` は server now）。`/last-seen` は ETag/304 対応（帯域節約） |
+| `/inbox`（WebSocket） | DeviceDO | ペア成立通知の真 push + **接続ノック**（§着信検知）。未読はキュー（TTL 1h・最大 50 件）に積んで接続時 flush。knock は transient で積まない |
+| `/pair/session`・`/pair/create`・`/pair/link` | **D1** `ferry_ledger`（`sessions` / `pairing_nonces` / `pairs`） | セッション登録・QR ペア成立・コード貼付ペア成立（認可モデルは上記） |
+| `/pairs/{pairId}`（PUT/GET/DELETE、bearer 当事者のみ） | D1 `pairs` | ペア台帳 SSoT。GET 404 で remote-unpair 検出（`PairSyncService`）。DELETE は相手 inbox へ unpair push |
+| `/ferry-relay`（WebSocket） | **RelayDO** | 転送リレー本体（Hibernation 対応）。pairId は `SALT` 付き SHA-256 で DO 名化（生 pairId 漏洩による横入り防止） |
+
+**Cleanup ポリシー**（旧 firebase-cleanup.yml の置換）:
+
+- **PairDO（signaling）**: 書込時に 1h alarm を仕掛け、TTL 経過で `deleteAll` して休眠（lazy・全 DO を短間隔で起こさない）
+- **probe（per-nonce）**: probe sender の finally で `CleanupProbeAsync(nonce)` により**即時削除**
+- **D1 `sessions` / `pairing_nonces`**: 読み時に `created_at` が 1h 超なら失効扱い（`EXPIRED_SESSION`）
+- **presence**: 削除でなく `LastSeen` の老化（`OfflineThresholdMs`=60s）で UI 側が offline 判定
 
 `ConnectionInfo` の `Probe / From / Nonce` フィールド (v12-v14 追加):
 - `Probe: bool` — true なら listening 側は経路 Probe 用と判定して通常 transport 確立をスキップ
@@ -118,7 +125,7 @@ signaling/{pairId}/probeAnswers/{nonce}             = TimedSignalingValue { Data
 
 ### Native AOT 制約
 
-- JSON シリアライズは Source Generator 必須（`FileMetaJsonContext`, `PeerRegistryJsonContext`, `ConnectionInfoJsonContext`, `AppSettingsJsonContext`）
+- JSON シリアライズは Source Generator 必須（`FileMetaJsonContext`, `PeerRegistryJsonContext`, `ConnectionInfoJsonContext`, `AppSettingsJsonContext`, `CfJsonContext`〔CloudflareSignaling の API DTO〕, `CfAuthJsonContext`〔/auth/token DTO〕）
 - リフレクションベースのシリアライズは使用不可
 - `ConnectionInfo` にプロパティを追加する場合は `ConnectionInfoJsonContext` の更新が必要
 
@@ -141,15 +148,14 @@ Velopack による自動更新の配信元は **Cloudflare R2**（カスタム�
 
 **Windows リリース (ローカル実行)**: `pwsh scripts/release-local.ps1` — Lhamiel で確立したローカル署名付きリリースフローの横展開。コード署名 (Authenticode、Certum **Open Source Code Signing in the cloud**、CN=`Open Source Developer Yuichiro Shinozaki`) は SimplySign Desktop のトークンログイン中セッション + スマホ OTP が必要で GitHub Actions からは署名できないため、win-x64 / win-arm64 の 2 チャンネルはローカルスクリプトでリリースする。スクリプトは publish (Native AOT) → `vpk pack` + **Authenticode 署名** (`--signParams`、タイムスタンプ `http://time.certum.pl`) → 署名検証 → `wrangler` (pnpm dlx) で R2 バケット `ferry-updates` にアップロード (manifest は最後) → 配信確認 (`releases.{channel}.json` HTTP 200) → **manifest 外の旧 `*.nupkg` を Cloudflare API V4 で自動削除** (Aggressive 保持戦略。今回ビルドしないチャンネルの manifest は R2 から取得して keep set に加えるため、macOS / Linux の nupkg は誤削除しない) まで一括実行。Cloudflare トークンは `C:\Users\IMT\dev\Secret\secrets.json` の `cloudflare.api_token` を実行時に読む。動作確認は `-SkipUpload` (ビルド + 署名のみ)、RID 絞り込みは `-Runtimes win-x64`。**実行前提: SimplySign Desktop がトークンログイン済み** (証明書が CurrentUser\My に見えること。スクリプトがプリフライトで検査して落とす)。**`/vava` は `vava.config.json` の `localRelease` キーを読んでこのスクリプトを自動実行する**。
 
-**macOS / Linux + Bridge (CI)**: `release/**` ブランチへの push で `.github/workflows/release.yml` が発火し、以下を順に呼ぶ（GitHub Releases は使わず R2 単独配信）:
+**macOS / Linux (CI)**: `release/**` ブランチへの push で `.github/workflows/release.yml` が発火し、以下を順に呼ぶ（GitHub Releases は使わず R2 単独配信）:
 
 - `build.yml` — 5 ランタイムを Native AOT 発行（win-* は `package.yml` の portable zip 用に残置）
 - `package.yml` — ユーザー向け配布物（zip / deb / rpm / AppImage）
 - `velopack.yml` — Velopack 自動更新パッケージ（`vpk pack --channel <runtime>` → `releases.<channel>.json` + nupkg）。**win-x64 / win-arm64 は matrix から除外済み** — 未署名 win フィードがローカル署名リリースの成果物を R2 上で上書きしないため。**osx-arm64 は Developer ID 署名 + notarytool 公証**（一時キーチェーンに証明書 .p12×2 をインポート → `notarytool store-credentials`（**app-specific password 方式**）→ `vpk pack` に `--signAppIdentity` / `--signInstallIdentity` / `--notaryProfile` を渡して .app codesign → .pkg productsign → 公証 → stapler を自動実行。要 Apple Secrets 8 個、手順は [`docs/operations/macos-signing.md`](docs/operations/macos-signing.md)。⚠️ 公証は **app-specific password 方式必須** — App Store Connect API キー方式は Team Key + Developer 権限でないと `invalidAsn1` で失敗する。`matrix: fail-fast: false` で osx 失敗時に linux を巻き込まない）。linux は署名不要
 - `r2-upload` job — フィードとインストーラを `wrangler` で R2 にアップロード（要 Secrets: `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`）。**cleanup は R2 上の `releases.win-*.json` を keep set に取り込む**（CI 成果物に win manifest が無いため、取り込まないと署名済み win nupkg を「manifest 外」と誤判定して削除する。取得失敗時は安全側で cleanup を中止）
-- `firebase-deploy` job — Bridge ページ (`src/Ferry.Bridge`) を Firebase Hosting に deploy（`--only hosting`。**RTDB ルールはこの job では触らない**）
 
-> **relay Worker の自動デプロイ（release/** とは独立・main の path 変更でトリガー）**: `deploy-relay.yml` が `infra/cloudflare/relay/**` 変更時に `wrangler deploy` で自動配信する（手動デプロイ忘れによる「コードと本番の乖離」事故＝2026-06-23 の `/auth/token` 426 の再発防止）。**Firebase RTDB ルールは CF 単独完結移行で Firebase ごと撤去予定のため CI 化せず手動運用**（`cd src/Ferry.Bridge && firebase deploy --only database`。厳格ルールは 2026-06-23 にデプロイ済み。ルールファイルは Firebase が受理する `//` コメントを含む＝文字列値コメントキーは構文エラーで deploy 不能なので残す）。
+> **relay Worker の自動デプロイ（release/** とは独立・main の path 変更でトリガー）**: `deploy-relay.yml` が `infra/cloudflare/relay/**` 変更時に `wrangler deploy` で自動配信する（手動デプロイ忘れによる「コードと本番の乖離」事故＝2026-06-23 の `/auth/token` 426 の再発防止）。Bridge ページ（`public/`）もこの Worker の Static Assets なので同時に配信される。
 
 > ℹ️ `package.yml` の win portable zip (`ferry_*.zip`) は引き続き CI で生成される未署名バイナリ（ランディングページ未参照のため影響は限定的）。署名対象に含めたい場合はローカルスクリプトへの移植が必要。
 
@@ -208,7 +214,7 @@ UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レ
 - **自動リトライ**: `SendOneFileAsync` が `MaxSendAttempts=3` でリトライ。2 回目以降は `TransferItem.Note` に「リトライ中…(n/3)」を表示（`OnTransferError` は `_sendCtsByItem` 管理中の送信項目をスキップしてリトライループに委ねる）。`OperationCanceledException` はリトライせず Cancelled 扱い。**`PeerUnreachableException`（相手無応答＝オフライン/未起動/到達不可）もリトライせず即 Error 扱い**: offer に対し answer が `OfferAnswerWaitSeconds`(20s) 以内に来なかった場合 `ConnectionService.ConnectToPeerAsync` がこの専用型を投げる。相手がいないのに再接続を繰り返しても毎回 20s 待ちを空打ちするだけ（旧実装は一過性エラー扱いで 20s×3≒60s 浪費していた）なので、明確なオフラインメッセージを出してユーザーの手動「再送」に委ねる。**転送中の一過性切断（相手は生存・接続確立済み）はこの型を投げず従来どおりリトライ対象**
 - **保存先アドレスバー**: 受信保存先を設定画面から `MainWindow` 上部の常時表示バーへ移動（📁 アイコン + readonly TextBox + 📂 で OS のファイラ起動 + 変更ボタン）。`SettingsView` 側の保存先ブロックは撤去
 - **多重起動防止** (`SingleInstanceGuard`): 名前付き `Mutex`（`Ferry-SingleInstance-Mutex-v1`）で取得失敗時は **Named Pipe**（`Ferry-Activate-<user>-v1`）で既存インスタンスへ前面化シグナルを送って即終了。`Program.cs` の `VelopackApp...Run()` 直後に `TryAcquire`、`App.axaml.cs` で `StartActivationListener` を起動。`Mutex`・`NamedPipeServer/ClientStream` とも .NET 上で **Win/mac/Linux すべて対応**（Unix は UDS バック）なので、2 個目起動時の既存ウィンドウ前面化は全 OS で対称に動く（旧 `EventWaitHandle`〔Windows 専用〕から移行）
-- **接続検出の短縮** (#5): `FirebaseSignaling.WaitForSdpAsync` の offer/answer ポーリング間隔を 1000ms → 400ms に短縮し、相手の送信開始から受信開始までの待ちを削減
+- **接続検出の短縮** (#5): offer/answer ポーリング間隔を 1000ms → 400ms に短縮し、相手の送信開始から受信開始までの待ちを削減（※着信 offer の**常時**ポーリングは v1.0.67 でノック方式に置換済み — §着信検知。400ms 高速ポーリングが残るのは接続確立中の有界待機〔answer / offer-v2 / endpoint〕のみ）
 
 #### 追加修正 (v1.0.47 後半)
 
@@ -221,29 +227,27 @@ UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レ
 - **受信フォルダを開くボタン**: 保存先バー（`MainWindow` 上部）の 📂 に一本化。OS ファイラ起動は `Util.ShellHelper.OpenFolder`、保存先は `MainWindow.axaml.cs` の `OnOpenSaveDirClick`（`_settingsService.Settings.SaveDirectory` 優先）から取得。`TransferView` ヘッダにも一時的に 📂 を置いていたが「開くボタンが 3 つある」状態を避けるため撤去し保存先バーのみに集約
 - **Bridge の URL 貼り付けペアリング撤去**: `src/Ferry.Bridge/`（index.html + bridge.js）からモード B（URL ペースト）を削除。このページはカメラ付き端末（スマホ）でしか到達しないため。モード選択はカメラ 1 枚のみ（自動カメラ起動はしない方針は維持）
 
+### 宛先リスト（v1.0.66 高機能化）
+
+サイドバーのピア一覧は `ConnectionViewModel.VisiblePeers`（`ObservableCollection<object>`、見出し `PeerListSection` と `PairedPeer` を混在）への投影で描画する。純関数 `BuildPeerProjection(peers, search, mode, label, keep)` が検索フィルタ・ソート（`PeerSortMode`: 名前 / 最終転送 / 経路 / 転送中）・セクション分割（📌 ピン留め / オンライン / オフライン）を決定し、`ReconcileVisiblePeers` が **in-place 差分反映**する。⚠️ `Clear()` による全置換は禁止 — `SelectedPeer` が null に振れて `TransferViewModel` が履歴をクリアし、転送ビュー消失・D&D 不能になる（実際に起きた回帰）。検索で選択中ピアが除外されても `keep` 引数で必ず一覧に残す。ピン留めは `PairedPeer.IsPinned`（peers.json 永続）、見出し行は `ContainerPrepared` で非選択・非フォーカス化。回帰は `PeerListProjectionTests`。
+
 ### プレゼンス監視（オンライン検出）
 
-ConnectionViewModel が定期的に Firebase にハートビート送信・ピアの lastSeen をポーリング。
+ConnectionViewModel が定期的に relay Worker（DeviceDO）へハートビート送信・ピアの lastSeen をポーリング。
 
 ```
 HeartbeatLoop (30秒):
-  └ UpdatePresenceAsync(deviceId, displayName)
-  └ Firebase の `presence/{deviceId}` に { LastSeen, DisplayName } を書き込み（PUT＝アップロード、DL 枠は消費しない）
+  └ UpdatePresenceAsync(deviceId, displayName) → POST /presence/{deviceId}
+    （lastSeen はサーバー時刻で記録。アプリの Version も載せる＝presence でバージョン分布が見える）
 
 PresencePollLoop (30秒):
   └ ① 前面（表示中かつ非最小化）のときだけ実行。トレイ格納/最小化中は停止（Heartbeat は継続するので相手からは online のまま）
   └ ② 取得対象: 選択中ピアは毎サイクル / 他ピアは FullPollEveryNCycles(4=2分) に1回 / ピア未選択時は一覧鮮度のため毎サイクル全ピア
-  └ ④⑤ GetPresenceLastSeenAsync(peerId): presence/{peerId}/LastSeen のみを ETag 条件付き GET（未変更なら 304 で本文ゼロ）
+  └ ④⑤ GetPresenceLastSeenAsync(peerId): GET /presence/{peerId}/last-seen を ETag 条件付き（未変更なら 304 で本文ゼロ）
   └ now - LastSeen < 60秒 なら IsOnline = true（false→true で WentOnline → 経路 Probe 発火）
 ```
 
-> **大規模常時オンライン時の Firebase ダウンロード帯域節約 (①②③④⑤)**: 旧実装は「全ペアを 10秒ごとにフル取得」で、常時オンライン台数 N×ピア数 P が ~400 リンクを超えると Spark 無料枠 (10GB/月 download) が枯れる試算だった。対策として上記 5 施策を実装:
-> - **① 可視性ゲート** (`MainWindow` → `ConnectionViewModel.SetPresencePollingActive`): トレイ常駐の大多数が寄与ゼロになる最大の削減。前面復帰時は `RefreshPeersAsync` で全ピア即フル取得（DisplayName 同期・経路再判定込み）。
-> - **② 選択ピア優先** + **③ 間隔 10s→30s** (`PollIntervalMs`): 1ウィンドウあたりのリクエスト数を削減。
-> - **④ ETag 条件付き GET** (`FirebaseSignaling.GetPresenceLastSeenAsync` + `_presenceCache`): `X-Firebase-ETag`/`If-None-Match` で未変更時は 304（本文ゼロ）。オフライン peer は LastSeen 不変なのでほぼ常時 304＝ほぼ無転送。
-> - **⑤ LastSeen のみ取得**: ポーリングでは `presence/{id}/LastSeen.json`（数値単独）のみ取り DisplayName を載せない。表示名同期は手動更新/前面復帰の `GetPresenceAsync`（フル取得）に委譲。
->
-> これで足りない規模（数千台超）は presence を Cloudflare (Workers Paid + KV / Durable Object) へ逃がすのが次手。`design-proposals.md` 参照。
+> ①〜⑤（可視性ゲート / 選択ピア優先 / 30s 間隔 / ETag 304 / LastSeen 単独取得）は Firebase 時代に DL 帯域節約のため導入した施策で、CF 移行後も**リクエスト数削減**としてそのまま有効。前面復帰時は `RefreshPeersAsync` で全ピア即フル取得（DisplayName 同期・経路再判定込み）。表示名同期はポーリングでは行わず、手動更新 / 前面復帰の `GetPresenceAsync`（フル取得）に委譲する。
 
 ### テスト
 
@@ -254,23 +258,23 @@ xUnit v3 + NSubstitute。テスト内の非同期メソッドには `TestContext
 **SuperLightLogger**（log4net 互換シム + 内蔵 File Target、Native AOT 安全）でファイル出力。出力先は OS 別に `Util.AppPaths.GetLogDirectory` が解決する: **Win=`%LOCALAPPDATA%\Ferry\logs`** / **mac=`~/Library/Logs/Ferry`**（慣習どおり Console.app から見える・常に存在し書込可。`LocalApplicationData` は mac で `~/.local/share` 隠し＝非慣習かつ空文字化のリスクがあるため明示パスに寄せている） / **Linux=`~/.local/share/Ferry/logs`**（XDG）。ファイル名は `Ferry_YYYYMMDD.log`。DEBUG は全レベル、Release は Info 以上（接続フォールバックの各段を本番でも追えるようにするため）。IP 等の PII はログ出力時に `Util.Logger.MaskIp` で末尾オクテットを伏せる。`Logger.Initialize` は失敗時に `%TEMP%`（mac/Linux は `$TMPDIR`）へフォールバックする（`Program.cs`）。なお settings.json / peers.json は DeviceId・ペア情報の移行リスクがあるため従来の `ApplicationData`（mac=`~/.config/Ferry`）配置のまま。`Util.Logger` は内部で `SuperLightLogger.ILog` を保持し、`LogManager.Configure(b => b.AddSuperLightFile(...).SetMinimumLevel("Trace"))` でローリング設定（旧 NLog から 2026-05 に移行）。
 
 **通信デバッグのポイント:**
-- SDP offer/answer ポーリング: `SDP 待機中` ログで現在の待機状態を確認（`createdAt=null` なら Firebase に offer が無い）
+- SDP offer/answer の待機: `SDP 受信(CF, offer|answer)` / `SDP ポーリングエラー(CF, ...)` ログで状態を確認（404 継続 = PairDO に相手の書き込みが無い）。着信検知は `接続ノック受信`（Debug）と `CF inbox WebSocket 接続成立`（Debug）で追う
 - 接続失敗時は常にログに原因が出力されるよう各所で `Util.Logger.Log(..., Util.LogLevel.Error)` を使用
+- relay Worker 側は `cd infra/cloudflare/relay && pnpm dlx wrangler tail` でライブログ（DO の exception や knock 配送を確認できる）
 
 ## サーバー接続情報
 
-- **WebSocket リレー**: Cloudflare Workers + Durable Objects (`wss://relay.ferry.nephilim.jp/ferry-relay`)。実装・デプロイ手順は [`infra/cloudflare/relay/README.md`](infra/cloudflare/relay/README.md) を参照
+- **relay Worker（シグナリング / プレゼンス / ペアリング / リレー / Bridge ページ）**: Cloudflare Workers + Durable Objects + D1（`https://relay.ferry.nephilim.jp`）。実装・デプロイ手順は [`infra/cloudflare/relay/README.md`](infra/cloudflare/relay/README.md) を参照。使用量は Cloudflare GraphQL Analytics（`workersInvocationsAdaptive` / zone の `httpRequestsAdaptiveGroups`）で確認できる
 - **STUN**: Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google STUN (`stun.l.google.com:19302`) を従。自前運用は無し
-- **Firebase**: Realtime DB (シグナリング・プレゼンス) と Hosting (Bridge ページ) は Firebase 据え置き (Spark 無料枠内)
+- **Firebase**: **完全撤去済み（2026-07）**。RTDB は deny-all・Hosting は無効化・GitHub/CF Worker の Firebase 系 Secrets も削除済みで、プロジェクト `ferry-edf09` はシャットダウン済み（2026-08-01 完全削除予定）。移行設計は [`docs/design/cf-only-migration.md`](docs/design/cf-only-migration.md)
 
-旧 VPS (`C:\Users\IMT\dev\1llum1n4t1.net` リポジトリ管理) の `ferry-relay` (Node.js) と `coturn` コンテナは 2026-05 Cloudflare 移行に伴い撤去予定。撤去手順は [`docs/Cloudflare移行_作業依頼書_2026-05.md`](docs/Cloudflare移行_作業依頼書_2026-05.md) を参照。
+旧 VPS (`C:\Users\IMT\dev\1llum1n4t1.net` リポジトリ管理) の `ferry-relay` (Node.js) と `coturn` コンテナは 2026-05 の Cloudflare 移行で役目を終えた（撤去手順は [`docs/Cloudflare移行_作業依頼書_2026-05.md`](docs/Cloudflare移行_作業依頼書_2026-05.md)）。
 
 ## 既知の制限と注意事項
 
-1. **同時接続の競合**: rere #D-003 で offer を per-sender ノード（`offers/{senderDeviceId}`）化したため、2台が同時に接続を試みても **offer の相互上書きは構造的に起きない**。さらに deviceId 序列の **deferral（`CompareOrdinal` で大きい側が answerer に委譲）** で「双方が offerer になり相互の answer を待ち続けるデッドロック」を収束させる。ただし deferral 判定の瞬間に相手がまだ offer を書いていない**同時ウィンドウ**は残る（完全収束は今後の課題）。基本は接続確立後にファイル送信するのが安全。
+1. **同時接続の競合**: rere #D-003 で offer を per-sender キー（PairDO `offer:{senderDeviceId}`）化したため、2台が同時に接続を試みても **offer の相互上書きは構造的に起きない**。さらに deviceId 序列の **deferral（`CompareOrdinal` で大きい側が answerer に委譲）** で「双方が offerer になり相互の answer を待ち続けるデッドロック」を収束させる。ただし deferral 判定の瞬間に相手がまだ offer を書いていない**同時ウィンドウ**は残る（完全収束は今後の課題）。基本は接続確立後にファイル送信するのが安全。
 2. **Native AOT 制約**: JSON の動的シリアライズは使用不可。モデル追加時は `*JsonContext` も追加。
-3. **信頼モデルは設計途上**: Firebase シグナリングは #D-001a で Custom Token Auth 化済み（PR #10）。E2E 暗号は `ConnectionService.CreateSecureChannel` / `StartSecureHandshake` / `ApplySecureStep` に配線済みで、v1.0.48 で設定トグル（旧 `EnableSecureChannel`）を撤去し**常時 ON 化**した。両端が PairSecret を保有していれば自動的に HMAC 相互認証 + AES-GCM 封筒化、保有していないペア（QR で公開鍵交換していない旧 peers.json）は **平文フォールバック**（互換維持）。改修方針は `memory-bank` の Ferry プロジェクト `design-proposals.md` を参照。
-   - ⚠️ **PairSecret 交換と 2 台実機検証は未完**: 「QR ペアリング時の長期 ECDH 公開鍵交換」は実装中（Bridge 経由で `PkA`/`PkB` を `pairings/` に乗せる Phase）。それまで既存の peers.json は `PairSecret=null` のままで平文ルートに落ちる。再ペアリング後に SecureChannel が起動するか、別回線 2 台でログ「暗号セッション確立（HMAC 相互認証成功）」を確認するまで「実機検証完了」とは扱わない。詳細は `docs/design/rere-deferred-implementation-plan.md`。
+3. **信頼モデル**: シグナリング認可は CF 単独完結の cfToken（自前 HMAC bearer + ECDSA デバイス署名チャレンジ + KV first-write-wins 鍵束縛。§Cloudflare バックエンド構造）。E2E 暗号は `ConnectionService.CreateSecureChannel` / `StartSecureHandshake` / `ApplySecureStep` に配線済みで **常時 ON**（v1.0.48 で旧トグル撤去）。QR ペアリング時に長期 ECDH 公開鍵を交換して PairSecret を導出し、HMAC 相互認証 + AES-GCM 封筒化する。**v1.0.65 で 2 台実機検証済み**（別回線 2 台でログ「暗号セッション確立（HMAC 相互認証成功）」+ 数百 MB 転送の SHA-256 検証を確認）。PairSecret を持たない旧ペア（公開鍵交換前の peers.json）は**平文フォールバック**のまま — 再ペアリングすると暗号化される。
 
 > 設定（`settings.json` / `peers.json`）は一時ファイル→リネームでアトミックに保存し、読み込み失敗時は `.corrupt-<時刻>` に退避する。`DeviceId` は pairId / presence の基盤なので、破損で再生成されるとペアが消える点に注意。
 

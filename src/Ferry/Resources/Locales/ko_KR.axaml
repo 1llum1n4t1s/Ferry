@@ -155,5 +155,25 @@
   <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
   <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
   <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Number of files sent simultaneously (1 = legacy serial)</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Multiple files are sent in parallel automatically</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Automatic (up to 10)</x:String>
+  <!-- macOS メニューバー（App.SetupMacNativeMenus が Text() で参照） -->
+  <x:String x:Key="Text.Menu.About" xml:space="preserve">Ferry에 관하여</x:String>
+  <x:String x:Key="Text.Menu.Settings" xml:space="preserve">설정…</x:String>
+  <x:String x:Key="Text.Menu.File" xml:space="preserve">파일</x:String>
+  <x:String x:Key="Text.Menu.CloseWindow" xml:space="preserve">창 닫기</x:String>
+  <x:String x:Key="Text.Menu.Window" xml:space="preserve">윈도우</x:String>
+  <x:String x:Key="Text.Menu.Minimize" xml:space="preserve">최소화</x:String>
+  <x:String x:Key="Text.Menu.Help" xml:space="preserve">도움말</x:String>
+  <x:String x:Key="Text.Menu.Website" xml:space="preserve">Ferry 웹 사이트</x:String>
+  <x:String x:Key="Text.Menu.OpenLogFolder" xml:space="preserve">로그 폴더 열기</x:String>
+  <x:String x:Key="Text.About.Tagline" xml:space="preserve">QR 페어링으로 연결되는 P2P 파일 전송</x:String>
+
+  <!-- 転送エラーの UI 文言（Util.ErrorText.Describe が参照。rere #U11） -->
+  <x:String x:Key="Text.Transfer.Error.Io" xml:space="preserve">파일 읽기/쓰기에 실패했습니다(용량 부족 또는 잠김)</x:String>
+  <x:String x:Key="Text.Transfer.Error.Access" xml:space="preserve">파일에 접근할 권한이 없습니다</x:String>
+  <x:String x:Key="Text.Transfer.Error.Generic" xml:space="preserve">전송 중 오류가 발생했습니다</x:String>
+
+  <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">설정 파일이 손상되어 초기화되었습니다. 페어링 정보는 가능한 한 유지되었습니다.</x:String>
+
 </ResourceDictionary>

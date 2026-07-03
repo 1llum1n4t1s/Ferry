@@ -43,4 +43,36 @@ public static class ShellHelper
             Logger.Log($"フォルダを開けませんでした (path={dir}): {ex.Message}", LogLevel.Warning);
         }
     }
+
+    /// <summary>
+    /// 指定 URL を OS の既定ブラウザで開く。https のみ許可（メニュー等の固定 URL 用で、
+    /// 任意スキームを Process.Start に流し込まない）。macOS メニューバー「ヘルプ」から呼ばれる。
+    /// </summary>
+    public static void OpenUrl(string url)
+    {
+        try
+        {
+            if (!url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return;
+
+            ProcessStartInfo psi;
+            if (OperatingSystem.IsWindows())
+            {
+                // Windows は UseShellExecute で URL 関連付け（既定ブラウザ）に委譲する
+                psi = new ProcessStartInfo(url) { UseShellExecute = true };
+            }
+            else
+            {
+                psi = new ProcessStartInfo(OperatingSystem.IsMacOS() ? "open" : "xdg-open")
+                {
+                    UseShellExecute = false,
+                };
+                psi.ArgumentList.Add(url);
+            }
+            using var _ = Process.Start(psi);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"URL を開けませんでした (url={url}): {ex.Message}", LogLevel.Warning);
+        }
+    }
 }

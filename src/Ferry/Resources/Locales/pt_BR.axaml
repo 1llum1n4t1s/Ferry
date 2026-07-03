@@ -170,5 +170,25 @@
   <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
   <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
   <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Number of files sent simultaneously (1 = legacy serial)</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Multiple files are sent in parallel automatically</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Automatic (up to 10)</x:String>
+  <!-- macOS メニューバー（App.SetupMacNativeMenus が Text() で参照） -->
+  <x:String x:Key="Text.Menu.About" xml:space="preserve">Sobre o Ferry</x:String>
+  <x:String x:Key="Text.Menu.Settings" xml:space="preserve">Configurações…</x:String>
+  <x:String x:Key="Text.Menu.File" xml:space="preserve">Arquivo</x:String>
+  <x:String x:Key="Text.Menu.CloseWindow" xml:space="preserve">Fechar janela</x:String>
+  <x:String x:Key="Text.Menu.Window" xml:space="preserve">Janela</x:String>
+  <x:String x:Key="Text.Menu.Minimize" xml:space="preserve">Minimizar</x:String>
+  <x:String x:Key="Text.Menu.Help" xml:space="preserve">Ajuda</x:String>
+  <x:String x:Key="Text.Menu.Website" xml:space="preserve">Site do Ferry</x:String>
+  <x:String x:Key="Text.Menu.OpenLogFolder" xml:space="preserve">Abrir pasta de logs</x:String>
+  <x:String x:Key="Text.About.Tagline" xml:space="preserve">Transferência de arquivos P2P com pareamento QR</x:String>
+
+  <!-- 転送エラーの UI 文言（Util.ErrorText.Describe が参照。rere #U11） -->
+  <x:String x:Key="Text.Transfer.Error.Io" xml:space="preserve">Falha ao ler/gravar o arquivo (disco cheio ou bloqueado?)</x:String>
+  <x:String x:Key="Text.Transfer.Error.Access" xml:space="preserve">Sem permissão para acessar o arquivo</x:String>
+  <x:String x:Key="Text.Transfer.Error.Generic" xml:space="preserve">Ocorreu um erro durante a transferência</x:String>
+
+  <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">O arquivo de configurações estava corrompido e foi redefinido. Suas informações de pareamento foram preservadas quando possível.</x:String>
+
 </ResourceDictionary>

@@ -336,13 +336,13 @@ public sealed class TransferService : ITransferService, IDisposable
         }
         catch (Exception ex)
         {
-            Util.Logger.Log($"ファイル送信エラー: {ex.Message}", Util.LogLevel.Error);
+            Util.Logger.Log($"ファイル送信エラー: {ex.GetType().Name}: {ex.Message}", Util.LogLevel.Error);
             // v1.0.38 review fix v6: 承認待ちタイムアウト / 拒否で既に Cancelled + TransferError 発火済みなら
             // 二重発火を防ぐ (TransferViewModel に重複行が出る問題の根本対策)
             if (item.State != TransferState.Cancelled)
             {
                 item.State = TransferState.Error;
-                item.ErrorMessage = ex.Message;
+                item.ErrorMessage = Util.ErrorText.Describe(ex);
                 TransferError?.Invoke(this, item);
             }
             throw;
@@ -423,13 +423,13 @@ public sealed class TransferService : ITransferService, IDisposable
         }
         catch (Exception ex)
         {
-            Util.Logger.Log($"レジュームエラー: {ex.Message}", Util.LogLevel.Error);
+            Util.Logger.Log($"レジュームエラー: {ex.GetType().Name}: {ex.Message}", Util.LogLevel.Error);
             // rere #B1-004: CancelTransfer / HandleFileReject が state を Cancelled に遷移済みなら
             // 上書きしない（SendFileAsync L300 と同じガード）。キャンセルを Error に化けさせない。
             if (item.State != TransferState.Cancelled)
             {
                 item.State = TransferState.Error;
-                item.ErrorMessage = ex.Message;
+                item.ErrorMessage = Util.ErrorText.Describe(ex);
                 TransferError?.Invoke(this, item);
             }
             return false;
@@ -1098,12 +1098,12 @@ public sealed class TransferService : ITransferService, IDisposable
         }
         catch (Exception ex)
         {
-            Util.Logger.Log($"チャンク書き込みエラー: {ex.Message}", Util.LogLevel.Error);
+            Util.Logger.Log($"チャンク書き込みエラー: {ex.GetType().Name}: {ex.Message}", Util.LogLevel.Error);
             // rere #C2-001 review: 同上。終端確定権を atomic に取り、勝者だけが終端イベントを発火する
             // (CancelTransfer が FileStream を dispose して書き込みが例外化したケースの二重終端を防ぐ)。
             if (!_receiveStates.TryRemove(state.TransferId, out _)) return;
             state.Item.State = TransferState.Error;
-            state.Item.ErrorMessage = ex.Message;
+            state.Item.ErrorMessage = Util.ErrorText.Describe(ex);
             TransferError?.Invoke(this, state.Item);
             CleanupReceiveState(state);
         }
@@ -1158,7 +1158,7 @@ public sealed class TransferService : ITransferService, IDisposable
             {
                 if (_receiveStates.IsEmpty) _folderMappings.Clear();
                 state.Item.State = TransferState.Error;
-                state.Item.ErrorMessage = ex.Message;
+                state.Item.ErrorMessage = Util.ErrorText.Describe(ex);
                 try { TransferError?.Invoke(this, state.Item); } catch { /* 購読側例外は無視 */ }
             }
         }
@@ -1185,7 +1185,7 @@ public sealed class TransferService : ITransferService, IDisposable
         catch (Exception ex)
         {
             Util.Logger.LogException("受信完了処理エラー", ex);
-            errorMessage = ex.Message;
+            errorMessage = Util.ErrorText.Describe(ex);
         }
 
         // 終端確定 + イベント発火。本メソッドは Task.Run(fire-and-forget) 上で動くため、終端処理の
@@ -1247,7 +1247,7 @@ public sealed class TransferService : ITransferService, IDisposable
     /// でミュートされていないときのみ。AutoAccept 経路もここを通る（CompleteReceive が唯一の受信完了点）。
     /// 再生は best-effort・非ブロッキングで、失敗してもファイル受信自体には影響しない。
     /// </summary>
-    private void MaybePlayReceiveNotification(string peerId)
+    private void MaybePlayReceiveNotification(string? peerId)
     {
         var settings = _settingsService.Settings;
         if (!settings.EnableNotificationSound)
@@ -1493,9 +1493,9 @@ public sealed class TransferService : ITransferService, IDisposable
             // SetLength 失敗 (ディスク不足等) 時に開きかけのストリームを残さない
             state.FileStream?.Dispose();
             state.FileStream = null;
-            Util.Logger.Log($"受信ファイル作成エラー: {ex.Message}", Util.LogLevel.Error);
+            Util.Logger.Log($"受信ファイル作成エラー: {ex.GetType().Name}: {ex.Message}", Util.LogLevel.Error);
             state.Item.State = TransferState.Error;
-            state.Item.ErrorMessage = ex.Message;
+            state.Item.ErrorMessage = Util.ErrorText.Describe(ex);
             TransferError?.Invoke(this, state.Item);
 
             // v1.0.38 review fix v6: file open 失敗時に sender へ FileReject を送って

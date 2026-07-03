@@ -145,8 +145,8 @@
   <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
   <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
   <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Number of files sent simultaneously (1 = legacy serial)</x:String>
-
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Multiple files are sent in parallel automatically</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Automatic (up to 10)</x:String>
   <!-- Peer: destination list sorting/section headers -->
   <x:String x:Key="Text.Member.TogglePin" xml:space="preserve">பின் / பின் நீக்கு</x:String>
   <x:String x:Key="Text.Peer.Sort" xml:space="preserve">வரிசைப்படுத்து</x:String>
@@ -157,4 +157,23 @@
   <x:String x:Key="Text.Peer.Section.Pinned" xml:space="preserve">பின் செய்யப்பட்டவை</x:String>
   <x:String x:Key="Text.Peer.Section.Online" xml:space="preserve">ஆன்லைனில்</x:String>
   <x:String x:Key="Text.Peer.Section.Offline" xml:space="preserve">ஆஃப்லைனில்</x:String>
+  <!-- macOS メニューバー（App.SetupMacNativeMenus が Text() で参照） -->
+  <x:String x:Key="Text.Menu.About" xml:space="preserve">Ferry பற்றி</x:String>
+  <x:String x:Key="Text.Menu.Settings" xml:space="preserve">அமைப்புகள்…</x:String>
+  <x:String x:Key="Text.Menu.File" xml:space="preserve">கோப்பு</x:String>
+  <x:String x:Key="Text.Menu.CloseWindow" xml:space="preserve">சாளரத்தை மூடு</x:String>
+  <x:String x:Key="Text.Menu.Window" xml:space="preserve">சாளரம்</x:String>
+  <x:String x:Key="Text.Menu.Minimize" xml:space="preserve">சிறிதாக்கு</x:String>
+  <x:String x:Key="Text.Menu.Help" xml:space="preserve">உதவி</x:String>
+  <x:String x:Key="Text.Menu.Website" xml:space="preserve">Ferry இணையதளம்</x:String>
+  <x:String x:Key="Text.Menu.OpenLogFolder" xml:space="preserve">பதிவு கோப்புறையைத் திற</x:String>
+  <x:String x:Key="Text.About.Tagline" xml:space="preserve">QR இணைத்தலுடன் P2P கோப்பு பரிமாற்றம்</x:String>
+
+  <!-- 転送エラーの UI 文言（Util.ErrorText.Describe が参照。rere #U11） -->
+  <x:String x:Key="Text.Transfer.Error.Io" xml:space="preserve">கோப்பைப் படிக்க/எழுத முடியவில்லை (இடமில்லை அல்லது பூட்டப்பட்டது)</x:String>
+  <x:String x:Key="Text.Transfer.Error.Access" xml:space="preserve">கோப்பை அணுக அனுமதி இல்லை</x:String>
+  <x:String x:Key="Text.Transfer.Error.Generic" xml:space="preserve">பரிமாற்றத்தின்போது பிழை ஏற்பட்டது</x:String>
+
+  <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">அமைப்புக் கோப்பு சேதமடைந்ததால் மீட்டமைக்கப்பட்டது. இணைத்தல் தகவல் இயன்றவரை பாதுகாக்கப்பட்டுள்ளது.</x:String>
+
 </ResourceDictionary>
