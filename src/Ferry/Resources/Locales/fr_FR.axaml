@@ -173,4 +173,10 @@
 
   <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">Le fichier de réglages était corrompu et a été réinitialisé. Vos informations d'appairage ont été conservées dans la mesure du possible.</x:String>
 
+  <!-- 確認ダイアログの共通ボタン文言（ConfirmWindow が参照） -->
+  <x:String x:Key="Text.Sure" xml:space="preserve">OK</x:String>
+  <x:String x:Key="Text.Cancel" xml:space="preserve">Annuler</x:String>
+  <x:String x:Key="Text.Yes" xml:space="preserve">Oui</x:String>
+  <x:String x:Key="Text.No" xml:space="preserve">Non</x:String>
+
 </ResourceDictionary>

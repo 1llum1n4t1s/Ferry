@@ -191,4 +191,10 @@
 
   <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">O arquivo de configurações estava corrompido e foi redefinido. Suas informações de pareamento foram preservadas quando possível.</x:String>
 
+  <!-- 確認ダイアログの共通ボタン文言（ConfirmWindow が参照） -->
+  <x:String x:Key="Text.Sure" xml:space="preserve">OK</x:String>
+  <x:String x:Key="Text.Cancel" xml:space="preserve">Cancelar</x:String>
+  <x:String x:Key="Text.Yes" xml:space="preserve">Sim</x:String>
+  <x:String x:Key="Text.No" xml:space="preserve">Não</x:String>
+
 </ResourceDictionary>

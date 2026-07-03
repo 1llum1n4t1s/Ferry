@@ -190,4 +190,10 @@
 
   <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">Файл настроек был повреждён и сброшен. Данные сопряжения по возможности сохранены.</x:String>
 
+  <!-- 確認ダイアログの共通ボタン文言（ConfirmWindow が参照） -->
+  <x:String x:Key="Text.Sure" xml:space="preserve">OK</x:String>
+  <x:String x:Key="Text.Cancel" xml:space="preserve">Отмена</x:String>
+  <x:String x:Key="Text.Yes" xml:space="preserve">Да</x:String>
+  <x:String x:Key="Text.No" xml:space="preserve">Нет</x:String>
+
 </ResourceDictionary>

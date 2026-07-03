@@ -176,4 +176,10 @@
 
   <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">설정 파일이 손상되어 초기화되었습니다. 페어링 정보는 가능한 한 유지되었습니다.</x:String>
 
+  <!-- 確認ダイアログの共通ボタン文言（ConfirmWindow が参照） -->
+  <x:String x:Key="Text.Sure" xml:space="preserve">확인</x:String>
+  <x:String x:Key="Text.Cancel" xml:space="preserve">취소</x:String>
+  <x:String x:Key="Text.Yes" xml:space="preserve">예</x:String>
+  <x:String x:Key="Text.No" xml:space="preserve">아니요</x:String>
+
 </ResourceDictionary>

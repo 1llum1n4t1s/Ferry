@@ -175,4 +175,10 @@
 
   <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">Die Einstellungsdatei war beschädigt und wurde zurückgesetzt. Ihre Kopplungsinformationen wurden nach Möglichkeit beibehalten.</x:String>
 
+  <!-- 確認ダイアログの共通ボタン文言（ConfirmWindow が参照） -->
+  <x:String x:Key="Text.Sure" xml:space="preserve">OK</x:String>
+  <x:String x:Key="Text.Cancel" xml:space="preserve">Abbrechen</x:String>
+  <x:String x:Key="Text.Yes" xml:space="preserve">Ja</x:String>
+  <x:String x:Key="Text.No" xml:space="preserve">Nein</x:String>
+
 </ResourceDictionary>

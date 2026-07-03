@@ -176,4 +176,10 @@
 
   <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">Sira ang settings file at na-reset na. Napanatili ang iyong pairing info hangga't maaari.</x:String>
 
+  <!-- 確認ダイアログの共通ボタン文言（ConfirmWindow が参照） -->
+  <x:String x:Key="Text.Sure" xml:space="preserve">OK</x:String>
+  <x:String x:Key="Text.Cancel" xml:space="preserve">Kanselahin</x:String>
+  <x:String x:Key="Text.Yes" xml:space="preserve">Oo</x:String>
+  <x:String x:Key="Text.No" xml:space="preserve">Hindi</x:String>
+
 </ResourceDictionary>

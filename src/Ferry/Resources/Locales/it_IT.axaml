@@ -190,4 +190,10 @@
 
   <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">Il file delle impostazioni era danneggiato ed è stato reimpostato. Le informazioni di abbinamento sono state conservate ove possibile.</x:String>
 
+  <!-- 確認ダイアログの共通ボタン文言（ConfirmWindow が参照） -->
+  <x:String x:Key="Text.Sure" xml:space="preserve">OK</x:String>
+  <x:String x:Key="Text.Cancel" xml:space="preserve">Annulla</x:String>
+  <x:String x:Key="Text.Yes" xml:space="preserve">Sì</x:String>
+  <x:String x:Key="Text.No" xml:space="preserve">No</x:String>
+
 </ResourceDictionary>

@@ -176,4 +176,10 @@
 
   <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">Berkas pengaturan rusak dan telah diatur ulang. Informasi penyandingan Anda dipertahankan jika memungkinkan.</x:String>
 
+  <!-- 確認ダイアログの共通ボタン文言（ConfirmWindow が参照） -->
+  <x:String x:Key="Text.Sure" xml:space="preserve">OK</x:String>
+  <x:String x:Key="Text.Cancel" xml:space="preserve">Batal</x:String>
+  <x:String x:Key="Text.Yes" xml:space="preserve">Ya</x:String>
+  <x:String x:Key="Text.No" xml:space="preserve">Tidak</x:String>
+
 </ResourceDictionary>

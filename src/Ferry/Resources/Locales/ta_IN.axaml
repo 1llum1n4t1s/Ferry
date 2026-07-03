@@ -176,4 +176,10 @@
 
   <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">அமைப்புக் கோப்பு சேதமடைந்ததால் மீட்டமைக்கப்பட்டது. இணைத்தல் தகவல் இயன்றவரை பாதுகாக்கப்பட்டுள்ளது.</x:String>
 
+  <!-- 確認ダイアログの共通ボタン文言（ConfirmWindow が参照） -->
+  <x:String x:Key="Text.Sure" xml:space="preserve">சரி</x:String>
+  <x:String x:Key="Text.Cancel" xml:space="preserve">ரத்துசெய்</x:String>
+  <x:String x:Key="Text.Yes" xml:space="preserve">ஆம்</x:String>
+  <x:String x:Key="Text.No" xml:space="preserve">இல்லை</x:String>
+
 </ResourceDictionary>

@@ -167,4 +167,10 @@
 
   <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">קובץ ההגדרות היה פגום ואופס. פרטי הצימוד נשמרו במידת האפשר.</x:String>
 
+  <!-- 確認ダイアログの共通ボタン文言（ConfirmWindow が参照） -->
+  <x:String x:Key="Text.Sure" xml:space="preserve">אישור</x:String>
+  <x:String x:Key="Text.Cancel" xml:space="preserve">ביטול</x:String>
+  <x:String x:Key="Text.Yes" xml:space="preserve">כן</x:String>
+  <x:String x:Key="Text.No" xml:space="preserve">לא</x:String>
+
 </ResourceDictionary>

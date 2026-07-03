@@ -176,4 +176,10 @@
 
   <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">Файл налаштувань було пошкоджено та скинуто. Дані парування за можливості збережено.</x:String>
 
+  <!-- 確認ダイアログの共通ボタン文言（ConfirmWindow が参照） -->
+  <x:String x:Key="Text.Sure" xml:space="preserve">OK</x:String>
+  <x:String x:Key="Text.Cancel" xml:space="preserve">Скасувати</x:String>
+  <x:String x:Key="Text.Yes" xml:space="preserve">Так</x:String>
+  <x:String x:Key="Text.No" xml:space="preserve">Ні</x:String>
+
 </ResourceDictionary>

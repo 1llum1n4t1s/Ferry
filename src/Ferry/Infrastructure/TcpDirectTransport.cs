@@ -115,15 +115,26 @@ public sealed class TcpDirectTransport : ITransport
                 // （パラメータなしの new TcpClient() は IPv4 ソケット固定で IPv6 宛てに接続できない）
                 var address = IPAddress.Parse(ip);
                 var client = new TcpClient(address.AddressFamily);
-                ConfigureTcpClient(client);
+                try
+                {
+                    ConfigureTcpClient(client);
 
-                using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                connectCts.CancelAfter(TimeSpan.FromSeconds(3));
+                    using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    connectCts.CancelAfter(TimeSpan.FromSeconds(3));
 
-                await client.ConnectAsync(address, port, connectCts.Token);
+                    await client.ConnectAsync(address, port, connectCts.Token);
 
-                _client = client;
-                _stream = _client.GetStream();
+                    _client = client;
+                    _stream = _client.GetStream();
+                }
+                catch
+                {
+                    // 接続失敗時に client を破棄せず次の IP へ進むとソケットがリークするため、
+                    // 複数 IP を順次試行するこのループでは確実に Dispose してから外側の catch へ委譲する
+                    client.Dispose();
+                    throw;
+                }
+
                 IsConnected = true;
 
                 Util.Logger.Log($"TCP 接続成功: {Util.Logger.MaskIp(ip)}:{port}");

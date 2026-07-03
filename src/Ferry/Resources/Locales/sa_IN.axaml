@@ -176,4 +176,10 @@
 
   <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">विन्याससञ्चिका दूषिता आसीत् अतः पुनःस्थापिता। युग्मनसूचना यथाशक्ति रक्षिता।</x:String>
 
+  <!-- 確認ダイアログの共通ボタン文言（ConfirmWindow が参照） -->
+  <x:String x:Key="Text.Sure" xml:space="preserve">स्वीकृतम्</x:String>
+  <x:String x:Key="Text.Cancel" xml:space="preserve">निरस्तम्</x:String>
+  <x:String x:Key="Text.Yes" xml:space="preserve">आम्</x:String>
+  <x:String x:Key="Text.No" xml:space="preserve">न</x:String>
+
 </ResourceDictionary>

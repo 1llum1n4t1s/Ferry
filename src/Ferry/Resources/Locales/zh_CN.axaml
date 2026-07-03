@@ -174,4 +174,10 @@
 
   <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">设置文件已损坏并已重置。已尽可能保留配对信息。</x:String>
 
+  <!-- 確認ダイアログの共通ボタン文言（ConfirmWindow が参照） -->
+  <x:String x:Key="Text.Sure" xml:space="preserve">确定</x:String>
+  <x:String x:Key="Text.Cancel" xml:space="preserve">取消</x:String>
+  <x:String x:Key="Text.Yes" xml:space="preserve">是</x:String>
+  <x:String x:Key="Text.No" xml:space="preserve">否</x:String>
+
 </ResourceDictionary>
