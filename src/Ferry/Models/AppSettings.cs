@@ -78,9 +78,9 @@ public sealed class AppSettings
     /// 受信ループが減速すると TCP/WebSocket のバックプレッシャーが上流へ伝わる。</summary>
     public int DownloadKBps { get; set; } = 0;
 
-    /// <summary>同時並列転送数 (1〜10)。複数ファイル選択時の同時送信本数。
-    /// 1 は従来動作（直列）、N>1 で N 個まで同時に送信する。各 transport の SendAsync は
-    /// SemaphoreSlim でフレーム単位に直列化済みなので、メッセージ交錯は起こらない。</summary>
+    /// <summary>旧「同時並列転送数」設定（未使用）。並列本数は TransferViewModel.MaxParallelSends の
+    /// 内部固定（最大 10）に移行し設定 UI も撤去した。既存 settings.json のデシリアライズ互換のため
+    /// プロパティだけ残置している（読み書きとも参照しない）。</summary>
     public int ParallelTransferCount { get; set; } = 1;
 
     /// <summary>宛先リストの各セクション内ソート基準（既定 Name）。📌ピン/🟢オンライン/⚪オフラインの
@@ -88,18 +88,8 @@ public sealed class AppSettings
     /// 永続化する（AOT source-gen 対応）。旧 settings.json に無ければ既定 Name(0)。</summary>
     public PeerSortMode PeerListSortMode { get; set; } = PeerSortMode.Name;
 
-    /// <summary>マルチストリーム転送 PoC 計測用: true で TCP/UDP 経路を skip し必ず Relay 経由にする (既定 false)。
-    /// 同一 LAN でも Relay を強制でき、N=1 vs N&gt;1 のスループット比較を再現性よく取れる。本番影響を避けるため
-    /// 既定 false。両端で ON にすると確実に Relay 接続になる（offer 側は STUN/UDP を skip、answer 側は TCP/UDP を skip）。</summary>
-    public bool ForceRelay { get; set; } = false;
-
-    /// <summary>マルチストリーム転送 PoC: Relay 経路で 1 ファイルのチャンクを分散する WebSocket 本数 (1〜8)。
-    /// 1 は従来動作（単一 WS）で完全後方互換。N&gt;1 で sub-pairId <c>pairId#s{i}</c> を使い N 本の独立 WS
-    /// （各々別 Cloudflare DO ルーム）へ FileChunk(0x02) を round-robin 分散し、単一 WS の送信直列化と単一 DO
-    /// 中継の頭打ちを解消して実効スループット向上を狙う。Relay 以外の経路 (TCP/UDP) には影響しない。
-    /// 暗号有効時の per-stream nonce 名前空間問題があるため、現状は平文フォールバック経路での PoC 用。
-    /// 速度向上が確認できなければ 1 に戻すだけで撤退できる。</summary>
-    public int RelayStreamCount { get; set; } = 1;
+    // 旧マルチストリーム転送 PoC のフラグ (ForceRelay / RelayStreamCount) は 2026-07 に不採用で撤去。
+    // System.Text.Json は未知プロパティを読み飛ばすため、旧 settings.json に残っていても無害。
 
     // N-1: 旧 Theme / AccentColor / FontSize は ThemeMode と二重定義 + 未実装だったため削除済み
     // テーマは ThemeMode で一元管理する
