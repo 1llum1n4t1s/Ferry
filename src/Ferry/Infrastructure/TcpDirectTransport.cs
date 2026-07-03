@@ -47,9 +47,9 @@ public sealed class TcpDirectTransport : ITransport
         // IPv6 デュアルスタックで待ち受ける（1 ポートで IPv4/IPv6 両方の着信を受ける）。
         // LAN の IPv4 直結に加え、IPoE 等で IPv4 が CGNAT でも end-to-end IPv6 なら直結できる。
         // IPv6 スタック無効の環境では従来どおり IPv4 のみで待ち受ける。
+        var listener = new TcpListener(IPAddress.IPv6Any, 0);
         try
         {
-            var listener = new TcpListener(IPAddress.IPv6Any, 0);
             listener.Server.DualMode = true;  // Start 前に設定（IPV6_V6ONLY=0）
             listener.Start();
             _listener = listener;
@@ -59,6 +59,9 @@ public sealed class TcpDirectTransport : ITransport
         }
         catch (SocketException ex)
         {
+            // TcpListener はコンストラクタで既にソケットを確保しているため、DualMode 設定 / Start
+            // 失敗時に破棄しないとハンドルがリークする（CodeRabbit #3516884775）
+            listener.Dispose();
             Util.Logger.Log($"IPv6 dual-stack リスナー起動失敗 → IPv4 のみで待ち受け: {ex.Message}", Util.LogLevel.Warning);
             _listener = new TcpListener(IPAddress.Any, 0);
             _listener.Start();

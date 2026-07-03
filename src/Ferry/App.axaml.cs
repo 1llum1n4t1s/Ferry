@@ -541,6 +541,11 @@ public partial class App : Application
         // トレイ / macOS メニューは Text() で静的構築のため、ロケール切替時に作り直して追従させる
         // （起動シーケンス中のロケール適用ではメニュー未構築 → 各メソッド内の null ガードでスキップ）
         app.RefreshNativeMenus();
+
+        // CodeRabbit #3516884778: ErrorText.Describe はバックグラウンドスレッド（受信 Task.Run 上）
+        // から呼ばれるため、そちら側で直接 App.Text()/TryGetResource を叩かないよう、
+        // UI スレッドである SetLocale 内で文言をキャッシュへ反映する
+        Util.ErrorText.RefreshCache();
     }
 
     /// <summary>
