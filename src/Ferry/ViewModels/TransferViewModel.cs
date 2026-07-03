@@ -408,6 +408,11 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             Util.Logger.Log($"送信前の接続確立に失敗: {ex.Message}", Util.LogLevel.Error);
             foreach (var item in items)
             {
+                // Codex #3516961668: 接続待ち中にユーザーが個別キャンセル/削除した行を
+                // Error で上書きしない（下の並列送信ループの skip 条件と同じガード）
+                if (item.State is TransferState.Cancelled or TransferState.Error
+                    || FindTransfer(item.TransferId) is null)
+                    continue;
                 item.State = TransferState.Error;
                 item.ErrorMessage = ex is PeerUnreachableException or InvalidOperationException
                     ? ex.Message
