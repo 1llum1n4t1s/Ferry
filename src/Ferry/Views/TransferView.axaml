@@ -162,7 +162,7 @@
                                                 CommandParameter="{Binding TransferId}">
                                             <!-- 再開: 右向き三角 -->
                                             <Path Fill="{Binding $parent[Button].Foreground}"
-                                                  Data="M 3,1.5 L 10.5,6 L 3,10.5 Z" />
+                                                  Data="{StaticResource Icon.Play}" />
                                         </Button>
                                         <Button Classes="icon"
                                                 ToolTip.Tip="{DynamicResource Text.Transfer.ResumeSuspended}"
@@ -172,7 +172,7 @@
                                                 CommandParameter="{Binding TransferId}">
                                             <!-- 中断再開: 右向き三角 -->
                                             <Path Fill="{Binding $parent[Button].Foreground}"
-                                                  Data="M 3,1.5 L 10.5,6 L 3,10.5 Z" />
+                                                  Data="{StaticResource Icon.Play}" />
                                         </Button>
                                         <Button Classes="icon"
                                                 ToolTip.Tip="{DynamicResource Text.Transfer.Resend}"
@@ -182,7 +182,7 @@
                                                 CommandParameter="{Binding TransferId}">
                                             <!-- 再送: 270° リング矢印（外弧→矢じり→内弧の単一塗りつぶしパス） -->
                                             <Path Fill="{Binding $parent[Button].Foreground}"
-                                                  Data="M 11.2,6 A 5.2,5.2 0 1 1 6,0.8 L 6,0 L 9,1.7 L 6,3.4 L 6,2.6 A 3.4,3.4 0 1 0 9.4,6 Z" />
+                                                  Data="{StaticResource Icon.Refresh}" />
                                         </Button>
                                         <Button Classes="icon"
                                                 ToolTip.Tip="{DynamicResource Text.Transfer.Cancel}"

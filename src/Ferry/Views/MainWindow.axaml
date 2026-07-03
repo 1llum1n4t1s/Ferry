@@ -111,7 +111,7 @@
                                      TransferView の再送アイコンと同一のベクター Path に統一。 -->
                                 <Path Width="14" Height="14" Stretch="Uniform"
                                       Fill="{Binding $parent[Button].Foreground}"
-                                      Data="M 11.2,6 A 5.2,5.2 0 1 1 6,0.8 L 6,0 L 9,1.7 L 6,3.4 L 6,2.6 A 3.4,3.4 0 1 0 9.4,6 Z" />
+                                      Data="{StaticResource Icon.Refresh}" />
                             </Button>
                         </Grid>
 
@@ -180,7 +180,7 @@
                                                         <Path Width="10" Height="10" Margin="0,0,3,0"
                                                               Stretch="Uniform" VerticalAlignment="Center"
                                                               Fill="{DynamicResource PinkBrush}"
-                                                              Data="M 11.2,6 A 5.2,5.2 0 1 1 6,0.8 L 6,0 L 9,1.7 L 6,3.4 L 6,2.6 A 3.4,3.4 0 1 0 9.4,6 Z" />
+                                                              Data="{StaticResource Icon.Refresh}" />
                                                         <TextBlock Classes="route-badge-text"
                                                                    Text="{Binding ActiveTransferCount}" />
                                                     </StackPanel>

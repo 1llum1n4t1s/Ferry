@@ -21,8 +21,12 @@ jobs:
     name: Build
     uses: ./.github/workflows/build.yml
   test:
-    name: Test
-    runs-on: windows-2022
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout sources
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

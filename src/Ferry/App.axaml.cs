@@ -52,32 +52,37 @@ public partial class App : Application
     // rere #D-004: Firebase DB / Bridge / Relay の各 URL は Ferry.AppConstants に一本化し、
     // settings.json からの書き換えを廃止した（改ざん面の対称化。UpdateBaseUrl と同方針）。
 
-    /// <summary>ロケール表示名（ネイティブ言語名）。サポートロケール一覧の単一の真実の源
-    /// （追加/削除時にここだけ編集すればよく、SupportedLocales との手動二重管理を避ける）。</summary>
-    public static readonly Dictionary<string, string> LocaleDisplayNames = new()
-    {
-        ["en_US"] = "English",
-        ["ja_JP"] = "日本語",
-        ["zh_CN"] = "简体中文",
-        ["zh_TW"] = "繁體中文",
-        ["de_DE"] = "Deutsch",
-        ["fr_FR"] = "Français",
-        ["es_ES"] = "Español",
-        ["it_IT"] = "Italiano",
-        ["pt_BR"] = "Português (Brasil)",
-        ["ru_RU"] = "Русский",
-        ["uk_UA"] = "Українська",
-        ["id_ID"] = "Bahasa Indonesia",
-        ["fil_PH"] = "Tagalog",
-        ["ta_IN"] = "தமிழ்",
-        ["ko_KR"] = "한국어",
-        ["la_VA"] = "Latina",
-        ["sa_IN"] = "संस्कृतम्",
-        ["he_IL"] = "עברית עתיקה"
-    };
+    /// <summary>サポートロケールの表示順+表示名の単一の真実の源。<see cref="Dictionary{TKey,TValue}"/> の
+    /// 列挙順は言語仕様上保証されないため、順序を要する <see cref="SupportedLocales"/> はこの配列から
+    /// 明示的に導出する（CodeRabbit nitpick #0613f719）。</summary>
+    private static readonly (string Key, string Name)[] LocaleDisplayEntries =
+    [
+        ("en_US", "English"),
+        ("ja_JP", "日本語"),
+        ("zh_CN", "简体中文"),
+        ("zh_TW", "繁體中文"),
+        ("de_DE", "Deutsch"),
+        ("fr_FR", "Français"),
+        ("es_ES", "Español"),
+        ("it_IT", "Italiano"),
+        ("pt_BR", "Português (Brasil)"),
+        ("ru_RU", "Русский"),
+        ("uk_UA", "Українська"),
+        ("id_ID", "Bahasa Indonesia"),
+        ("fil_PH", "Tagalog"),
+        ("ta_IN", "தமிழ்"),
+        ("ko_KR", "한국어"),
+        ("la_VA", "Latina"),
+        ("sa_IN", "संस्कृतम्"),
+        ("he_IL", "עברית עתיקה"),
+    ];
 
-    /// <summary>サポートされているロケール一覧（LocaleDisplayNames のキー集合から導出、表示順を保持）。</summary>
-    public static readonly string[] SupportedLocales = [.. LocaleDisplayNames.Keys];
+    /// <summary>ロケール表示名（ネイティブ言語名）。</summary>
+    public static readonly Dictionary<string, string> LocaleDisplayNames =
+        LocaleDisplayEntries.ToDictionary(e => e.Key, e => e.Name);
+
+    /// <summary>サポートされているロケール一覧（表示順を保持）。</summary>
+    public static readonly string[] SupportedLocales = [.. LocaleDisplayEntries.Select(e => e.Key)];
 
     /// <summary>ロケール選択肢一覧。</summary>
     public static readonly LocaleItem[] LocaleOptions = SupportedLocales

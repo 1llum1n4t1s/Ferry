@@ -235,7 +235,7 @@ UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レ
 
 ConnectionViewModel が定期的に relay Worker（DeviceDO）へハートビート送信・ピアの lastSeen をポーリング。
 
-```
+```text
 HeartbeatLoop (30秒):
   └ UpdatePresenceAsync(deviceId, displayName) → POST /presence/{deviceId}
     （lastSeen はサーバー時刻で記録。アプリの Version も載せる＝presence でバージョン分布が見える）
