@@ -7,6 +7,7 @@ using Avalonia;
 using Avalonia.Platform;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -23,6 +24,10 @@ public record LocaleItem(string Key, string DisplayName);
 public partial class App : Application
 {
     private MainWindow? _mainWindow;
+    /// <summary>macOS メニューバー / トレイメニューの項目からコマンドを叩くための参照。</summary>
+    private MainWindowViewModel? _mainVm;
+    /// <summary>ロケール切替時にメニューを作り直すための参照（メニューは Text() で静的構築のため）。</summary>
+    private TrayIcon? _trayIcon;
     private ResourceDictionary? _activeLocale;
     // rere #B2-001: 全ロケールのフォールバック先として常時マージしておく en_US 辞書。
     // 選択ロケールに欠損キーがあっても DynamicResource が空白にならず英語で表示される
@@ -47,15 +52,8 @@ public partial class App : Application
     // rere #D-004: Firebase DB / Bridge / Relay の各 URL は Ferry.AppConstants に一本化し、
     // settings.json からの書き換えを廃止した（改ざん面の対称化。UpdateBaseUrl と同方針）。
 
-    /// <summary>サポートされているロケール一覧。</summary>
-    public static readonly string[] SupportedLocales =
-    [
-        "en_US", "ja_JP", "zh_CN", "zh_TW", "de_DE", "fr_FR", "es_ES",
-        "it_IT", "pt_BR", "ru_RU", "uk_UA", "id_ID", "fil_PH", "ta_IN", "ko_KR",
-        "la_VA", "sa_IN", "he_IL"
-    ];
-
-    /// <summary>ロケール表示名（ネイティブ言語名）。</summary>
+    /// <summary>ロケール表示名（ネイティブ言語名）。サポートロケール一覧の単一の真実の源
+    /// （追加/削除時にここだけ編集すればよく、SupportedLocales との手動二重管理を避ける）。</summary>
     public static readonly Dictionary<string, string> LocaleDisplayNames = new()
     {
         ["en_US"] = "English",
@@ -77,6 +75,9 @@ public partial class App : Application
         ["sa_IN"] = "संस्कृतम्",
         ["he_IL"] = "עברית עתיקה"
     };
+
+    /// <summary>サポートされているロケール一覧（LocaleDisplayNames のキー集合から導出、表示順を保持）。</summary>
+    public static readonly string[] SupportedLocales = [.. LocaleDisplayNames.Keys];
 
     /// <summary>ロケール選択肢一覧。</summary>
     public static readonly LocaleItem[] LocaleOptions = SupportedLocales
@@ -398,6 +399,7 @@ public partial class App : Application
 
             var mainVm = new MainWindowViewModel(connectionVm, transferVm, settingsVm);
 
+            _mainVm = mainVm;
             _mainWindow = new MainWindow
             {
                 DataContext = mainVm,
@@ -438,6 +440,11 @@ public partial class App : Application
             };
             trayIcon.Clicked += (_, _) => ShowMainWindow();
             TrayIcon.SetIcons(this, [trayIcon]);
+            _trayIcon = trayIcon;
+
+            // macOS メニューバー（アプリメニュー + ファイル/ウィンドウ/ヘルプ）。
+            // 未設定だと Avalonia 既定の英語メニュー（About Avalonia 等）が出てしまう
+            SetupMacNativeMenus();
 
             // 多重起動防止: 2 つ目の起動が来たら（Windows）既存ウィンドウを前面化する
             SingleInstanceGuard.StartActivationListener(
@@ -467,6 +474,29 @@ public partial class App : Application
                     catch (Exception ex)
                     {
                         Util.Logger.Log($"起動時ペアリング追加タブ表示失敗: {ex.Message}", Util.LogLevel.Error);
+                    }
+                };
+            }
+
+            // rere #U13: settings.json 破損で初期化された場合、ユーザーへ一度だけ通知する。
+            // 破損検出はログのみだった → ユーザーには「設定が突然リセットされた」としか見えず、
+            // DeviceId サルベージ失敗ならペア消失にも繋がるため、起動後に明示する。
+            if (settingsService.WasCorrupted)
+            {
+                var noticeShown = false;
+                _mainWindow.Loaded += (_, _) =>
+                {
+                    if (noticeShown) return;
+                    noticeShown = true;
+                    try
+                    {
+                        var dialog = new ConfirmWindow();
+                        dialog.SetData(Text("Settings.CorruptedNotice"), Models.ConfirmButtonType.Ok);
+                        _ = dialog.ShowDialog<bool?>(_mainWindow);
+                    }
+                    catch (Exception ex)
+                    {
+                        Util.Logger.Log($"設定破損通知の表示に失敗: {ex.Message}", Util.LogLevel.Warning);
                     }
                 };
             }
@@ -507,6 +537,10 @@ public partial class App : Application
         if (!ReferenceEquals(targetLocale, app._baseLocale))
             app.Resources.MergedDictionaries.Add(targetLocale);
         app._activeLocale = targetLocale;
+
+        // トレイ / macOS メニューは Text() で静的構築のため、ロケール切替時に作り直して追従させる
+        // （起動シーケンス中のロケール適用ではメニュー未構築 → 各メソッド内の null ガードでスキップ）
+        app.RefreshNativeMenus();
     }
 
     /// <summary>
@@ -600,6 +634,12 @@ public partial class App : Application
         checkUpdateItem.Click += (_, _) => Check4Update(true);
         menu.Add(checkUpdateItem);
 
+        // ログフォルダを開く導線を全 OS 共通のトレイに置く（rere #U12）。旧実装は macOS メニュー
+        // だけに存在し、Win/Linux ユーザーは不具合時にログの場所へ辿り着けなかった。
+        var openLogItem = new NativeMenuItem(Text("Menu.OpenLogFolder"));
+        openLogItem.Click += (_, _) => Util.ShellHelper.OpenFolder(Util.AppPaths.GetLogDirectory());
+        menu.Add(openLogItem);
+
         menu.Add(new NativeMenuItemSeparator());
 
         var exitItem = new NativeMenuItem(Text("Tray.Exit"));
@@ -615,6 +655,154 @@ public partial class App : Application
         menu.Add(exitItem);
 
         return menu;
+    }
+
+    /// <summary>ロケール切替後にトレイ / macOS メニューを現ロケールで作り直す。</summary>
+    private void RefreshNativeMenus()
+    {
+        if (_trayIcon != null)
+            _trayIcon.Menu = CreateTrayMenu();
+        SetupMacNativeMenus();
+    }
+
+    /// <summary>
+    /// macOS のメニューバーを構築する（Windows / Linux では何もしない）。
+    /// Application 添付 = アプリメニュー（メニューバー左端の「Ferry」。Hide / Quit 系は
+    /// Avalonia が既定項目を末尾に自動追加するので自前では持たない）、
+    /// MainWindow 添付 = それ以外のトップレベルメニュー（ファイル / ウィンドウ / ヘルプ）。
+    /// NativeMenuItem はリソース解決ツリー外で DynamicResource が効かないため Text() で静的構築し、
+    /// ロケール切替は <see cref="RefreshNativeMenus"/> の作り直しで追従する。
+    /// </summary>
+    private void SetupMacNativeMenus()
+    {
+        if (!OperatingSystem.IsMacOS() || _mainWindow == null || _mainVm == null)
+            return;
+
+        var mainVm = _mainVm;
+
+        // === アプリメニュー（Ferry） ===
+        var appMenu = new NativeMenu();
+
+        var aboutItem = new NativeMenuItem(Text("Menu.About"));
+        aboutItem.Click += (_, _) => ShowAboutDialog();
+        appMenu.Add(aboutItem);
+
+        var updateItem = new NativeMenuItem(Text("Tray.CheckForUpdate"));
+        updateItem.Click += (_, _) => Check4Update(true);
+        appMenu.Add(updateItem);
+
+        appMenu.Add(new NativeMenuItemSeparator());
+
+        var settingsItem = new NativeMenuItem(Text("Menu.Settings"))
+        {
+            Gesture = new KeyGesture(Key.OemComma, KeyModifiers.Meta),
+        };
+        settingsItem.Click += (_, _) =>
+        {
+            ShowMainWindow();
+            mainVm.IsSettingsMode = true;
+        };
+        appMenu.Add(settingsItem);
+
+        NativeMenu.SetMenu(this, appMenu);
+
+        // === メニューバー（ファイル / ウィンドウ / ヘルプ） ===
+        var bar = new NativeMenu();
+
+        // --- ファイル ---
+        var fileMenu = new NativeMenu();
+
+        var sendItem = new NativeMenuItem(Text("Transfer.SendFile") + "…")
+        {
+            Gesture = new KeyGesture(Key.O, KeyModifiers.Meta),
+        };
+        // ウィンドウがトレイ格納（Hide）中だとファイルピッカーの親が出せないため、必ず表示してから実行する
+        sendItem.Click += (_, _) =>
+        {
+            ShowMainWindow();
+            mainVm.Transfer.BrowseAndSendFilesCommand.Execute(null);
+        };
+        fileMenu.Add(sendItem);
+
+        var openSaveDirItem = new NativeMenuItem(Text("SaveBar.Open"));
+        openSaveDirItem.Click += (_, _) => Util.ShellHelper.OpenFolder(_settingsService?.Settings.SaveDirectory);
+        fileMenu.Add(openSaveDirItem);
+
+        fileMenu.Add(new NativeMenuItemSeparator());
+
+        var addPeerItem = new NativeMenuItem(Text("Sidebar.AddPeer") + "…")
+        {
+            Gesture = new KeyGesture(Key.N, KeyModifiers.Meta),
+        };
+        addPeerItem.Click += (_, _) =>
+        {
+            ShowMainWindow();
+            mainVm.ShowAddPeerCommand.Execute(null);
+        };
+        fileMenu.Add(addPeerItem);
+
+        fileMenu.Add(new NativeMenuItemSeparator());
+
+        var closeItem = new NativeMenuItem(Text("Menu.CloseWindow"))
+        {
+            Gesture = new KeyGesture(Key.W, KeyModifiers.Meta),
+        };
+        // macOS では MainWindow.OnClosing が Hide に倒すので転送は切れない（赤信号ボタンと同挙動）
+        closeItem.Click += (_, _) => _mainWindow?.Close();
+        fileMenu.Add(closeItem);
+
+        bar.Add(new NativeMenuItem(Text("Menu.File")) { Menu = fileMenu });
+
+        // --- ウィンドウ ---
+        var windowMenu = new NativeMenu();
+
+        var minimizeItem = new NativeMenuItem(Text("Menu.Minimize"))
+        {
+            Gesture = new KeyGesture(Key.M, KeyModifiers.Meta),
+        };
+        minimizeItem.Click += (_, _) =>
+        {
+            if (_mainWindow != null)
+                _mainWindow.WindowState = WindowState.Minimized;
+        };
+        windowMenu.Add(minimizeItem);
+
+        var showItem = new NativeMenuItem(Text("Tray.ShowWindow"))
+        {
+            Gesture = new KeyGesture(Key.D0, KeyModifiers.Meta),
+        };
+        showItem.Click += (_, _) => ShowMainWindow();
+        windowMenu.Add(showItem);
+
+        bar.Add(new NativeMenuItem(Text("Menu.Window")) { Menu = windowMenu });
+
+        // --- ヘルプ ---
+        var helpMenu = new NativeMenu();
+
+        var websiteItem = new NativeMenuItem(Text("Menu.Website"));
+        websiteItem.Click += (_, _) => Util.ShellHelper.OpenUrl(UpdateBaseUrl);
+        helpMenu.Add(websiteItem);
+
+        var logsItem = new NativeMenuItem(Text("Menu.OpenLogFolder"));
+        logsItem.Click += (_, _) => Util.ShellHelper.OpenFolder(Util.AppPaths.GetLogDirectory());
+        helpMenu.Add(logsItem);
+
+        bar.Add(new NativeMenuItem(Text("Menu.Help")) { Menu = helpMenu });
+
+        NativeMenu.SetMenu(_mainWindow, bar);
+    }
+
+    /// <summary>「Ferry について」— バージョンと配布元をシンプルな OK ダイアログで表示する。</summary>
+    private void ShowAboutDialog()
+    {
+        ShowMainWindow();
+        if (_mainWindow == null) return;
+
+        var dialog = new ConfirmWindow();
+        dialog.SetData(
+            $"Ferry v{AppVersion.Value}\n\n{Text("About.Tagline")}\n{UpdateBaseUrl}",
+            Models.ConfirmButtonType.Ok);
+        _ = dialog.ShowDialog<bool?>(_mainWindow);
     }
 
     // === 自動更新チェック（VelopackUpdateDialog.Avalonia 委譲、Komorebi 同等パターン） ===

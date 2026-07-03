@@ -202,5 +202,5 @@ public interface IConnectionService
     string GeneratePairIdFor(string peerId) => string.Empty;
 
     /// <summary>Firebase pairs/{pairId} を SSoT として削除する（既定実装は no-op＝旧テストの互換維持）。</summary>
-    Task DeletePairFromFirebaseAsync(string peerId, CancellationToken ct = default) => Task.CompletedTask;
+    Task DeletePairFromRelayAsync(string peerId, CancellationToken ct = default) => Task.CompletedTask;
 }

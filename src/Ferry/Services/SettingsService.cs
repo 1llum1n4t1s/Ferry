@@ -12,8 +12,12 @@ namespace Ferry.Services;
 /// アプリケーション設定をファイルに永続化するサービス。
 /// %APPDATA%\Ferry\settings.json に保存する。
 /// </summary>
-public sealed class SettingsService : ISettingsService, IDisposable
+public sealed partial class SettingsService : ISettingsService, IDisposable
 {
+    // Native AOT: 動的コンパイル正規表現はインタプリタ実行にフォールバックするため GeneratedRegex でソース生成する
+    [GeneratedRegex("\"DeviceId\"\\s*:\\s*\"([a-fA-F0-9]{32})\"")]
+    private static partial Regex DeviceIdPattern();
+
     private readonly string _filePath;
 
     // Codex 第12弾 verify critical: SaveAsync 内の JsonSerializer.SerializeToUtf8Bytes は
@@ -25,6 +29,10 @@ public sealed class SettingsService : ISettingsService, IDisposable
     private readonly System.Threading.SemaphoreSlim _saveLock = new(1, 1);
 
     public AppSettings Settings { get; private set; } = new();
+
+    /// <summary>settings.json が破損して初期化 / サルベージされたか（rere #U13）。
+    /// 起動時に App がこれを見て、ユーザーへ一度だけ通知ダイアログを出す。</summary>
+    public bool WasCorrupted { get; private set; }
 
     public SettingsService()
         : this(Path.Combine(
@@ -74,6 +82,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
             {
                 var backup = _filePath + $".corrupt-{DateTime.Now:yyyyMMddHHmmss}";
                 File.Move(_filePath, backup, overwrite: true);
+                WasCorrupted = true;  // rere #U13: 起動後に UI へ一度だけ通知させる
                 Util.Logger.Log($"破損した settings.json を退避しました: {backup}", Util.LogLevel.Warning);
 
                 // rere レビュー #F-009: 破損ファイルから DeviceId だけサルベージ。
@@ -85,7 +94,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
                 try
                 {
                     var corruptContent = File.ReadAllText(backup);
-                    var match = Regex.Match(corruptContent, "\"DeviceId\"\\s*:\\s*\"([a-fA-F0-9]{32})\"");
+                    var match = DeviceIdPattern().Match(corruptContent);
                     if (match.Success)
                     {
                         Settings.DeviceId = match.Groups[1].Value.ToLowerInvariant();
