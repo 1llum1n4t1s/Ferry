@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code and other coding agents working in this repository.
 
 ## ビルド・テストコマンド
 
@@ -72,7 +72,7 @@ Infrastructure/         → CloudflareSignaling（+ CfTokenProvider 認証）, T
 3. **TCP 失敗時（UDP ホールパンチ）**: ここが非対称で**順序が肝**。外部エンドポイントの交換は更に非対称で、**Offer 側の endpoint は offer-v2 ペイロード（`ConnectionInfo.ExternalIp/ExternalPort`）で運ばれ、Answer 側の endpoint だけが `/sig/{pairId}/endpoint`（PairDO キー `endpoint:{answererDeviceId}`）経由**で渡る（rere #D-003 で per-sender 化。書き手は自分の deviceId キー、読み手はペア相手の deviceId キー）。
    - **Offer 側**: answer(needRelay) 受信 → STUN クエリ → **ExternalIp を載せた offer-v2 を自分の offer キー（PairDO `offer:{_deviceId}`）に上書き再送**（`SendSdpOfferAsync(pairId, _deviceId, …)`）→ Answer の外部エンドポイント（`endpoint:{peerId}`）を最大 10 秒待つ（`WaitForEndpointAsync(pairId, peerId)`）→ 取得後ホールパンチ
    - **Answer 側**: 最初に読んだ offer-v1 には ExternalIp が無い。**`WaitForOfferExternalIpAsync` で offer-v2（ExternalIp 付き）を最大 8 秒ポーリングして読み直してから**（`TryReadOfferOnceAsync(pairId, peerId)`）STUN → 自分の外部エンドポイントを publish（`SendEndpointAsync(pairId, _deviceId, …)`）→ ホールパンチ。MITM 防御（`offer.From == ペア相手` ＋ per-sender キー一致）は再読み分にも適用
-   - ⚠️ **Answer 側を「最初に読んだ offer の ExternalIp 有無」でゲートしてはいけない**。offer-v1 は常に ExternalIp が空なので、ゲートすると UDP を一切起動せず自分の endpoint も publish しない → Offer 側が endpoint 待ちでタイムアウト → **cross-NAT（別回線・別 NAT）で必ずリレーへ落ちる構造バグ**になる（実際に過去発生・修正済み）
+   - ⚠️ **Answer 側は「最初に読んだ offer の ExternalIp 有無」でゲートせず、offer-v2 を待って読み直してからホールパンチする**。offer-v1 は常に ExternalIp が空なので、ゲートすると UDP を一切起動せず自分の endpoint も publish しない → Offer 側が endpoint 待ちでタイムアウト → **cross-NAT（別回線・別 NAT）で必ずリレーへ落ちる構造バグ**になる（実際に過去発生・修正済み）
 4. **UDP 失敗時**: WebSocket リレーにフォールバック（`wss://relay.ferry.nephilim.jp/ferry-relay`、Cloudflare Workers + Durable Objects、Hibernation 対応）
 
 > UDP ホールパンチの成功は **NAT タイプ依存**。修正後も両側が CGNAT / symmetric NAT（日本の IPoE 等で多い）だとホールパンチが抜けずリレーに落ちる。「UDP 修正＝必ず P2P」ではない点に注意。IPoE 環境の救済としては上記 **IPv6 TCP 直結**が先に効く（NAT 越え不要、相手側 FW の inbound 許可のみが条件）。
@@ -125,15 +125,14 @@ STUN は **Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google S
 
 ### Native AOT 制約
 
-- JSON シリアライズは Source Generator 必須（`FileMetaJsonContext`, `PeerRegistryJsonContext`, `ConnectionInfoJsonContext`, `AppSettingsJsonContext`, `CfJsonContext`〔CloudflareSignaling の API DTO〕, `CfAuthJsonContext`〔/auth/token DTO〕）
-- リフレクションベースのシリアライズは使用不可
-- `ConnectionInfo` にプロパティを追加する場合は `ConnectionInfoJsonContext` の更新が必要
+- JSON シリアライズは Source Generator 必須（`FileMetaJsonContext`, `PeerRegistryJsonContext`, `ConnectionInfoJsonContext`, `AppSettingsJsonContext`, `CfJsonContext`〔CloudflareSignaling の API DTO〕, `CfAuthJsonContext`〔/auth/token DTO〕）。リフレクションベースのシリアライズは使わず、上記 source-gen コンテキストを使う
+- `ConnectionInfo` にプロパティを追加する場合は `ConnectionInfoJsonContext` を更新する
 
 ### プラットフォーム差の吸収（Win / mac / Linux）
 
 OS 依存処理は実行時分岐（`OperatingSystem.IsWindows()/IsMacOS()/IsLinux()`、AOT でトリミング安全）で 1 箇所に閉じ込める。新たに OS 依存コードを足すときは下記の既存吸収点に倣う。
 
-- **ログイン時自動起動** (`Util.AutoStartManager.Apply`): `SettingsService.SetAutoStart` が委譲。**Win=レジストリ Run キー** / **mac=`~/Library/LaunchAgents/com.1llum1n4t1s.ferry.plist`（`RunAtLoad`、`.app` なら `open` で起動）** / **Linux=`$XDG_CONFIG_HOME/autostart/ferry.desktop`（AppImage 時は `$APPIMAGE` を Exec）** を生成/削除する。設定 UI（`AutoStartWithWindows` トグル）は全 OS で機能し、ラベルは OS 中立文言（「ログイン時に起動」/「Start at login」）。JSON プロパティ名 `AutoStartWithWindows` は既存 `settings.json` 互換のため**改名しない**。`App.axaml.cs` 起動時に有効なら `SetAutoStart(true)` を冪等再適用し、更新で実行パスが変わっても追従する（self-heal）
+- **ログイン時自動起動** (`Util.AutoStartManager.Apply`): `SettingsService.SetAutoStart` が委譲。**Win=レジストリ Run キー** / **mac=`~/Library/LaunchAgents/com.1llum1n4t1s.ferry.plist`（`RunAtLoad`、`.app` なら `open` で起動）** / **Linux=`$XDG_CONFIG_HOME/autostart/ferry.desktop`（AppImage 時は `$APPIMAGE` を Exec）** を生成/削除する。設定 UI（`AutoStartWithWindows` トグル）は全 OS で機能し、ラベルは OS 中立文言（「ログイン時に起動」/「Start at login」）。JSON プロパティ名 `AutoStartWithWindows` は既存 `settings.json` 互換のため**そのまま維持する（改名しない）**。`App.axaml.cs` 起動時に有効なら `SetAutoStart(true)` を冪等再適用し、更新で実行パスが変わっても追従する（self-heal）
 - **多重起動の前面化** (`SingleInstanceGuard`): 上記のとおり Mutex + Named Pipe で全 OS 対称
 - **× ボタン / 最小化トレイ格納** (`MainWindow.OnClosing` / `WindowStateProperty` observable): **macOS は × で終了せず `Hide()`**（赤信号ボタン慣習。終了はメニューバー「終了」/Cmd+Q。これがないと転送中 transport が切れる）。最小化トレイ格納（`ShowInTaskbar=false`+`Hide`）は **Win/Linux 限定**（mac は最小化=Dock 慣習なのでスキップ）
 - **ファイラ起動** (`Util.ShellHelper.OpenFolder`): Win=`explorer.exe` / mac=`open` / Linux=`xdg-open`。非 Windows は `ArgumentList` でパスを渡す
@@ -229,7 +228,7 @@ UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レ
 
 ### 宛先リスト（v1.0.66 高機能化）
 
-サイドバーのピア一覧は `ConnectionViewModel.VisiblePeers`（`ObservableCollection<object>`、見出し `PeerListSection` と `PairedPeer` を混在）への投影で描画する。純関数 `BuildPeerProjection(peers, search, mode, label, keep)` が検索フィルタ・ソート（`PeerSortMode`: 名前 / 最終転送 / 経路 / 転送中）・セクション分割（📌 ピン留め / オンライン / オフライン）を決定し、`ReconcileVisiblePeers` が **in-place 差分反映**する。⚠️ `Clear()` による全置換は禁止 — `SelectedPeer` が null に振れて `TransferViewModel` が履歴をクリアし、転送ビュー消失・D&D 不能になる（実際に起きた回帰）。検索で選択中ピアが除外されても `keep` 引数で必ず一覧に残す。ピン留めは `PairedPeer.IsPinned`（peers.json 永続）、見出し行は `ContainerPrepared` で非選択・非フォーカス化。回帰は `PeerListProjectionTests`。
+サイドバーのピア一覧は `ConnectionViewModel.VisiblePeers`（`ObservableCollection<object>`、見出し `PeerListSection` と `PairedPeer` を混在）への投影で描画する。純関数 `BuildPeerProjection(peers, search, mode, label, keep)` が検索フィルタ・ソート（`PeerSortMode`: 名前 / 最終転送 / 経路 / 転送中）・セクション分割（📌 ピン留め / オンライン / オフライン）を決定し、`ReconcileVisiblePeers` が **in-place 差分反映**する。⚠️ 一覧更新は必ず `ReconcileVisiblePeers` の in-place 差分反映で行う。`Clear()` による全置換は禁止 — `SelectedPeer` が null に振れて `TransferViewModel` が履歴をクリアし、転送ビュー消失・D&D 不能になる（実際に起きた回帰）。検索で選択中ピアが除外されても `keep` 引数で必ず一覧に残す。ピン留めは `PairedPeer.IsPinned`（peers.json 永続）、見出し行は `ContainerPrepared` で非選択・非フォーカス化。回帰は `PeerListProjectionTests`。
 
 ### プレゼンス監視（オンライン検出）
 
@@ -273,11 +272,11 @@ xUnit v3 + NSubstitute。テスト内の非同期メソッドには `TestContext
 ## 既知の制限と注意事項
 
 1. **同時接続の競合**: rere #D-003 で offer を per-sender キー（PairDO `offer:{senderDeviceId}`）化したため、2台が同時に接続を試みても **offer の相互上書きは構造的に起きない**。さらに deviceId 序列の **deferral（`CompareOrdinal` で大きい側が answerer に委譲）** で「双方が offerer になり相互の answer を待ち続けるデッドロック」を収束させる。ただし deferral 判定の瞬間に相手がまだ offer を書いていない**同時ウィンドウ**は残る（完全収束は今後の課題）。基本は接続確立後にファイル送信するのが安全。
-2. **Native AOT 制約**: JSON の動的シリアライズは使用不可。モデル追加時は `*JsonContext` も追加。
+2. **Native AOT 制約**: JSON の動的シリアライズは使えないため、モデル追加時は `*JsonContext` も追加する。
 3. **信頼モデル**: シグナリング認可は CF 単独完結の cfToken（自前 HMAC bearer + ECDSA デバイス署名チャレンジ + KV first-write-wins 鍵束縛。§Cloudflare バックエンド構造）。E2E 暗号は `ConnectionService.CreateSecureChannel` / `StartSecureHandshake` / `ApplySecureStep` に配線済みで **常時 ON**（v1.0.48 で旧トグル撤去）。QR ペアリング時に長期 ECDH 公開鍵を交換して PairSecret を導出し、HMAC 相互認証 + AES-GCM 封筒化する。**v1.0.65 で 2 台実機検証済み**（別回線 2 台でログ「暗号セッション確立（HMAC 相互認証成功）」+ 数百 MB 転送の SHA-256 検証を確認）。PairSecret を持たない旧ペア（公開鍵交換前の peers.json）は**平文フォールバック**のまま — 再ペアリングすると暗号化される。
 
 > 設定（`settings.json` / `peers.json`）は一時ファイル→リネームでアトミックに保存し、読み込み失敗時は `.corrupt-<時刻>` に退避する。`DeviceId` は pairId / presence の基盤なので、破損で再生成されるとペアが消える点に注意。
 
 ## 言語
 
-コード内コメント、コミットメッセージ、ユーザーへの応答はすべて **日本語** で行うこと。
+コード内コメント、コミットメッセージ、ユーザーへの応答はすべて **日本語** で行う。
