@@ -2,7 +2,7 @@
 
 旧 VPS Node.js リレー (`wss://1llum1n4t1.net/ferry-relay`) の置き換え。
 
-- **エンドポイント**: `wss://relay.ferry.nephilim.jp/ferry-relay?pairId=<id>&role=<offer|answer>`
+- **エンドポイント**: `wss://watashiba.kagayoi.com/ferry-relay?pairId=<id>&role=<offer|answer>`
 - **ランタイム**: Cloudflare Workers + Durable Objects (Hibernation API)
 - **コスト**: Workers Paid $5/月 (RealTimeTranslator と共有)。Ferry の DO duration は無料枠で収まる試算
 
@@ -41,14 +41,14 @@
    wrangler deploy
    ```
 
-   初回は `relay.ferry.nephilim.jp` の Custom Domain 紐付けが Cloudflare Dashboard 側でも必要な場合がある。
-   - Dashboard → Workers & Pages → ferry-relay → Settings → Triggers → Custom Domains → `relay.ferry.nephilim.jp` を Add
-   - DNS は Cloudflare が自動で `nephilim.jp` Zone に AAAA / CNAME を貼る
+   初回は `watashiba.kagayoi.com` の Custom Domain 紐付けが Cloudflare Dashboard 側でも必要な場合がある。
+   - Dashboard → Workers & Pages → ferry-relay → Settings → Triggers → Custom Domains → `watashiba.kagayoi.com` を Add
+   - DNS は Cloudflare が自動で `kagayoi.com` Zone に AAAA / CNAME を貼る
 
 6. **疎通確認**
 
    ```powershell
-   curl https://relay.ferry.nephilim.jp/health
+   curl https://watashiba.kagayoi.com/health
    # → OK が返れば疎通完了
    ```
 

@@ -5,7 +5,7 @@
  * Durable Objects Hibernation API を使うことで、ペアアイドル中はメモリ 0 / 課金 0 で待機する。
  *
  * クライアント側プロトコル (src/Ferry/Infrastructure/WebSocketRelayTransport.cs と一致させること):
- *   1. wss://relay.ferry.nephilim.jp/ferry-relay?pairId=<id>&role=<offer|answer> へ接続
+ *   1. wss://watashiba.kagayoi.com/ferry-relay?pairId=<id>&role=<offer|answer> へ接続
  *   2. リレーは 2 peer 揃ったら両方に "ready" テキストフレームを送る
  *   3. それ以降のバイナリフレームは無条件で相手側へパススルー
  *      (WebSocket メッセージ上限は 32 MiB / Workers 仕様。2025-10-31 に 1 MiB から引上げ。
@@ -56,7 +56,7 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
 
-    // ヘルスチェック (curl https://relay.ferry.nephilim.jp/health で疎通確認)
+    // ヘルスチェック (curl https://watashiba.kagayoi.com/health で疎通確認)
     if (url.pathname === '/health') {
       return new Response('OK', { status: 200 });
     }

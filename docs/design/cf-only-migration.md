@@ -63,7 +63,7 @@ Bridge は PC のような長期鍵を持たない。**nonce 所有が認可の�
 
 ## 3. エンドポイント仕様（C# メソッド ↔ CF）
 
-ベース URL: `https://relay.ferry.nephilim.jp`。signaling は pairId をクエリで渡し Worker が PairDO へ委譲。
+ベース URL: `https://watashiba.kagayoi.com`。signaling は pairId をクエリで渡し Worker が PairDO へ委譲。
 
 ### 3.1 signaling（PairDO・HTTP poll）
 | C# (FirebaseSignaling) | CF エンドポイント | 備考 |

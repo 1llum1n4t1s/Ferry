@@ -47,7 +47,7 @@ public partial class App : Application
     private System.Threading.CancellationTokenSource? _pendingDeleteCts;
 
     /// <summary>自動更新の配信元 URL（Cloudflare R2 ferry-updates 経由）。</summary>
-    private const string UpdateBaseUrl = "https://ferry.nephilim.jp";
+    private const string UpdateBaseUrl = "https://ferry.kagayoi.com";
 
     // rere #D-004: Firebase DB / Bridge / Relay の各 URL は Ferry.AppConstants に一本化し、
     // settings.json からの書き換えを廃止した（改ざん面の対称化。UpdateBaseUrl と同方針）。

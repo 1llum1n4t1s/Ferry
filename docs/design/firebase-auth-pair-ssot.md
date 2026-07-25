@@ -122,7 +122,7 @@ ferry-edf09 (Realtime DB)
 
 #### リクエスト
 ```http
-POST https://relay.ferry.nephilim.jp/auth/token
+POST https://watashiba.kagayoi.com/auth/token
 Content-Type: application/json
 
 {
@@ -157,7 +157,7 @@ Content-Type: application/json
 
 #### リクエスト
 ```http
-POST https://relay.ferry.nephilim.jp/pair/token
+POST https://watashiba.kagayoi.com/pair/token
 Content-Type: application/json
 
 {
@@ -637,7 +637,7 @@ PC がセッション登録時に `Guid.NewGuid().ToString("N")` で 32hex の `
 #### `bridge.js` main() 冒頭
 ```javascript
 async function ensureAuth(sessionId, nonce) {
-  const resp = await fetch('https://relay.ferry.nephilim.jp/pair/token', {
+  const resp = await fetch('https://watashiba.kagayoi.com/pair/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionId, pairingNonce: nonce })

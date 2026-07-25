@@ -37,7 +37,7 @@ cd infra/cloudflare/relay && pnpm dlx wrangler deploy
 Ferry は QR コードでペアリングし、TCP 直接接続（LAN）/ UDP ホールパンチ（NAT 越え P2P）/ WebSocket リレー（最終手段）で PC 間ファイルを P2P 転送するデスクトップアプリ。ファイル転送に特化しており、チャット機能は含まない。
 
 - **`src/Ferry/`** — .NET 10 Avalonia UI デスクトップアプリ（Native AOT、クロスプラットフォーム: win-x64 / win-arm64 / osx-arm64 / linux-x64 / linux-arm64）
-- **`infra/cloudflare/relay/`** — バックエンド一式 (TypeScript)。Cloudflare Workers + Durable Objects + D1 で **シグナリング（PairDO）/ プレゼンス + inbox（DeviceDO）/ ペア台帳（D1）/ WebSocket リレー（RelayDO、`wss://relay.ferry.nephilim.jp/ferry-relay`）/ QR ペアリング用 Bridge ページ（`public/` を Static Assets 配信）** を 1 Worker に集約。テストは vitest（`pnpm test`）。**`infra/cloudflare/relay/**` を main に push すると `deploy-relay.yml` が `wrangler deploy` で自動配信**（手動 `wrangler deploy` も可）。死活監視は `relay-healthcheck.yml`（15 分ごとの cron）。⚠️ 旧来は手動デプロイのみでリリースに紐づかず、本番が古いまま残り `/auth/token` が 426 を返す事故（2026-06-23）が起きたため CI 化した
+- **`infra/cloudflare/relay/`** — バックエンド一式 (TypeScript)。Cloudflare Workers + Durable Objects + D1 で **シグナリング（PairDO）/ プレゼンス + inbox（DeviceDO）/ ペア台帳（D1）/ WebSocket リレー（RelayDO、`wss://watashiba.kagayoi.com/ferry-relay`）/ QR ペアリング用 Bridge ページ（`public/` を Static Assets 配信）** を 1 Worker に集約。テストは vitest（`pnpm test`）。**`infra/cloudflare/relay/**` を main に push すると `deploy-relay.yml` が `wrangler deploy` で自動配信**（手動 `wrangler deploy` も可）。死活監視は `relay-healthcheck.yml`（15 分ごとの cron）。⚠️ 旧来は手動デプロイのみでリリースに紐づかず、本番が古いまま残り `/auth/token` が 426 を返す事故（2026-06-23）が起きたため CI 化した
 - **`web/`** — ダウンロード用ランディングページ（`index.html` + Cloudflare Worker `worker.js` + `wrangler.toml`）。QR ペアリングの Bridge ページとは別物。`web/` 配下を main に push すると `deploy-landing.yml` が Cloudflare に配信
 - **`tests/Ferry.Tests/`** — xUnit v3 + NSubstitute によるユニットテスト
 
@@ -73,7 +73,7 @@ Infrastructure/         → CloudflareSignaling（+ CfTokenProvider 認証）, T
    - **Offer 側**: answer(needRelay) 受信 → STUN クエリ → **ExternalIp を載せた offer-v2 を自分の offer キー（PairDO `offer:{_deviceId}`）に上書き再送**（`SendSdpOfferAsync(pairId, _deviceId, …)`）→ Answer の外部エンドポイント（`endpoint:{peerId}`）を最大 10 秒待つ（`WaitForEndpointAsync(pairId, peerId)`）→ 取得後ホールパンチ
    - **Answer 側**: 最初に読んだ offer-v1 には ExternalIp が無い。**`WaitForOfferExternalIpAsync` で offer-v2（ExternalIp 付き）を最大 8 秒ポーリングして読み直してから**（`TryReadOfferOnceAsync(pairId, peerId)`）STUN → 自分の外部エンドポイントを publish（`SendEndpointAsync(pairId, _deviceId, …)`）→ ホールパンチ。MITM 防御（`offer.From == ペア相手` ＋ per-sender キー一致）は再読み分にも適用
    - ⚠️ **Answer 側は「最初に読んだ offer の ExternalIp 有無」でゲートせず、offer-v2 を待って読み直してからホールパンチする**。offer-v1 は常に ExternalIp が空なので、ゲートすると UDP を一切起動せず自分の endpoint も publish しない → Offer 側が endpoint 待ちでタイムアウト → **cross-NAT（別回線・別 NAT）で必ずリレーへ落ちる構造バグ**になる（実際に過去発生・修正済み）
-4. **UDP 失敗時**: WebSocket リレーにフォールバック（`wss://relay.ferry.nephilim.jp/ferry-relay`、Cloudflare Workers + Durable Objects、Hibernation 対応）
+4. **UDP 失敗時**: WebSocket リレーにフォールバック（`wss://watashiba.kagayoi.com/ferry-relay`、Cloudflare Workers + Durable Objects、Hibernation 対応）
 
 > UDP ホールパンチの成功は **NAT タイプ依存**。修正後も両側が CGNAT / symmetric NAT（日本の IPoE 等で多い）だとホールパンチが抜けずリレーに落ちる。「UDP 修正＝必ず P2P」ではない点に注意。IPoE 環境の救済としては上記 **IPv6 TCP 直結**が先に効く（NAT 越え不要、相手側 FW の inbound 許可のみが条件）。
 
@@ -91,7 +91,7 @@ STUN は **Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google S
 ### ペアリングフロー
 
 1. PC-A がセッション登録（`POST /pair/session` → D1 の `sessions` + `pairing_nonces`）→ QR コード表示（Bridge ページ URL + sid + nonce + 長期 ECDH 公開鍵）
-2. スマホで QR スキャン → Bridge ページ（`https://relay.ferry.nephilim.jp`、relay Worker の Static Assets・API と同一オリジンなので CORS 不要）が開く
+2. スマホで QR スキャン → Bridge ページ（`https://watashiba.kagayoi.com`、relay Worker の Static Assets・API と同一オリジンなので CORS 不要）が開く
 3. Bridge ページ内カメラで PC-B の QR をスキャン
 4. Bridge が `POST /pair/create`（**両 sid の nonce 値所有を D1 で server 検証** = ghost peer 注入防止・bearer 不要・IP rate limit）→ 両 PC の DeviceDO inbox（WebSocket）へペア成立を即 push
 5. ペア情報 + PairSecret（交換した公開鍵から ECDH 導出）を `peers.json` にローカル保存
@@ -143,7 +143,7 @@ OS 依存処理は実行時分岐（`OperatingSystem.IsWindows()/IsMacOS()/IsLin
 
 ### 自動更新と配信（CI/CD）
 
-Velopack による自動更新の配信元は **Cloudflare R2**（カスタムドメイン `https://ferry.nephilim.jp`、bucket `ferry-updates`）。クライアントは `App.axaml.cs` の `UpdateBaseUrl` 定数 + `Velopack.Sources.SimpleWebSource` で更新を取得する（旧 `GithubSource` から移行済み）。`Check4Update` は起動時 + 24時間ごとに実行。
+Velopack による自動更新の配信元は **Cloudflare R2**（カスタムドメイン `https://ferry.kagayoi.com`、bucket `ferry-updates`）。クライアントは `App.axaml.cs` の `UpdateBaseUrl` 定数 + `Velopack.Sources.SimpleWebSource` で更新を取得する（旧 `GithubSource` から移行済み）。`Check4Update` は起動時 + 24時間ごとに実行。
 
 **Windows リリース (ローカル実行)**: `pwsh scripts/release-local.ps1` — Lhamiel で確立したローカル署名付きリリースフローの横展開。コード署名 (Authenticode、Certum **Open Source Code Signing in the cloud**、CN=`Open Source Developer Yuichiro Shinozaki`) は SimplySign Desktop のトークンログイン中セッション + スマホ OTP が必要で GitHub Actions からは署名できないため、win-x64 / win-arm64 の 2 チャンネルはローカルスクリプトでリリースする。スクリプトは publish (Native AOT) → `vpk pack` + **Authenticode 署名** (`--signParams`、タイムスタンプ `http://time.certum.pl`) → 署名検証 → `wrangler` (pnpm dlx) で R2 バケット `ferry-updates` にアップロード (manifest は最後) → 配信確認 (`releases.{channel}.json` HTTP 200) → **manifest 外の旧 `*.nupkg` を Cloudflare API V4 で自動削除** (Aggressive 保持戦略。今回ビルドしないチャンネルの manifest は R2 から取得して keep set に加えるため、macOS / Linux の nupkg は誤削除しない) まで一括実行。Cloudflare トークンは `C:\Users\IMT\dev\Secret\secrets.json` の `cloudflare.api_token` を実行時に読む。動作確認は `-SkipUpload` (ビルド + 署名のみ)、RID 絞り込みは `-Runtimes win-x64`。**実行前提: SimplySign Desktop がトークンログイン済み** (証明書が CurrentUser\My に見えること。スクリプトがプリフライトで検査して落とす)。**`/vava` は `vava.config.json` の `localRelease` キーを読んでこのスクリプトを自動実行する**。
 
@@ -263,7 +263,7 @@ xUnit v3 + NSubstitute。テスト内の非同期メソッドには `TestContext
 
 ## サーバー接続情報
 
-- **relay Worker（シグナリング / プレゼンス / ペアリング / リレー / Bridge ページ）**: Cloudflare Workers + Durable Objects + D1（`https://relay.ferry.nephilim.jp`）。実装・デプロイ手順は [`infra/cloudflare/relay/README.md`](infra/cloudflare/relay/README.md) を参照。使用量は Cloudflare GraphQL Analytics（`workersInvocationsAdaptive` / zone の `httpRequestsAdaptiveGroups`）で確認できる
+- **relay Worker（シグナリング / プレゼンス / ペアリング / リレー / Bridge ページ）**: Cloudflare Workers + Durable Objects + D1（`https://watashiba.kagayoi.com`）。実装・デプロイ手順は [`infra/cloudflare/relay/README.md`](infra/cloudflare/relay/README.md) を参照。使用量は Cloudflare GraphQL Analytics（`workersInvocationsAdaptive` / zone の `httpRequestsAdaptiveGroups`）で確認できる
 - **STUN**: Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google STUN (`stun.l.google.com:19302`) を従。自前運用は無し
 - **Firebase**: **完全撤去済み（2026-07）**。RTDB は deny-all・Hosting は無効化・GitHub/CF Worker の Firebase 系 Secrets も削除済みで、プロジェクト `ferry-edf09` はシャットダウン済み（2026-08-01 完全削除予定）。移行設計は [`docs/design/cf-only-migration.md`](docs/design/cf-only-migration.md)
 

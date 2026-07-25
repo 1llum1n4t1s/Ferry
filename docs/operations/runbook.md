@@ -158,7 +158,7 @@ firebase database:get / --shallow=true
 **確認手順**:
 ```bash
 # Relay 健康診断 (rere #F-011 で CI 化済み)
-curl -s -o /dev/null -w "%{http_code}\n" https://relay.ferry.nephilim.jp/health
+curl -s -o /dev/null -w "%{http_code}\n" https://watashiba.kagayoi.com/health
 # → 200 if OK
 
 # wrangler tail でリアルタイムログ
@@ -202,7 +202,7 @@ grep "経路 Probe\|TCP\|UDP\|Relay" %LOCALAPPDATA%\Ferry\logs\Ferry_*.log | tai
 ### 自動監視 (rere #F-011 で CI 化)
 
 `.github/workflows/relay-healthcheck.yml` が 15 分間隔で:
-- `https://relay.ferry.nephilim.jp/health` への HTTP 200 確認
+- `https://watashiba.kagayoi.com/health` への HTTP 200 確認
 - 失敗時に Issue 自動作成
 
 ### 手動監視ダッシュボード
@@ -214,7 +214,7 @@ grep "経路 Probe\|TCP\|UDP\|Relay" %LOCALAPPDATA%\Ferry\logs\Ferry_*.log | tai
 | Firebase Realtime DB | https://console.firebase.google.com/project/ferry-edf09/database |
 | Firebase Hosting | https://console.firebase.google.com/project/ferry-edf09/hosting |
 | GitHub Actions | https://github.com/1llum1n4t1s/Ferry/actions |
-| Velopack 配信 | https://ferry.nephilim.jp/releases.win-x64.json |
+| Velopack 配信 | https://ferry.kagayoi.com/releases.win-x64.json |
 
 ### SLO / SLI (将来検討)
 

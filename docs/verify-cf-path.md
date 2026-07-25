@@ -4,7 +4,7 @@ Firebase 撤去（`docs/design/cf-only-migration.md`）の Step 5（既定切替
 
 ## 前提
 
-- CF インフラはデプロイ済み（`relay.ferry.nephilim.jp`）。クライアントの dual-path 配線も完成済み（`App.axaml.cs` の `UseCloudflareSignaling` 分岐）。
+- CF インフラはデプロイ済み（`watashiba.kagayoi.com`）。クライアントの dual-path 配線も完成済み（`App.axaml.cs` の `UseCloudflareSignaling` 分岐）。
 - このゲートは **本番（Firebase 既定）に無影響**。検証する 2 台だけ手元でフラグを立てて試す。終わったらフラグを戻せば元通り。
 
 ## 設定（両端の PC で `settings.json` を編集）
@@ -28,7 +28,7 @@ Firebase 撤去（`docs/design/cf-only-migration.md`）の Step 5（既定切替
 - `/auth/token` で cfToken 取得成功（401/403 が出ないこと）
 
 ### 2. ペアリング（D1 + inbox WS）
-- スマホで QR → Bridge（CF 版 `relay.ferry.nephilim.jp/`）でスキャン
+- スマホで QR → Bridge（CF 版 `watashiba.kagayoi.com/`）でスキャン
 - 両 PC に**ペア成立が出る**（DeviceDO inbox WS push）
 - 再ペアリング後、`pairs/{pairId}` が D1 に書かれる
 
