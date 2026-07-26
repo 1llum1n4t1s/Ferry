@@ -26,7 +26,7 @@ Ferry は 3 階層フォールバック設計:
 2. **UDP ホールパンチ** (NAT 越え P2P) — STUN サーバー必要 → 現状 `1llum1n4t1.net:3478` の自前 coturn
 3. **WebSocket リレー** (最終手段) — `wss://1llum1n4t1.net/ferry-relay` の自前 Node.js サーバー
 
-この 2 つが VPS で動いており、 月額 ¥1,000-3,000 の VPS コストの一部を占有している。 別途 Velopack 配信は既に Cloudflare R2 (`ferry.nephilim.jp`) に移行済み。
+この 2 つが VPS で動いており、 月額 ¥1,000-3,000 の VPS コストの一部を占有している。 別途 Velopack 配信は既に Cloudflare R2 (`ferry.kagayoi.com`) に移行済み。
 
 ### 移行する理由
 
@@ -64,7 +64,7 @@ Firebase Realtime DB (シグナリング・プレゼンス) と Firebase Hosting
 
 - [ ] Cloudflare Workers Paid プラン契約済み ($5/月、 RealTimeTranslator 用に契約予定なので共用)
 - [ ] `wrangler` CLI ローカル install 済み (`npm install -g wrangler` + `wrangler login`)
-- [ ] 既存 `ferry.nephilim.jp` Zone が Cloudflare 配下 (Velopack 配信で確認済)
+- [ ] 既存 `ferry.kagayoi.com` Zone が Cloudflare 配下 (Velopack 配信で確認済)
 - [ ] DO の Hello World を 1 度動かして hibernation 挙動を理解済 (RealTimeTranslator 計画 Phase 0 で実施)
 
 ---
@@ -113,7 +113,7 @@ new_sqlite_classes = ["RelayDO"]  # v2 以降は new_classes でない方を使�
 
 # カスタムドメイン (Cloudflare Dashboard で手動設定するか route で)
 [[routes]]
-pattern = "relay.ferry.nephilim.jp/*"
+pattern = "watashiba.kagayoi.com/*"
 custom_domain = true
 ```
 
@@ -243,7 +243,7 @@ export class RelayDO {
 
 Cloudflare Dashboard で:
 1. Workers & Pages → ferry-relay → Settings → Triggers
-2. **Custom Domains** → Add Custom Domain → `relay.ferry.nephilim.jp`
+2. **Custom Domains** → Add Custom Domain → `watashiba.kagayoi.com`
 3. DNS は自動的に CNAME 設定される
 
 ### 1.7 デプロイ
@@ -251,19 +251,19 @@ Cloudflare Dashboard で:
 ```powershell
 cd infra/cloudflare/relay
 wrangler deploy
-# → relay.ferry.nephilim.jp で公開される
+# → watashiba.kagayoi.com で公開される
 ```
 
 ### 1.8 検証
 
 ```powershell
 # ヘルスチェック
-curl https://relay.ferry.nephilim.jp/health
+curl https://watashiba.kagayoi.com/health
 # → OK が返れば疎通 OK
 
 # WebSocket 接続テスト (websocat 必要)
 # 2 つのターミナルで:
-websocat "wss://relay.ferry.nephilim.jp/ferry-relay?pairId=test123"
+websocat "wss://watashiba.kagayoi.com/ferry-relay?pairId=test123"
 # 片方で送信したメッセージがもう片方に届けば成功
 ```
 
@@ -326,7 +326,7 @@ private static readonly (string Host, int Port)[] StunServers = new[]
 private const string RelayUrl = "wss://1llum1n4t1.net/ferry-relay";
 
 // 新
-private const string RelayUrl = "wss://relay.ferry.nephilim.jp/ferry-relay";
+private const string RelayUrl = "wss://watashiba.kagayoi.com/ferry-relay";
 ```
 
 ### 3.2 旧 VPS リレーの停止方針 (即停止 / 2026-05 確定)
@@ -359,7 +359,7 @@ private const string RelayUrl = "wss://relay.ferry.nephilim.jp/ferry-relay";
 ### 3.5 移行後の確認
 
 - Velopack 配信が成功し、トレイメニュー「アップデートを確認」で新版取得が成立すること
-- 新リレー (`relay.ferry.nephilim.jp`) で WebSocket 接続 + 大ファイル送受信ができること
+- 新リレー (`watashiba.kagayoi.com`) で WebSocket 接続 + 大ファイル送受信ができること
 - 上記 OK を確認次第、1llum1n4t1.net 側で `ferry-relay` + `coturn` コンテナを撤去 (即停止方針)
 
 ---
@@ -371,7 +371,7 @@ private const string RelayUrl = "wss://relay.ferry.nephilim.jp/ferry-relay";
 1. **Workers 側緊急停止**: Cloudflare Dashboard → Workers → ferry-relay → Disable (新リレーへの接続を即遮断)
 2. **VPS 側リレー復活**: 1llum1n4t1.net リポジトリの `docker-compose.yml` から削除した `ferry-relay` + `coturn` サービスブロックを `git revert` で復元 → VPS で `docker compose up -d`
 3. **アプリ側 hotfix**: `App.axaml.cs` の `const string RelayUrl` を `wss://1llum1n4t1.net/ferry-relay` に戻して `/vava` で hotfix リリース
-4. **DNS 切替案**: `relay.ferry.nephilim.jp` の CNAME を一時的に VPS に向ける (ただし TLS 証明書設定要、 推奨しない)
+4. **DNS 切替案**: `watashiba.kagayoi.com` の CNAME を一時的に VPS に向ける (ただし TLS 証明書設定要、 推奨しない)
 
 ロールバック判断基準:
 - 接続成功率が 95% を切る (1 時間継続)
@@ -382,7 +382,7 @@ private const string RelayUrl = "wss://relay.ferry.nephilim.jp/ferry-relay";
 
 ## 完了条件 (Definition of Done)
 
-- [ ] `relay.ferry.nephilim.jp` で WebSocket リレーが動作している
+- [ ] `watashiba.kagayoi.com` で WebSocket リレーが動作している
 - [ ] アプリ側の `RelayUrl` ハードコードが新 URL に切替済み (`[JsonIgnore]` パターンで)
 - [ ] STUN サーバーリストが Cloudflare/Google の 2 段になっている
 - [ ] `Ferry.Tests` に `WebSocketRelayTransport` の単体テストが追加されている
@@ -390,7 +390,7 @@ private const string RelayUrl = "wss://relay.ferry.nephilim.jp/ferry-relay";
 - [ ] Velopack 経由で新バージョン (v1.0.33 以降) が配信されている
 - [ ] 1 ヶ月後に VPS の `ferry-relay` コンテナ停止 + `coturn` コンテナ停止が完了
 - [ ] `1llum1n4t1.net` リポジトリの docker-compose.yml から `ferry-relay` と `coturn` サービス削除
-- [ ] `CLAUDE.md` の「サーバー接続情報」セクション更新 (`relay.ferry.nephilim.jp` を記載)
+- [ ] `CLAUDE.md` の「サーバー接続情報」セクション更新 (`watashiba.kagayoi.com` を記載)
 - [ ] `memory-bank/Ferry/activeContext.md` を更新
 
 ---
@@ -458,7 +458,7 @@ VPS は他のサービスでまだ使い続ける場合は VPS 自体は残る�
 
 ### 既存 Cloudflare リソース
 
-- Zone: `ferry.nephilim.jp` (Cloudflare 配下)
+- Zone: `ferry.kagayoi.com` (Cloudflare 配下)
 - R2 bucket: `ferry-updates` (Velopack 配信、 触らない)
 - Worker: 既存 landing page (`web/wrangler.toml`、 触らない)
 

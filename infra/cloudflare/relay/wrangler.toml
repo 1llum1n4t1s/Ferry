@@ -5,7 +5,7 @@ compatibility_date = "2026-05-26"
 # Workers Paid プラン必須 (Durable Objects 利用のため)。
 # Workers Paid $5/月は RealTimeTranslator と共有想定。Ferry のリレー DO 自体は無料枠で収まる試算。
 
-# workers.dev サブドメイン (ferry-relay.1llum1n4t1.workers.dev) と Preview URL を明示的に無効化。
+# workers.dev サブドメイン (ferry-relay.kagayoi.workers.dev) と Preview URL を明示的に無効化。
 # Custom Domain (watashiba.kagayoi.com) でのみ公開し、口を増やさない。
 workers_dev = false
 preview_urls = false

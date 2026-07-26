@@ -1,6 +1,6 @@
 name: Relay Healthcheck
 
-# rere レビュー #F-011: Cloudflare Workers Relay (https://relay.ferry.nephilim.jp)
+# rere レビュー #F-011: Cloudflare Workers Relay (https://watashiba.kagayoi.com)
 # の /health endpoint を 15 分間隔で polling する。失敗時に Issue を自動作成して
 # 「気付かないまま部分障害が続く」状態を防ぐ。
 # 「200 を返し続けるが機能不全」の部分障害も検出するため、将来的には実 WebSocket
@@ -25,7 +25,7 @@ jobs:
         id: probe
         run: |
           set +e
-          url="https://relay.ferry.nephilim.jp/health"
+          url="https://watashiba.kagayoi.com/health"
           status=$(curl --silent --max-time 30 --retry 3 --retry-delay 5 \
                        --output /dev/null --write-out "%{http_code}" \
                        "$url")
@@ -80,7 +80,7 @@ jobs:
             const body = `## 障害発生通知\n\n` +
               `- **時刻**: ${new Date().toISOString()}\n` +
               `- **HTTP ステータス**: ${status}\n` +
-              `- **対象**: https://relay.ferry.nephilim.jp/health\n\n` +
+              `- **対象**: https://watashiba.kagayoi.com/health\n\n` +
               `## 確認手順\n\n` +
               `1. Cloudflare ステータス: https://www.cloudflarestatus.com/\n` +
               `2. wrangler tail で実時間ログ確認:\n` +

@@ -134,7 +134,7 @@ jobs:
       - name: 配信確認 (全 channel の releases.<channel>.json HTTP 200 を検証)
         run: |
           set -euo pipefail
-          base="https://ferry.nephilim.jp"
+          base="https://ferry.kagayoi.com"
           for channel in win-x64 win-arm64 osx-arm64 linux-x64 linux-arm64; do
             url="${base}/releases.${channel}.json"
             curl --fail --silent --show-error --max-time 30 \
@@ -191,7 +191,7 @@ jobs:
           # クエリ付き URL で CDN キャッシュをバイパスし、取得失敗時は誤削除防止のため
           # cleanup を安全側で中止する (release-local.ps1 側の osx/linux keep 取り込みと対称)。
           for channel in win-x64 win-arm64; do
-            manifest_url="https://ferry.nephilim.jp/releases.${channel}.json?cb=$(date +%s)"
+            manifest_url="https://ferry.kagayoi.com/releases.${channel}.json?cb=$(date +%s)"
             if ! remote_json=$(curl --fail --silent --max-time 30 \
                  --retry 3 --retry-delay 5 --retry-all-errors "$manifest_url"); then
               echo "::error::releases.${channel}.json の取得に失敗しました。署名済み win nupkg の誤削除を防ぐため cleanup を中止します。"
