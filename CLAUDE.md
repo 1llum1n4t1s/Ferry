@@ -282,3 +282,12 @@ xUnit v3 + NSubstitute。テスト内の非同期メソッドには `TestContext
 ## 言語
 
 コード内コメント、コミットメッセージ、ユーザーへの応答はすべて **日本語** で行う。
+
+## ドメイン移行（2026-07 開始・期限 2027/05/31）
+
+屋号を **Kagayoi** に統一したため、配信ドメインを `nephilim.jp` から `kagayoi.com` へ移行中。方針の全体像はユーザーグローバルの `CLAUDE.md` §屋号とドメイン を参照する。
+
+- **旧ドメイン `nephilim.jp` はレジストラで廃止申請済みで 2027/05/31 に失効する**（延長しない）。それまでに出荷済みバイナリを新ドメインへ移行しきる。
+- 旧ホストの Worker route / custom domain は**期限まで消さない**。消すと出荷済みアプリの自動更新が止まる。
+- `nephilim.jp` の Redirect Rules は `/` だけを 301 する。`releases.*.json` / `*.nupkg` / `*-Setup.exe` は転送せず R2 が配信を続ける。
+- 配信は `ferry.kagayoi.com`（R2 `ferry-updates`）、リレーは `watashiba.kagayoi.com`（渡し場）。旧 `ferry.nephilim.jp` / `relay.ferry.nephilim.jp` は wrangler の route に併記して残してある。`App.axaml.cs` の `UpdateBaseUrl` と relay の URL を書き換えるときは、旧ホストの route を消さないこと。
