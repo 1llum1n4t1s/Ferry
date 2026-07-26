@@ -90,8 +90,20 @@ jobs:
         if: startsWith(matrix.runtime, 'osx-')
         run: |
           sed "s/FERRY_VERSION/${{ inputs.version }}/g" build/resources/app/App.plist > Info.plist
+      # rere レビュー #C-25/#F-10: vpk のバージョンが記録されていなかった。
+      # vpk は macOS の codesign / productsign / notarytool 実行と自動更新フィード生成を担うので、
+      # マイナー更新で nupkg / delta / releases.*.json の形式が変わると、その日以降の
+      # リリースだけ特定 OS で自動更新が失敗しうる。にもかかわらず「どの vpk がこの nupkg を
+      # 作ったか」がリリース成果物にも CI ログにも残っておらず、退行時に二分探索できなかった。
+      # ローカル署名リリース (scripts/release-local.ps1) は解決した版をログに出しているので、
+      # CI 側も最低限バージョンを記録してサマリに残し、対称にする。
       - name: Install Velopack CLI
-        run: dotnet tool install --global vpk
+        run: |
+          dotnet tool install --global vpk
+          vpk_version=$(vpk --version 2>&1 | head -1 || echo 'unknown')
+          echo "vpk version: $vpk_version"
+          echo "- \`${{ matrix.runtime }}\`: vpk $vpk_version" >> "$GITHUB_STEP_SUMMARY"
+        shell: bash
       - name: Create Velopack package (Linux)
         if: startsWith(matrix.runtime, 'linux-')
         run: >

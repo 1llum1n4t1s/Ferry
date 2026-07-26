@@ -71,7 +71,18 @@ public sealed class CloudflareSignaling : ISignalingService
         if (ifNoneMatch != null) req.Headers.TryAddWithoutValidation("If-None-Match", ifNoneMatch);
         if (jsonBody != null)
             req.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
-        return await _http.SendAsync(req, HttpCompletionOption.ResponseContentRead, ct);
+        var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseContentRead, ct);
+
+        // rere レビュー #C-08: サーバーがトークンを拒否した事実をクライアント状態へ反映する。
+        // 旧実装はレスポンスを一切見ずに返しており、401 は IsSevere でポーリング backoff に
+        // 分類されるだけでトークンの再取得契機にならなかった。SESSION_HMAC_SECRET を
+        // ローテーションすると「自クロック上は fresh」なトークンを持ち続け、全ルートが
+        // 401 のまま最大 50 分（refresh ループ周期）復旧しない。ここで破棄しておけば
+        // 次の EnsureTokenAsync が即座に再取得する。
+        if (resp.StatusCode == HttpStatusCode.Unauthorized)
+            _tokens.InvalidateToken();
+
+        return resp;
     }
 
     private static string Url(string path) => AppConstants.CfApiBaseUrl + path;
@@ -185,6 +196,13 @@ public sealed class CloudflareSignaling : ISignalingService
                 var token = await _tokens.GetCfTokenAsync();
                 using var ws = new ClientWebSocket();
                 ws.Options.SetRequestHeader("Authorization", "Bearer " + token);
+                // rere レビュー #C-23: inbox WS はクライアントから一切送信しない純受信ソケットなので、
+                // half-open を検出する手段が ReceiveAsync の例外しかない。KeepAlive を設定しないと
+                // NAT / 企業プロキシのアイドル切断で _inboxConnected が 1 のまま張り付き、
+                // listener が「WS 接続中」と誤認して安全網ポーリングの遅い方(15s)を選んでしまう
+                // （切断中の 3s より遅い＝最も検知が遅れる状態で固定される）。
+                ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
+                ws.Options.KeepAliveTimeout = TimeSpan.FromSeconds(20);
                 await ws.ConnectAsync(new Uri(AppConstants.CfInboxWsUrl), ct);
                 attempt = 0;
                 Volatile.Write(ref _inboxConnected, 1);
@@ -249,7 +267,7 @@ public sealed class CloudflareSignaling : ISignalingService
         if (e.CreatedAt < _pairingWatchStartedAtMs - 60_000) return;
 
         var isA = e.SidA == _sessionId;
-        Util.Logger.Log($"ペアリング検知(CF): {e.PairingId}");
+        Util.Logger.Log($"ペアリング検知(CF): {Util.Logger.MaskPairId(e.PairingId)}");
         PairingDetected?.Invoke(this, new PairingInfo
         {
             PairingId = e.PairingId,
@@ -324,7 +342,7 @@ public sealed class CloudflareSignaling : ISignalingService
 
     public async Task<string> WaitForEndpointAsync(string pairId, string fromDeviceId, CancellationToken ct = default)
     {
-        Util.Logger.Log($"外部エンドポイント待機開始(CF): pairId={pairId}, from={Util.Logger.MaskDeviceId(fromDeviceId)}");
+        Util.Logger.Log($"外部エンドポイント待機開始(CF): pairId={Util.Logger.MaskPairId(pairId)}, from={Util.Logger.MaskDeviceId(fromDeviceId)}");
         while (!ct.IsCancellationRequested)
         {
             try
@@ -551,7 +569,7 @@ public sealed class CloudflareSignaling : ISignalingService
                     var dto = JsonSerializer.Deserialize(await resp.Content.ReadAsStringAsync(ct), CfJsonContext.Default.TimedDataDto);
                     if (!string.IsNullOrEmpty(dto?.Data))
                     {
-                        Util.Logger.Log($"SDP 受信(CF, {label}): pairId={pairId}, ポーリング回数={pollCount}");
+                        Util.Logger.Log($"SDP 受信(CF, {label}): pairId={Util.Logger.MaskPairId(pairId)}, ポーリング回数={pollCount}");
                         return dto!.Data;
                     }
                 }

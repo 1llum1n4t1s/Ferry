@@ -77,12 +77,25 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// <summary>CF 使用量削減: 着信 listener のアイドルポーリング間隔（ms）。
     /// 接続ノック（relay Worker が offer/probe 書込時に inbox WS へ push する合図）が主検知経路で、
     /// このポーリングはノック欠落時の安全網。旧実装の常時 400ms ポーリングは 1 ペアあたり
-    /// ~20 万 req/日を relay Worker に流しており（2026-07 実測）、これを ~1.2 万 req/日へ落とす。</summary>
-    private const int IdleListenPollMs = 15_000;
+    /// ~20 万 req/日を relay Worker に流しており（2026-07 実測）、まず 15s へ落とした。
+    /// ⚠️ さらに 2026-07 の Durable Objects 使用量調査で、この安全網ポーリング自体が
+    /// PairDO リクエストの 89%（87.8 万 req/月・含有枠 100 万の 138% 到達）を占めていたため 120s へ延長した。
+    /// ノックは WS push（ms オーダー）なので、この値を延ばしても通常の着信検知は一切遅くならない。
+    /// 効くのは「WS が生きているつもりで実は死んでいた」場合の復帰時間だけで、そこは
+    /// InboxConnected=false 検知が <see cref="IdleListenPollNoInboxMs"/> 側へ倒すことで守られる。</summary>
+    private const int IdleListenPollMs = 120_000;
 
     /// <summary>CF 使用量削減: inbox WS 切断中（ノックが届かない）の安全網ポーリング間隔（ms）。
-    /// WS が使えない網（プロキシ等）でも着信検知が数秒で済むよう短めに保つ。</summary>
+    /// WS が使えない網（プロキシ等）でも着信検知が数秒で済むよう短めに保つ。
+    /// ここはノックが構造的に届かない状態なので、検知遅延と直結する = 延ばさない。</summary>
     private const int IdleListenPollNoInboxMs = 3_000;
+
+    /// <summary>CF 使用量削減: probe offer をノック無しで読み直す安全網の周回数。
+    /// probe offer の書き込みでも relay はノックを push する（signaling-routes.ts の
+    /// <c>action === 'offer' || action === 'probe-offer'</c>）ため、probe の読み取りはノック駆動で足りる。
+    /// ノック配送自体が失敗した probe を取りこぼさないよう、安全網タイムアウトがこの回数連続したときだけ
+    /// probe も読み直す（WS 接続中なら 120s × 5 = 最長 10 分に 1 回）。</summary>
+    private const int ProbeSafetyNetEveryNRounds = 5;
 
     /// <summary>着信接続ループが失敗（全経路失敗/タイムアウト/例外）した後、次の試行までの待機時間（ms）。</summary>
     private const int IncomingRetryDelayMs = 3_000;
@@ -618,7 +631,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     private async Task ListenForIncomingConnectionAsync(string peerId, CancellationToken ct)
     {
         var pairId = GeneratePairId(_deviceId, peerId);
-        Util.Logger.Log($"着信接続ポーリング開始: pairId={pairId}");
+        Util.Logger.Log($"着信接続ポーリング開始: pairId={Util.Logger.MaskPairId(pairId)}");
 
         // Stage 4: per-Session の Connecting 所有権を扱う。Session は StartListeningForConnection が
         // 既に GetOrAdd 済みなので TryGet で十分（呼び出し直後の race も無い）。
@@ -630,6 +643,12 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         // 旧 minProbeCreatedAt (cross-device clock 比較) は時計差で fresh offer を捨てる回帰を
         // 招いていたため撤去。per-nonce key + 本 HashSet のみで stale dedupe する。
         var processedProbeNonces = new System.Collections.Generic.HashSet<string>();
+
+        // CF 使用量削減 (2026-07): probe offer の読み取りをノック駆動にするための状態。
+        // 初回だけ true から始めて、listener 起動前に積まれていた probe を 1 度回収する。
+        var wokenByKnock = true;
+        // ノック無しの安全網タイムアウトが何周続いたか（ProbeSafetyNetEveryNRounds で probe を読み直す）。
+        var idleRoundsSinceProbeRead = 0;
 
         // この iteration で自分が SetState(Connecting) を立てて着信 offer を処理中かどうか。
         // キャンセル catch で State を復旧する条件に使う (ConnectToPeerAsync 側が立てた Connecting を
@@ -654,28 +673,43 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     continue;
                 }
 
-                // v1.0.38 review fix v14: per-nonce key 化により複数の同時 probe offer を全て処理。
-                // ReadProbeOffersAsync は probeOffers/<nonce>/ 配下を全部 OnceAsync で取得し、
-                // (nonce, sdp) のリストを返す。自分発 (From=self) と既処理 nonce はスキップ
-                var probeOffers = await pollingSignaling.ReadProbeOffersAsync(pairId, ct);
-                foreach (var (probeNonce, probeOfferJson) in probeOffers)
+                // CF 使用量削減 (2026-07): probe offer の読み取りはノック駆動にする。
+                // relay は offer / probe-offer のどちらの POST でも inbox WS へノックを push するので
+                // (signaling-routes.ts の action === 'offer' || action === 'probe-offer')、
+                // アイドル中に毎周 probe を読む必要はない。旧実装は 1 周で probe-offers + offer の
+                // 2 リクエストを PairDO へ投げており、これが Durable Objects リクエストの 89%
+                // (2026-07 実測 87.8 万 req/月) を占めて含有枠 100 万を超過させていた。
+                // ノック配送が失敗した probe を取りこぼさないため、安全網タイムアウトが
+                // ProbeSafetyNetEveryNRounds 回連続したときだけ読み直す。
+                if (wokenByKnock || idleRoundsSinceProbeRead >= ProbeSafetyNetEveryNRounds)
                 {
-                    if (processedProbeNonces.Contains(probeNonce)) continue;
-                    var probeOffer = DeserializeConnectionInfo(probeOfferJson);
-                    // rere #A1-001: probe も通常 offer と同様、送信元がペア相手であることを要求する
-                    if (probeOffer == null || probeOffer.From != peerId) continue;
-                    try
+                    // ノックは 1 周で消費する（次の周は安全網カウンタ側の判定に委ねる）
+                    wokenByKnock = false;
+                    idleRoundsSinceProbeRead = 0;
+
+                    // v1.0.38 review fix v14: per-nonce key 化により複数の同時 probe offer を全て処理。
+                    // ReadProbeOffersAsync は probeOffers/<nonce>/ 配下を全部 OnceAsync で取得し、
+                    // (nonce, sdp) のリストを返す。自分発 (From=self) と既処理 nonce はスキップ
+                    var probeOffers = await pollingSignaling.ReadProbeOffersAsync(pairId, ct);
+                    foreach (var (probeNonce, probeOfferJson) in probeOffers)
                     {
-                        await HandleProbeOfferAsync(probeOffer, pairId, probeNonce, ct);
-                        processedProbeNonces.Add(probeNonce);
+                        if (processedProbeNonces.Contains(probeNonce)) continue;
+                        var probeOffer = DeserializeConnectionInfo(probeOfferJson);
+                        // rere #A1-001: probe も通常 offer と同様、送信元がペア相手であることを要求する
+                        if (probeOffer == null || probeOffer.From != peerId) continue;
+                        try
+                        {
+                            await HandleProbeOfferAsync(probeOffer, pairId, probeNonce, ct);
+                            processedProbeNonces.Add(probeNonce);
+                        }
+                        catch (Exception ex)
+                        {
+                            Util.Logger.Log($"Probe offer 処理エラー (nonce={probeNonce}): {ex.Message}", Util.LogLevel.Warning);
+                        }
                     }
-                    catch (Exception ex)
-                    {
-                        Util.Logger.Log($"Probe offer 処理エラー (nonce={probeNonce}): {ex.Message}", Util.LogLevel.Warning);
-                    }
+                    // 過剰な memory 占有を避けるため、最大 100 nonce で打ち切り (5min cooldown と整合)
+                    if (processedProbeNonces.Count > 100) processedProbeNonces.Clear();
                 }
-                // 過剰な memory 占有を避けるため、最大 100 nonce で打ち切り (5min cooldown と整合)
-                if (processedProbeNonces.Count > 100) processedProbeNonces.Clear();
 
                 // CF 使用量削減: 旧実装は WaitForOfferAsync が 400ms 間隔で常時ポーリングし、アイドルでも
                 // 1 ペアあたり ~20 万 req/日を relay Worker に流していた（2026-07 実測）。着信検知の主経路は
@@ -688,7 +722,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     // ノックが来たら即時に次 iteration（probe + offer 再読み）。来なければ安全網間隔で再読み。
                     // inbox WS 切断中はノックが届かないため間隔を詰めて検知遅延を数秒に抑える。
                     var idleMs = (_knockWatcher?.InboxConnected ?? false) ? IdleListenPollMs : IdleListenPollNoInboxMs;
-                    await session.WaitForKnockAsync(idleMs, ct);
+                    // 戻り値 true = ノックで起きた / false = 安全網タイムアウト。
+                    // ノックで起きた周は probe も読み直し、タイムアウトの周は offer だけ読む（PairDO リクエスト半減）。
+                    wokenByKnock = await session.WaitForKnockAsync(idleMs, ct);
+                    if (!wokenByKnock) idleRoundsSinceProbeRead++;
                     continue;
                 }
 
@@ -716,14 +753,14 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 {
                     Util.Logger.Log(
                         offer.From == _deviceId
-                            ? $"自己 offer を無視: pairId={pairId}"
-                            : $"ペア相手以外からの offer を破棄: pairId={pairId}, from={Util.Logger.MaskDeviceId(offer.From)}",
+                            ? $"自己 offer を無視: pairId={Util.Logger.MaskPairId(pairId)}"
+                            : $"ペア相手以外からの offer を破棄: pairId={Util.Logger.MaskPairId(pairId)}, from={Util.Logger.MaskDeviceId(offer.From)}",
                         Util.LogLevel.Warning);
                     minCreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     continue;
                 }
 
-                Util.Logger.Log($"着信接続情報検知！ Answer 側として接続開始: pairId={pairId}, ips=[{string.Join(", ", offer.Ips.Select(Util.Logger.MaskIp))}], port={offer.Port}");
+                Util.Logger.Log($"着信接続情報検知！ Answer 側として接続開始: pairId={Util.Logger.MaskPairId(pairId)}, ips=[{string.Join(", ", offer.Ips.Select(Util.Logger.MaskIp))}], port={offer.Port}");
                 // Stage 4: per-Session の Connecting 所有権を立てる。単数 State は primary alias として追従。
                 session.ConnectingByListener = true;
                 session.State = PeerState.Connecting;
@@ -863,7 +900,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// </summary>
     private async Task HandleProbeOfferAsync(ConnectionInfo offer, string pairId, string nonce, CancellationToken ct)
     {
-        Util.Logger.Log($"Probe offer 受信: pairId={pairId}, nonce={nonce}, TCP 試行のみで応答");
+        Util.Logger.Log($"Probe offer 受信: pairId={Util.Logger.MaskPairId(pairId)}, nonce={nonce}, TCP 試行のみで応答");
         var probeSig = NewSignaling();
         var connected = false;
         // 複数ペア同時接続対応 Stage 1: probe transient は受信ルーティングしない (transport を
@@ -982,7 +1019,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     {
                         Util.Logger.Log(
                             $"role調停: ペア相手 ({Util.Logger.MaskDeviceId(peerId)}) が既に offer 済み → " +
-                            $"answerer に委譲し offer 送信を見送る (pairId={pairId})");
+                            $"answerer に委譲し offer 送信を見送る (pairId={Util.Logger.MaskPairId(pairId)})");
                         StartListeningForConnection(peerId);  // listener が peer の offer を answer し State=Connected へ
                         // rere PR#8 #F2: 通常経路は SetState(Connected) 後にのみ return するのに対し、旧コードは
                         // listener 起動直後に return していた。listener が確立に失敗すると呼び出し側は「成功」と誤認し、
@@ -1014,7 +1051,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                             return;
                         Util.Logger.Log(
                             $"role調停: 委譲先 listener が {RoleDeferListenTimeoutSeconds}s 以内に接続確立せず → " +
-                            $"通常 offerer 経路へフォールバック (pairId={pairId})", Util.LogLevel.Warning);
+                            $"通常 offerer 経路へフォールバック (pairId={Util.Logger.MaskPairId(pairId)})", Util.LogLevel.Warning);
                         // listener は上で停止・完了済み。以降の処理が offerer として再試行する。
                     }
                 }
@@ -2255,7 +2292,12 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 Util.Logger.Log($"暗号ハンドシェイク失敗（HMAC 不一致）→ 切断: peer={Util.Logger.MaskDeviceId(session.PeerId)}", Util.LogLevel.Error);
                 session.SecureTimeoutCts?.Cancel();
                 session.SecureReadyTcs?.TrySetException(new InvalidOperationException("ペア相互認証に失敗しました（HMAC 不一致）"));
-                _ = DisconnectAsync();
+                // rere レビュー #C-04: 引数なし DisconnectAsync() は全 session の transport を畳み、
+                // StopListeningForConnection() で全 listener まで止めてしまう。1 ピアの HMAC 不一致で
+                // 他ペアの進行中転送まで巻き添えにするうえ、攻撃者が 1 本の transport に不正 Confirm を
+                // 送るだけでその状態を意図的に作れる。per-peer オーバーロードへ寄せる
+                // （Stage 3c/4/5 で他の経路は既に per-peer 化済みで、ここだけ取り残されていた）。
+                _ = DisconnectAsync(session.PeerId);
                 break;
         }
     }

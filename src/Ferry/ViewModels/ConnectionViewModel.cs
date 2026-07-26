@@ -128,9 +128,16 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     public partial string PairFromCodeStatus { get; set; } = string.Empty;
 
-    /// <summary>コードペアリング結果メッセージの色 (success/error で切替)。</summary>
+    /// <summary>コードペアリングが成功したか（結果メッセージの色分け用）。
+    /// 色そのものではなく状態だけを公開し、配色は Theme.axaml の TextBlock.pair-status.success /
+    /// .error セレクタに委ねる。旧実装は VM が TryGetResource で IBrush を解決して公開していたため、
+    /// テーマ切替に追従せず、ViewModel が Avalonia.Media に依存していた。</summary>
     [ObservableProperty]
-    public partial Avalonia.Media.IBrush? PairFromCodeStatusBrush { get; set; }
+    public partial bool IsPairFromCodeSuccess { get; set; }
+
+    /// <summary>コードペアリングが失敗したか（結果メッセージの色分け用）。</summary>
+    [ObservableProperty]
+    public partial bool IsPairFromCodeError { get; set; }
 
     public ConnectionViewModel(
         IConnectionService connectionService,
@@ -151,6 +158,11 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         _connectionService.RouteChanged += OnRouteChanged;
         _connectionService.PairingCompleted += OnPairingCompleted;
         _connectionService.StatusMessageChanged += OnStatusMessageChanged;
+
+        // 経路バッジの文言は App.Text 由来の計算プロパティなので、ロケール切替では
+        // 変更通知が出ない。全ピアぶんをここでまとめて再通知する（PairedPeer 側で static
+        // イベントを購読するとピア削除時にリークするため、保持側の本 VM が肩代わりする）。
+        App.LocaleChanged += OnLocaleChanged;
 
         // 保存済みピアを読み込み + WentOnline 購読 (Online エッジで経路 Probe 発火用)
         foreach (var peer in _peerRegistry.GetPairedPeers())
@@ -338,6 +350,35 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         await StartSessionAsync();
     }
 
+    /// <summary>
+    /// ロケール切替時に、C# 側で App.Text から組み立てた文言をすべて再評価させる。
+    ///
+    /// rere レビュー #C-11: 旧実装は PairedPeer の経路バッジ 3 プロパティしか再通知しておらず、
+    /// 同じ画面の他の App.Text 由来文言が旧言語のまま残っていた。取りこぼしは 2 系統:
+    ///   1. PeerListSection.Label — BuildPeerProjection が投影時に文字列を焼き込む record。
+    ///      RebuildVisiblePeers の呼び出し元にロケール切替経路が無く、PeerResortTriggers にも
+    ///      経路バッジのプロパティは含まれないため、全ピアがオンラインのまま無転送だと
+    ///      サイドバー見出し（📌 ピン留め / オンライン / オフライン）が永久に旧言語だった。
+    ///   2. PairedPeer.ConnectionStatusText — App.Text の結果を保存する plain プロパティ。
+    ///      次に接続状態が変わるまで旧言語のまま残る。接続中でなければ空なので実害は
+    ///      「接続中に言語を切り替えた場合」に限られるが、機構としては不揃い。
+    /// AXAML の {DynamicResource} は辞書差し替えで自動追従するので対象外。
+    /// </summary>
+    private void OnLocaleChanged(object? sender, EventArgs e)
+    {
+        foreach (var peer in PairedPeers)
+        {
+            peer.RaiseLocalizedTextChanged();
+            // 保存済みの接続状態テキストは再計算できないので、空でなければクリアする。
+            // 次の状態変化で新しい言語の文言が入る（古い言語のまま残すより誤解が少ない）。
+            if (!string.IsNullOrEmpty(peer.ConnectionStatusText))
+                peer.ConnectionStatusText = string.Empty;
+        }
+
+        // セクション見出しは投影時に焼き込まれるので、投影自体をやり直す
+        RebuildVisiblePeers();
+    }
+
     /// <summary>ペアリングコードのクリップボード書き込み要求イベント (View 側で TopLevel.Clipboard 経由処理)。
     /// v1.0.38: 旧 CopyPairingLinkRequested から rename。値は PairingCode (= SessionId)。</summary>
     public event EventHandler<string>? CopyPairingCodeRequested;
@@ -370,23 +411,16 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     {
         if (string.IsNullOrWhiteSpace(PairFromCodeText)) return;
 
-        PairFromCodeStatus = "処理中…";
-        PairFromCodeStatusBrush = Avalonia.Application.Current is { } app
-            && app.TryGetResource("TextSecondaryBrush", app.ActualThemeVariant, out var pendingBrush)
-            && pendingBrush is Avalonia.Media.IBrush pb ? pb : null;
+        PairFromCodeStatus = App.Text("Connection.PairFromCode.Working");
+        IsPairFromCodeSuccess = false;
+        IsPairFromCodeError = false;
 
         try
         {
             var (success, message) = await _connectionService.PairFromCodeAsync(PairFromCodeText.Trim());
             PairFromCodeStatus = message;
-
-            var brushKey = success ? "GreenBrush" : "RedBrush";
-            if (Avalonia.Application.Current is { } a
-                && a.TryGetResource(brushKey, a.ActualThemeVariant, out var b)
-                && b is Avalonia.Media.IBrush ib)
-            {
-                PairFromCodeStatusBrush = ib;
-            }
+            IsPairFromCodeSuccess = success;
+            IsPairFromCodeError = !success;
 
             if (success)
             {
@@ -397,7 +431,9 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         catch (Exception ex)
         {
             Util.Logger.Log($"コードペアリング失敗: {ex.Message}", Util.LogLevel.Warning);
-            PairFromCodeStatus = $"エラー: {ex.Message}";
+            PairFromCodeStatus = App.Text("Connection.PairFromCode.Failed", ex.Message);
+            IsPairFromCodeSuccess = false;
+            IsPairFromCodeError = true;
         }
     }
 
@@ -1085,6 +1121,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         _connectionService.PairingCompleted -= OnPairingCompleted;
         _connectionService.StatusMessageChanged -= OnStatusMessageChanged;
         _peerRegistry.PeerRemoved -= OnPeerRemovedFromRegistry;
+        App.LocaleChanged -= OnLocaleChanged;  // static イベントなので解除しないと VM ごとリークする
         ClearQrCodeImage();
 
         // 全ピアの WentOnline 購読を解除

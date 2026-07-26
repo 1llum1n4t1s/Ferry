@@ -30,6 +30,11 @@ public sealed class CfTokenProvider : IDisposable
 
     private sealed record TokenState(string Token, long ExpiresAtMs);
     private volatile TokenState? _token;
+
+    /// <summary>rere レビュー #C-07: /auth/token が CLOCK_SKEW で返した serverTime から算出した補正値 (ms)。
+    /// PC の時計が NTP 未同期・CMOS 電池切れ・デュアルブートの RTC 問題等でずれていても、
+    /// 署名メッセージの ts をサーバー基準に寄せて認証を通す。</summary>
+    private long _serverTimeOffsetMs;
     private CancellationTokenSource? _refreshCts;
 
     /// <summary>/auth/token が 401 DEVICE_PUBKEY_MISMATCH を返した通知（clean slate UI 用）。</summary>
@@ -78,9 +83,32 @@ public sealed class CfTokenProvider : IDisposable
         finally { _signInSemaphore.Release(); }
     }
 
+    /// <summary>
+    /// rere レビュー #C-08: サーバーが 401 で拒否したトークンを破棄する。
+    ///
+    /// 旧実装は <see cref="IsFresh"/> が自クロックの有効期限だけを見ていたため、サーバー側が
+    /// トークンを拒否している事実がクライアントの状態遷移に一切反映されなかった。
+    /// SESSION_HMAC_SECRET をローテーションすると、稼働中クライアントは「fresh」なトークンを
+    /// 持ち続けて全ルートが 401 のまま最大 50 分（refresh ループ周期）復旧しなかった。
+    /// 401 を観測した呼び出し側がこれを呼ぶことで、次の EnsureTokenAsync が再取得に入る。
+    /// </summary>
+    public void InvalidateToken()
+    {
+        lock (_lock)
+        {
+            if (_token == null) return;
+            _token = null;
+        }
+        Util.Logger.Log("cfToken をサーバー拒否(401)により破棄 → 次回リクエストで再取得", Util.LogLevel.Warning);
+    }
+
     private async Task<(string Token, long ExpiresAtMs)> SignInOnceAsync(CancellationToken ct)
     {
-        var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        // rere レビュー #C-07: サーバーが CLOCK_SKEW とともに返す serverTime を反映する。
+        // PC の時計がずれていると /auth/token が 400 を返し続け、cfToken が取れず
+        // シグナリング・プレゼンス・ペアリング・リレーが全滅する（UI には専用の説明も出ない）。
+        // サーバーは正しい時刻を渡してくれているので、それを offset として保持して再署名する。
+        var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + Volatile.Read(ref _serverTimeOffsetMs);
         var pubKeySpki = _identity.PublicKeyBase64Url;
         var message = $"ferry-auth-v1|{_deviceId}|{pubKeySpki}|{ts}";
         var sig = PairCrypto.ToBase64Url(_identity.Sign(System.Text.Encoding.UTF8.GetBytes(message)));
@@ -100,6 +128,16 @@ public sealed class CfTokenProvider : IDisposable
                 IdentityLost?.Invoke(this, EventArgs.Empty);
                 throw new IdentityLostException(err.Message ?? "deviceId pubKey mismatch");
             }
+            // #C-07: CLOCK_SKEW ならサーバー時刻との差を記録して次回以降の署名を補正する。
+            // 補正しないと同じローカル時計で同じ ts を作り直すだけで、backoff 付きとはいえ永久に失敗する。
+            if (err?.Error == "CLOCK_SKEW" && err.ServerTime is { } serverTime && serverTime > 0)
+            {
+                var offset = serverTime - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                Volatile.Write(ref _serverTimeOffsetMs, offset);
+                Util.Logger.Log(
+                    $"CF Auth: PC の時計がサーバーと {offset} ms ずれています → 補正して再試行します",
+                    Util.LogLevel.Warning);
+            }
             throw new HttpRequestException($"/auth/token (cf) failed: {(int)resp.StatusCode} {err?.Error}: {err?.Message}");
         }
 
@@ -109,7 +147,8 @@ public sealed class CfTokenProvider : IDisposable
 
         var expiresInSec = body.ExpiresIn > 0 ? body.ExpiresIn : 3600;
         var expiresAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + expiresInSec * 1000L;
-        Util.Logger.Log($"CF Auth 認証成功 uid={_deviceId} (expiresIn={expiresInSec}s)");
+        // #C-17: 他 26 箇所は MaskDeviceId 済みなのにここだけ生の deviceId を Info で出していた
+        Util.Logger.Log($"CF Auth 認証成功 uid={Util.Logger.MaskDeviceId(_deviceId)} (expiresIn={expiresInSec}s)");
         return (body.CfToken!, expiresAtMs);
     }
 

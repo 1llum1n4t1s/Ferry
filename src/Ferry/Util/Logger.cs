@@ -256,6 +256,23 @@ public static class Logger
     }
 
     /// <summary>
+    /// rere レビュー #C-17: pairId (= "{deviceIdA}_{deviceIdB}" の素の連結) の専用マスキング。
+    ///
+    /// pairId は WebSocket リレー室 (/ferry-relay) の入室資格そのもので、かつ deviceId 2 個を
+    /// そのまま含む。旧実装は deviceId を MaskDeviceId で伏せながら pairId は Info レベル
+    /// (Release でも出力・7 日保持) で生のまま出しており、トレイの「ログフォルダを開く」導線で
+    /// ユーザーがログを共有すると第三者がリレー室へ横入りできる状態だった。
+    /// 両側を MaskDeviceId で伏せて識別性だけ残す。
+    /// </summary>
+    public static string MaskPairId(string? pairId)
+    {
+        if (string.IsNullOrEmpty(pairId)) return pairId ?? "";
+        var sep = pairId.IndexOf('_');
+        if (sep < 0) return MaskDeviceId(pairId);
+        return $"{MaskDeviceId(pairId[..sep])}_{MaskDeviceId(pairId[(sep + 1)..])}";
+    }
+
+    /// <summary>
     /// ログ出力用に IP アドレスの末尾を伏せる（PII 保護）。
     /// IPv4: "1.2.3.4" → "1.2.3.x"、"1.2.3.4:5678" → "1.2.3.x:5678"
     /// IPv6: "2403:3a00:202:1134:49:212:230:244" → "2403:3a00:202:1134:49:212:x:x"

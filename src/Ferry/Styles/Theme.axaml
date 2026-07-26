@@ -148,9 +148,8 @@
             <SolidColorBrush x:Key="PinkBrushSoft" Color="#35FF3D7F" />
             <SolidColorBrush x:Key="PinkBrushBorder" Color="#AAFF3D7F" />
 
-            <!-- === BORDERS (glow) / BADGE === -->
+            <!-- === BORDERS (glow) === -->
             <SolidColorBrush x:Key="BorderGlowBrush" Color="#5500F0FF" />
-            <SolidColorBrush x:Key="BadgeBrush" Color="#FF2D8A" />   <!-- 未読バッジはピンク -->
 
             <!-- === SIZES — ROG はやや角ばらせる (CornerRadius を引き締め) === -->
             <x:Double x:Key="SidebarWidth">220</x:Double>
@@ -292,56 +291,9 @@
         <Setter Property="Background" Value="#33FF2D8A" />
     </Style>
 
-    <!-- === Sidebar (左寄せ汎用) — 透過維持、CornerRadius 6 統一 === -->
-    <Style Selector="Button.sidebar">
-        <Setter Property="Background" Value="Transparent" />
-        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
-        <Setter Property="HorizontalAlignment" Value="Stretch" />
-        <Setter Property="HorizontalContentAlignment" Value="Left" />
-        <Setter Property="Padding" Value="14,8" />
-        <Setter Property="Cursor" Value="Hand" />
-        <Setter Property="CornerRadius" Value="6" />
-        <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="Effect" Value="{x:Null}" />
-    </Style>
-    <Style Selector="Button.sidebar /template/ ContentPresenter">
-        <Setter Property="Background" Value="Transparent" />
-        <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="CornerRadius" Value="6" />
-    </Style>
-    <Style Selector="Button.sidebar:pointerover">
-        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-    </Style>
-    <Style Selector="Button.sidebar:pointerover /template/ ContentPresenter">
-        <Setter Property="Background" Value="#22FF2D8A" />
-    </Style>
-
-    <!-- === Danger (ネオンレッド) — 意味的区別のため赤を維持、CornerRadius 6 統一 === -->
-    <Style Selector="Button.danger">
-        <Setter Property="Background" Value="Transparent" />
-        <Setter Property="Foreground" Value="{DynamicResource RedBrush}" />
-        <Setter Property="Padding" Value="10,5" />
-        <Setter Property="Cursor" Value="Hand" />
-        <Setter Property="CornerRadius" Value="6" />
-        <Setter Property="BorderBrush" Value="#55FF2D6A" />
-        <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="Effect" Value="{x:Null}" />
-    </Style>
-    <Style Selector="Button.danger /template/ ContentPresenter">
-        <Setter Property="Background" Value="Transparent" />
-        <Setter Property="BorderBrush" Value="#55FF2D6A" />
-        <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="6" />
-    </Style>
-    <Style Selector="Button.danger:pointerover">
-        <Setter Property="Foreground" Value="#FFFFFF" />
-        <Setter Property="Effect">
-            <DropShadowEffect Color="#FF2D6A" BlurRadius="14" Opacity="0.85" OffsetX="0" OffsetY="0" />
-        </Setter>
-    </Style>
-    <Style Selector="Button.danger:pointerover /template/ ContentPresenter">
-        <Setter Property="Background" Value="#33FF2D6A" />
-    </Style>
+    <!-- 旧 Button.sidebar / Button.danger は参照ゼロだったため削除
+         （左サイドバーの項目は Button.sidebarMenuItem、破壊的操作の確認は ConfirmWindow の
+           Button.pink が担当している）。 -->
 
     <!--
     ================================================================================
@@ -407,6 +359,35 @@
     <!-- セクション見出し行（📌ピン/🟢オンライン/⚪オフライン）。code-behind の OnPeerListContainerPrepared が
          DataContext=PeerListSection の ListBoxItem にこの class を付ける。ピア行のような padding/カーソル/枠を
          打ち消し、見出しらしく詰める（選択・hover 抑止は IsHitTestVisible/Focusable=false 側で成立）。 -->
+    <!-- 転送履歴リスト。仮想化目的で ListBox を使っているだけで選択状態は使わないため、
+         枠・背景・選択/hover ハイライトをすべて消して ItemsControl と同じ見た目に戻す。
+         行内のボタン（一時停止 / 再送 / 中止…）はタブ移動で拾えるよう、行コンテナ側だけ
+         フォーカスを外す。 -->
+    <Style Selector="ListBox.transferList">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox.transferList ListBoxItem">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="0" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Cursor" Value="Arrow" />
+    </Style>
+    <Style Selector="ListBox.transferList ListBoxItem /template/ ContentPresenter">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox.transferList ListBoxItem:selected /template/ ContentPresenter">
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBox.transferList ListBoxItem:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+
     <Style Selector="ListBox.peerList ListBoxItem.sectionHeader">
         <Setter Property="Padding" Value="2,0" />
         <Setter Property="Cursor" Value="Arrow" />
@@ -414,23 +395,7 @@
         <Setter Property="MinHeight" Value="0" />
     </Style>
 
-    <Style Selector="ListBox.messageList">
-        <Setter Property="Background" Value="Transparent" />
-        <Setter Property="BorderThickness" Value="0" />
-        <Setter Property="Padding" Value="0" />
-    </Style>
-    <Style Selector="ListBox.messageList ListBoxItem">
-        <Setter Property="Padding" Value="8,2" />
-    </Style>
-    <Style Selector="ListBox.messageList ListBoxItem /template/ ContentPresenter">
-        <Setter Property="Background" Value="Transparent" />
-    </Style>
-    <Style Selector="ListBox.messageList ListBoxItem:selected /template/ ContentPresenter">
-        <Setter Property="Background" Value="Transparent" />
-    </Style>
-    <Style Selector="ListBox.messageList ListBoxItem:pointerover /template/ ContentPresenter">
-        <Setter Property="Background" Value="Transparent" />
-    </Style>
+    <!-- 旧 ListBox.messageList はチャット機能撤去後に参照ゼロで残っていたため削除。 -->
 
     <!--
     ================================================================================
@@ -466,6 +431,19 @@
         <Setter Property="FontSize" Value="12" />
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
         <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <!-- コード貼付ペアリングの結果表示。ViewModel は成否 bool だけを公開し、
+         色は Classes.success / Classes.error のセレクタでここに閉じ込める
+         （旧実装は VM が IBrush を TryGetResource して公開しており、テーマ切替に追従しなかった）。 -->
+    <Style Selector="TextBlock.pair-status">
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    </Style>
+    <Style Selector="TextBlock.pair-status.success">
+        <Setter Property="Foreground" Value="{DynamicResource GreenBrush}" />
+    </Style>
+    <Style Selector="TextBlock.pair-status.error">
+        <Setter Property="Foreground" Value="{DynamicResource RedBrush}" />
     </Style>
 
     <!--
@@ -515,23 +493,8 @@
         </Setter>
     </Style>
 
-    <!--
-    ================================================================================
-    UNREAD BADGE — ネオンピンクで目立つ
-    ================================================================================
-    -->
-    <Style Selector="Border.badge">
-        <Setter Property="Background" Value="{DynamicResource BadgeBrush}" />
-        <Setter Property="CornerRadius" Value="10" />
-        <Setter Property="MinWidth" Value="20" />
-        <Setter Property="MinHeight" Value="20" />
-        <Setter Property="Padding" Value="4,2" />
-        <Setter Property="HorizontalAlignment" Value="Right" />
-        <Setter Property="VerticalAlignment" Value="Center" />
-        <Setter Property="Effect">
-            <DropShadowEffect Color="#FF2D8A" BlurRadius="10" Opacity="0.85" OffsetX="0" OffsetY="0" />
-        </Setter>
-    </Style>
+    <!-- 旧 Border.badge（未読バッジ）はチャット機能撤去後に参照ゼロで残っていたため削除。
+         進行中転送の件数バッジは Border.route-badge.transferring-badge が担当している。 -->
 
     <!--
     ================================================================================

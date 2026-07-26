@@ -120,9 +120,9 @@ public sealed partial class PairedPeer : ObservableObject
     [JsonIgnore]
     public string RouteText => Route switch
     {
-        ConnectionRoute.Direct => "🟢 LAN 直接",
-        ConnectionRoute.StunAssisted => "🟡 P2P（STUN）",
-        ConnectionRoute.Relay => "🔴 リレー（TURN）",
+        ConnectionRoute.Direct => "🟢 " + App.Text("Route.Lan.Label"),
+        ConnectionRoute.StunAssisted => "🟡 " + App.Text("Route.P2p.Label"),
+        ConnectionRoute.Relay => "🔴 " + App.Text("Route.Relay.Label"),
         _ => string.Empty,
     };
 
@@ -162,20 +162,31 @@ public sealed partial class PairedPeer : ObservableObject
     [JsonIgnore]
     public string RouteBadgeLabel => Route switch
     {
-        ConnectionRoute.Direct => "LAN",
-        ConnectionRoute.StunAssisted => "P2P",
-        ConnectionRoute.Relay => "RELAY",
-        _ => "状態取得中",
+        ConnectionRoute.Direct => App.Text("Route.Lan.Badge"),
+        ConnectionRoute.StunAssisted => App.Text("Route.P2p.Badge"),
+        ConnectionRoute.Relay => App.Text("Route.Relay.Badge"),
+        _ => App.Text("Route.Unknown.Badge"),
     };
 
     /// <summary>ツールチップ用の詳細説明。</summary>
     [JsonIgnore]
     public string RouteBadgeTooltip => Route switch
     {
-        ConnectionRoute.Direct => "LAN 直接接続（TCP）— 最速・最高帯域",
-        ConnectionRoute.StunAssisted => "P2P 直接接続（UDP ホールパンチ + STUN）— インターネット越え",
-        ConnectionRoute.Relay => "サーバー経由リレー（TURN/WebSocket）— ファイアウォール越え",
-        _ => "接続経路を確認中…",
+        ConnectionRoute.Direct => App.Text("Route.Lan.Tooltip"),
+        ConnectionRoute.StunAssisted => App.Text("Route.P2p.Tooltip"),
+        ConnectionRoute.Relay => App.Text("Route.Relay.Tooltip"),
+        _ => App.Text("Route.Unknown.Tooltip"),
     };
 
+    /// <summary>
+    /// ロケール切替後に、<see cref="App.Text"/> 由来の計算プロパティを再評価させる。
+    /// 保持側（ConnectionViewModel）が <see cref="App.LocaleChanged"/> を購読して全ピアに対して呼ぶ。
+    /// 個々の PairedPeer が static イベントを直接購読するとピア削除時にリークするため、この形にしている。
+    /// </summary>
+    public void RaiseLocalizedTextChanged()
+    {
+        OnPropertyChanged(nameof(RouteText));
+        OnPropertyChanged(nameof(RouteBadgeLabel));
+        OnPropertyChanged(nameof(RouteBadgeTooltip));
+    }
 }

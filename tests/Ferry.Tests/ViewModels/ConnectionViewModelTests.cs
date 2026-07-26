@@ -480,7 +480,8 @@ public class ConnectionViewModelTests : IDisposable
         vm.SelectedPeer = peer;
 
         // オンデマンド接続を明示的に呼び出す
-        await Assert.ThrowsAsync<Exception>(() => vm.ConnectToSelectedPeerAsync());
+        await Assert.ThrowsAsync<Exception>(
+            () => vm.ConnectToSelectedPeerAsync(TestContext.Current.CancellationToken));
 
         Assert.Equal(string.Empty, peer.ConnectionStatusText);
         Assert.Equal(PeerState.Disconnected, vm.ConnectionState);

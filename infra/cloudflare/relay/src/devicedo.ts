@@ -21,6 +21,11 @@ import { readJsonObject } from './http';
 const INBOX_TTL_MS = 60 * 60 * 1000; // 1h
 const INBOX_MAX = 50;
 
+/** rere レビュー #A2-09: presence に格納する自己申告文字列の上限。
+ *  /auth/token の pubKeySpki (256 文字) と同じ思想で、格納側で長さを有界にする。 */
+const MAX_DISPLAY_NAME_LEN = 128;
+const MAX_VERSION_LEN = 32;
+
 interface Presence {
   lastSeen: number;
   displayName: string;
@@ -62,6 +67,9 @@ export class DeviceDO {
           return json(400, { error: 'BAD_ACTION', action });
       }
     } catch (e) {
+      // rere レビュー #C-13: PairDO と同じく、例外の実体をレスポンスボディにしか
+      // 載せていなかったのでサーバ側に痕跡が残らなかった。構造化して残す。
+      console.error('DeviceDO error', JSON.stringify({ action, method, error: String(e) }));
       return json(500, { error: 'DO_ERROR', message: String(e) });
     }
   }
@@ -72,10 +80,16 @@ export class DeviceDO {
     const parsed = await readJsonObject(req);
     if ('error' in parsed) return parsed.error;
     const body = parsed.value;
+    // rere レビュー #A2-09: displayName / version は typeof チェックだけで長さ制限が無く、
+    // 認証済みデバイスが巨大文字列を格納して DO 容量を食い、ピア側はそれを presence 経由で
+    // 受け取って peers.json へ永続化・UI 描画していた。/auth/token の pubKeySpki が 256 文字
+    // 上限を持つのと揃えて、格納側でも上限を掛ける（超過分は切り詰め＝既存の成功契約は保つ）。
+    const clamp = (v: unknown, max: number): string =>
+      typeof v === 'string' ? v.slice(0, max) : '';
     const p: Presence = {
       lastSeen: Date.now(), // server now (クライアント時計に依存しない)
-      displayName: typeof body.displayName === 'string' ? body.displayName : '',
-      version: typeof body.version === 'string' ? body.version : '',
+      displayName: clamp(body.displayName, MAX_DISPLAY_NAME_LEN),
+      version: clamp(body.version, MAX_VERSION_LEN),
     };
     await this.state.storage.put('presence', p);
     return json(200, { ok: true, lastSeen: p.lastSeen });

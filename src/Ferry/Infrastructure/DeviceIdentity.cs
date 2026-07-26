@@ -154,9 +154,11 @@ public sealed class DeviceIdentity : IDisposable
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
             var pkcs8 = ec.ExportPkcs8PrivateKey();
             // 部分書き込みで壊れた鍵を残さないよう tmp→Move でアトミックに保存する。
-            var tmp = path + ".tmp";
-            File.WriteAllBytes(tmp, pkcs8);
-            File.Move(tmp, path, overwrite: true);
+            // rere レビュー #C-18: これは PKCS#8 秘密鍵そのもの（漏れると deviceId を
+            // なりすませる）なので、POSIX では所有者のみ読み書き可（0600）に絞る。
+            // 固定名 .tmp は AtomicFile の GUID 付き一時名と違い前回クラッシュの残骸と
+            // 衝突しうるので、そちらへ寄せて実装も一本化する。
+            Util.AtomicFile.Write(path, pkcs8);
         }
         catch (Exception ex)
         {

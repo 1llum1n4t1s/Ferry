@@ -317,6 +317,16 @@ public sealed class UdpHolePunchTransport : ITransport
 
                 var type = packet[0];
 
+                // rere レビュー #C-02: DATA / ACK は確立済みセッションの中身を動かすので、
+                // 送信元が確立相手であることを必ず確認する（旧実装は HandleData / HandleAck に
+                // 送信元を渡してすらおらず、任意の第三者が偽装パケットを注入できた）。
+                // PUNCH / PUNCH_ACK は穴あけの性質上あらゆる送信元から来るので各ハンドラ側で判定する。
+                if ((type == PktData || type == PktAck)
+                    && (!IsConnected || !result.RemoteEndPoint.Equals(_remoteEp)))
+                {
+                    continue;
+                }
+
                 switch (type)
                 {
                     case PktPunch:
@@ -420,7 +430,17 @@ public sealed class UdpHolePunchTransport : ITransport
         // 相手の PUNCH に PUNCH_ACK を返すのは無条件。これが相手側の双方向確認(相手の HandlePunchAck)を
         // 成立させる。ここに IsConnected ゲートを足すと、片側が先に確立して PUNCH 送信を止めた後に
         // 相手の PUNCH へ ACK を返さなくなり相互収束しない＝デッドロックするので絶対に足さない。
-        _remoteEp = from;
+        //
+        // ⚠ ただし ACK の返送先を `from` にするのと、送信先 `_remoteEp` を書き換えるのは別物。
+        // rere レビュー #C-02: 旧実装は確立後でも無条件に `_remoteEp = from` していたため、
+        // 転送中のローカル UDP ポートへ 5 バイトの PUNCH を 1 通投げるだけで以降の全チャンク・
+        // 再送・ACK の宛先が攻撃者側へ移る（正規ピアには 1 バイトも届かない）転送ハイジャックが
+        // 成立した。確立後はエンドポイントを固定し、ACK だけを要求元へ返す。
+        if (!IsConnected)
+            _remoteEp = from;
+        else if (!from.Equals(_remoteEp))
+            Util.Logger.Log($"確立済み UDP セッションに別エンドポイントから PUNCH: {Util.Logger.MaskIp(from.Address.ToString())} → 宛先は据え置き", Util.LogLevel.Warning);
+
         SendHeaderOnlyPacketFireAndForget(PktPunchAck, 0, from);
 
         // ⚠ ここでは確立しない。相手の PUNCH 受信は「相手→こちら」方向の開通確認に過ぎず、
@@ -435,8 +455,15 @@ public sealed class UdpHolePunchTransport : ITransport
     {
         // PUNCH_ACK 受信 = 自分の PUNCH が相手 NAT を通って届き、相手が ACK を返した
         // = 「こちら→相手」方向の開通確認。ここで初めて双方向開通とみなして確立する。
+        // #C-02: HandlePunch と同じ理由で、確立後のエンドポイント差し替えは受け付けない。
+        if (IsConnected)
+        {
+            if (!from.Equals(_remoteEp))
+                Util.Logger.Log($"確立済み UDP セッションに別エンドポイントから PUNCH_ACK: {Util.Logger.MaskIp(from.Address.ToString())} → 無視", Util.LogLevel.Warning);
+            return;
+        }
+
         _remoteEp = from;
-        if (!IsConnected)
         {
             Util.Logger.Log($"UDP PUNCH_ACK 受信: {Util.Logger.MaskIp(from.Address.ToString())}:{from.Port} → 接続確立（双方向開通確認）");
             SetConnected();

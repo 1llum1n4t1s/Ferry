@@ -56,13 +56,20 @@
             </Grid>
         </Border>
 
-        <!-- 転送リスト（選択中ピア分のみ） -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <Panel>
-                <ItemsControl ItemsSource="{Binding VisibleTransfers}"
-                              IsVisible="{Binding HasTransfers}"
-                              Margin="8">
-                    <ItemsControl.ItemTemplate>
+        <!-- 転送リスト（選択中ピア分のみ）。
+             履歴は件数が青天井なので仮想化必須。旧実装は ScrollViewer > ItemsControl で、
+             ItemsControl の既定パネルは非仮想化 StackPanel のため全行のビジュアルと
+             各行の MarqueeTextBlock が生き続けていた（ItemsPanel に VirtualizingStackPanel を
+             指定しても、外側 ScrollViewer 構成ではビューポートが伝わらず仮想化されない）。
+             ListBox は既定で VirtualizingStackPanel + 自前 ScrollViewer を持つので、
+             宛先リスト（Classes="peerList"）と同じ手当てで仮想化できる。
+             選択状態は使わないので Classes="transferList" 側で選択・hover の見た目を消している。 -->
+        <Panel Grid.Row="1">
+                <ListBox Classes="transferList"
+                         ItemsSource="{Binding VisibleTransfers}"
+                         IsVisible="{Binding HasTransfers}"
+                         Margin="8">
+                    <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="m:TransferItem">
                             <Border Background="{DynamicResource SurfaceVariantBrush}"
                                     CornerRadius="8" Padding="12,10" Margin="0,4">
@@ -209,8 +216,8 @@
                                 </Grid>
                             </Border>
                         </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                    </ListBox.ItemTemplate>
+                </ListBox>
 
                 <!-- 転送履歴が空の場合 -->
                 <StackPanel IsVisible="{Binding !HasTransfers}"
@@ -225,8 +232,7 @@
                                Foreground="{DynamicResource TextTertiaryBrush}"
                                HorizontalAlignment="Center" />
                 </StackPanel>
-            </Panel>
-        </ScrollViewer>
+        </Panel>
 
         <!-- 承認待ちパネル -->
         <Border Grid.Row="2" IsVisible="{Binding HasPendingApproval}"

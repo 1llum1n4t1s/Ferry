@@ -47,8 +47,8 @@ public partial class MainWindow : Window
 
     // イベント重複登録防止用: 前回購読した ViewModel の参照を保持
     private ConnectionViewModel? _subscribedConnectionVm;
-    private MainWindowViewModel? _subscribedMainVm;
     private SettingsViewModel? _subscribedSettingsVm;
+    private TransferViewModel? _subscribedTransferVm;
 
     public MainWindow()
     {
@@ -145,13 +145,13 @@ public partial class MainWindow : Window
             _subscribedConnectionVm.PropertyChanged -= OnConnectionVmPropertyChanged;
             _subscribedConnectionVm.CopyPairingCodeRequested -= OnCopyPairingCodeRequested;
         }
-        if (_subscribedMainVm != null)
-        {
-            _subscribedMainVm.PropertyChanged -= OnMainVmPropertyChangedForEmptyView;
-        }
         if (_subscribedSettingsVm != null)
         {
             _subscribedSettingsVm.BrowseSaveDirectoryRequested -= OnBrowseSaveDirectoryRequested;
+        }
+        if (_subscribedTransferVm != null)
+        {
+            _subscribedTransferVm.BrowseFilesRequested -= OnBrowseFilesRequested;
         }
 
         // SelectedPeer 変更 → ピア名更新
@@ -165,10 +165,6 @@ public partial class MainWindow : Window
             UpdatePresenceForeground();
         }
 
-        // IsSettingsMode 変更時の空ビュー更新（名前付きメソッドで一度だけ登録）
-        _mainVm.PropertyChanged += OnMainVmPropertyChangedForEmptyView;
-        _subscribedMainVm = _mainVm;
-
         // 保存先アドレスバーの「変更」ボタン → フォルダ選択ダイアログ（v1.0.47: 設定画面から移設したので View 側はここで処理）
         if (_mainVm.Settings != null)
         {
@@ -176,42 +172,25 @@ public partial class MainWindow : Window
             _subscribedSettingsVm = _mainVm.Settings;
         }
 
-        // 空ビューの表示制御を更新
-        UpdateEmptyViewVisibility();
+        // 「ファイル送信」ボタン → ファイル選択ダイアログ（保存先ピッカーと同じく View 側で開く）
+        if (TransferVm != null)
+        {
+            TransferVm.BrowseFilesRequested += OnBrowseFilesRequested;
+            _subscribedTransferVm = TransferVm;
+        }
     }
 
     private void OnConnectionVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(ConnectionViewModel.SelectedPeer))
         {
-            var peer = ConnectionVm?.SelectedPeer;
-            if (peer != null && _mainVm != null)
+            // 宛先を選んだら設定タブ・ペアリング追加タブを解除（同一タブグループの排他選択）。
+            // 空ビューの表示は AXAML の MultiBinding が担うのでここでは触らない。
+            if (ConnectionVm?.SelectedPeer != null && _mainVm != null)
             {
-                // 宛先を選んだら設定タブ・ペアリング追加タブを解除（同一タブグループの排他選択）
                 _mainVm.IsSettingsMode = false;
                 _mainVm.IsAddPeerMode = false;
             }
-            UpdateEmptyViewVisibility();
-        }
-    }
-
-    private void UpdateEmptyViewVisibility()
-    {
-        var emptyView = this.FindControl<Border>("EmptyView");
-        if (emptyView != null && _mainVm != null)
-        {
-            emptyView.IsVisible = !_mainVm.IsSettingsMode && !_mainVm.IsAddPeerMode
-                                  && ConnectionVm?.SelectedPeer == null;
-        }
-    }
-
-    /// <summary>設定 / ペアリング追加タブ切替時に空ビューの表示を更新する（重複登録防止のため名前付きメソッド化）。</summary>
-    private void OnMainVmPropertyChangedForEmptyView(object? sender, PropertyChangedEventArgs pe)
-    {
-        if (pe.PropertyName == nameof(MainWindowViewModel.IsSettingsMode)
-            || pe.PropertyName == nameof(MainWindowViewModel.IsAddPeerMode))
-        {
-            UpdateEmptyViewVisibility();
         }
     }
 
@@ -491,6 +470,44 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             Ferry.Util.Logger.Log($"保存先選択でエラー: {ex.Message}", Ferry.Util.LogLevel.Warning);
+        }
+    }
+
+    /// <summary>
+    /// 転送タブの「ファイル送信」ボタン → ファイル選択ダイアログ。
+    /// TransferViewModel.BrowseFilesRequested を受けて TopLevel 経由でピッカーを開き、
+    /// 選択結果を SendFilesCommand へ返す（MVVM 規約遵守: VM は StorageProvider に依存しない）。
+    /// </summary>
+    private async void OnBrowseFilesRequested(object? sender, EventArgs e)
+    {
+        try
+        {
+            var topLevel = TopLevel.GetTopLevel(this);
+            // await を挟むので await 前にローカルへ束縛する（DataContext 切替に影響されないようにする）
+            if (topLevel == null || TransferVm is not { } tvm) return;
+
+            var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                AllowMultiple = true,
+                Title = App.Text("Transfer.SelectFiles"),
+            });
+
+            var paths = files
+                .Select(f => f.TryGetLocalPath())
+                .Where(p => !string.IsNullOrEmpty(p))
+                .ToArray();
+
+            if (paths.Length > 0)
+                await tvm.SendFilesCommand.ExecuteAsync(paths!);
+        }
+        catch (Exception ex)
+        {
+            Ferry.Util.Logger.Log($"送信ファイル選択でエラー: {ex.Message}", Ferry.Util.LogLevel.Warning);
+        }
+        finally
+        {
+            // #C-34: 成功・キャンセル・例外いずれの場合もボタンを必ず復帰させる
+            TransferVm?.NotifyBrowseFinished();
         }
     }
 

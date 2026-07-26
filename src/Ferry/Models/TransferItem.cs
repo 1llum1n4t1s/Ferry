@@ -66,7 +66,6 @@ public sealed partial class TransferItem : ObservableObject
     /// <summary>転送状態。</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StateText))]
-    [NotifyPropertyChangedFor(nameof(StateColorHex))]
     [NotifyPropertyChangedFor(nameof(IsInProgress))]
     [NotifyPropertyChangedFor(nameof(IsWaitingApproval))]
     [NotifyPropertyChangedFor(nameof(DisplayInfo))]
@@ -170,16 +169,21 @@ public sealed partial class TransferItem : ObservableObject
     /// <summary>方向アイコン。</summary>
     public string DirectionSymbol => Direction == TransferDirection.Send ? "↑" : "↓";
 
-    /// <summary>状態表示色（Avalonia の Color 型ではなくテーマリソースのキー的な hex を返す）。</summary>
-    public string StateColorHex => State switch
+    // 旧 StateColorHex は AXAML から参照ゼロ、かつ旧 Tahoe 配色の hex 直書きで
+    // テーマリソース（ROG NEON / Light）に追従しない死蔵プロパティだったため削除。
+    // 状態ごとの色分けが必要になったら Classes セレクタで Theme.axaml 側に持たせること。
+
+    /// <summary>
+    /// rere レビュー #C-11: ロケール切替後に App.Text 由来の計算プロパティを再評価させる。
+    /// 保持側（TransferViewModel）が App.LocaleChanged を購読して全項目に対して呼ぶ
+    /// （PairedPeer.RaiseLocalizedTextChanged と同じ方式。短命モデルが static イベントを
+    ///   直接購読するとリークするため、保持側が肩代わりする）。
+    /// </summary>
+    public void RaiseLocalizedTextChanged()
     {
-        TransferState.Completed => "#30D158",   // TahoeGreen
-        TransferState.Error => "#FF453A",       // TahoeRed
-        TransferState.InProgress => "#007AFF",  // TahoeAccent
-        TransferState.WaitingApproval => "#FF9F0A", // TahoeOrange
-        TransferState.Paused => "#FF9F0A",      // TahoeOrange（停止中）
-        _ => "#99EBEBF5",                       // TahoeTextSecondary
-    };
+        OnPropertyChanged(nameof(StateText));
+        OnPropertyChanged(nameof(DisplayInfo));
+    }
 
     /// <summary>状態表示テキスト。</summary>
     public string StateText => State switch

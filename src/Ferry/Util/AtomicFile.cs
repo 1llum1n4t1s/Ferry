@@ -24,6 +24,7 @@ public static class AtomicFile
         try
         {
             File.WriteAllBytes(tmp, data);
+            RestrictToOwner(tmp);
             File.Move(tmp, path, overwrite: true);
         }
         finally
@@ -39,11 +40,37 @@ public static class AtomicFile
         try
         {
             await File.WriteAllBytesAsync(tmp, data);
+            RestrictToOwner(tmp);
             File.Move(tmp, path, overwrite: true);
         }
         finally
         {
             TryCleanup(tmp);
+        }
+    }
+
+    /// <summary>
+    /// rere レビュー #C-18: POSIX で所有者のみ読み書き可（0600）にする。
+    ///
+    /// peers.json は <c>PairedPeer.PairSecret</c>（ECDH ルート鍵の base64）を平文で持ち、
+    /// settings.json は DeviceId を持つ。既定 umask 022 のままだと 0644 になり、
+    /// 同一マシンの他ローカルユーザーが全ペアのセッション鍵を読めてしまう。
+    /// Ferry は mac / Linux も配信対象なので、書き込み側で明示的に絞る。
+    /// Windows は <c>%APPDATA%</c> の既定 ACL がユーザー限定なので no-op（API も無効）。
+    /// リネーム前の tmp に適用することで、本体ファイルが緩い権限で存在する瞬間を作らない。
+    /// </summary>
+    internal static void RestrictToOwner(string path)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        try
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+        catch (Exception ex)
+        {
+            // ファイルシステムが POSIX パーミッションを持たない（exFAT 等）ケースは無視する。
+            // 保存自体を失敗させる価値は無いが、緩い権限で置かれた事実は残す。
+            Logger.Log($"ファイル権限の制限に失敗（0600 未適用）: {ex.Message}", LogLevel.Warning);
         }
     }
 

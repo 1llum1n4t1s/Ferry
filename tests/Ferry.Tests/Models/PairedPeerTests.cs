@@ -28,16 +28,48 @@ public class PairedPeerTests
         Assert.Equal(string.Empty, peer.ConnectionStatusText);
     }
 
+    // 経路文言はロケール辞書 (Text.Route.*) 経由になったため、期待値は「絵文字プレフィクス +
+    // 経路ごとのリソースキー」で表す。Avalonia の Application が存在しないユニットテストでは
+    // App.Text がキー名そのものを返す契約なので、これで「どの経路にどのキーを引いているか」
+    // という本来の検証対象（マッピングの取り違え）をそのまま守れる。
     [Theory]
-    [InlineData(ConnectionRoute.Direct, "🟢 LAN 直接")]
-    [InlineData(ConnectionRoute.StunAssisted, "🟡 P2P（STUN）")]
-    [InlineData(ConnectionRoute.Relay, "🔴 リレー（TURN）")]
+    [InlineData(ConnectionRoute.Direct, "🟢 Text.Route.Lan.Label")]
+    [InlineData(ConnectionRoute.StunAssisted, "🟡 Text.Route.P2p.Label")]
+    [InlineData(ConnectionRoute.Relay, "🔴 Text.Route.Relay.Label")]
     [InlineData(ConnectionRoute.Unknown, "")]
     public void RouteTextが全enum値に対して正しい文字列を返すこと(ConnectionRoute route, string expected)
     {
         var peer = CreatePeer();
         peer.Route = route;
         Assert.Equal(expected, peer.RouteText);
+    }
+
+    [Theory]
+    [InlineData(ConnectionRoute.Direct, "Text.Route.Lan.Badge", "Text.Route.Lan.Tooltip")]
+    [InlineData(ConnectionRoute.StunAssisted, "Text.Route.P2p.Badge", "Text.Route.P2p.Tooltip")]
+    [InlineData(ConnectionRoute.Relay, "Text.Route.Relay.Badge", "Text.Route.Relay.Tooltip")]
+    [InlineData(ConnectionRoute.Unknown, "Text.Route.Unknown.Badge", "Text.Route.Unknown.Tooltip")]
+    public void 経路バッジのラベルとツールチップがロケールキー経由で解決されること(
+        ConnectionRoute route, string expectedLabel, string expectedTooltip)
+    {
+        var peer = CreatePeer();
+        peer.Route = route;
+        Assert.Equal(expectedLabel, peer.RouteBadgeLabel);
+        Assert.Equal(expectedTooltip, peer.RouteBadgeTooltip);
+    }
+
+    [Fact]
+    public void RaiseLocalizedTextChangedで経路文言の再評価が通知されること()
+    {
+        var peer = CreatePeer();
+        var changed = new List<string>();
+        peer.PropertyChanged += (_, e) => changed.Add(e.PropertyName!);
+
+        peer.RaiseLocalizedTextChanged();
+
+        Assert.Contains(nameof(PairedPeer.RouteText), changed);
+        Assert.Contains(nameof(PairedPeer.RouteBadgeLabel), changed);
+        Assert.Contains(nameof(PairedPeer.RouteBadgeTooltip), changed);
     }
 
     [Fact]

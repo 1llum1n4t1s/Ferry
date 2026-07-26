@@ -54,8 +54,40 @@ export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
 
-    // ヘルスチェック (curl https://watashiba.kagayoi.com/health で疎通確認)
+    // ヘルスチェック (curl https://watashiba.kagayoi.com/health で疎通確認)。
+    //
+    // rere レビュー #C-12: 旧実装は binding に一切触れず無条件 200 を返していたため、
+    // 「Worker が起動して route が生きている」ことしか検査できていなかった。
+    // これだと 2026-06-23 の事故 (本番が旧コードのまま /auth/token を 426 で弾き続けた) が
+    // そのまま再現しても 15 分 cron は 24h グリーンのままで、SESSION_HMAC_SECRET 消失・
+    // D1 バインディング喪失・KV 喪失のいずれも検知できない。
+    // 依存の実在と疎通を実際に確かめてから 200 を返す (失敗した依存名だけを返し、
+    // 例外メッセージは外に出さない)。
     if (url.pathname === '/health') {
+      const failed: string[] = [];
+      if (!env.SESSION_HMAC_SECRET) failed.push('SESSION_HMAC_SECRET');
+      if (!env.SALT) failed.push('SALT');
+      try {
+        // 最小コストの実クエリ。テーブル定義が壊れていれば例外になる。
+        await env.DB.prepare('SELECT 1').first();
+      } catch (e) {
+        console.error('health: D1 failed', String(e));
+        failed.push('D1');
+      }
+      try {
+        // 読み取りのみ。未登録キーの null は正常 (バインディング喪失なら例外)。
+        await env.DEVICE_KEY_BINDING.get('health-probe');
+      } catch (e) {
+        console.error('health: KV failed', String(e));
+        failed.push('KV');
+      }
+      if (failed.length > 0) {
+        console.error('health: degraded', JSON.stringify({ failed }));
+        return new Response(JSON.stringify({ ok: false, failed }), {
+          status: 503,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
       return new Response('OK', { status: 200 });
     }
 

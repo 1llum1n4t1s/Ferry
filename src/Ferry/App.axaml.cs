@@ -105,6 +105,11 @@ public partial class App : Application
         // "Ferry" を入れることで .app 起動 / dotnet run のどちらでもメニューバーが Ferry になる。
         Name = "Ferry";
         AvaloniaXamlLoader.Load(this);
+#if DEBUG
+        // AvaloniaUI.DeveloperTools（グローバルツール）へ接続する。
+        // 旧 Avalonia.Diagnostics の AttachDevTools 相当。Release には含めない。
+        this.AttachDeveloperTools();
+#endif
     }
 
     [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Reflection used by Avalonia data validation plugins and ViewLocator")]
@@ -555,7 +560,18 @@ public partial class App : Application
         // から呼ばれるため、そちら側で直接 App.Text()/TryGetResource を叩かないよう、
         // UI スレッドである SetLocale 内で文言をキャッシュへ反映する
         Util.ErrorText.RefreshCache();
+
+        LocaleChanged?.Invoke(null, EventArgs.Empty);
     }
+
+    /// <summary>
+    /// ロケール切替後に発火する。AXAML の <c>{DynamicResource}</c> は辞書差し替えで自動追従するが、
+    /// C# 側で <see cref="Text"/> を使って組み立てた計算プロパティ（PairedPeer の経路バッジ等）は
+    /// 変更通知を出さないと古い言語のまま残るため、保持側がこれを購読して再通知する。
+    /// 購読者はアプリと同寿命の ViewModel を想定している（購読解除しないので短命オブジェクトから
+    /// 直接購読しないこと。個々のモデルは保持側の ViewModel 経由でまとめて再通知する）。
+    /// </summary>
+    public static event EventHandler? LocaleChanged;
 
     /// <summary>
     /// リソースからローカライズ済みテキストを取得する。

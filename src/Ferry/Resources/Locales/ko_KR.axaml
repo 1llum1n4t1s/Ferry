@@ -5,27 +5,12 @@
   </ResourceDictionary.MergedDictionaries>
 
   <!-- Tabs -->
-  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 멤버 목록</x:String>
   <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ 멤버 추가</x:String>
-  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 전송</x:String>
-  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ 설정</x:String>
   <x:String x:Key="Text.Drop.Message" xml:space="preserve">파일을 드롭하여 전송</x:String>
   <x:String x:Key="Text.Drop.Description" xml:space="preserve">드롭한 파일이 연결된 장치로 전송됩니다</x:String>
-  <x:String x:Key="Text.Connection.Header" xml:space="preserve">대상</x:String>
-  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">또는 페어링 링크를 공유하세요.</x:String>
   <x:String x:Key="Text.Connection.Copy" xml:space="preserve">복사</x:String>
   <x:String x:Key="Text.Connection.Copied" xml:space="preserve">복사됨 ✓</x:String>
-  <x:String x:Key="Text.Connection.Start" xml:space="preserve">연결 시작</x:String>
-  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">취소</x:String>
-  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">새 장치 추가</x:String>
-  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">페어링 해제</x:String>
-  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">네트워크 나가기</x:String>
-  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">전송 기록</x:String>
-  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">지우기</x:String>
-  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">파일을 드롭하여 전송</x:String>
-  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">승인</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">거부</x:String>
-  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">폴더 열기</x:String>
   <x:String x:Key="Text.Settings.General" xml:space="preserve">일반</x:String>
   <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">상대에게 표시되는 이름</x:String>
   <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">PC 이름 입력</x:String>
@@ -45,8 +30,8 @@
   <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">닫기 버튼을 누르면 시스템 트레이로 이동합니다</x:String>
   <x:String x:Key="Text.Settings.Version" xml:space="preserve">버전</x:String>
   <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">업데이트 확인</x:String>
-  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">Skipping version {0}</x:String>
-  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">Undo</x:String>
+  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">버전 {0} 건너뛰는 중</x:String>
+  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">실행 취소</x:String>
   <x:String x:Key="Text.State.Pending" xml:space="preserve">대기 중…</x:String>
   <x:String x:Key="Text.State.Sending" xml:space="preserve">전송 중</x:String>
   <x:String x:Key="Text.State.Receiving" xml:space="preserve">수신 중</x:String>
@@ -59,7 +44,6 @@
   <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">스마트폰으로 QR 코드를 스캔하세요</x:String>
   <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">다른 PC의 QR 코드를 스캔하세요…</x:String>
   <x:String x:Key="Text.Status.Error" xml:space="preserve">오류: {0}</x:String>
-  <x:String x:Key="Text.Status.Connected" xml:space="preserve">연결됨</x:String>
   <x:String x:Key="Text.Status.Connecting" xml:space="preserve">연결 중…</x:String>
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">재연결 중…</x:String>
   <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN 직접 연결</x:String>
@@ -75,13 +59,13 @@
   <x:String x:Key="Text.SelfUpdate.UpToDate" xml:space="preserve">현재 사용 가능한 업데이트가 없습니다.</x:String>
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">수신이 거부되었습니다</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">재개 실패</x:String>
-  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
-  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
-  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>
-  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Send File</x:String>
-  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Drop files here to send</x:String>
-  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">or click "Send File" button</x:String>
-  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
+  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">전송할 파일 선택</x:String>
+  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">피어 검색…</x:String>
+  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">파일을 전송할 멤버를 선택하세요</x:String>
+  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">파일 보내기</x:String>
+  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">보낼 파일을 여기에 끌어다 놓으세요</x:String>
+  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">또는 "파일 보내기" 버튼을 누르세요</x:String>
+  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">수락</x:String>
 
   <!-- Connection Phase Status -->
   <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">TCP 리스너 준비 중…</x:String>
@@ -93,15 +77,12 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">창 표시</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">종료</x:String>
-  <x:String x:Key="Text.Pairing.LinkLabel">페어링 링크</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">닫기</x:String>
 
   <!-- Connection: No Members -->
-  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">페어링된 장치가 없습니다</x:String>
 
   <!-- Transfer: Empty -->
-  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">전송 내역 없음</x:String>
 
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">알림</x:String>
@@ -109,9 +90,6 @@
   <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">메시지 수신 시 소리 재생</x:String>
 
   <!-- Settings: File Transfer -->
-  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">파일 전송</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">수신 파일 저장 경로</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">(다운로드 폴더)</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">파일 자동 수락</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">수신되는 파일을 자동으로 수락합니다</x:String>
 
@@ -150,13 +128,13 @@
   <x:String x:Key="Text.SaveBar.Tooltip" xml:space="preserve">받은 파일 저장 위치</x:String>
   <x:String x:Key="Text.SaveBar.Open" xml:space="preserve">폴더 열기</x:String>
   <!-- v1.0.48: 帯域制限と並列転送数（英語フォールバック） -->
-  <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">Upload Limit (KB/s)</x:String>
-  <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">Outbound bandwidth cap. 0 = unlimited</x:String>
-  <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
-  <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Multiple files are sent in parallel automatically</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Automatic (up to 10)</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">업로드 제한(KB/s)</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">송신 대역폭 상한. 0 = 무제한</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">다운로드 제한(KB/s)</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">수신 대역폭 상한. 0 = 무제한</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">병렬 전송</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">여러 파일이 자동으로 병렬 전송됩니다</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">자동(최대 10개)</x:String>
   <!-- macOS メニューバー（App.SetupMacNativeMenus が Text() で参照） -->
   <x:String x:Key="Text.Menu.About" xml:space="preserve">Ferry에 관하여</x:String>
   <x:String x:Key="Text.Menu.Settings" xml:space="preserve">설정…</x:String>
@@ -181,5 +159,35 @@
   <x:String x:Key="Text.Cancel" xml:space="preserve">취소</x:String>
   <x:String x:Key="Text.Yes" xml:space="preserve">예</x:String>
   <x:String x:Key="Text.No" xml:space="preserve">아니요</x:String>
+
+  <!-- 追補: en_US に対して欠けていたキー（全言語パリティ対応） -->
+  <x:String x:Key="Text.Connection.PairFromCode.Button" xml:space="preserve">이 코드로 페어링</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">오류: {0}</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 상대방 코드를 붙여넣어 페어링</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">다른 PC에 표시된 코드를 붙여넣으세요.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">32자리 페어링 코드</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">처리 중…</x:String>
+  <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">페어링 코드</x:String>
+  <x:String x:Key="Text.Member.Delete" xml:space="preserve">삭제</x:String>
+  <x:String x:Key="Text.Member.Delete.Confirm" xml:space="preserve">"{0}"을(를) 멤버에서 제거할까요?
+이 작업은 되돌릴 수 없습니다.</x:String>
+  <x:String x:Key="Text.Member.Menu" xml:space="preserve">메뉴</x:String>
+  <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">이 피어와 진행 중인 전송</x:String>
+  <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
+  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">LAN 직접 연결</x:String>
+  <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">LAN 직접 연결(TCP) — 가장 빠르고 대역폭이 가장 높음</x:String>
+  <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
+  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P(STUN)</x:String>
+  <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">P2P 직접 연결(UDP 홀 펀칭 + STUN) — 인터넷 너머</x:String>
+  <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
+  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">릴레이(TURN)</x:String>
+  <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">서버를 통한 릴레이(TURN/WebSocket) — 방화벽 통과 가능</x:String>
+  <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">확인 중</x:String>
+  <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">연결 경로를 확인하는 중…</x:String>
+  <x:String x:Key="Text.Sidebar.AddPeer" xml:space="preserve">페어링 추가</x:String>
+  <x:String x:Key="Text.Sidebar.RefreshPeers" xml:space="preserve">피어 새로 고침</x:String>
+  <x:String x:Key="Text.Sidebar.Settings" xml:space="preserve">설정</x:String>
+  <x:String x:Key="Text.Tray.CheckForUpdate" xml:space="preserve">업데이트 확인…</x:String>
+  <x:String x:Key="Text.Warn" xml:space="preserve">경고</x:String>
 
 </ResourceDictionary>

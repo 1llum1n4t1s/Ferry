@@ -68,14 +68,24 @@ export async function handleInbox(req: Request, env: Env): Promise<Response> {
   return stub.fetch(new Request('https://do/inbox', req));
 }
 
-/** Worker 内部: ペア成立を deviceId の DeviceDO inbox へ push する (/pair/create から呼ぶ)。 */
-export async function notifyInbox(env: Env, deviceId: string, event: object): Promise<void> {
+/**
+ * Worker 内部: ペア成立 / 接続ノックを deviceId の DeviceDO inbox へ push する。
+ *
+ * rere レビュー #C-30: DeviceDO の notify は `{ ok, delivered }` を返しているのに
+ * 呼び出し側が戻り値を捨てていたため、「相手の inbox WS へ実際に届いたか」がどこにも
+ * 残らなかった。接続中 WS の本数を返して呼び出し側が観測できるようにする
+ * （delivered=0 は「相手がオフライン」という正常な縮退で、エラーではない）。
+ */
+export async function notifyInbox(env: Env, deviceId: string, event: object): Promise<number> {
   const stub = await deviceStub(env, deviceId);
-  await stub.fetch(
+  const resp = await stub.fetch(
     new Request('https://do/notify', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(event),
     }),
   );
+  if (!resp.ok) throw new Error(`notify failed: HTTP ${resp.status}`);
+  const body = (await resp.json()) as { delivered?: unknown };
+  return typeof body.delivered === 'number' ? body.delivered : 0;
 }

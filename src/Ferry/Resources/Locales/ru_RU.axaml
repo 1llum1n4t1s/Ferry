@@ -5,33 +5,18 @@
   </ResourceDictionary.MergedDictionaries>
 
   <!-- Tabs -->
-  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 Участники</x:String>
   <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ Добавить участника</x:String>
-  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 Передача</x:String>
-  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ Настройки</x:String>
 
   <!-- Drop Overlay -->
   <x:String x:Key="Text.Drop.Message" xml:space="preserve">Перетащите файлы для передачи</x:String>
   <x:String x:Key="Text.Drop.Description" xml:space="preserve">Перетащенные файлы будут отправлены на подключённое устройство</x:String>
 
   <!-- Connection Panel -->
-  <x:String x:Key="Text.Connection.Header" xml:space="preserve">Назначение</x:String>
-  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">Или поделитесь ссылкой для сопряжения.</x:String>
   <x:String x:Key="Text.Connection.Copy" xml:space="preserve">Копировать</x:String>
   <x:String x:Key="Text.Connection.Copied" xml:space="preserve">Скопировано</x:String>
-  <x:String x:Key="Text.Connection.Start" xml:space="preserve">Начать подключение</x:String>
-  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">Отмена</x:String>
-  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">Добавить новое устройство</x:String>
-  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">Удалить сопряжение</x:String>
-  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">Покинуть сеть</x:String>
 
   <!-- Transfer Panel -->
-  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">История передач</x:String>
-  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">Очистить</x:String>
-  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">Перетащите файлы для передачи</x:String>
-  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">Принять</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">Отклонить</x:String>
-  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">Открыть папку</x:String>
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">Общие</x:String>
@@ -53,8 +38,8 @@
   <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">Кнопка закрытия сворачивает в системный трей</x:String>
   <x:String x:Key="Text.Settings.Version" xml:space="preserve">Версия</x:String>
   <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">Проверить обновления</x:String>
-  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">Skipping version {0}</x:String>
-  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">Undo</x:String>
+  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">Версия {0} пропускается</x:String>
+  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">Отменить</x:String>
 
   <!-- Transfer States -->
   <x:String x:Key="Text.State.Pending" xml:space="preserve">Ожидание...</x:String>
@@ -71,7 +56,6 @@
   <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">Отсканируйте QR-код смартфоном</x:String>
   <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">Отсканируйте QR-код другого ПК...</x:String>
   <x:String x:Key="Text.Status.Error" xml:space="preserve">Ошибка: {0}</x:String>
-  <x:String x:Key="Text.Status.Connected" xml:space="preserve">Подключено</x:String>
   <x:String x:Key="Text.Status.Connecting" xml:space="preserve">Подключение...</x:String>
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">Переподключение...</x:String>
 
@@ -92,13 +76,13 @@
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Передача отклонена</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Не удалось возобновить</x:String>
-  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
-  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
-  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>
-  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Send File</x:String>
-  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Drop files here to send</x:String>
-  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">or click "Send File" button</x:String>
-  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
+  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Выберите файлы для передачи</x:String>
+  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Поиск узлов…</x:String>
+  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Выберите участника для передачи файлов</x:String>
+  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Отправить файл</x:String>
+  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Перетащите файлы сюда для отправки</x:String>
+  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">или нажмите кнопку «Отправить файл»</x:String>
+  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Принять</x:String>
 
   <!-- Connection Phase Status -->
   <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">Подготовка TCP-слушателя…</x:String>
@@ -110,15 +94,12 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Показать окно</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Выход</x:String>
-  <x:String x:Key="Text.Pairing.LinkLabel">Ссылка для сопряжения</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">Закрыть</x:String>
 
   <!-- Connection: No Members -->
-  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">Нет сопряжённых устройств</x:String>
 
   <!-- Transfer: Empty -->
-  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">Нет передач</x:String>
 
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">Уведомления</x:String>
@@ -126,9 +107,6 @@
   <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">Воспроизводить звук при получении сообщений</x:String>
 
   <!-- Settings: File Transfer -->
-  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">Передача файлов</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">Путь сохранения полученных файлов</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">(Папка загрузок)</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">Автоматически принимать файлы</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">Автоматически принимать входящие файлы</x:String>
 
@@ -154,13 +132,13 @@
   <x:String x:Key="Text.SaveBar.Tooltip" xml:space="preserve">Папка для сохранения полученных файлов</x:String>
   <x:String x:Key="Text.SaveBar.Open" xml:space="preserve">Открыть папку</x:String>
   <!-- v1.0.48: 帯域制限と並列転送数（英語フォールバック） -->
-  <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">Upload Limit (KB/s)</x:String>
-  <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">Outbound bandwidth cap. 0 = unlimited</x:String>
-  <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
-  <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Multiple files are sent in parallel automatically</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Automatic (up to 10)</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">Ограничение отдачи (КБ/с)</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">Предел исходящей скорости. 0 — без ограничений</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Ограничение загрузки (КБ/с)</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Предел входящей скорости. 0 — без ограничений</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Параллельные передачи</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Несколько файлов отправляются параллельно автоматически</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Автоматически (до 10)</x:String>
   <!-- Peer: destination list sorting/section headers -->
   <x:String x:Key="Text.Member.TogglePin" xml:space="preserve">Закрепить / Открепить</x:String>
   <x:String x:Key="Text.Peer.Sort" xml:space="preserve">Сортировка</x:String>
@@ -195,5 +173,35 @@
   <x:String x:Key="Text.Cancel" xml:space="preserve">Отмена</x:String>
   <x:String x:Key="Text.Yes" xml:space="preserve">Да</x:String>
   <x:String x:Key="Text.No" xml:space="preserve">Нет</x:String>
+
+  <!-- 追補: en_US に対して欠けていたキー（全言語パリティ対応） -->
+  <x:String x:Key="Text.Connection.PairFromCode.Button" xml:space="preserve">Связать по этому коду</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">Ошибка: {0}</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 Вставьте код собеседника для связывания</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">Вставьте код, показанный на другом ПК.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">32-символьный код связывания</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">Обработка…</x:String>
+  <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">Код связывания</x:String>
+  <x:String x:Key="Text.Member.Delete" xml:space="preserve">Удалить</x:String>
+  <x:String x:Key="Text.Member.Delete.Confirm" xml:space="preserve">Удалить «{0}» из списка участников?
+Это действие нельзя отменить.</x:String>
+  <x:String x:Key="Text.Member.Menu" xml:space="preserve">Меню</x:String>
+  <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">Текущие передачи с этим узлом</x:String>
+  <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
+  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">Прямое LAN</x:String>
+  <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">Прямое подключение по локальной сети (TCP) — самое быстрое, максимальная пропускная способность</x:String>
+  <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
+  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P (STUN)</x:String>
+  <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">Прямое P2P-подключение (пробивание UDP + STUN) — через интернет</x:String>
+  <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
+  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">Ретрансляция (TURN)</x:String>
+  <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">Ретрансляция через сервер (TURN/WebSocket) — проходит через брандмауэры</x:String>
+  <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">Проверка</x:String>
+  <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">Проверка маршрута подключения…</x:String>
+  <x:String x:Key="Text.Sidebar.AddPeer" xml:space="preserve">Добавить связывание</x:String>
+  <x:String x:Key="Text.Sidebar.RefreshPeers" xml:space="preserve">Обновить список узлов</x:String>
+  <x:String x:Key="Text.Sidebar.Settings" xml:space="preserve">Настройки</x:String>
+  <x:String x:Key="Text.Tray.CheckForUpdate" xml:space="preserve">Проверить обновления…</x:String>
+  <x:String x:Key="Text.Warn" xml:space="preserve">Предупреждение</x:String>
 
 </ResourceDictionary>

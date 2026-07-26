@@ -5,33 +5,18 @@
   </ResourceDictionary.MergedDictionaries>
 
   <!-- Tabs -->
-  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 Anggota</x:String>
   <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ Tambah Anggota</x:String>
-  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 Transfer</x:String>
-  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ Pengaturan</x:String>
 
   <!-- Drop Overlay -->
   <x:String x:Key="Text.Drop.Message" xml:space="preserve">Lepaskan file untuk mentransfer</x:String>
   <x:String x:Key="Text.Drop.Description" xml:space="preserve">File yang dilepaskan akan dikirim ke perangkat yang terhubung</x:String>
 
   <!-- Connection Panel -->
-  <x:String x:Key="Text.Connection.Header" xml:space="preserve">Tujuan</x:String>
-  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">Atau bagikan tautan pemasangan.</x:String>
   <x:String x:Key="Text.Connection.Copy" xml:space="preserve">Salin</x:String>
   <x:String x:Key="Text.Connection.Copied" xml:space="preserve">Tersalin</x:String>
-  <x:String x:Key="Text.Connection.Start" xml:space="preserve">Mulai Koneksi</x:String>
-  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">Batal</x:String>
-  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">Tambah Perangkat Baru</x:String>
-  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">Hapus Pemasangan</x:String>
-  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">Tinggalkan Jaringan</x:String>
 
   <!-- Transfer Panel -->
-  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">Riwayat Transfer</x:String>
-  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">Hapus</x:String>
-  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">Lepaskan file untuk mentransfer</x:String>
-  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">Setujui</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">Tolak</x:String>
-  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">Buka folder</x:String>
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">Umum</x:String>
@@ -43,7 +28,7 @@
   <x:String x:Key="Text.Settings.Theme.Light" xml:space="preserve">Terang</x:String>
   <x:String x:Key="Text.Settings.Theme.Dark" xml:space="preserve">Gelap</x:String>
   <x:String x:Key="Text.Settings.Language" xml:space="preserve">Bahasa</x:String>
-  <x:String x:Key="Text.Settings.File" xml:space="preserve">File</x:String>
+  <x:String x:Key="Text.Settings.File" xml:space="preserve">Berkas</x:String>
   <x:String x:Key="Text.Settings.SaveDirectory" xml:space="preserve">Lokasi penyimpanan file yang diterima</x:String>
   <x:String x:Key="Text.Settings.SaveDirectory.Browse" xml:space="preserve">Jelajahi</x:String>
   <x:String x:Key="Text.Settings.Behavior" xml:space="preserve">Perilaku</x:String>
@@ -53,8 +38,8 @@
   <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">Tombol tutup mengirim ke system tray</x:String>
   <x:String x:Key="Text.Settings.Version" xml:space="preserve">Versi</x:String>
   <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">Periksa Pembaruan</x:String>
-  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">Skipping version {0}</x:String>
-  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">Undo</x:String>
+  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">Melewati versi {0}</x:String>
+  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">Urungkan</x:String>
 
   <!-- Transfer States -->
   <x:String x:Key="Text.State.Pending" xml:space="preserve">Menunggu...</x:String>
@@ -71,13 +56,12 @@
   <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">Pindai kode QR dengan smartphone Anda</x:String>
   <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">Pindai kode QR PC lainnya...</x:String>
   <x:String x:Key="Text.Status.Error" xml:space="preserve">Kesalahan: {0}</x:String>
-  <x:String x:Key="Text.Status.Connected" xml:space="preserve">Terhubung</x:String>
   <x:String x:Key="Text.Status.Connecting" xml:space="preserve">Menghubungkan...</x:String>
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">Menghubungkan ulang...</x:String>
 
   <!-- Connection Routes -->
   <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN Langsung</x:String>
-  <x:String x:Key="Text.Route.Stun" xml:space="preserve">Internet P2P (STUN)</x:String>
+  <x:String x:Key="Text.Route.Stun" xml:space="preserve">P2P internet (STUN)</x:String>
   <x:String x:Key="Text.Route.Relay" xml:space="preserve">Relay Server (TURN)</x:String>
 
   <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
@@ -94,13 +78,13 @@
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Gagal melanjutkan</x:String>
   <x:String x:Key="Text.Transfer.Retrying" xml:space="preserve">Mencoba lagi ({0}/{1})…</x:String>
   <x:String x:Key="Text.Transfer.ConnectFailed" xml:space="preserve">Tidak dapat membuat koneksi</x:String>
-  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
-  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
-  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>
-  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Send File</x:String>
-  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Drop files here to send</x:String>
-  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">or click "Send File" button</x:String>
-  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
+  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Pilih berkas untuk ditransfer</x:String>
+  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Cari rekan…</x:String>
+  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Pilih anggota untuk mentransfer berkas</x:String>
+  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Kirim berkas</x:String>
+  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Seret berkas ke sini untuk mengirim</x:String>
+  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">atau klik tombol "Kirim Berkas"</x:String>
+  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Terima</x:String>
 
   <!-- Connection Phase Status -->
   <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">Menyiapkan listener TCP…</x:String>
@@ -112,15 +96,12 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Tampilkan Jendela</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Keluar</x:String>
-  <x:String x:Key="Text.Pairing.LinkLabel">Tautan Pemasangan</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">Tutup</x:String>
 
   <!-- Connection: No Members -->
-  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">Belum ada perangkat yang dipasangkan</x:String>
 
   <!-- Transfer: Empty -->
-  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">Tidak ada transfer</x:String>
 
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">Notifikasi</x:String>
@@ -128,9 +109,6 @@
   <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">Putar suara saat menerima pesan</x:String>
 
   <!-- Settings: File Transfer -->
-  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">Transfer File</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">Lokasi Penyimpanan File yang Diterima</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">(Folder Unduhan)</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">Terima File Otomatis</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">Secara otomatis menerima file yang masuk</x:String>
 
@@ -140,13 +118,13 @@
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">Mulai saat masuk</x:String>
   <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Jalankan Ferry secara otomatis saat Anda masuk</x:String>
   <!-- v1.0.48: 帯域制限と並列転送数（英語フォールバック） -->
-  <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">Upload Limit (KB/s)</x:String>
-  <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">Outbound bandwidth cap. 0 = unlimited</x:String>
-  <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
-  <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Multiple files are sent in parallel automatically</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Automatic (up to 10)</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">Batas unggah (KB/dtk)</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">Batas bandwidth keluar. 0 = tanpa batas</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Batas unduh (KB/dtk)</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Batas bandwidth masuk. 0 = tanpa batas</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Transfer paralel</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Beberapa berkas dikirim secara paralel otomatis</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Otomatis (hingga 10)</x:String>
   <!-- Peer: destination list sorting/section headers -->
   <x:String x:Key="Text.Member.TogglePin" xml:space="preserve">Sematkan / Lepas sematan</x:String>
   <x:String x:Key="Text.Peer.Sort" xml:space="preserve">Urutkan</x:String>
@@ -155,8 +133,8 @@
   <x:String x:Key="Text.Peer.Sort.Route" xml:space="preserve">Berdasarkan rute koneksi</x:String>
   <x:String x:Key="Text.Peer.Sort.Transferring" xml:space="preserve">Yang sedang mentransfer dulu</x:String>
   <x:String x:Key="Text.Peer.Section.Pinned" xml:space="preserve">Tersemat</x:String>
-  <x:String x:Key="Text.Peer.Section.Online" xml:space="preserve">Online</x:String>
-  <x:String x:Key="Text.Peer.Section.Offline" xml:space="preserve">Offline</x:String>
+  <x:String x:Key="Text.Peer.Section.Online" xml:space="preserve">Daring</x:String>
+  <x:String x:Key="Text.Peer.Section.Offline" xml:space="preserve">Luring</x:String>
   <!-- macOS メニューバー（App.SetupMacNativeMenus が Text() で参照） -->
   <x:String x:Key="Text.Menu.About" xml:space="preserve">Tentang Ferry</x:String>
   <x:String x:Key="Text.Menu.Settings" xml:space="preserve">Pengaturan…</x:String>
@@ -181,5 +159,47 @@
   <x:String x:Key="Text.Cancel" xml:space="preserve">Batal</x:String>
   <x:String x:Key="Text.Yes" xml:space="preserve">Ya</x:String>
   <x:String x:Key="Text.No" xml:space="preserve">Tidak</x:String>
+
+  <!-- 追補: en_US に対して欠けていたキー（全言語パリティ対応） -->
+  <x:String x:Key="Text.Connection.PairFromCode.Button" xml:space="preserve">Sandingkan dengan kode ini</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">Kesalahan: {0}</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 Tempel kode rekan untuk menyandingkan</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">Tempel kode yang ditampilkan di PC lain.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">Kode penyandingan 32 karakter</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">Memproses…</x:String>
+  <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">Kode penyandingan</x:String>
+  <x:String x:Key="Text.Member.Delete" xml:space="preserve">Hapus</x:String>
+  <x:String x:Key="Text.Member.Delete.Confirm" xml:space="preserve">Hapus "{0}" dari daftar anggota?
+Tindakan ini tidak dapat dibatalkan.</x:String>
+  <x:String x:Key="Text.Member.Menu" xml:space="preserve">Menu</x:String>
+  <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">Transfer yang sedang berlangsung dengan rekan ini</x:String>
+  <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
+  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">LAN langsung</x:String>
+  <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">Koneksi LAN langsung (TCP) — tercepat, bandwidth tertinggi</x:String>
+  <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
+  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P (STUN)</x:String>
+  <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">Koneksi P2P langsung (UDP hole punching + STUN) — melintasi internet</x:String>
+  <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
+  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">Relai (TURN)</x:String>
+  <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">Direlaikan melalui server (TURN/WebSocket) — dapat menembus firewall</x:String>
+  <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">Memeriksa</x:String>
+  <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">Memeriksa rute koneksi…</x:String>
+  <x:String x:Key="Text.SaveBar.Open" xml:space="preserve">Buka folder penyimpanan</x:String>
+  <x:String x:Key="Text.SaveBar.Tooltip" xml:space="preserve">Tempat berkas yang diterima disimpan</x:String>
+  <x:String x:Key="Text.Sidebar.AddPeer" xml:space="preserve">Tambah penyandingan</x:String>
+  <x:String x:Key="Text.Sidebar.RefreshPeers" xml:space="preserve">Segarkan daftar rekan</x:String>
+  <x:String x:Key="Text.Sidebar.Settings" xml:space="preserve">Pengaturan</x:String>
+  <x:String x:Key="Text.State.Paused" xml:space="preserve">Dijeda</x:String>
+  <x:String x:Key="Text.Transfer.Cancel" xml:space="preserve">Batal</x:String>
+  <x:String x:Key="Text.Transfer.ClearHistory" xml:space="preserve">Bersihkan riwayat</x:String>
+  <x:String x:Key="Text.Transfer.Delete" xml:space="preserve">Hapus</x:String>
+  <x:String x:Key="Text.Transfer.Pause" xml:space="preserve">Jeda</x:String>
+  <x:String x:Key="Text.Transfer.PeerMissing" xml:space="preserve">Rekan tujuan tidak ditemukan</x:String>
+  <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">Kirim ulang</x:String>
+  <x:String x:Key="Text.Transfer.Resume" xml:space="preserve">Lanjutkan</x:String>
+  <x:String x:Key="Text.Transfer.ResumeSuspended" xml:space="preserve">Lanjutkan</x:String>
+  <x:String x:Key="Text.Transfer.SourceMissing" xml:space="preserve">Berkas sumber tidak ditemukan</x:String>
+  <x:String x:Key="Text.Tray.CheckForUpdate" xml:space="preserve">Periksa pembaruan…</x:String>
+  <x:String x:Key="Text.Warn" xml:space="preserve">Peringatan</x:String>
 
 </ResourceDictionary>

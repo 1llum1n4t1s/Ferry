@@ -95,10 +95,12 @@
                          PlaceholderText="{DynamicResource Text.Connection.PairFromCode.Placeholder}"
                          Text="{Binding PairFromCodeText, Mode=TwoWay}" />
                 <TextBlock Text="{Binding PairFromCodeStatus}"
+                           Classes="pair-status"
+                           Classes.success="{Binding IsPairFromCodeSuccess}"
+                           Classes.error="{Binding IsPairFromCodeError}"
                            FontSize="10"
                            TextWrapping="Wrap"
                            HorizontalAlignment="Center"
-                           Foreground="{Binding PairFromCodeStatusBrush}"
                            IsVisible="{Binding PairFromCodeStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 <Button Classes="tahoe-primary"
                         FontSize="11"

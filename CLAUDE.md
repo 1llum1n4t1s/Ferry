@@ -84,9 +84,12 @@ STUN は **Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google S
 着信 listener（`ListenForIncomingConnectionAsync`）は旧実装で `/sig/{pairId}/offer` を **400ms 間隔で常時ポーリング**しており、アイドルでも 1 ペアあたり ~20 万 req/日を relay Worker に流していた（2026-07 実測: 4 ペアで ~50 万 req/日）。v1.0.67 で「**接続ノック**」方式に移行:
 
 - **relay Worker** (`signaling-routes.ts`): offer / probe-offer の POST 成功時、ペア相手の DeviceDO inbox WS へ `{type:"knock", pairId, from}` を push する。knock は **transient**（`devicedo.ts` の notify が storage に積まず接続中 WS にだけ送る。積むと INBOX_MAX=50 を溢れさせてペア成立イベントを押し出す + 次回接続時に stale replay される）
-- **クライアント** (`ConnectionService`): inbox WS を 1 本（`_knockWatcher`、初回 `StartListeningForConnection` で遅延生成・全 listener 共有）張り、ノック受信で該当 Session の listener を `SignalKnock()` で即時に起こす。listener 自身は **単発読み（`TryReadOfferOnceAsync`）+ 安全網待機**（WS 接続中 `IdleListenPollMs`=15s / 切断中 `IdleListenPollNoInboxMs`=3s）に低頻度化。検知レイテンシは WS push で ms オーダー＝旧 400ms ポーリングより速い
+- **クライアント** (`ConnectionService`): inbox WS を 1 本（`_knockWatcher`、初回 `StartListeningForConnection` で遅延生成・全 listener 共有）張り、ノック受信で該当 Session の listener を `SignalKnock()` で即時に起こす。listener 自身は **単発読み（`TryReadOfferOnceAsync`）+ 安全網待機**（WS 接続中 `IdleListenPollMs`=**120s** / 切断中 `IdleListenPollNoInboxMs`=3s）に低頻度化。検知レイテンシは WS push で ms オーダー＝旧 400ms ポーリングより速い
+- **probe offer の読み取り（`ReadProbeOffersAsync`）はノック駆動**: relay は offer / probe-offer の**どちらの POST でも**ノックを push するので、アイドル中に probe を毎周読む必要はない。`WaitForKnockAsync` の戻り値（true=ノック / false=安全網タイムアウト）で分岐し、**ノックで起きた周だけ probe も読む**。ノック配送自体が失敗した probe を取りこぼさないよう、安全網タイムアウトが `ProbeSafetyNetEveryNRounds`=5 回連続したときだけ読み直す（WS 接続中なら最長 10 分に 1 回）
 - **answer / endpoint / probe-answer の待機は従来どおり能動ポーリング**（送信側が数秒〜20s で有界に待つ経路。knock 不要）
-- 旧 `WaitForOfferAsync`（400ms 常時ポーラ）は撤去済み。回帰テストは `ConnectionServiceKnockTests`（ノックで即再読み / ノック無しで安全網間隔まで沈黙）と relay 側 `tests/knock.test.ts`
+- 旧 `WaitForOfferAsync`（400ms 常時ポーラ）は撤去済み。回帰テストは `ConnectionServiceKnockTests`（ノックで即再読み / ノック無しで安全網間隔まで沈黙 / **アイドル中は probe を読み直さない** / **ノックで probe も読み直す**）と relay 側 `tests/knock.test.ts`
+
+> **⚠️ この安全網ポーリング自体が次のボトルネックだった（2026-07 の Durable Objects 使用量調査）**。ノック化で 400ms ポーリングは消えたが、残った安全網が **1 周あたり `probe-offers` + `offer` の 2 リクエスト**を PairDO へ投げており、15s 間隔 × 2 req × ペア数で **PairDO が DO リクエストの 89%（87.8 万 req/月）** を占め、Workers Paid の含有枠 100 万を 138% まで超過させていた（`ferry-relay_PairDO` 87.8 万 / `ferry-relay_DeviceDO` 11.2 万 / `RelayDO` 0）。対策は上記の 2 点＝**安全網 15s→120s**（1/8）と **probe のノック駆動化**（1/2）で、合わせて **PairDO を約 5.5 万 req/月（-94%）** に落とす。どちらもノックが主経路である前提に乗っているだけなので、通常の着信検知レイテンシは変わらない。使用量は Cloudflare のカスタムダッシュボード「Kagayoi 有料枠の余裕（Workers Paid）」（30 日表示）で監視する。
 
 ### ペアリングフロー
 
@@ -123,6 +126,16 @@ STUN は **Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google S
 - `From: string?` — 送信元 deviceId。自己 probe offer の listening 側スキップ用識別子
 - `Nonce: string?` — bidirectional 同時 probe race 対策の per-probe 識別子 (v12 追加、v14 で key path として正規化)
 
+### ローカライズ（18 言語）
+
+UI 文言は `src/Ferry/Resources/Locales/<locale>.axaml`（`ResourceDictionary`）に置き、`App.axaml` が `x:Key` 付きの `ResourceInclude` として全ロケールを宣言する。**全 18 ファイルが同一のキー集合を持つ**のが契約（現在 175 キー）。
+
+- **参照方法**: AXAML からは `{DynamicResource Text.Xxx}`（辞書差し替えで自動追従）、C# からは `App.Text("Xxx")`（`Text.` プレフィックスは付けない）。
+- **フォールバック**: `App.SetLocale` は `en_US` を `MergedDictionaries[0]` に常駐させ、選択ロケールを後ろに Add する（後勝ち）。さらに各ロケールファイル自身も冒頭で `en_US` を merge する。**二重のフォールバックで欠損キーは英語表示**になる。
+- **未解決時**: `App.Text` はキー未登録／`Application.Current == null`（ユニットテスト）のとき `$"Text.{key}"` をそのまま返す。テストがこの値を期待していると「辞書にキーが実在するか」は検証されない点に注意。
+- **⚠️ C# 側で `App.Text` から組み立てた文言はロケール切替で自動更新されない**。計算プロパティは変更通知が出ず、`ConnectionStatusText` のような格納プロパティは古い言語のまま残る。保持側の ViewModel が `App.LocaleChanged`（static イベント）を購読し、`RaiseLocalizedTextChanged()` で再通知する。購読者は `Dispose` で必ず解除する（static イベントなのでリークする）。現在の購読者は `ConnectionViewModel`（PairedPeer 全件 + `RebuildVisiblePeers`）と `TransferViewModel`（TransferItem 全件）。
+- **キー追加時**: `en_US.axaml` と `ja_JP.axaml` は必須。残り 16 言語も揃えるのが原則（揃えないと英語にフォールバックする）。追加後は「使用キーが en_US に全て存在するか」「18 ファイルのキー集合が一致するか」を機械的に確認する。
+
 ### Native AOT 制約
 
 - JSON シリアライズは Source Generator 必須（`FileMetaJsonContext`, `PeerRegistryJsonContext`, `ConnectionInfoJsonContext`, `AppSettingsJsonContext`, `CfJsonContext`〔CloudflareSignaling の API DTO〕, `CfAuthJsonContext`〔/auth/token DTO〕）。リフレクションベースのシリアライズは使わず、上記 source-gen コンテキストを使う
@@ -145,7 +158,7 @@ OS 依存処理は実行時分岐（`OperatingSystem.IsWindows()/IsMacOS()/IsLin
 
 Velopack による自動更新の配信元は **Cloudflare R2**（カスタムドメイン `https://ferry.kagayoi.com`、bucket `ferry-updates`）。クライアントは `App.axaml.cs` の `UpdateBaseUrl` 定数 + `Velopack.Sources.SimpleWebSource` で更新を取得する（旧 `GithubSource` から移行済み）。`Check4Update` は起動時 + 24時間ごとに実行。
 
-**Windows リリース (ローカル実行)**: `pwsh scripts/release-local.ps1` — Lhamiel で確立したローカル署名付きリリースフローの横展開。コード署名 (Authenticode、Certum **Open Source Code Signing in the cloud**、CN=`Open Source Developer Yuichiro Shinozaki`) は SimplySign Desktop のトークンログイン中セッション + スマホ OTP が必要で GitHub Actions からは署名できないため、win-x64 / win-arm64 の 2 チャンネルはローカルスクリプトでリリースする。スクリプトは publish (Native AOT) → `vpk pack` + **Authenticode 署名** (`--signParams`、タイムスタンプ `http://time.certum.pl`) → 署名検証 → `wrangler` (pnpm dlx) で R2 バケット `ferry-updates` にアップロード (manifest は最後) → 配信確認 (`releases.{channel}.json` HTTP 200) → **manifest 外の旧 `*.nupkg` を Cloudflare API V4 で自動削除** (Aggressive 保持戦略。今回ビルドしないチャンネルの manifest は R2 から取得して keep set に加えるため、macOS / Linux の nupkg は誤削除しない) まで一括実行。Cloudflare トークンは `C:\Users\IMT\dev\Secret\secrets.json` の `cloudflare.api_token` を実行時に読む。動作確認は `-SkipUpload` (ビルド + 署名のみ)、RID 絞り込みは `-Runtimes win-x64`。**実行前提: SimplySign Desktop がトークンログイン済み** (証明書が CurrentUser\My に見えること。スクリプトがプリフライトで検査して落とす)。**`/vava` は `vava.config.json` の `localRelease` キーを読んでこのスクリプトを自動実行する**。
+**Windows リリース (ローカル実行)**: `pwsh scripts/release-local.ps1` — Lhamiel で確立したローカル署名付きリリースフローの横展開。コード署名 (Authenticode、Certum **Open Source Code Signing in the cloud**、CN=`Open Source Developer Yuichiro Shinozaki`) は SimplySign Desktop のトークンログイン中セッション + スマホ OTP が必要で GitHub Actions からは署名できないため、win-x64 / win-arm64 の 2 チャンネルはローカルスクリプトでリリースする。スクリプトは publish (Native AOT) → `vpk pack` + **Authenticode 署名** (`--signParams`、タイムスタンプ `http://time.certum.pl`) → 署名検証 → `wrangler` (pnpm dlx) で R2 バケット `ferry-updates` にアップロード (manifest は最後) → 配信確認 (`releases.{channel}.json` HTTP 200) → **manifest 外の旧配布物を Cloudflare API V4 で自動削除** (Aggressive 保持戦略。⚠️ 対象は `*.nupkg` だけでなく**バージョン文字列 `x.y.z` を含む全オブジェクト**〔zip / deb / rpm / AppImage 含む〕で、manifest 参照分と**直近 2 世代**〔`KEEP_VERSIONS` / `$KeepVersionCount`〕だけを保持する。今回ビルドしないチャンネルの manifest は R2 から取得して keep set に加えるため、macOS / Linux の配布物は誤削除しない。ランディングページの DL リンクはバージョン文字列を含まない固定名なので対象外) まで一括実行。Cloudflare トークンは `C:\Users\IMT\dev\Secret\secrets.json` の `cloudflare.api_token` を実行時に読む。動作確認は `-SkipUpload` (ビルド + 署名のみ)、RID 絞り込みは `-Runtimes win-x64`。**実行前提: SimplySign Desktop がトークンログイン済み** (証明書が CurrentUser\My に見えること。スクリプトがプリフライトで検査して落とす)。**`/vava` は `vava.config.json` の `localRelease` キーを読んでこのスクリプトを自動実行する**。
 
 **macOS / Linux (CI)**: `release/**` ブランチへの push で `.github/workflows/release.yml` が発火し、以下を順に呼ぶ（GitHub Releases は使わず R2 単独配信）:
 
@@ -209,7 +222,7 @@ UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レ
 
 転送履歴の宛先別表示・送信操作（再送 / 一時停止 / キャンセル）・受信保存先の常時表示・多重起動防止を追加した。送信時は VM 側 item とサービス側 item が別インスタンスのため、`SendFileAsync(filePath, relativePath, transferId, ct)` に **TransferId を渡して両者を同一 ID で相関**させる（受信は VM とサービスが同一 TransferItem を共有）。
 
-- **宛先別履歴**: `TransferViewModel` は全件を `Transfers` に保持しつつ、選択中ピアに属する項目だけを `VisibleTransfers` に投影（`TransferItem.PeerId` で判定）。`ConnectionViewModel.SelectedPeer` 変更を購読して `RebuildVisibleTransfers`。`TransferView.axaml` の `ItemsControl` は `VisibleTransfers` を bind
+- **宛先別履歴**: `TransferViewModel` は全件を `Transfers` に保持しつつ、選択中ピアに属する項目だけを `VisibleTransfers` に投影（`TransferItem.PeerId` で判定）。`ConnectionViewModel.SelectedPeer` 変更を購読して `RebuildVisibleTransfers`。`TransferView.axaml` の `ListBox`（`Classes="transferList"`）は `VisibleTransfers` を bind。⚠️ 履歴は件数が青天井なので**仮想化必須**。外側を `ScrollViewer` で包むと `VirtualizingStackPanel` にビューポートが伝わらず仮想化が壊れる（旧 `ScrollViewer > ItemsControl` 構成が全行のビジュアルと各行の `MarqueeTextBlock` を生かし続けていた回帰）。また `RebuildVisibleTransfers` は`ReconcileVisiblePeers` と同じく **in-place 差分反映**で行う（`Clear()` 全置換は Reset 通知で全行が再生成されスクロール位置も飛ぶ）
 - **対称キャンセル** (`CancelTransfer`): 送受信どちらからでも `FileReject` で相手に通知し、送信側は自分の `_sendCts`（`ConcurrentDictionary<Guid, CancellationTokenSource>`）を cancel、受信側は `_receiveStates` を破棄。`HandleFileReject` の `_activeTransfers` 分岐も `_sendCts` cancel を行う
 - **一時停止 / 再開** (`PauseSendTransfer` / `ResumeSendTransfer`): 送信のみ対応。`_pausedSends`(`ConcurrentDictionary<Guid, byte>`) に TransferId を入れ、`SendChunksAsync` がチャンク送信ループ手前で `_pausedSends.ContainsKey` の間 `Task.Delay(100)` 待機。待機中は `TransferState.Paused`（色 `#FF9F0A`）を表示
 - **自動リトライ**: `SendOneFileAsync` が `MaxSendAttempts=3` でリトライ。2 回目以降は `TransferItem.Note` に「リトライ中…(n/3)」を表示（`OnTransferError` は `_sendCtsByItem` 管理中の送信項目をスキップしてリトライループに委ねる）。`OperationCanceledException` はリトライせず Cancelled 扱い。**`PeerUnreachableException`（相手無応答＝オフライン/未起動/到達不可）もリトライせず即 Error 扱い**: offer に対し answer が `OfferAnswerWaitSeconds`(20s) 以内に来なかった場合 `ConnectionService.ConnectToPeerAsync` がこの専用型を投げる。相手がいないのに再接続を繰り返しても毎回 20s 待ちを空打ちするだけ（旧実装は一過性エラー扱いで 20s×3≒60s 浪費していた）なので、明確なオフラインメッセージを出してユーザーの手動「再送」に委ねる。**転送中の一過性切断（相手は生存・接続確立済み）はこの型を投げず従来どおりリトライ対象**
@@ -222,7 +235,7 @@ UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レ
 - **複数ファイルを即時 N 行表示**: `SendFilesAsync` は **先に全ファイル分の `TransferItem` を生成・`AddTransfer`**（State=Pending で即 `VisibleTransfers` に並ぶ）してから、`SendItemAsync(item, peer)` を 1 件ずつ直列に送る。旧実装は `foreach await SendOneFileAsync` で 1 件完了まで次行が出ない症状だった。`SendOneFileAsync` は「item 生成 + AddTransfer + SendItemAsync」の薄いラッパ（ResendAsync 用）に分割
 - **相手表示名の伝播**: `PairedPeer.DisplayName` を明示バッキングフィールド + `SetProperty` に変更（plain プロパティのままなので AOT の `PeerRegistryJsonContext` シリアライズは維持）。`PresencePollLoop` の `peer.DisplayName =` 代入が変更通知を出し、**左ペイン（ピアリスト）も右ペインも更新**される。旧 plain auto-property は通知が無く左ペインが古い名前のままだった
 - **経路バッジ「状態取得中」固着の解消**: `ConnectionViewModel.ProbePeerRouteAsync` は **probe が `Unknown` を返しても既に有効な Route を持つピアは据え置く**（転送中の probe 競合タイムアウトで `Unknown` 退行しない）。`RefreshPeersAsync` は接続中ピア（`_connectionService.ConnectedPeer?.SessionId == peer.PeerId`）には probe せず `_connectionService.Route` を即反映。offline 時の `Unknown` 化は `!isOnline` 分岐が担当
-- **ファイルパスのマーキー**: `Controls/MarqueeTextBlock`（`Decorator` 派生・テンプレート非依存・子 TextBlock をコード保持・`DispatcherTimer` で `TranslateTransform.X` を更新）。収まる時は静止、はみ出す時のみ左へ流す。`TransferView` の Row2 パス表示を差し替え
+- **ファイルパスのマーキー**: `Controls/MarqueeTextBlock`（`Decorator` 派生・テンプレート非依存・子 TextBlock をコード保持・**クラス共通の単一 `DispatcherTimer`** で `TranslateTransform.X` を更新）。行ごとにタイマーを立てると流れている行数ぶん Dispatcher キューを埋めるため登録制にしている。`IsEffectivelyVisible` がfalse のインスタンス（設定タブ表示中・トレイ格納中）は tick 側でスキップし、全件不可視ならタイマーごと停止する。収まる時は静止、はみ出す時のみ左へ流す。`TransferView` の Row2 パス表示を差し替え
 - **転送レート(bps)**: `TransferViewModel` の 1 秒 `DispatcherTimer`（`OnRateTimerTick`）が `VisibleTransfers` の InProgress 項目について **転送開始からの累積平均**（総転送バイト ÷ 経過秒）で bps を算出し `TransferItem.RateText` を更新（停止/完了/一時停止でクリア）。瞬間差分はチャンクのバースト/フロー制御待ちで乱高下するため累積平均に統一。整形は `Util.Formatting.FormatBitrate`（1000 区切り）。開始基準は素フィールド `RateStartBytes`/`RateStartTick`（一時停止/完了で `RateStartTick=0` にリセットし、停止区間を平均に含めない＝再開後は再開時点からの平均）
 - **送受信日時**: `TransferItem.CreatedAt`（生成時 `DateTime.Now`）+ `CreatedAtText`（`yyyy-MM-dd HH:mm:ss`）を全履歴行（ファイル名行の右）に常時表示。重複回避のため `DisplayInfo` の完了時刻連結は撤去
 - **受信フォルダを開くボタン**: 保存先バー（`MainWindow` 上部）の 📂 に一本化。OS ファイラ起動は `Util.ShellHelper.OpenFolder`、保存先は `MainWindow.axaml.cs` の `OnOpenSaveDirClick`（`_settingsService.Settings.SaveDirectory` 優先）から取得。`TransferView` ヘッダにも一時的に 📂 を置いていたが「開くボタンが 3 つある」状態を避けるため撤去し保存先バーのみに集約

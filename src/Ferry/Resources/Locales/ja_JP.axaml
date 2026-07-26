@@ -5,10 +5,7 @@
   </ResourceDictionary.MergedDictionaries>
 
   <!-- Tabs -->
-  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 メンバーリスト</x:String>
   <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ メンバー追加</x:String>
-  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 転送履歴</x:String>
-  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ 設定</x:String>
 
   <!-- Sidebar bottom menu (v1.0.38) -->
   <x:String x:Key="Text.Sidebar.AddPeer" xml:space="preserve">ペアリング先追加</x:String>
@@ -19,34 +16,19 @@
   <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">もう片方の PC に表示されているコードを貼り付けてください。</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Button" xml:space="preserve">このコードでペアリング</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">32 文字のペアリングコード</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">処理中…</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">エラー: {0}</x:String>
 
   <!-- Drop Overlay -->
   <x:String x:Key="Text.Drop.Message" xml:space="preserve">ファイルをドロップして転送</x:String>
   <x:String x:Key="Text.Drop.Description" xml:space="preserve">ドロップしたファイルを接続先に送信します</x:String>
 
   <!-- Connection Panel -->
-  <x:String x:Key="Text.Connection.Header" xml:space="preserve">宛先</x:String>
-  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">または、ペアリングリンクを送る。</x:String>
   <x:String x:Key="Text.Connection.Copy" xml:space="preserve">コピー</x:String>
   <x:String x:Key="Text.Connection.Copied" xml:space="preserve">コピー済み ✓</x:String>
-  <x:String x:Key="Text.Connection.Start" xml:space="preserve">接続開始</x:String>
-  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">キャンセル</x:String>
-  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">新しいデバイスを追加</x:String>
-  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">ペアリング解除</x:String>
-  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">ネットワークを退出</x:String>
-  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">ペアリング済みのデバイスはありません</x:String>
-  <x:String x:Key="Text.Connection.PairFromUrl.Header" xml:space="preserve">📋 相手の URL を貼り付けてペアリング</x:String>
-  <x:String x:Key="Text.Connection.PairFromUrl.Hint" xml:space="preserve">カメラ無し PC 同士のペアリングはこちら。もう片方の PC に表示されているリンクを貼り付けてください。</x:String>
-  <x:String x:Key="Text.Connection.PairFromUrl.Button" xml:space="preserve">この URL でペアリング</x:String>
 
   <!-- Transfer Panel -->
-  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">転送履歴</x:String>
-  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">クリア</x:String>
-  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">ファイルをドロップして転送</x:String>
-  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">転送履歴はありません</x:String>
-  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">承認</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">拒否</x:String>
-  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">フォルダを開く</x:String>
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">一般</x:String>
@@ -86,7 +68,6 @@
   <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">QR コードをスマートフォンでスキャンしてください</x:String>
   <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">ペアリング先の PC の QR コードをスキャンしてください…</x:String>
   <x:String x:Key="Text.Status.Error" xml:space="preserve">エラー: {0}</x:String>
-  <x:String x:Key="Text.Status.Connected" xml:space="preserve">接続済み</x:String>
   <x:String x:Key="Text.Status.Connecting" xml:space="preserve">接続中…</x:String>
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">再接続中…</x:String>
 
@@ -129,7 +110,6 @@
   <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">承認</x:String>
 
   <!-- Pairing -->
-  <x:String x:Key="Text.Pairing.LinkLabel" xml:space="preserve">またはペアリングリンクを共有</x:String>
 
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">通知</x:String>
@@ -137,9 +117,6 @@
   <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">メッセージ受信時にサウンドを再生する</x:String>
 
   <!-- Settings: File Transfer -->
-  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">ファイル転送</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">受信ファイルの保存先</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">（ダウンロードフォルダ）</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">ファイル受信を自動承認</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">受信ファイルを自動的に承認する</x:String>
   <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">アップロード帯域制限 (KB/s)</x:String>
@@ -178,6 +155,20 @@
   <x:String x:Key="Text.Peer.Section.Pinned" xml:space="preserve">ピン留め</x:String>
   <x:String x:Key="Text.Peer.Section.Online" xml:space="preserve">オンライン</x:String>
   <x:String x:Key="Text.Peer.Section.Offline" xml:space="preserve">オフライン</x:String>
+  <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">このピアへの進行中転送</x:String>
+
+  <!-- Route バッジ: 接続経路ごとのラベル / 短縮バッジ / ツールチップ -->
+  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">LAN 直接</x:String>
+  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P（STUN）</x:String>
+  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">リレー（TURN）</x:String>
+  <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
+  <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
+  <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
+  <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">状態取得中</x:String>
+  <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">LAN 直接接続（TCP）— 最速・最高帯域</x:String>
+  <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">P2P 直接接続（UDP ホールパンチ + STUN）— インターネット越え</x:String>
+  <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">サーバー経由リレー（TURN/WebSocket）— ファイアウォール越え</x:String>
+  <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">接続経路を確認中…</x:String>
 
   <!-- v1.0.47: 行ごとの転送操作・受信保存先バー -->
   <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">再送</x:String>

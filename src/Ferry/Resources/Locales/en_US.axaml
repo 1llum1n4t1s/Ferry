@@ -2,10 +2,7 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
   <!-- Tabs -->
-  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 Members</x:String>
   <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ Add Member</x:String>
-  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 Transfer</x:String>
-  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ Settings</x:String>
 
   <!-- Sidebar bottom menu (v1.0.38) -->
   <x:String x:Key="Text.Sidebar.AddPeer" xml:space="preserve">Add pairing</x:String>
@@ -16,34 +13,19 @@
   <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">Paste the code shown on the other PC.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Button" xml:space="preserve">Pair with this code</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">32-character pairing code</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">Working…</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">Error: {0}</x:String>
 
   <!-- Drop Overlay -->
   <x:String x:Key="Text.Drop.Message" xml:space="preserve">Drop files to transfer</x:String>
   <x:String x:Key="Text.Drop.Description" xml:space="preserve">Dropped files will be sent to the connected device</x:String>
 
   <!-- Connection Panel -->
-  <x:String x:Key="Text.Connection.Header" xml:space="preserve">Destination</x:String>
-  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">Or share the pairing link.</x:String>
   <x:String x:Key="Text.Connection.Copy" xml:space="preserve">Copy</x:String>
   <x:String x:Key="Text.Connection.Copied" xml:space="preserve">Copied</x:String>
-  <x:String x:Key="Text.Connection.Start" xml:space="preserve">Start Connection</x:String>
-  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">Cancel</x:String>
-  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">Add New Device</x:String>
-  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">Remove Pairing</x:String>
-  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">Leave Network</x:String>
-  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">No paired devices yet</x:String>
-  <x:String x:Key="Text.Connection.PairFromUrl.Header" xml:space="preserve">📋 Paste partner's URL to pair</x:String>
-  <x:String x:Key="Text.Connection.PairFromUrl.Hint" xml:space="preserve">For camera-less PC pairing. Paste the link shown on the other PC here.</x:String>
-  <x:String x:Key="Text.Connection.PairFromUrl.Button" xml:space="preserve">Pair with this URL</x:String>
 
   <!-- Transfer Panel -->
-  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">Transfer History</x:String>
-  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">Clear</x:String>
-  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">Drop files to transfer</x:String>
-  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">No transfer history</x:String>
-  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">Approve</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">Reject</x:String>
-  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">Open folder</x:String>
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">General</x:String>
@@ -83,7 +65,6 @@
   <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">Scan the QR code with your smartphone</x:String>
   <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">Scan the other PC's QR code...</x:String>
   <x:String x:Key="Text.Status.Error" xml:space="preserve">Error: {0}</x:String>
-  <x:String x:Key="Text.Status.Connected" xml:space="preserve">Connected</x:String>
   <x:String x:Key="Text.Status.Connecting" xml:space="preserve">Connecting...</x:String>
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">Reconnecting...</x:String>
 
@@ -126,7 +107,6 @@
   <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
 
   <!-- Pairing -->
-  <x:String x:Key="Text.Pairing.LinkLabel" xml:space="preserve">Or share the pairing link</x:String>
 
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">Notifications</x:String>
@@ -134,9 +114,6 @@
   <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">Play sound when receiving messages</x:String>
 
   <!-- Settings: File Transfer -->
-  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">File Transfer</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">Receive File Save Path</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">(Downloads folder)</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">Auto Accept Files</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">Automatically accept incoming files</x:String>
   <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">Upload Limit (KB/s)</x:String>
@@ -175,6 +152,20 @@ This cannot be undone.</x:String>
   <x:String x:Key="Text.Peer.Section.Pinned" xml:space="preserve">Pinned</x:String>
   <x:String x:Key="Text.Peer.Section.Online" xml:space="preserve">Online</x:String>
   <x:String x:Key="Text.Peer.Section.Offline" xml:space="preserve">Offline</x:String>
+  <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">Transfers in progress with this peer</x:String>
+
+  <!-- Route badge: label / short badge / tooltip per connection route -->
+  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">LAN direct</x:String>
+  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P (STUN)</x:String>
+  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">Relay (TURN)</x:String>
+  <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
+  <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
+  <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
+  <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">Checking</x:String>
+  <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">Direct LAN connection (TCP) — fastest, highest bandwidth</x:String>
+  <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">Direct P2P connection (UDP hole punching + STUN) — across the internet</x:String>
+  <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">Relayed through the server (TURN/WebSocket) — works through firewalls</x:String>
+  <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">Checking the connection route…</x:String>
 
   <!-- v1.0.47: 行ごとの転送操作・受信保存先バー -->
   <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">Resend</x:String>

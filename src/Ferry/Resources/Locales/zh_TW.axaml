@@ -5,27 +5,12 @@
   </ResourceDictionary.MergedDictionaries>
 
   <!-- Tabs -->
-  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 成員列表</x:String>
   <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ 新增成員</x:String>
-  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 傳輸</x:String>
-  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ 設定</x:String>
   <x:String x:Key="Text.Drop.Message" xml:space="preserve">拖放檔案進行傳輸</x:String>
   <x:String x:Key="Text.Drop.Description" xml:space="preserve">拖放的檔案將傳送到已連接的裝置</x:String>
-  <x:String x:Key="Text.Connection.Header" xml:space="preserve">目標</x:String>
-  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">或分享配對連結。</x:String>
   <x:String x:Key="Text.Connection.Copy" xml:space="preserve">複製</x:String>
   <x:String x:Key="Text.Connection.Copied" xml:space="preserve">已複製 ✓</x:String>
-  <x:String x:Key="Text.Connection.Start" xml:space="preserve">開始連線</x:String>
-  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">取消</x:String>
-  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">新增裝置</x:String>
-  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">解除配對</x:String>
-  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">離開網路</x:String>
-  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">傳輸歷史</x:String>
-  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">清除</x:String>
-  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">拖放檔案進行傳輸</x:String>
-  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">核准</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">拒絕</x:String>
-  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">開啟資料夾</x:String>
   <x:String x:Key="Text.Settings.General" xml:space="preserve">一般</x:String>
   <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">對方看到的名稱</x:String>
   <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">輸入電腦名稱</x:String>
@@ -45,8 +30,8 @@
   <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">關閉按鈕將應用程式傳送至系統匣</x:String>
   <x:String x:Key="Text.Settings.Version" xml:space="preserve">版本</x:String>
   <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">檢查更新</x:String>
-  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">Skipping version {0}</x:String>
-  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">Undo</x:String>
+  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">已略過版本 {0}</x:String>
+  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">復原</x:String>
   <x:String x:Key="Text.State.Pending" xml:space="preserve">等待中…</x:String>
   <x:String x:Key="Text.State.Sending" xml:space="preserve">傳送中</x:String>
   <x:String x:Key="Text.State.Receiving" xml:space="preserve">接收中</x:String>
@@ -59,7 +44,6 @@
   <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">請用智慧型手機掃描 QR 碼</x:String>
   <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">請掃描另一台電腦的 QR 碼…</x:String>
   <x:String x:Key="Text.Status.Error" xml:space="preserve">錯誤: {0}</x:String>
-  <x:String x:Key="Text.Status.Connected" xml:space="preserve">已連線</x:String>
   <x:String x:Key="Text.Status.Connecting" xml:space="preserve">連線中…</x:String>
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">重新連線中…</x:String>
   <x:String x:Key="Text.Route.Direct" xml:space="preserve">區域網路直連</x:String>
@@ -75,13 +59,13 @@
   <x:String x:Key="Text.SelfUpdate.UpToDate" xml:space="preserve">目前已是最新版本。</x:String>
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">已拒絕接收</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">恢復失敗</x:String>
-  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
-  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
-  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>
-  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Send File</x:String>
-  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Drop files here to send</x:String>
-  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">or click "Send File" button</x:String>
-  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
+  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">選擇要傳輸的檔案</x:String>
+  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">搜尋裝置…</x:String>
+  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">請選擇要傳輸檔案的成員</x:String>
+  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">傳送檔案</x:String>
+  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">將檔案拖曳到此處以傳送</x:String>
+  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">或點擊「傳送檔案」按鈕</x:String>
+  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">接受</x:String>
 
   <!-- Connection Phase Status -->
   <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">正在準備 TCP 監聽…</x:String>
@@ -93,15 +77,12 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">顯示視窗</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">結束</x:String>
-  <x:String x:Key="Text.Pairing.LinkLabel">配對連結</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">關閉</x:String>
 
   <!-- Connection: No Members -->
-  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">尚無已配對的裝置</x:String>
 
   <!-- Transfer: Empty -->
-  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">沒有傳輸紀錄</x:String>
 
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">通知</x:String>
@@ -109,9 +90,6 @@
   <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">收到訊息時播放提示音</x:String>
 
   <!-- Settings: File Transfer -->
-  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">檔案傳輸</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">接收檔案儲存路徑</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">（下載資料夾）</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">自動接受檔案</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">自動接受傳入的檔案</x:String>
 
@@ -137,13 +115,13 @@
   <x:String x:Key="Text.SaveBar.Tooltip" xml:space="preserve">接收檔案的儲存位置</x:String>
   <x:String x:Key="Text.SaveBar.Open" xml:space="preserve">開啟資料夾</x:String>
   <!-- v1.0.48: 帯域制限と並列転送数（英語フォールバック） -->
-  <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">Upload Limit (KB/s)</x:String>
-  <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">Outbound bandwidth cap. 0 = unlimited</x:String>
-  <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
-  <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Multiple files are sent in parallel automatically</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Automatic (up to 10)</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">上傳限速（KB/s）</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">出站頻寬上限。0 表示不限制</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">下載限速（KB/s）</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">入站頻寬上限。0 表示不限制</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">並行傳輸</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">多個檔案將自動並行傳送</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">自動（最多 10 個）</x:String>
   <!-- Peer: destination list sorting/section headers -->
   <x:String x:Key="Text.Member.TogglePin" xml:space="preserve">釘選 / 取消釘選</x:String>
   <x:String x:Key="Text.Peer.Sort" xml:space="preserve">排序</x:String>
@@ -178,5 +156,35 @@
   <x:String x:Key="Text.Cancel" xml:space="preserve">取消</x:String>
   <x:String x:Key="Text.Yes" xml:space="preserve">是</x:String>
   <x:String x:Key="Text.No" xml:space="preserve">否</x:String>
+
+  <!-- 追補: en_US に対して欠けていたキー（全言語パリティ対応） -->
+  <x:String x:Key="Text.Connection.PairFromCode.Button" xml:space="preserve">使用此代碼配對</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">錯誤：{0}</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 貼上對方的代碼進行配對</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">請貼上另一台電腦上顯示的代碼。</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">32 位配對代碼</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">處理中…</x:String>
+  <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">配對代碼</x:String>
+  <x:String x:Key="Text.Member.Delete" xml:space="preserve">刪除</x:String>
+  <x:String x:Key="Text.Member.Delete.Confirm" xml:space="preserve">要將「{0}」從成員中移除嗎？
+此操作無法復原。</x:String>
+  <x:String x:Key="Text.Member.Menu" xml:space="preserve">選單</x:String>
+  <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">與此裝置正在進行的傳輸</x:String>
+  <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
+  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">區域網路直連</x:String>
+  <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">區域網路直接連線（TCP）— 最快、頻寬最高</x:String>
+  <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
+  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P（STUN）</x:String>
+  <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">P2P 直接連線（UDP 打洞 + STUN）— 跨網際網路</x:String>
+  <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
+  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">中繼（TURN）</x:String>
+  <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">透過伺服器中繼（TURN/WebSocket）— 可穿透防火牆</x:String>
+  <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">偵測中</x:String>
+  <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">正在偵測連線路徑…</x:String>
+  <x:String x:Key="Text.Sidebar.AddPeer" xml:space="preserve">新增配對</x:String>
+  <x:String x:Key="Text.Sidebar.RefreshPeers" xml:space="preserve">重新整理裝置清單</x:String>
+  <x:String x:Key="Text.Sidebar.Settings" xml:space="preserve">設定</x:String>
+  <x:String x:Key="Text.Tray.CheckForUpdate" xml:space="preserve">檢查更新…</x:String>
+  <x:String x:Key="Text.Warn" xml:space="preserve">警告</x:String>
 
 </ResourceDictionary>

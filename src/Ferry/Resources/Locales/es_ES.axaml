@@ -5,27 +5,12 @@
   </ResourceDictionary.MergedDictionaries>
 
   <!-- Tabs -->
-  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 Miembros</x:String>
   <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ Añadir miembro</x:String>
-  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 Transferencia</x:String>
-  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ Configuración</x:String>
   <x:String x:Key="Text.Drop.Message" xml:space="preserve">Suelta archivos para transferir</x:String>
   <x:String x:Key="Text.Drop.Description" xml:space="preserve">Los archivos soltados se enviarán al dispositivo conectado</x:String>
-  <x:String x:Key="Text.Connection.Header" xml:space="preserve">Destino</x:String>
-  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">O comparte el enlace de emparejamiento.</x:String>
   <x:String x:Key="Text.Connection.Copy" xml:space="preserve">Copiar</x:String>
   <x:String x:Key="Text.Connection.Copied" xml:space="preserve">Copiado ✓</x:String>
-  <x:String x:Key="Text.Connection.Start" xml:space="preserve">Iniciar conexión</x:String>
-  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">Cancelar</x:String>
-  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">Agregar nuevo dispositivo</x:String>
-  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">Eliminar emparejamiento</x:String>
-  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">Salir de la red</x:String>
-  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">Historial de transferencias</x:String>
-  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">Limpiar</x:String>
-  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">Suelta archivos para transferir</x:String>
-  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">Aprobar</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">Rechazar</x:String>
-  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">Abrir carpeta</x:String>
   <x:String x:Key="Text.Settings.General" xml:space="preserve">General</x:String>
   <x:String x:Key="Text.Settings.DisplayName" xml:space="preserve">Nombre visible para otros</x:String>
   <x:String x:Key="Text.Settings.DisplayName.Placeholder" xml:space="preserve">Ingrese el nombre del PC</x:String>
@@ -45,8 +30,8 @@
   <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">El botón cerrar envía a la bandeja del sistema</x:String>
   <x:String x:Key="Text.Settings.Version" xml:space="preserve">Versión</x:String>
   <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">Buscar actualizaciones</x:String>
-  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">Skipping version {0}</x:String>
-  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">Undo</x:String>
+  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">Omitiendo la versión {0}</x:String>
+  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">Deshacer</x:String>
   <x:String x:Key="Text.State.Pending" xml:space="preserve">Pendiente…</x:String>
   <x:String x:Key="Text.State.Sending" xml:space="preserve">Enviando</x:String>
   <x:String x:Key="Text.State.Receiving" xml:space="preserve">Recibiendo</x:String>
@@ -59,11 +44,10 @@
   <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">Escanea el código QR con tu smartphone</x:String>
   <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">Escanea el código QR del otro PC…</x:String>
   <x:String x:Key="Text.Status.Error" xml:space="preserve">Error: {0}</x:String>
-  <x:String x:Key="Text.Status.Connected" xml:space="preserve">Conectado</x:String>
   <x:String x:Key="Text.Status.Connecting" xml:space="preserve">Conectando…</x:String>
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">Reconectando…</x:String>
   <x:String x:Key="Text.Route.Direct" xml:space="preserve">Conexión directa LAN</x:String>
-  <x:String x:Key="Text.Route.Stun" xml:space="preserve">Internet P2P (STUN)</x:String>
+  <x:String x:Key="Text.Route.Stun" xml:space="preserve">P2P por Internet (STUN)</x:String>
   <x:String x:Key="Text.Route.Relay" xml:space="preserve">Relé del servidor (TURN)</x:String>
   <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
   <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">Nueva versión de este software disponible: </x:String>
@@ -75,13 +59,13 @@
   <x:String x:Key="Text.SelfUpdate.UpToDate" xml:space="preserve">Actualmente no hay actualizaciones disponibles.</x:String>
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">Transferencia rechazada</x:String>
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Error al reanudar</x:String>
-  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
-  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
-  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>
-  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Send File</x:String>
-  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Drop files here to send</x:String>
-  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">or click "Send File" button</x:String>
-  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
+  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Selecciona los archivos a transferir</x:String>
+  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Buscar pares…</x:String>
+  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Selecciona un miembro para transferir archivos</x:String>
+  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Enviar archivo</x:String>
+  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Arrastra archivos aquí para enviarlos</x:String>
+  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">o pulsa el botón «Enviar archivo»</x:String>
+  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Aceptar</x:String>
 
   <!-- Connection Phase Status -->
   <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">Preparando listener TCP…</x:String>
@@ -93,15 +77,12 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Mostrar ventana</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Salir</x:String>
-  <x:String x:Key="Text.Pairing.LinkLabel">Enlace de emparejamiento</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">Cerrar</x:String>
 
   <!-- Connection: No Members -->
-  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">Aún no hay dispositivos emparejados</x:String>
 
   <!-- Transfer: Empty -->
-  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">Sin transferencias</x:String>
 
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">Notificaciones</x:String>
@@ -109,9 +90,6 @@
   <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">Reproducir sonido al recibir mensajes</x:String>
 
   <!-- Settings: File Transfer -->
-  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">Transferencia de archivos</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">Ruta de guardado de archivos recibidos</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">(Carpeta de descargas)</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">Aceptar archivos automáticamente</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">Aceptar automáticamente los archivos entrantes</x:String>
 
@@ -147,13 +125,13 @@
   <x:String x:Key="Text.Peer.Section.Online" xml:space="preserve">En línea</x:String>
   <x:String x:Key="Text.Peer.Section.Offline" xml:space="preserve">Sin conexión</x:String>
   <!-- v1.0.48: 帯域制限と並列転送数（英語フォールバック） -->
-  <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">Upload Limit (KB/s)</x:String>
-  <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">Outbound bandwidth cap. 0 = unlimited</x:String>
-  <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
-  <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Multiple files are sent in parallel automatically</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Automatic (up to 10)</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">Límite de subida (KB/s)</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">Límite de ancho de banda saliente. 0 = sin límite</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Límite de descarga (KB/s)</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Límite de ancho de banda entrante. 0 = sin límite</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Transferencias paralelas</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Varios archivos se envían en paralelo automáticamente</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Automático (hasta 10)</x:String>
   <!-- macOS メニューバー（App.SetupMacNativeMenus が Text() で参照） -->
   <x:String x:Key="Text.Menu.About" xml:space="preserve">Acerca de Ferry</x:String>
   <x:String x:Key="Text.Menu.Settings" xml:space="preserve">Ajustes…</x:String>
@@ -178,5 +156,35 @@
   <x:String x:Key="Text.Cancel" xml:space="preserve">Cancelar</x:String>
   <x:String x:Key="Text.Yes" xml:space="preserve">Sí</x:String>
   <x:String x:Key="Text.No" xml:space="preserve">No</x:String>
+
+  <!-- 追補: en_US に対して欠けていたキー（全言語パリティ対応） -->
+  <x:String x:Key="Text.Connection.PairFromCode.Button" xml:space="preserve">Emparejar con este código</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">Error: {0}</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 Pega el código del otro equipo para emparejar</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">Pega el código que se muestra en el otro PC.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">Código de emparejamiento de 32 caracteres</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">Procesando…</x:String>
+  <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">Código de emparejamiento</x:String>
+  <x:String x:Key="Text.Member.Delete" xml:space="preserve">Eliminar</x:String>
+  <x:String x:Key="Text.Member.Delete.Confirm" xml:space="preserve">¿Quitar «{0}» de tus miembros?
+Esta acción no se puede deshacer.</x:String>
+  <x:String x:Key="Text.Member.Menu" xml:space="preserve">Menú</x:String>
+  <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">Transferencias en curso con este par</x:String>
+  <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
+  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">LAN directa</x:String>
+  <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">Conexión LAN directa (TCP) — la más rápida y con mayor ancho de banda</x:String>
+  <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
+  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P (STUN)</x:String>
+  <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">Conexión P2P directa (perforación UDP + STUN) — a través de Internet</x:String>
+  <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
+  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">Retransmisión (TURN)</x:String>
+  <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">Retransmitido por el servidor (TURN/WebSocket) — atraviesa cortafuegos</x:String>
+  <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">Comprobando</x:String>
+  <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">Comprobando la ruta de conexión…</x:String>
+  <x:String x:Key="Text.Sidebar.AddPeer" xml:space="preserve">Añadir emparejamiento</x:String>
+  <x:String x:Key="Text.Sidebar.RefreshPeers" xml:space="preserve">Actualizar pares</x:String>
+  <x:String x:Key="Text.Sidebar.Settings" xml:space="preserve">Ajustes</x:String>
+  <x:String x:Key="Text.Tray.CheckForUpdate" xml:space="preserve">Buscar actualizaciones…</x:String>
+  <x:String x:Key="Text.Warn" xml:space="preserve">Advertencia</x:String>
 
 </ResourceDictionary>

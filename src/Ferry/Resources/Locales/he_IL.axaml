@@ -5,33 +5,18 @@
   </ResourceDictionary.MergedDictionaries>
 
   <!-- Tabs -->
-  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 חברים</x:String>
   <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ הוסף חבר</x:String>
-  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 העברה</x:String>
-  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ הגדרות</x:String>
 
   <!-- Drop Overlay -->
   <x:String x:Key="Text.Drop.Message" xml:space="preserve">השלך קבצים להעברה</x:String>
   <x:String x:Key="Text.Drop.Description" xml:space="preserve">הקבצים שהושלכו יישלחו אל ההתקן המחובר</x:String>
 
   <!-- Connection Panel -->
-  <x:String x:Key="Text.Connection.Header" xml:space="preserve">יעד</x:String>
-  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">או שתף את קישור הצימוד.</x:String>
   <x:String x:Key="Text.Connection.Copy" xml:space="preserve">העתק</x:String>
   <x:String x:Key="Text.Connection.Copied" xml:space="preserve">הועתק</x:String>
-  <x:String x:Key="Text.Connection.Start" xml:space="preserve">התחל חיבור</x:String>
-  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">בטל</x:String>
-  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">הוסף התקן חדש</x:String>
-  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">הסר צימוד</x:String>
-  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">עזוב את הרשת</x:String>
 
   <!-- Transfer Panel -->
-  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">תולדות ההעברה</x:String>
-  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">נקה</x:String>
-  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">השלך קבצים להעברה</x:String>
-  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">אשר</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">דחה</x:String>
-  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">פתח תיקייה</x:String>
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">כללי</x:String>
@@ -53,8 +38,8 @@
   <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">לחצן הסגירה שולח למגש המערכת</x:String>
   <x:String x:Key="Text.Settings.Version" xml:space="preserve">גרסה</x:String>
   <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">בדוק עדכונים</x:String>
-  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">Skipping version {0}</x:String>
-  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">Undo</x:String>
+  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">מדלג על גרסה {0}</x:String>
+  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">בטל</x:String>
 
   <!-- Transfer States -->
   <x:String x:Key="Text.State.Pending" xml:space="preserve">ממתין...</x:String>
@@ -71,7 +56,6 @@
   <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">סרוק את קוד ה-QR באמצעות הטלפון החכם</x:String>
   <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">סרוק את קוד ה-QR של המחשב השני...</x:String>
   <x:String x:Key="Text.Status.Error" xml:space="preserve">שגיאה: {0}</x:String>
-  <x:String x:Key="Text.Status.Connected" xml:space="preserve">מחובר</x:String>
   <x:String x:Key="Text.Status.Connecting" xml:space="preserve">מתחבר...</x:String>
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">מתחבר מחדש...</x:String>
 
@@ -85,13 +69,13 @@
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">החידוש נכשל</x:String>
   <x:String x:Key="Text.Transfer.Retrying" xml:space="preserve">מנסה שוב ({0}/{1})…</x:String>
   <x:String x:Key="Text.Transfer.ConnectFailed" xml:space="preserve">לא ניתן ליצור חיבור</x:String>
-  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
-  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
-  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>
-  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Send File</x:String>
-  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Drop files here to send</x:String>
-  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">or click "Send File" button</x:String>
-  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
+  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">בחר קבצים להעברה</x:String>
+  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">חפש עמיתים…</x:String>
+  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">בחר חבר כדי להעביר קבצים</x:String>
+  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">שלח קובץ</x:String>
+  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">גרור קבצים לכאן כדי לשלוח</x:String>
+  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">או לחץ על הכפתור "שלח קובץ"</x:String>
+  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">אשר</x:String>
 
   <!-- Connection Phase Status -->
   <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">מכין מאזין TCP…</x:String>
@@ -103,15 +87,12 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">הצג חלון</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">יציאה</x:String>
-  <x:String x:Key="Text.Pairing.LinkLabel">קישור התאמה</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">סגור</x:String>
 
   <!-- Connection: No Members -->
-  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">אין עדיין התקנים מצומדים</x:String>
 
   <!-- Transfer: Empty -->
-  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">אין העברות</x:String>
 
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">התראות</x:String>
@@ -119,9 +100,6 @@
   <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">השמע צליל בעת קבלת הודעות</x:String>
 
   <!-- Settings: File Transfer -->
-  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">העברת קבצים</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">נתיב שמירת קבצים שהתקבלו</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">(תיקיית הורדות)</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">קבל קבצים אוטומטית</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">קבל אוטומטית קבצים נכנסים</x:String>
 
@@ -131,13 +109,13 @@
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">הפעלה בעת הכניסה</x:String>
   <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">הפעל את Ferry אוטומטית בעת הכניסה</x:String>
   <!-- v1.0.48: 帯域制限と並列転送数（英語フォールバック） -->
-  <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">Upload Limit (KB/s)</x:String>
-  <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">Outbound bandwidth cap. 0 = unlimited</x:String>
-  <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
-  <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Multiple files are sent in parallel automatically</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Automatic (up to 10)</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">מגבלת העלאה (KB/שנייה)</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">מגבלת רוחב פס יוצא. 0 = ללא הגבלה</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">מגבלת הורדה (KB/שנייה)</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">מגבלת רוחב פס נכנס. 0 = ללא הגבלה</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">העברות מקבילות</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">מספר קבצים נשלחים במקביל באופן אוטומטי</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">אוטומטי (עד 10)</x:String>
   <!-- Peer: destination list sorting/section headers -->
   <x:String x:Key="Text.Member.TogglePin" xml:space="preserve">הצמד / בטל הצמדה</x:String>
   <x:String x:Key="Text.Peer.Sort" xml:space="preserve">מיון</x:String>
@@ -172,5 +150,54 @@
   <x:String x:Key="Text.Cancel" xml:space="preserve">ביטול</x:String>
   <x:String x:Key="Text.Yes" xml:space="preserve">כן</x:String>
   <x:String x:Key="Text.No" xml:space="preserve">לא</x:String>
+
+  <!-- 追補: en_US に対して欠けていたキー（全言語パリティ対応） -->
+  <x:String x:Key="Text.Connection.PairFromCode.Button" xml:space="preserve">התאם באמצעות קוד זה</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">שגיאה: {0}</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 הדבק את הקוד של הצד השני כדי להתאים</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">הדבק את הקוד המוצג במחשב השני.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">קוד התאמה בן 32 תווים</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">מעבד…</x:String>
+  <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">קוד התאמה</x:String>
+  <x:String x:Key="Text.Member.Delete" xml:space="preserve">מחק</x:String>
+  <x:String x:Key="Text.Member.Delete.Confirm" xml:space="preserve">להסיר את "{0}" מרשימת החברים?
+לא ניתן לבטל פעולה זו.</x:String>
+  <x:String x:Key="Text.Member.Menu" xml:space="preserve">תפריט</x:String>
+  <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">העברות פעילות עם עמית זה</x:String>
+  <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
+  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">LAN ישיר</x:String>
+  <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">חיבור LAN ישיר (TCP) — המהיר ביותר, רוחב פס מרבי</x:String>
+  <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
+  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P (STUN)</x:String>
+  <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">חיבור P2P ישיר (ניקוב UDP + STUN) — דרך האינטרנט</x:String>
+  <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
+  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">ממסר (TURN)</x:String>
+  <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">מועבר דרך השרת (TURN/WebSocket) — עובר חומות אש</x:String>
+  <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">בבדיקה</x:String>
+  <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">בודק את נתיב החיבור…</x:String>
+  <x:String x:Key="Text.SaveBar.Open" xml:space="preserve">פתח את תיקיית השמירה</x:String>
+  <x:String x:Key="Text.SaveBar.Tooltip" xml:space="preserve">המיקום שבו נשמרים הקבצים שהתקבלו</x:String>
+  <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">גרסה חדשה זמינה!</x:String>
+  <x:String x:Key="Text.SelfUpdate.Checking" xml:space="preserve">בודק עדכונים…</x:String>
+  <x:String x:Key="Text.SelfUpdate.DownloadAndInstall" xml:space="preserve">הורד והתקן</x:String>
+  <x:String x:Key="Text.SelfUpdate.Error" xml:space="preserve">בדיקת העדכונים נכשלה!</x:String>
+  <x:String x:Key="Text.SelfUpdate.IgnoreThisVersion" xml:space="preserve">דלג על גרסה זו</x:String>
+  <x:String x:Key="Text.SelfUpdate.Title" xml:space="preserve">עדכון תוכנה</x:String>
+  <x:String x:Key="Text.SelfUpdate.UpToDate" xml:space="preserve">אתה משתמש בגרסה העדכנית ביותר.</x:String>
+  <x:String x:Key="Text.Sidebar.AddPeer" xml:space="preserve">הוסף התאמה</x:String>
+  <x:String x:Key="Text.Sidebar.RefreshPeers" xml:space="preserve">רענן עמיתים</x:String>
+  <x:String x:Key="Text.Sidebar.Settings" xml:space="preserve">הגדרות</x:String>
+  <x:String x:Key="Text.State.Paused" xml:space="preserve">מושהה</x:String>
+  <x:String x:Key="Text.Transfer.Cancel" xml:space="preserve">בטל</x:String>
+  <x:String x:Key="Text.Transfer.ClearHistory" xml:space="preserve">נקה היסטוריה</x:String>
+  <x:String x:Key="Text.Transfer.Delete" xml:space="preserve">מחק</x:String>
+  <x:String x:Key="Text.Transfer.Pause" xml:space="preserve">השהה</x:String>
+  <x:String x:Key="Text.Transfer.PeerMissing" xml:space="preserve">עמית היעד לא נמצא</x:String>
+  <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">שלח שוב</x:String>
+  <x:String x:Key="Text.Transfer.Resume" xml:space="preserve">המשך</x:String>
+  <x:String x:Key="Text.Transfer.ResumeSuspended" xml:space="preserve">המשך</x:String>
+  <x:String x:Key="Text.Transfer.SourceMissing" xml:space="preserve">קובץ המקור לא נמצא</x:String>
+  <x:String x:Key="Text.Tray.CheckForUpdate" xml:space="preserve">בדוק עדכונים…</x:String>
+  <x:String x:Key="Text.Warn" xml:space="preserve">אזהרה</x:String>
 
 </ResourceDictionary>

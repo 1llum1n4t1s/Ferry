@@ -30,6 +30,9 @@ public class ConnectionServiceKnockTests
     private static int OfferReadCount(ISignalingService sig) =>
         sig.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(ISignalingService.TryReadOfferOnceAsync));
 
+    private static int ProbeReadCount(ISignalingService sig) =>
+        sig.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(ISignalingService.ReadProbeOffersAsync));
+
     private static async Task WaitUntilAsync(Func<bool> cond, int timeoutMs = 3000)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -68,6 +71,44 @@ public class ConnectionServiceKnockTests
             // 安全網間隔（WS 切断時 3s）より十分短い時間ではポーリングが発生しない（旧 400ms 常時ポーリングの根絶）
             await Task.Delay(800, TestContext.Current.CancellationToken);
             Assert.Equal(before, OfferReadCount(sig));
+        }
+        finally { svc.Dispose(); }
+    }
+
+    [Fact]
+    public async Task アイドル中はprobeを読み直さない()
+    {
+        var (svc, sig) = CreateService();
+        try
+        {
+            svc.StartListeningForConnection(DeviceB);
+            // 初回 iteration だけ、listener 起動前に積まれていた probe を 1 度回収する
+            await WaitUntilAsync(() => ProbeReadCount(sig) >= 1);
+            var before = ProbeReadCount(sig);
+
+            // CF 使用量削減 (2026-07): ノックが来ない間は probe を読み直さない。
+            // 旧実装は毎周 probe-offers + offer の 2 リクエストを PairDO へ投げており、
+            // それが Durable Objects リクエストの 89%（87.8 万 req/月）を占めていた。
+            await Task.Delay(800, TestContext.Current.CancellationToken);
+            Assert.Equal(before, ProbeReadCount(sig));
+        }
+        finally { svc.Dispose(); }
+    }
+
+    [Fact]
+    public async Task ノック受信でprobeも読み直す()
+    {
+        var (svc, sig) = CreateService();
+        try
+        {
+            svc.StartListeningForConnection(DeviceB);
+            await WaitUntilAsync(() => ProbeReadCount(sig) >= 1);
+            var before = ProbeReadCount(sig);
+
+            // relay は probe-offer の POST でもノックを push する（signaling-routes.ts）ため、
+            // ノックで起きた周は probe も読み直して経路 Probe の取りこぼしを防ぐ
+            sig.ConnectKnockReceived += Raise.Event<EventHandler<string>>(sig, PairId);
+            await WaitUntilAsync(() => ProbeReadCount(sig) > before);
         }
         finally { svc.Dispose(); }
     }

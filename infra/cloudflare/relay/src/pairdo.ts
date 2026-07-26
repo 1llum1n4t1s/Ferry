@@ -23,6 +23,10 @@
 
 const SIGNALING_TTL_MS = 60 * 60 * 1000; // 1h。Firebase の firebase-cleanup.yml と同じ stale 閾値。
 
+/** rere レビュー #C-06: offer 鮮度判定で許容するクライアント↔サーバの時計ズレ。
+ *  /auth/token の CLOCK_SKEW ガード (auth.ts) と同じ 60s に揃える。 */
+const STALE_TOLERANCE_MS = 60 * 1000;
+
 interface TimedValue {
   data: string;
   createdAt: number;
@@ -66,8 +70,13 @@ export class PairDO {
           return method === 'POST'
             ? await this.writeEndpoint(device, req)
             : await this.readEndpoint(url);
+        // rere レビュー #A1-08: probe-offer / probe は method を見ずに書込・削除していたため、
+        // 読み取りのつもりの GET が状態を破壊した (offer/answer/endpoint は POST/GET を
+        // 分岐しているのに非対称)。他アクションと同じくメソッドを強制する。
         case 'probe-offer':
-          return await this.writeProbe('probeOffer', segs[1] ?? '', req);
+          return method === 'POST'
+            ? await this.writeProbe('probeOffer', segs[1] ?? '', req)
+            : json(405, { error: 'METHOD_NOT_ALLOWED', action, method });
         case 'probe-offers':
           return await this.readProbeOffers();
         case 'probe-answer':
@@ -75,13 +84,20 @@ export class PairDO {
             ? await this.writeProbe('probeAnswer', segs[1] ?? '', req)
             : await this.readProbeAnswer(segs[1] ?? '');
         case 'probe':
-          return await this.deleteProbe(segs[1] ?? '');
+          return method === 'DELETE'
+            ? await this.deleteProbe(segs[1] ?? '')
+            : json(405, { error: 'METHOD_NOT_ALLOWED', action, method });
         case '':
           return method === 'DELETE' ? await this.cleanupLeaves() : json(400, { error: 'BAD_ACTION' });
         default:
           return json(400, { error: 'BAD_ACTION', action });
       }
     } catch (e) {
+      // rere レビュー #C-13: 例外の実体をレスポンスボディにしか載せていなかったため、
+      // サーバ側 (wrangler tail / Workers Logs) には何も残らず、クライアント側も
+      // 5xx のボディを読まずに捨てるので両端で消えていた。DO 名は伏せ、アクションと
+      // 例外内容だけを構造化して残す (deviceId は Worker 側で検証済みなのでここでは出さない)。
+      console.error('PairDO error', JSON.stringify({ action, method, error: String(e) }));
       return json(500, { error: 'DO_ERROR', message: String(e) });
     }
   }
@@ -92,7 +108,15 @@ export class PairDO {
     if (!sender) return json(400, { error: 'NO_SENDER' });
     const body = (await req.json()) as { sdp?: unknown; createdAt?: unknown };
     if (typeof body.sdp !== 'string') return json(400, { error: 'BAD_BODY' });
-    const createdAt = typeof body.createdAt === 'number' ? body.createdAt : Date.now();
+    // rere レビュー #C-06: createdAt は必ずサーバ時刻で刻む。
+    // 旧実装は offerer がボディで申告した createdAt をそのまま保存し、listener 側が渡す
+    // minCreatedAt (listener のローカル時計) と直接比較していた = cross-device の時計比較。
+    // 同じ罠は probe 経路で「時計差で fresh offer を捨てる回帰を招いた」として既に撤去済み
+    // (ConnectionService.cs の minProbeCreatedAt 撤去コメント参照) なのに offer 経路に残っていた。
+    // 片側をサーバ時刻に寄せることで、比較のズレは「listener のローカル時計 vs サーバ時刻」の
+    // 1 段だけになり、/auth/token の CLOCK_SKEW ガード (±60s) で有界になる。
+    // クライアントは引き続き createdAt を送ってよい (無視するだけ) なので後方互換。
+    const createdAt = Date.now();
     await this.state.storage.put(`offer:${sender}`, { data: body.sdp, createdAt } satisfies TimedValue);
     await this.bumpCreatedAt(createdAt);
     return json(200, { ok: true });
@@ -103,7 +127,12 @@ export class PairDO {
     const minCreatedAt = Number(url.searchParams.get('minCreatedAt') ?? '0');
     const v = await this.state.storage.get<TimedValue>(`offer:${from}`);
     if (!v || !v.data) return json(404, { error: 'NOT_FOUND' });
-    if (minCreatedAt > 0 && v.createdAt < minCreatedAt) return json(404, { error: 'STALE' });
+    // #C-06: minCreatedAt は listener のローカル時計なので、サーバ時刻との差を許容する。
+    // 許容幅は /auth/token の CLOCK_SKEW と同じ 60s。offer の TTL は 1h あるので、
+    // 60s ぶん緩めても「本当に古い offer」を拾う実害はない（むしろ取りこぼしの方が痛い）。
+    if (minCreatedAt > 0 && v.createdAt < minCreatedAt - STALE_TOLERANCE_MS) {
+      return json(404, { error: 'STALE' });
+    }
     return json(200, { data: v.data, createdAt: v.createdAt });
   }
 

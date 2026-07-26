@@ -8,7 +8,6 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -102,6 +101,20 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         _rateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _rateTimer.Tick += OnRateTimerTick;
         _rateTimer.Start();
+
+        // rere レビュー #C-11: TransferItem.StateText は App.Text 由来の計算プロパティなので、
+        // ロケール切替では変更通知が出ず「完了 / 送信中 / 一時停止」が旧言語のまま残る。
+        // 完了済みの行は State が二度と変わらないため、再通知しないと永久に直らない。
+        App.LocaleChanged += OnLocaleChanged;
+    }
+
+    /// <summary>ロケール切替時に、全転送行の状態テキストを再評価させる。</summary>
+    private void OnLocaleChanged(object? sender, EventArgs e)
+    {
+        foreach (var item in Transfers)
+            item.RaiseLocalizedTextChanged();
+        foreach (var item in PendingApprovals)
+            item.RaiseLocalizedTextChanged();
     }
 
     /// <summary>
@@ -150,11 +163,48 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     private bool BelongsToSelectedPeer(TransferItem item) =>
         !string.IsNullOrEmpty(_selectedPeerId) && item.PeerId == _selectedPeerId;
 
+    /// <summary>
+    /// 選択中ピアの転送だけを <see cref="VisibleTransfers"/> へ投影し直す。
+    ///
+    /// ⚠️ Clear() の全置換ではなく in-place 差分反映で行う（宛先リストの
+    /// ConnectionViewModel.ReconcileVisiblePeers と同じ方針）。Clear() は
+    /// NotifyCollectionChangedAction.Reset を投げるため、購読側は「全行が消えて全行が生えた」と
+    /// 解釈して行のビジュアルを全部作り直す。宛先を切り替えるたび、あるいは転送 1 件の増減のたびに
+    /// リスト全体が再生成されるのは無駄で、スクロール位置もリセットされる。
+    /// </summary>
     private void RebuildVisibleTransfers()
     {
-        VisibleTransfers.Clear();
-        foreach (var t in Transfers.Where(BelongsToSelectedPeer))
-            VisibleTransfers.Add(t);
+        var desired = Transfers.Where(BelongsToSelectedPeer).ToList();
+
+        // 1) 不要になった行を後ろから除去（前から消すとインデックスがずれる）
+        for (var i = VisibleTransfers.Count - 1; i >= 0; i--)
+        {
+            if (!BelongsToSelectedPeer(VisibleTransfers[i]))
+                VisibleTransfers.RemoveAt(i);
+        }
+
+        // 2) 期待順に合わせて挿入する。
+        //
+        // rere レビュー #C-19: 旧実装はここで `VisibleTransfers.IndexOf(item)` を引いて
+        // Insert と Move を出し分けていたが、Move 分岐は構造的に到達不能なデッドコードだった。
+        // VisibleTransfers は常に Transfers の同順部分列（AddTransfer / RemoveTransfer が
+        // 両方へ append / remove するだけで、Transfers 側に Insert も並べ替えも無い）なので、
+        // desired も同順部分列になり「見つかったのに位置が違う」状態が作れない。
+        // 加えて宛先切替時は 1) で空になるため IndexOf が毎回「必ず見つからない」全走査になり、
+        // 履歴 m 件で O(m²) の空振り比較を積んでいた（m=10,000 で 5,000 万回）。
+        // 前方一致のファストパスだけ残して線形マージ 1 パスにする。
+        for (var i = 0; i < desired.Count; i++)
+        {
+            var item = desired[i];
+            if (i < VisibleTransfers.Count && ReferenceEquals(VisibleTransfers[i], item))
+                continue;
+            VisibleTransfers.Insert(i, item);
+        }
+
+        // 3) 期待より長い場合の余りを落とす（1) で拾えるのは所属違いのみ）
+        while (VisibleTransfers.Count > desired.Count)
+            VisibleTransfers.RemoveAt(VisibleTransfers.Count - 1);
+
         HasTransfers = VisibleTransfers.Count > 0;
     }
 
@@ -319,31 +369,40 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     // === 送信 ===
 
     /// <summary>
-    /// ファイル選択ダイアログを開き、選択されたファイルを送信する。
+    /// 送信ファイル選択ダイアログの表示要求イベント（View 側で TopLevel.StorageProvider 経由処理）。
+    /// SettingsViewModel.BrowseSaveDirectoryRequested と同じ委譲パターンに揃えている
+    /// （旧実装は VM が App.GetMainWindow().StorageProvider を直接叩いており、
+    ///   同じアプリ内でピッカーの開き方が 2 通り併存していた）。
+    /// View 側は選択結果を <see cref="SendFilesCommand"/> に渡す。
     /// </summary>
-    [RelayCommand]
-    private async Task BrowseAndSendFilesAsync()
+    public event EventHandler? BrowseFilesRequested;
+
+    /// <summary>
+    /// ファイル選択ダイアログの表示を要求する。実際のピッカー操作は View 側で行う（MVVM 厳密化）。
+    ///
+    /// rere レビュー #C-34: 旧 BrowseAndSendFilesAsync は AsyncRelayCommand だったため、
+    /// ピッカー〜送信完了まで CanExecute=false でボタンが無効化されていた。View 委譲で同期
+    /// コマンド化した際にその抑止が消え、連打で 2 本目の SendFilesAsync が走りうる状態になった。
+    /// SendFilesAsync は SemaphoreSlim(MaxParallelSends) を呼び出しごとに生成するので、
+    /// バッチが重なると並列上限 10 が実質 20 になる。ピッカーを開いている間だけ自前で抑止する。
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanBrowseAndSendFiles))]
+    private void BrowseAndSendFiles()
     {
-        if (App.GetMainWindow() is not { } mainWindow)
-            return;
-
-        var storageProvider = mainWindow.StorageProvider;
-        var files = await storageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            AllowMultiple = true,
-            Title = App.Text("Transfer.SelectFiles"),
-        });
-
-        if (files.Count == 0) return;
-
-        var paths = files
-            .Select(f => f.TryGetLocalPath())
-            .Where(p => p != null)
-            .ToArray();
-
-        if (paths.Length > 0)
-            await SendFilesAsync(paths!);
+        IsBrowsingFiles = true;
+        BrowseFilesRequested?.Invoke(this, EventArgs.Empty);
     }
+
+    private bool CanBrowseAndSendFiles() => !IsBrowsingFiles;
+
+    /// <summary>ファイル選択ダイアログを表示中か（#C-34: 多重起動抑止）。
+    /// View 側はピッカーを閉じた時点で必ず <see cref="NotifyBrowseFinished"/> を呼ぶ契約。</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(BrowseAndSendFilesCommand))]
+    public partial bool IsBrowsingFiles { get; set; }
+
+    /// <summary>View 側がファイル選択ダイアログを閉じたことを通知する（成功・キャンセル・例外いずれも）。</summary>
+    public void NotifyBrowseFinished() => IsBrowsingFiles = false;
 
     /// <summary>
     /// ファイル/フォルダパスの配列を受け取り、送信を開始する。
@@ -775,12 +834,26 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private void ClearHistory()
     {
-        var toRemove = Transfers
-            .Where(t => BelongsToSelectedPeer(t) && t.CanDelete)
-            .ToList();
+        // rere レビュー #C-20: 旧実装は `foreach (toRemove) RemoveTransfer(item)` で、
+        // 1 件ごとに Transfers / VisibleTransfers 双方の ObservableCollection.Remove
+        // （内部 IndexOf の線形探索 + CollectionChanged 通知）を走らせていた。
+        // ClearHistory は「選択中ピアの終端行を全消し」なので削除件数 K ≒ 総件数 T になりやすく、
+        // O(K·T) の二乗になる（T=10,000 で 5,000 万回の参照比較 + 20,000 回の UI 通知）。
+        // 対象を HashSet に入れて後ろから 1 パスで落とし、O(T) にする。
+        var toRemove = new HashSet<TransferItem>(
+            Transfers.Where(t => BelongsToSelectedPeer(t) && t.CanDelete));
+        if (toRemove.Count == 0) return;
 
-        foreach (var item in toRemove)
-            RemoveTransfer(item);
+        for (var i = Transfers.Count - 1; i >= 0; i--)
+        {
+            if (toRemove.Contains(Transfers[i]))
+                Transfers.RemoveAt(i);  // _transferIndex は CollectionChanged で自動更新
+        }
+        for (var i = VisibleTransfers.Count - 1; i >= 0; i--)
+        {
+            if (toRemove.Contains(VisibleTransfers[i]))
+                VisibleTransfers.RemoveAt(i);
+        }
     }
 
     // === service イベント ===
@@ -981,6 +1054,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         _transferService.TransferError -= OnTransferError;
         _transferService.ApprovalRequested -= OnApprovalRequested;
         _connectionViewModel.PropertyChanged -= OnConnectionVmPropertyChanged;
+        App.LocaleChanged -= OnLocaleChanged;  // static イベントなので解除しないと VM ごとリークする
 
         foreach (var tid in _sendCtsByItem.Keys.ToArray())
         {

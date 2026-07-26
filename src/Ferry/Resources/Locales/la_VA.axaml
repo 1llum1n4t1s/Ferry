@@ -5,33 +5,18 @@
   </ResourceDictionary.MergedDictionaries>
 
   <!-- Tabs -->
-  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 Sodales</x:String>
   <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ Sodalem Addere</x:String>
-  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 Translatio</x:String>
-  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ Dispositiones</x:String>
 
   <!-- Drop Overlay -->
   <x:String x:Key="Text.Drop.Message" xml:space="preserve">Demitte fasciculos ad transferendum</x:String>
   <x:String x:Key="Text.Drop.Description" xml:space="preserve">Fasciculi demissi ad instrumentum coniunctum mittentur</x:String>
 
   <!-- Connection Panel -->
-  <x:String x:Key="Text.Connection.Header" xml:space="preserve">Destinatio</x:String>
-  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">Vel nexum coniunctionis communica.</x:String>
   <x:String x:Key="Text.Connection.Copy" xml:space="preserve">Exscribe</x:String>
   <x:String x:Key="Text.Connection.Copied" xml:space="preserve">Exscriptum</x:String>
-  <x:String x:Key="Text.Connection.Start" xml:space="preserve">Incipe Conexionem</x:String>
-  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">Abroga</x:String>
-  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">Adde Novum Instrumentum</x:String>
-  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">Remove Coniunctionem</x:String>
-  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">Discede a Rete</x:String>
 
   <!-- Transfer Panel -->
-  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">Historia Translationum</x:String>
-  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">Purga</x:String>
-  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">Demitte fasciculos ad transferendum</x:String>
-  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">Approba</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">Reice</x:String>
-  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">Aperi involucrum</x:String>
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">Generalia</x:String>
@@ -53,8 +38,8 @@
   <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">Clavis clausurae ad lancem systematis mittit</x:String>
   <x:String x:Key="Text.Settings.Version" xml:space="preserve">Versio</x:String>
   <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">Inspice Renovationes</x:String>
-  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">Skipping version {0}</x:String>
-  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">Undo</x:String>
+  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">Versio {0} omittitur</x:String>
+  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">Revoca</x:String>
 
   <!-- Transfer States -->
   <x:String x:Key="Text.State.Pending" xml:space="preserve">Exspectans...</x:String>
@@ -71,7 +56,6 @@
   <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">Scande codicem QR telephonio intelligenti</x:String>
   <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">Scande codicem QR alterius PC...</x:String>
   <x:String x:Key="Text.Status.Error" xml:space="preserve">Error: {0}</x:String>
-  <x:String x:Key="Text.Status.Connected" xml:space="preserve">Coniunctum</x:String>
   <x:String x:Key="Text.Status.Connecting" xml:space="preserve">Coniungens...</x:String>
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">Reconiungens...</x:String>
 
@@ -94,13 +78,13 @@
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">Resumptio defecit</x:String>
   <x:String x:Key="Text.Transfer.Retrying" xml:space="preserve">Iterum temptans ({0}/{1})…</x:String>
   <x:String x:Key="Text.Transfer.ConnectFailed" xml:space="preserve">Conexionem constituere non potuit</x:String>
-  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
-  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
-  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>
-  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Send File</x:String>
-  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Drop files here to send</x:String>
-  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">or click "Send File" button</x:String>
-  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
+  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Elige fasciculos transferendos</x:String>
+  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Quaere pares…</x:String>
+  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Elige socium ad fasciculos transferendos</x:String>
+  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Mitte fasciculum</x:String>
+  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Fasciculos huc trahe ut mittas</x:String>
+  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">aut preme bullam "Mitte fasciculum"</x:String>
+  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accipe</x:String>
 
   <!-- Connection Phase Status -->
   <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">TCP auscultator praeparatur…</x:String>
@@ -112,15 +96,12 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">Fenestram Ostende</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">Exi</x:String>
-  <x:String x:Key="Text.Pairing.LinkLabel">Nexus Coniugationis</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">Claudere</x:String>
 
   <!-- Connection: No Members -->
-  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">Nulla instrumenta coniugata adhuc</x:String>
 
   <!-- Transfer: Empty -->
-  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">Nullae translationes</x:String>
 
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">Notificationes</x:String>
@@ -128,9 +109,6 @@
   <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">Sonum ede cum nuntii accipiuntur</x:String>
 
   <!-- Settings: File Transfer -->
-  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">Translatio Fasciculorum</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">Via Servandi Fasciculos Acceptos</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">(Involucrum Depositionum)</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">Fasciculos Automatice Accipe</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">Fasciculos advenientes automatice accipe</x:String>
 
@@ -140,13 +118,13 @@
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">In ingressu incipe</x:String>
   <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">Ferry in ingressu automatice incipiat</x:String>
   <!-- v1.0.48: 帯域制限と並列転送数（英語フォールバック） -->
-  <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">Upload Limit (KB/s)</x:String>
-  <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">Outbound bandwidth cap. 0 = unlimited</x:String>
-  <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
-  <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Multiple files are sent in parallel automatically</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Automatic (up to 10)</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">Terminus missionis (KB/s)</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">Terminus latitudinis egredientis. 0 = sine termino</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Terminus demissionis (KB/s)</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Terminus latitudinis ingredientis. 0 = sine termino</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Translationes parallelae</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Plures fasciculi automatice parallele mittuntur</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Automatice (usque ad 10)</x:String>
   <!-- Peer: destination list sorting/section headers -->
   <x:String x:Key="Text.Member.TogglePin" xml:space="preserve">Affige / Solve</x:String>
   <x:String x:Key="Text.Peer.Sort" xml:space="preserve">Ordina</x:String>
@@ -181,5 +159,47 @@
   <x:String x:Key="Text.Cancel" xml:space="preserve">Cancella</x:String>
   <x:String x:Key="Text.Yes" xml:space="preserve">Ita</x:String>
   <x:String x:Key="Text.No" xml:space="preserve">Non</x:String>
+
+  <!-- 追補: en_US に対して欠けていたキー（全言語パリティ対応） -->
+  <x:String x:Key="Text.Connection.PairFromCode.Button" xml:space="preserve">Hoc codice coniunge</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">Error: {0}</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 Codicem socii insere ad coniungendum</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">Codicem in altero computatro monstratum insere.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">Codex coniunctionis 32 litterarum</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">Tractatur…</x:String>
+  <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">Codex coniunctionis</x:String>
+  <x:String x:Key="Text.Member.Delete" xml:space="preserve">Dele</x:String>
+  <x:String x:Key="Text.Member.Delete.Confirm" xml:space="preserve">Visne "{0}" e sociis tuis removere?
+Hoc revocari non potest.</x:String>
+  <x:String x:Key="Text.Member.Menu" xml:space="preserve">Index</x:String>
+  <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">Translationes cum hoc pari currentes</x:String>
+  <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
+  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">LAN directum</x:String>
+  <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">Nexus LAN directus (TCP) — celerrimus, latitudo maxima</x:String>
+  <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
+  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P (STUN)</x:String>
+  <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">Nexus P2P directus (perforatio UDP + STUN) — per interrete</x:String>
+  <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
+  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">Transmissio (TURN)</x:String>
+  <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">Per servitorem transmissum (TURN/WebSocket) — muros ignis transit</x:String>
+  <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">Exploratur</x:String>
+  <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">Via nexus exploratur…</x:String>
+  <x:String x:Key="Text.SaveBar.Open" xml:space="preserve">Aperi plicam servandi</x:String>
+  <x:String x:Key="Text.SaveBar.Tooltip" xml:space="preserve">Ubi fasciculi accepti servantur</x:String>
+  <x:String x:Key="Text.Sidebar.AddPeer" xml:space="preserve">Adde coniunctionem</x:String>
+  <x:String x:Key="Text.Sidebar.RefreshPeers" xml:space="preserve">Recense pares</x:String>
+  <x:String x:Key="Text.Sidebar.Settings" xml:space="preserve">Optiones</x:String>
+  <x:String x:Key="Text.State.Paused" xml:space="preserve">Intermissum</x:String>
+  <x:String x:Key="Text.Transfer.Cancel" xml:space="preserve">Abroga</x:String>
+  <x:String x:Key="Text.Transfer.ClearHistory" xml:space="preserve">Dele historiam</x:String>
+  <x:String x:Key="Text.Transfer.Delete" xml:space="preserve">Dele</x:String>
+  <x:String x:Key="Text.Transfer.Pause" xml:space="preserve">Intermitte</x:String>
+  <x:String x:Key="Text.Transfer.PeerMissing" xml:space="preserve">Par destinatum non inventum</x:String>
+  <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">Remitte</x:String>
+  <x:String x:Key="Text.Transfer.Resume" xml:space="preserve">Perge</x:String>
+  <x:String x:Key="Text.Transfer.ResumeSuspended" xml:space="preserve">Perge</x:String>
+  <x:String x:Key="Text.Transfer.SourceMissing" xml:space="preserve">Fasciculus fontis non inventus</x:String>
+  <x:String x:Key="Text.Tray.CheckForUpdate" xml:space="preserve">Quaere renovationes…</x:String>
+  <x:String x:Key="Text.Warn" xml:space="preserve">Monitum</x:String>
 
 </ResourceDictionary>

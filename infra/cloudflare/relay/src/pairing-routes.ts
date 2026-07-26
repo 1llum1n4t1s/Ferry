@@ -122,7 +122,8 @@ export async function handlePairCreate(req: Request, env: Env): Promise<Response
   const errB = await verifyNonce(env, sidB, nonceB, 'B');
   if (errB) return errB;
 
-  const pairingId = await notifyPairEstablished(env, sidA, str(body.nameA), sidB, str(body.nameB), str(body.pkA), str(body.pkB));
+  // 公開鍵は body.pkA / body.pkB ではなく D1 の権威データを使う (#C-32)
+  const pairingId = await notifyPairEstablished(env, sidA, str(body.nameA), sidB, str(body.nameB));
   return jsonOk({ ok: true, pairingId });
 }
 
@@ -147,17 +148,42 @@ async function verifySessionActive(env: Env, sid: string, label: string): Promis
   return null;
 }
 
+/**
+ * rere レビュー #C-32: ペア成立イベントに載せる公開鍵を D1 `sessions.public_key`
+ * （= /pair/session で bearer 本人が登録した権威データ）から引き直す。
+ *
+ * 旧実装はリクエストボディの pkA / pkB をそのまま両者の inbox へ流していた。公開鍵は
+ * PairSecret（ECDH ルート鍵）の導出元なので、呼び出し元が申告した値をそのまま採用すると
+ * 鍵配送の完全性が「呼び出し元の善意」に依存する。改造 Bridge や nonce を握った中間者が
+ * pkB を差し替えると両 PC が別々の PairSecret を導出し、SecureChannel.ApplyConfirm が
+ * HMAC 不一致で Failed → そのペアは恒久的に転送不能（平文フォールバックもしない）になる。
+ * サーバが権威データを持っているのに照合していなかったのが root cause なので、
+ * 申告値は無視して D1 から読む。
+ *
+ * public_key が空のセッション（公開鍵交換前の旧クライアント）や sessions 行が無いケースは
+ * 空文字のまま流し、従来どおりクライアント側の平文フォールバックに委ねる。
+ * ここで 404 にすると「pairing_nonces はあるが sessions が無い」不整合状態でペアリングが
+ * 止まってしまうので、可用性を優先する。申告値を絶対に使わない時点で防御目的は達成される。
+ */
+async function loadSessionPublicKeys(env: Env, sidA: string, sidB: string): Promise<{ pkA: string; pkB: string }> {
+  const [rowA, rowB] = await Promise.all([
+    env.DB.prepare('SELECT public_key FROM sessions WHERE sid=?').bind(sidA).first<{ public_key: string }>(),
+    env.DB.prepare('SELECT public_key FROM sessions WHERE sid=?').bind(sidB).first<{ public_key: string }>(),
+  ]);
+  return { pkA: rowA?.public_key ?? '', pkB: rowB?.public_key ?? '' };
+}
+
 /** pairingId を導出し、両 deviceId の DeviceDO inbox にペア成立イベントを push する
- *  (handlePairCreate / handlePairLink で共通)。2 つの DO は互いに独立しているため並列実行する。 */
+ *  (handlePairCreate / handlePairLink で共通)。2 つの DO は互いに独立しているため並列実行する。
+ *  公開鍵は呼び出し元の申告ではなく D1 の権威データを使う (#C-32)。 */
 async function notifyPairEstablished(
   env: Env,
   sidA: string,
   nameA: string,
   sidB: string,
   nameB: string,
-  pkA: string,
-  pkB: string,
 ): Promise<string> {
+  const keys = await loadSessionPublicKeys(env, sidA, sidB);
   const pairingId = derivePairId(sidA, sidB);
   const event = {
     pairingId,
@@ -165,8 +191,8 @@ async function notifyPairEstablished(
     nameA: nameA || 'PC-A',
     sidB,
     nameB: nameB || 'PC-B',
-    pkA,
-    pkB,
+    pkA: keys.pkA,
+    pkB: keys.pkB,
     createdAt: Date.now(),
   };
   await Promise.all([notifyInbox(env, sidA, event), notifyInbox(env, sidB, event)]);
@@ -210,7 +236,10 @@ export async function handlePairLink(req: Request, env: Env): Promise<Response> 
   const sessionErr = await verifySessionActive(env, sidB, 'sidB');
   if (sessionErr) return sessionErr;
 
-  const pairingId = await notifyPairEstablished(env, sidA, str(body.nameA), sidB, str(body.nameB), str(body.pkA), str(body.pkB));
+  // 公開鍵は body.pkA / body.pkB ではなく D1 の権威データを使う (#C-32)。
+  // /pair/link は sidA=claims.deviceId が保証される一方で pkA/pkB は呼び出し元申告だったため、
+  // 相手側 (sidB) に渡る自分の公開鍵を任意値にできる状態だった。
+  const pairingId = await notifyPairEstablished(env, sidA, str(body.nameA), sidB, str(body.nameB));
   return jsonOk({ ok: true, pairingId });
 }
 

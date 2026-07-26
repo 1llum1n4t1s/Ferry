@@ -231,18 +231,38 @@ jobs:
           printf '  %s\n' "${all_keys[@]}"
           echo "::endgroup::"
 
-          # 3. 削除対象判定: 拡張子 .nupkg のもののみ対象 + keep_map 外
-          #    Ferry の packages/ 由来 (deb/rpm/AppImage/zip 等のインストーラ) は
-          #    .nupkg 拡張子ではないので絶対に削除対象にならない
+          # 3. 削除対象判定: 「manifest 外 かつ バージョン文字列付き かつ 直近 N 世代以外」
+          #    ⚠️ 旧実装は .nupkg だけを対象にしていたため、package.yml が生成する
+          #       バージョン付き配布物 (ferry_x.y.z.zip / .deb / .rpm / ferry-x.y.z.AppImage)
+          #       が一切消えず、1.0.31〜1.0.69 の 39 世代 351 個 = 7.2GB が R2 に滞留した
+          #       (2026-07 実測。R2 含有枠 10GB の 72% を 1 バケットで消費していた)。
+          #    固定ファイル名 (Ferry-*-Setup.exe / Ferry-*-Portable.zip / Ferry-linux-*.AppImage /
+          #    Ferry-osx-arm64-Setup.pkg / RELEASES* / assets.*.json / releases.*.json) は
+          #    バージョン文字列を含まないので対象外 = ランディングページの DL リンクは無傷。
+          #    grep が無一致で終わると pipefail で job が落ちるため || true で吸収する。
+          KEEP_VERSIONS=2
+          declare -A keep_version_map
+          mapfile -t all_versions < <(printf '%s\n' "${all_keys[@]}" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sort -V -u || true)
+          if [[ "${#all_versions[@]}" -gt 0 ]]; then
+            start=$(( ${#all_versions[@]} - KEEP_VERSIONS ))
+            (( start < 0 )) && start=0
+            for v in "${all_versions[@]:$start}"; do keep_version_map["$v"]=1; done
+          fi
+          echo "保持バージョン: ${!keep_version_map[*]} (R2 上の全 ${#all_versions[@]} 世代のうち直近 ${KEEP_VERSIONS} 世代)"
+
           to_delete=()
           for key in "${all_keys[@]}"; do
-            [[ "$key" != *.nupkg ]] && continue
+            # manifest が参照するファイルは絶対保持 (消すと自動更新が壊れる)
             [[ -n "${keep_map[$key]:-}" ]] && continue
+            # 固定ファイル名はバージョン文字列を含まない = 毎リリース上書きなので保持
+            ver=$(printf '%s' "$key" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)
+            [[ -z "$ver" ]] && continue
+            [[ -n "${keep_version_map[$ver]:-}" ]] && continue
             to_delete+=("$key")
           done
 
           if [[ "${#to_delete[@]}" -eq 0 ]]; then
-            echo "✅ 削除対象なし - R2 上の全 nupkg が manifest に含まれています"
+            echo "✅ 削除対象なし - R2 上のバージョン付きファイルは manifest 参照分と直近 ${KEEP_VERSIONS} 世代のみです"
             exit 0
           fi
 
@@ -270,11 +290,28 @@ jobs:
 
           echo ""
           echo "🧹 R2 クリーンアップ完了: $deleted / ${#to_delete[@]} 削除  (失敗: $failed)"
-          # 失敗があってもリリース自体は成功扱い (削除失敗は次回リリースで再試行される)
-          # ただし全件失敗の場合はワークフロー失敗にして気付けるようにする
-          if [[ "$failed" -gt 0 && "$deleted" -eq 0 ]]; then
-            echo "::error::すべての削除が失敗しました。API token の権限・bucket 名を確認してください。"
-            exit 1
+          # rere レビュー #C-38: 旧実装は「全件失敗」のときだけ exit 1 にしていたため、
+          # 100 件中 99 件が失敗しても job はグリーンだった。恒久的に削除できないキー
+          # (URI エンコード不整合・権限不足・オブジェクトロック等) は再試行しても永久に
+          # 失敗するので、「次回リリースで再試行される」という前提が成り立たない。
+          # 実際 1.0.31〜1.0.69 の 351 個 7.2GB が滞留して R2 含有枠の 72% を消費する事故が
+          # 起きており、R2 使用量の監視もリポジトリ内に無い（気付く手段が他にない）。
+          # 配信自体は完了しているのでリリースは失敗させないが、1 件でも失敗したら
+          # ::warning:: を出してサマリに残し、全件失敗なら従来どおり ::error:: + exit 1 にする。
+          if [[ "$failed" -gt 0 ]]; then
+            if [[ "$deleted" -eq 0 ]]; then
+              echo "::error::すべての削除が失敗しました。API token の権限・bucket 名を確認してください。"
+              exit 1
+            fi
+            echo "::warning::R2 クリーンアップで $failed 件の削除に失敗しました。恒久失敗なら滞留し続けるので、上のログの ❌ 行を確認してください。"
+            {
+              echo "### ⚠️ R2 クリーンアップの部分失敗"
+              echo ""
+              echo "- 削除成功: $deleted 件 / 対象 ${#to_delete[@]} 件"
+              echo "- **削除失敗: $failed 件**"
+              echo ""
+              echo "再試行で解消しない場合は R2 に滞留し続けます（含有枠を圧迫）。"
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
   # CF 単独完結 Step 6: Bridge ページは relay Worker の Static Assets（deploy-relay.yml）で配信するため、
   # Firebase Hosting への deploy job（firebase-deploy）は撤去した。src/Ferry.Bridge も削除済み。

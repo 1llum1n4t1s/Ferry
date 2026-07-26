@@ -45,6 +45,17 @@ export async function handleSignaling(req: Request, env: Env, url: URL, ctx?: Wa
     return jsonError(403, 'NOT_PARTICIPANT', 'deviceId is not a participant of pairId');
   }
 
+  // 2.5. rere レビュー #C-31: device-scoped rate limit。
+  // 旧実装は /sig/* だけ rate limit を通していなかった（/auth/token・/pair/link にはある）。
+  // 当事者検証は「pairId の 2 要素の一方が自分」しか見ず D1 `pairs` の実在を確認しないため、
+  // cfToken を 1 つ取れば `{自分}_{任意の32hex}` を無数に作って PairDO を生成でき、
+  // 各々が storage 書込 + 1h alarm を保持する（DO/storage 課金の増殖）。
+  // 認可判断そのものは変えず、正規クライアントの通常レートに影響しない上限だけを掛ける。
+  if (env.RATELIMIT_DEVICE) {
+    const { success } = await env.RATELIMIT_DEVICE.limit({ key: claims.deviceId });
+    if (!success) return jsonError(429, 'DEVICE_RATE_LIMIT', 'deviceId rate limit exceeded');
+  }
+
   // 3+4. PairDO へ forward (sender キーは X-Ferry-Device で強制)
   const doId = env.PAIR.idFromName(await hashPairId(pairId, env.SALT));
   const stub = env.PAIR.get(doId);
@@ -69,14 +80,25 @@ export async function handleSignaling(req: Request, env: Env, url: URL, ctx?: Wa
   //   有界予算〔answer 20s / offer-v2 8s / endpoint 10s〕を無駄に食う）。
   if (resp.ok && req.method === 'POST' && (action === 'offer' || action === 'probe-offer')) {
     const peer = claims.deviceId === a ? b : a;
+    // rere レビュー #C-30: 配送結果 (delivered) を捨てず観測する。
+    // ノックは v1.0.67 で着信検知の主経路になったが、成否も到達率もどこにも記録されて
+    // いなかった。inbox WS 接続が壊れると全ユーザーが黙って安全網ポーリングへ退行し、
+    // 機能は「動く」ので healthcheck も転送成功率も無傷 → 退行が起きた事実自体を
+    // 検知できない silent failure になっていた。delivered=0（相手 WS 未接続）は正常な
+    // 縮退なので info、例外は error として残す。
     const knock = notifyInbox(env, peer, {
       type: 'knock',
       pairId,
       from: claims.deviceId,
       createdAt: Date.now(),
-    }).catch(() => {
-      /* ノック失敗は無害（listener の安全網ポーリングが拾う）。offer 書込自体は成功済み */
-    });
+    })
+      .then((delivered) => {
+        console.log('knock', JSON.stringify({ action, delivered }));
+      })
+      .catch((e) => {
+        /* ノック失敗自体は無害（listener の安全網ポーリングが拾う）。offer 書込は成功済み */
+        console.error('knock failed', JSON.stringify({ action, error: String(e) }));
+      });
     if (ctx) ctx.waitUntil(knock);
     else await knock; // ctx 無し（テスト等）は従来どおり待つ
   }

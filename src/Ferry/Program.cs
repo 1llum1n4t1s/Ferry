@@ -97,6 +97,12 @@ internal sealed partial class Program
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
             .WithInterFont()
+#if DEBUG
+            // DevTools インフラを有効化する。実際の接続は App.Initialize の
+            // AttachDeveloperTools が行う（両方必要）。パッケージ自体が Debug 限定参照なので
+            // Release / Native AOT 発行には一切入らない。
+            .WithDeveloperTools()
+#endif
             .LogToTrace();
 
     private static void TrySetCurrentProcessAppUserModelId()

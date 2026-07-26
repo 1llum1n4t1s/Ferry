@@ -209,13 +209,17 @@ foreach ($runtime in $Runtimes) {
     Write-Host "  $url → HTTP $($resp.StatusCode) ($($resp.RawContentLength) bytes)"
 }
 
-# ---- 4. 旧バージョン nupkg のクリーンアップ (Aggressive 戦略) ----
+# ---- 4. 旧バージョンのクリーンアップ (直近 N バージョン保持) ----
 # keep set = ローカル artifacts の manifest (今アップロードしたもの) +
 #            今回ビルドしていないチャンネル (osx / linux 等) の manifest を R2 から取得。
-# R2 上の「.nupkg かつ keep set 外」だけを削除する。固定ファイル名 (Setup.exe /
-# Portable.zip / AppImage / deb / rpm / ferry_*.zip / RELEASES* / assets.*.json /
-# releases.*.json) は .nupkg ではないので対象外 = 安全。
-Write-Host '== 旧 nupkg クリーンアップ ==' -ForegroundColor Cyan
+# 削除対象は「manifest 外 かつ バージョン文字列付き かつ 直近 N バージョン以外」。
+# 固定ファイル名 (Setup.exe / Portable.zip / AppImage / RELEASES* / assets.*.json /
+# releases.*.json) はバージョン文字列を含まないので対象外 = 安全。
+# ⚠️ 旧実装は '*.nupkg' だけを削除対象にしていたため、package.yml が生成する
+#    バージョン付き配布物 (ferry_x.y.z.zip / .deb / .rpm / ferry-x.y.z.AppImage) が
+#    永久に残り、1.0.31〜1.0.69 の 39 世代 351 個 = 7.2GB が R2 に滞留していた
+#    (2026-07 実測。R2 含有枠 10GB の 72% を 1 バケットで消費)。
+Write-Host '== 旧バージョンクリーンアップ ==' -ForegroundColor Cyan
 $keep = @{}
 $manifests = Get-ChildItem $ArtifactsDir -Filter 'releases.*.json'
 if (-not $manifests) { throw 'artifacts に releases.*.json が見つかりません' }
@@ -273,7 +277,26 @@ while ($true) {
     if (-not $cursor) { break }
 }
 
-$toDelete = $allKeys | Where-Object { $_ -like '*.nupkg' -and -not $keep.ContainsKey($_) }
+# 全プロジェクト共通の保持ポリシー: 直近 2 バージョン。
+$KeepVersionCount = 2
+$versionPattern = '(\d+\.\d+\.\d+)'
+$allVersions = @(
+    $allKeys | ForEach-Object {
+        $m = [regex]::Match($_, $versionPattern)
+        if ($m.Success) { $m.Groups[1].Value }
+    } | Sort-Object -Property { [version]$_ } -Unique
+)
+$keepVersions = @($allVersions | Select-Object -Last $KeepVersionCount)
+Write-Host "  保持バージョン: $($keepVersions -join ', ') (全 $($allVersions.Count) 世代)"
+
+$toDelete = $allKeys | Where-Object {
+    # manifest が参照するファイルは絶対保持 (消すと自動更新が壊れる)
+    if ($keep.ContainsKey($_)) { return $false }
+    # 固定ファイル名はバージョン文字列を含まない = 毎リリース上書きなので保持
+    $m = [regex]::Match($_, $versionPattern)
+    if (-not $m.Success) { return $false }
+    return $keepVersions -notcontains $m.Groups[1].Value
+}
 if (-not $toDelete) {
     Write-Host '  ✅ 削除対象なし'
 } else {

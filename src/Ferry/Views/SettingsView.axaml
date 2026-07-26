@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Ferry.ViewModels"
+             xmlns:app="using:Ferry"
              mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="700"
              x:Class="Ferry.Views.SettingsView"
              x:DataType="vm:SettingsViewModel">
@@ -44,11 +45,23 @@
                         </ComboBox>
                     </Grid>
 
-                    <!-- 言語 -->
+                    <!-- 言語。旧実装は code-behind で ItemsSource 代入 +
+                         DisplayMemberBinding = new Binding("DisplayName") をしており、
+                         この reflection binding が Native AOT で IL3050 警告
+                         (RequiresDynamicCode) を出していた。x:DataType 付きの ItemTemplate に
+                         置き換えてコンパイル済みバインディングに寄せ、選択状態も VM に持たせた。 -->
                     <Grid ColumnDefinitions="*,Auto">
                         <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.Language}" />
-                        <ComboBox Grid.Column="1" x:Name="LocaleComboBox"
-                                  MinWidth="160" />
+                        <ComboBox Grid.Column="1"
+                                  MinWidth="160"
+                                  ItemsSource="{Binding LocaleOptions}"
+                                  SelectedItem="{Binding SelectedLocaleItem, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="app:LocaleItem">
+                                    <TextBlock Text="{Binding DisplayName}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
                     </Grid>
 
                     <!-- N-1: AccentColor / FontSize は未実装で死蔵だったため削除（ThemeMode のみ有効） -->

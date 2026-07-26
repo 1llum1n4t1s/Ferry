@@ -67,10 +67,16 @@ public sealed class WebSocketRelayTransport : ITransport
     /// </summary>
     public async Task ConnectAsync(CancellationToken ct = default)
     {
-        Util.Logger.Log($"WebSocket リレー接続開始: {_relayUrl}, pairId={_pairId}, role={_role}");
+        Util.Logger.Log($"WebSocket リレー接続開始: {_relayUrl}, pairId={Util.Logger.MaskPairId(_pairId)}, role={_role}");
 
         _ws = new ClientWebSocket();
         _ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+        // rere レビュー #C-23: KeepAliveInterval だけでは .NET は Ping を送るものの Pong 応答を
+        // 要求しない（KeepAliveTimeout の既定が InfiniteTimeSpan）。経路が黙って落ちた half-open を
+        // 検出できず、受信ループは OS の TCP 再送タイムアウト（分オーダー）までブロックし続ける。
+        // 送信側は FlowAckStallTimeoutMs=60s で打ち切れるのに受信側には無通信タイムアウトが無く、
+        // リレー受信中に経路が black-hole 化すると UI が InProgress のまま無期限に固まっていた。
+        _ws.Options.KeepAliveTimeout = TimeSpan.FromSeconds(20);
 
         // リレーサーバーに接続（URL にルーム情報を含める）
         var uri = new Uri($"{_relayUrl}?pairId={Uri.EscapeDataString(_pairId)}&role={Uri.EscapeDataString(_role)}");

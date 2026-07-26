@@ -5,33 +5,18 @@
   </ResourceDictionary.MergedDictionaries>
 
   <!-- Tabs -->
-  <x:String x:Key="Text.Tab.Members" xml:space="preserve">👥 सदस्याः</x:String>
   <x:String x:Key="Text.Tab.AddMember" xml:space="preserve">➕ सदस्यं योजय</x:String>
-  <x:String x:Key="Text.Tab.Transfer" xml:space="preserve">📁 स्थानान्तरणम्</x:String>
-  <x:String x:Key="Text.Tab.Settings" xml:space="preserve">⚙️ विन्यासाः</x:String>
 
   <!-- Drop Overlay -->
   <x:String x:Key="Text.Drop.Message" xml:space="preserve">स्थानान्तरणाय सञ्चिकाः अत्र त्यजन्तु</x:String>
   <x:String x:Key="Text.Drop.Description" xml:space="preserve">त्यक्ताः सञ्चिकाः संयुक्तं यन्त्रं प्रति प्रेषयिष्यन्ते</x:String>
 
   <!-- Connection Panel -->
-  <x:String x:Key="Text.Connection.Header" xml:space="preserve">गन्तव्यम्</x:String>
-  <x:String x:Key="Text.Connection.PairingLink" xml:space="preserve">अथवा युग्मनसम्बन्धं विभजन्तु।</x:String>
   <x:String x:Key="Text.Connection.Copy" xml:space="preserve">प्रतिलिपिः</x:String>
   <x:String x:Key="Text.Connection.Copied" xml:space="preserve">प्रतिलिपिकृतम्</x:String>
-  <x:String x:Key="Text.Connection.Start" xml:space="preserve">संयोजनम् आरभताम्</x:String>
-  <x:String x:Key="Text.Connection.Cancel" xml:space="preserve">निरस्यताम्</x:String>
-  <x:String x:Key="Text.Connection.AddDevice" xml:space="preserve">नवीनं यन्त्रं योजयतु</x:String>
-  <x:String x:Key="Text.Connection.RemovePeer" xml:space="preserve">युग्मनं निवर्तयतु</x:String>
-  <x:String x:Key="Text.Connection.Leave" xml:space="preserve">जालात् निर्गच्छतु</x:String>
 
   <!-- Transfer Panel -->
-  <x:String x:Key="Text.Transfer.Header" xml:space="preserve">स्थानान्तरणस्य इतिहासः</x:String>
-  <x:String x:Key="Text.Transfer.Clear" xml:space="preserve">शोधयतु</x:String>
-  <x:String x:Key="Text.Transfer.DropHint" xml:space="preserve">स्थानान्तरणाय सञ्चिकाः अत्र त्यजन्तु</x:String>
-  <x:String x:Key="Text.Transfer.Approve" xml:space="preserve">अनुमोदयतु</x:String>
   <x:String x:Key="Text.Transfer.Reject" xml:space="preserve">निराकरोतु</x:String>
-  <x:String x:Key="Text.Transfer.OpenFolder" xml:space="preserve">सञ्चिकाकोशं उद्घाटयतु</x:String>
 
   <!-- Settings Panel -->
   <x:String x:Key="Text.Settings.General" xml:space="preserve">सामान्यम्</x:String>
@@ -53,8 +38,8 @@
   <x:String x:Key="Text.Settings.MinimizeToTray.Desc" xml:space="preserve">पिधानबटनं प्रणालीट्रे प्रति प्रेषयति</x:String>
   <x:String x:Key="Text.Settings.Version" xml:space="preserve">संस्करणम्</x:String>
   <x:String x:Key="Text.Settings.CheckUpdate" xml:space="preserve">नवीकरणानि परीक्षयतु</x:String>
-  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">Skipping version {0}</x:String>
-  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">Undo</x:String>
+  <x:String x:Key="Text.Settings.Version.SkippedVersion" xml:space="preserve">संस्करणं {0} त्यज्यते</x:String>
+  <x:String x:Key="Text.Settings.Version.ClearSkippedVersion" xml:space="preserve">प्रत्यावर्तयतु</x:String>
 
   <!-- Transfer States -->
   <x:String x:Key="Text.State.Pending" xml:space="preserve">प्रतीक्षमाणम्...</x:String>
@@ -71,7 +56,6 @@
   <x:String x:Key="Text.Status.ScanQR" xml:space="preserve">स्मार्टफोनेन QR सङ्केतं स्कैन् कुर्वन्तु</x:String>
   <x:String x:Key="Text.Status.ScanPeerQR" xml:space="preserve">अन्यस्य PC इत्यस्य QR सङ्केतं स्कैन् कुर्वन्तु...</x:String>
   <x:String x:Key="Text.Status.Error" xml:space="preserve">दोषः: {0}</x:String>
-  <x:String x:Key="Text.Status.Connected" xml:space="preserve">संयुक्तम्</x:String>
   <x:String x:Key="Text.Status.Connecting" xml:space="preserve">संयोजयति...</x:String>
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">पुनः संयोजयति...</x:String>
 
@@ -94,13 +78,13 @@
   <x:String x:Key="Text.Transfer.ResumeFailed" xml:space="preserve">पुनरारम्भः विफलः</x:String>
   <x:String x:Key="Text.Transfer.Retrying" xml:space="preserve">पुनः प्रयत्नं करोति ({0}/{1})…</x:String>
   <x:String x:Key="Text.Transfer.ConnectFailed" xml:space="preserve">संयोजनं स्थापयितुं न शक्यते</x:String>
-  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">Select files to transfer</x:String>
-  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">Search peers...</x:String>
-  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">Select a member to transfer files</x:String>
-  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">Send File</x:String>
-  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">Drop files here to send</x:String>
-  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">or click "Send File" button</x:String>
-  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">Accept</x:String>
+  <x:String x:Key="Text.Transfer.SelectFiles" xml:space="preserve">प्रेषणीयाः सञ्चिकाः वृणुतु</x:String>
+  <x:String x:Key="Text.Transfer.SearchPeer" xml:space="preserve">सहचरान् अन्विष्यतु…</x:String>
+  <x:String x:Key="Text.Transfer.SelectMember" xml:space="preserve">सञ्चिकाप्रेषणार्थं सदस्यं वृणुतु</x:String>
+  <x:String x:Key="Text.Transfer.SendFile" xml:space="preserve">सञ्चिकां प्रेषयतु</x:String>
+  <x:String x:Key="Text.Transfer.DropHere" xml:space="preserve">प्रेषणार्थं सञ्चिकाः अत्र स्थापयतु</x:String>
+  <x:String x:Key="Text.Transfer.OrClickSend" xml:space="preserve">अथवा "सञ्चिकां प्रेषयतु" इति नुदतु</x:String>
+  <x:String x:Key="Text.Transfer.Accept" xml:space="preserve">स्वीकरोतु</x:String>
 
   <!-- Connection Phase Status -->
   <x:String x:Key="Text.Status.Phase.TcpPreparing" xml:space="preserve">TCP श्रोता सज्जीक्रियते…</x:String>
@@ -112,15 +96,12 @@
   <!-- Tray Menu -->
   <x:String x:Key="Text.Tray.ShowWindow" xml:space="preserve">वातायनं दर्शयतु</x:String>
   <x:String x:Key="Text.Tray.Exit" xml:space="preserve">निर्गमनम्</x:String>
-  <x:String x:Key="Text.Pairing.LinkLabel">युग्मनसम्बन्धः</x:String>
 
   <x:String x:Key="Text.Close" xml:space="preserve">पिधत्ति</x:String>
 
   <!-- Connection: No Members -->
-  <x:String x:Key="Text.Connection.NoMembers" xml:space="preserve">अद्यापि कोऽपि युग्मितयन्त्रं नास्ति</x:String>
 
   <!-- Transfer: Empty -->
-  <x:String x:Key="Text.Transfer.Empty" xml:space="preserve">स्थानान्तरणानि न सन्ति</x:String>
 
   <!-- Settings: Notification -->
   <x:String x:Key="Text.Settings.Notification" xml:space="preserve">सूचनाः</x:String>
@@ -128,9 +109,6 @@
   <x:String x:Key="Text.Settings.NotificationSound.Desc" xml:space="preserve">सन्देशप्राप्तौ ध्वनिं वादयतु</x:String>
 
   <!-- Settings: File Transfer -->
-  <x:String x:Key="Text.Settings.FileTransfer" xml:space="preserve">सञ्चिकास्थानान्तरणम्</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath" xml:space="preserve">प्राप्तसञ्चिकानां संरक्षणमार्गः</x:String>
-  <x:String x:Key="Text.Settings.ReceiveFileSavePath.Default" xml:space="preserve">(अवतरणसञ्चिकाकोशः)</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile" xml:space="preserve">सञ्चिकाः स्वयमेव स्वीकरोतु</x:String>
   <x:String x:Key="Text.Settings.AutoAcceptFile.Desc" xml:space="preserve">आगमनसञ्चिकाः स्वयमेव स्वीकरोतु</x:String>
 
@@ -140,13 +118,13 @@
   <x:String x:Key="Text.Settings.AutoStartWithWindows" xml:space="preserve">प्रवेशसमये आरभताम्</x:String>
   <x:String x:Key="Text.Settings.AutoStartWithWindows.Desc" xml:space="preserve">प्रवेशसमये Ferry स्वयमेव आरभताम्</x:String>
   <!-- v1.0.48: 帯域制限と並列転送数（英語フォールバック） -->
-  <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">Upload Limit (KB/s)</x:String>
-  <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">Outbound bandwidth cap. 0 = unlimited</x:String>
-  <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">Download Limit (KB/s)</x:String>
-  <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">Inbound bandwidth cap. 0 = unlimited</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">Parallel Transfers</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">Multiple files are sent in parallel automatically</x:String>
-  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">Automatic (up to 10)</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps" xml:space="preserve">उन्नयनसीमा (KB/क्षण)</x:String>
+  <x:String x:Key="Text.Settings.UploadKBps.Desc" xml:space="preserve">गच्छन्त्याः गतेः सीमा। 0 = असीमम्</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps" xml:space="preserve">अवतरणसीमा (KB/क्षण)</x:String>
+  <x:String x:Key="Text.Settings.DownloadKBps.Desc" xml:space="preserve">आगच्छन्त्याः गतेः सीमा। 0 = असीमम्</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer" xml:space="preserve">समान्तरप्रेषणानि</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Desc" xml:space="preserve">बह्व्यः सञ्चिकाः स्वयमेव समान्तरं प्रेष्यन्ते</x:String>
+  <x:String x:Key="Text.Settings.ParallelTransfer.Auto" xml:space="preserve">स्वयंचालितम् (दश पर्यन्तम्)</x:String>
   <!-- Peer: destination list sorting/section headers -->
   <x:String x:Key="Text.Member.TogglePin" xml:space="preserve">ध्वजाङ्कनम् / निष्कासनम्</x:String>
   <x:String x:Key="Text.Peer.Sort" xml:space="preserve">क्रमीकरणम्</x:String>
@@ -181,5 +159,47 @@
   <x:String x:Key="Text.Cancel" xml:space="preserve">निरस्तम्</x:String>
   <x:String x:Key="Text.Yes" xml:space="preserve">आम्</x:String>
   <x:String x:Key="Text.No" xml:space="preserve">न</x:String>
+
+  <!-- 追補: en_US に対して欠けていたキー（全言語パリティ対応） -->
+  <x:String x:Key="Text.Connection.PairFromCode.Button" xml:space="preserve">अनेन सङ्केतेन युज्यताम्</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">दोषः: {0}</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 योजनार्थं परस्य सङ्केतं स्थापयतु</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">अपरे सङ्गणके दृश्यमानं सङ्केतं स्थापयतु।</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">द्वात्रिंशदक्षरः योजनसङ्केतः</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">प्रक्रिया चलति…</x:String>
+  <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">योजनसङ्केतः</x:String>
+  <x:String x:Key="Text.Member.Delete" xml:space="preserve">अपनयतु</x:String>
+  <x:String x:Key="Text.Member.Delete.Confirm" xml:space="preserve">"{0}" इति सदस्येभ्यः अपनेतव्यम्?
+एतत् प्रत्यावर्तयितुं न शक्यते।</x:String>
+  <x:String x:Key="Text.Member.Menu" xml:space="preserve">सूची</x:String>
+  <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">अनेन सहचरेण सह चलन्तः प्रेषणाः</x:String>
+  <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
+  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">साक्षात् LAN</x:String>
+  <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">साक्षात् LAN सम्बन्धः (TCP) — शीघ्रतमः, अधिकतमा गतिः</x:String>
+  <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
+  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P (STUN)</x:String>
+  <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">साक्षात् P2P सम्बन्धः (UDP hole punching + STUN) — अन्तर्जालमार्गेण</x:String>
+  <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
+  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">प्रेषणम् (TURN)</x:String>
+  <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">सेवकद्वारा प्रेषितम् (TURN/WebSocket) — अग्निप्राकारम् अतिक्रामति</x:String>
+  <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">परीक्ष्यते</x:String>
+  <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">सम्बन्धमार्गः परीक्ष्यते…</x:String>
+  <x:String x:Key="Text.SaveBar.Open" xml:space="preserve">सङ्ग्रहकोशं उद्घाटयतु</x:String>
+  <x:String x:Key="Text.SaveBar.Tooltip" xml:space="preserve">यत्र प्राप्ताः सञ्चिकाः सङ्गृह्यन्ते</x:String>
+  <x:String x:Key="Text.Sidebar.AddPeer" xml:space="preserve">योजनं योजयतु</x:String>
+  <x:String x:Key="Text.Sidebar.RefreshPeers" xml:space="preserve">सहचरसूचीं नवीकरोतु</x:String>
+  <x:String x:Key="Text.Sidebar.Settings" xml:space="preserve">समायोजनानि</x:String>
+  <x:String x:Key="Text.State.Paused" xml:space="preserve">विरतम्</x:String>
+  <x:String x:Key="Text.Transfer.Cancel" xml:space="preserve">निरस्यतु</x:String>
+  <x:String x:Key="Text.Transfer.ClearHistory" xml:space="preserve">इतिहासं मार्जयतु</x:String>
+  <x:String x:Key="Text.Transfer.Delete" xml:space="preserve">अपनयतु</x:String>
+  <x:String x:Key="Text.Transfer.Pause" xml:space="preserve">विरमयतु</x:String>
+  <x:String x:Key="Text.Transfer.PeerMissing" xml:space="preserve">लक्ष्यसहचरः न प्राप्तः</x:String>
+  <x:String x:Key="Text.Transfer.Resend" xml:space="preserve">पुनः प्रेषयतु</x:String>
+  <x:String x:Key="Text.Transfer.Resume" xml:space="preserve">अनुवर्तयतु</x:String>
+  <x:String x:Key="Text.Transfer.ResumeSuspended" xml:space="preserve">अनुवर्तयतु</x:String>
+  <x:String x:Key="Text.Transfer.SourceMissing" xml:space="preserve">मूलसञ्चिका न प्राप्ता</x:String>
+  <x:String x:Key="Text.Tray.CheckForUpdate" xml:space="preserve">नवीकरणानि परीक्षतु…</x:String>
+  <x:String x:Key="Text.Warn" xml:space="preserve">सावधानम्</x:String>
 
 </ResourceDictionary>

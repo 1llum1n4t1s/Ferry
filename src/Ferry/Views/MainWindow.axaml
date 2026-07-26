@@ -54,22 +54,25 @@
                  SidebarColumn の幅はドラッグ後に settings.json へ永続化する -->
             <Grid Grid.Row="1" x:Name="MainContentGrid">
                 <Grid.ColumnDefinitions>
-                    <!-- 左ペイン（サイドバー）。幅は code-behind が ColumnDefinitions[0] 経由で保存/復元 -->
-                    <ColumnDefinition Width="220" />
+                    <!-- 左ペイン（サイドバー）。幅は code-behind が ColumnDefinitions[0] 経由で保存/復元。
+                         GridSplitter がドラッグ制約に見るのは ColumnDefinition.MinWidth なので、最小幅は
+                         子 Border ではなくここに置く（子側 MinWidth だとドラッグで潰れて ClipToBounds に
+                         黙って切られる。code-behind の MinSidebarWidth / MinMainPaneWidth と一致させること）。 -->
+                    <ColumnDefinition Width="220" MinWidth="180" />
                     <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" MinWidth="300" />
                 </Grid.ColumnDefinitions>
 
-                <!-- Col 0: サイドバー (ROG NEON: cyan 枠 + ほんのり glow) -->
+                <!-- Col 0: サイドバー (ROG NEON: cyan 枠 + ほんのり glow)。
+                     glow は Border.Effect ではなく BoxShadow で出す。Effect は自身と子孫の描画結果
+                     全体をオフスクリーン合成＋ブラーに通すため、中のピアリストが再描画されるたびに
+                     ペイン全体のブラーが走る。BoxShadow は枠の外側だけを描くので子ツリーを巻き込まない。 -->
                 <Border Grid.Column="0" Background="{DynamicResource SidebarBrush}"
                         CornerRadius="4" Margin="8,4,4,8"
-                        MinWidth="180"
                         BorderBrush="#3300F0FF"
                         BorderThickness="1"
+                        BoxShadow="0 0 20 0 #5900F0FF"
                         ClipToBounds="True">
-                    <Border.Effect>
-                        <DropShadowEffect Color="#00F0FF" BlurRadius="20" Opacity="0.35" OffsetX="0" OffsetY="0" />
-                    </Border.Effect>
                     <Grid RowDefinitions="Auto,*,Auto">
 
                         <!-- 検索ボックス + 並び替えメニュー + 手動更新ボタン -->
@@ -173,7 +176,7 @@
                                                 <Border Classes="route-badge transferring-badge"
                                                         VerticalAlignment="Center"
                                                         IsVisible="{Binding IsTransferring}"
-                                                        ToolTip.Tip="このピアへの進行中転送">
+                                                        ToolTip.Tip="{DynamicResource Text.Peer.Transferring.Tooltip}">
                                                     <StackPanel Orientation="Horizontal">
                                                         <!-- 転送中アイコン: 🔄 は mac Inter で化けるためベクター Path に。
                                                              色は transferring-badge の PinkBrush に合わせる。 -->
@@ -269,15 +272,14 @@
                               HorizontalAlignment="Center"
                               VerticalAlignment="Stretch" />
 
-                <!-- Col 2: メインパネル (ROG NEON: pink 枠 + ほんのり glow) -->
+                <!-- Col 2: メインパネル (ROG NEON: pink 枠 + ほんのり glow)。
+                     サイドバーと同じ理由で Effect ではなく BoxShadow を使う（中の転送リストは
+                     進捗バーが毎フレーム動くので、Effect だとペイン全体が毎フレーム再合成される）。 -->
                 <Border Grid.Column="2" Background="{DynamicResource SurfaceBrush}"
                         CornerRadius="4" Margin="4,4,8,8" ClipToBounds="True"
-                        MinWidth="300"
                         BorderBrush="#33FF2D8A"
-                        BorderThickness="1">
-                    <Border.Effect>
-                        <DropShadowEffect Color="#FF2D8A" BlurRadius="20" Opacity="0.3" OffsetX="0" OffsetY="0" />
-                    </Border.Effect>
+                        BorderThickness="1"
+                        BoxShadow="0 0 20 0 #4CFF2D8A">
                 <Panel>
                     <!-- 転送ビュー -->
                     <v:TransferView x:Name="TransferViewControl"
@@ -307,8 +309,24 @@
                                      IsVisible="{Binding ((vm:MainWindowViewModel)DataContext).IsAddPeerMode,
                                                          RelativeSource={RelativeSource AncestorType=Window}}" />
 
-                    <!-- 空ビュー（ピア未選択時） -->
-                    <Border IsVisible="False" x:Name="EmptyView">
+                    <!-- 空ビュー（設定・ペアリング追加のどちらでもなく、かつピア未選択のとき）。
+                         TransferView の表示条件をそのまま反転した MultiBinding で宣言的に制御する
+                         （旧実装は code-behind が VM の PropertyChanged を 2 系統購読して
+                           FindControl 経由で IsVisible を書き換えており、他 3 ビューと不揃いだった）。 -->
+                    <Border x:Name="EmptyView">
+                        <Border.IsVisible>
+                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                <Binding Path="((vm:MainWindowViewModel)DataContext).IsSettingsMode"
+                                         RelativeSource="{RelativeSource AncestorType=Window}"
+                                         Converter="{x:Static BoolConverters.Not}" />
+                                <Binding Path="((vm:MainWindowViewModel)DataContext).IsAddPeerMode"
+                                         RelativeSource="{RelativeSource AncestorType=Window}"
+                                         Converter="{x:Static BoolConverters.Not}" />
+                                <Binding Path="((vm:MainWindowViewModel)DataContext).Connection.SelectedPeer"
+                                         RelativeSource="{RelativeSource AncestorType=Window}"
+                                         Converter="{x:Static ObjectConverters.IsNull}" />
+                            </MultiBinding>
+                        </Border.IsVisible>
                         <TextBlock Text="{DynamicResource Text.Transfer.SelectMember}"
                                    FontSize="16"
                                    Foreground="{DynamicResource TextSecondaryBrush}"
@@ -328,10 +346,8 @@
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
                     Padding="56,40"
-                    BorderBrush="#00F0FF" BorderThickness="2">
-                <Border.Effect>
-                    <DropShadowEffect Color="#FF2D8A" BlurRadius="40" Opacity="0.85" OffsetX="0" OffsetY="0" />
-                </Border.Effect>
+                    BorderBrush="#00F0FF" BorderThickness="2"
+                    BoxShadow="0 0 40 0 #D9FF2D8A">
                 <StackPanel Spacing="16" HorizontalAlignment="Center">
                     <TextBlock Text="{DynamicResource Text.Drop.Message}"
                                FontSize="16" Foreground="{DynamicResource TextPrimaryBrush}"

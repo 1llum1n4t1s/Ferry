@@ -42,17 +42,30 @@ describe('derivePairId', () => {
 
 class FakeD1 {
   private nonces = new Map<string, number>(); // sid -> created_at
+  private publicKeys = new Map<string, string>(); // sid -> sessions.public_key
 
   setSessionActive(sid: string, createdAt: number) {
     this.nonces.set(sid, createdAt);
   }
 
-  prepare(_sql: string) {
+  /** rere #C-32 用: sessions.public_key（サーバーが持つ権威データ）を仕込む。 */
+  setSessionPublicKey(sid: string, publicKey: string) {
+    this.publicKeys.set(sid, publicKey);
+  }
+
+  prepare(sql: string) {
     const nonces = this.nonces;
+    const publicKeys = this.publicKeys;
+    // sessions と pairing_nonces で返す列が違うので SQL で振り分ける
+    const isSessions = sql.includes('FROM sessions');
     return {
       bind: (...args: unknown[]) => ({
         first: async <T>(): Promise<T | null> => {
           const sid = args[0] as string;
+          if (isSessions) {
+            if (!publicKeys.has(sid)) return null;
+            return { public_key: publicKeys.get(sid)! } as unknown as T;
+          }
           if (!nonces.has(sid)) return null;
           return { created_at: nonces.get(sid)! } as unknown as T;
         },
@@ -162,6 +175,46 @@ describe('handlePairLink', () => {
     expect(j.pairingId).toBe(derivePairId(attacker, victim));
     // event の sidA は claims (= attacker) 固定。victim が「ペアリングを申し込まれた」ことが
     // PairingDetected として両者に通知される（通常のペアリング成立と同じ挙動で、ghost peer 注入ではない）。
+  });
+
+  // rere レビュー #C-32 の回帰テスト。
+  // ペア成立イベントに載る公開鍵は PairSecret (ECDH ルート鍵) の導出元なので、
+  // 呼び出し元が申告した pkA/pkB を採用すると鍵配送の完全性が呼び出し元依存になる。
+  // 必ず D1 sessions.public_key (bearer 本人が /pair/session で登録した権威データ) を使う。
+  it('#C-32: body の pkA/pkB を無視し、D1 sessions.public_key を両者へ配る', async () => {
+    const db = new FakeD1();
+    db.setSessionActive(B, Date.now());
+    db.setSessionPublicKey(A, 'AUTHORITATIVE_PK_A');
+    db.setSessionPublicKey(B, 'AUTHORITATIVE_PK_B');
+    const env = makeEnv(db);
+    const token = await bearerFor(A, env);
+
+    const res = await handlePairLink(
+      mkRequest({ sidB: B, pkA: 'ATTACKER_PK_A', pkB: 'ATTACKER_PK_B' }, token),
+      env,
+    );
+    expect(res.status).toBe(200);
+
+    expect(notifyInboxMock).toHaveBeenCalledTimes(2);
+    for (const call of notifyInboxMock.mock.calls) {
+      const event = call[2] as { pkA: string; pkB: string };
+      expect(event.pkA).toBe('AUTHORITATIVE_PK_A');
+      expect(event.pkB).toBe('AUTHORITATIVE_PK_B');
+    }
+  });
+
+  it('#C-32: sessions 行が無くても申告値は使わず空の公開鍵で成立させる (可用性優先・平文フォールバック)', async () => {
+    const db = new FakeD1();
+    db.setSessionActive(B, Date.now()); // public_key は未登録
+    const env = makeEnv(db);
+    const token = await bearerFor(A, env);
+
+    const res = await handlePairLink(mkRequest({ sidB: B, pkA: 'ATTACKER_PK_A', pkB: 'ATTACKER_PK_B' }, token), env);
+    expect(res.status).toBe(200);
+
+    const event = notifyInboxMock.mock.calls[0][2] as { pkA: string; pkB: string };
+    expect(event.pkA).toBe('');
+    expect(event.pkB).toBe('');
   });
 
   it('RATELIMIT_DEVICE が枯渇していたら 429 DEVICE_RATE_LIMIT を返し notifyInbox を呼ばない (sidB 総当たり / 通知スパム対策)', async () => {

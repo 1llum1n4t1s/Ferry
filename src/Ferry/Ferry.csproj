@@ -67,10 +67,13 @@
     <PackageReference Include="Avalonia.Desktop" Version="12.0.5" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.5" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.5" />
-    <!-- 注意: Avalonia 本体は 12 系だが、Avalonia.Diagnostics は 11 系が最新 (12 系未公開)。
-         Debug ビルド専用のデベロッパーツールで Release には含まれないため、互換性警告が出ても許容する。
-         Avalonia.Diagnostics 12 が公開され次第バージョンを揃える -->
-    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.18" Condition="'$(Configuration)' == 'Debug'" />
+    <!-- デベロッパーツール。旧 Avalonia.Diagnostics は非推奨 (かつ 11 系止まりで本体 12 系と不揃い)
+         だったため AvaloniaUI.DiagnosticsSupport へ移行した。UI は別プロセスの
+         グローバルツール AvaloniaUI.DeveloperTools が提供する
+         (導入は dotnet tool install で global 指定)。
+         Debug 限定なので Release / Native AOT 発行には含まれない
+         (Program.cs の WithDeveloperTools / App.Initialize の AttachDeveloperTools も #if DEBUG)。 -->
+    <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3" Condition="'$(Configuration)' == 'Debug'" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <!-- Komorebi と同じローカライズ＆アイコン注入パターンで自動更新ダイアログを提供する。
          自前の SelfUpdateWindow/VM/Model は撤去し、このライブラリの UpdateDialogWindow に統一 -->

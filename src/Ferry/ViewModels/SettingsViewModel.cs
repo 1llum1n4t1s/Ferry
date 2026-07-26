@@ -34,6 +34,19 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [ObservableProperty]
     public partial string SelectedLocale { get; set; } = string.Empty;
 
+    /// <summary>ロケール ComboBox の選択肢。</summary>
+    public IReadOnlyList<LocaleItem> LocaleOptions => App.LocaleOptions;
+
+    /// <summary>ロケール ComboBox の選択項目。<see cref="SelectedLocale"/>（キー文字列）と相互に同期する。
+    /// 同じ値の代入では ObservableProperty が変更通知を出さないため、双方向同期はここで自然に収束する。</summary>
+    [ObservableProperty]
+    public partial LocaleItem? SelectedLocaleItem { get; set; }
+
+    partial void OnSelectedLocaleItemChanged(LocaleItem? value)
+    {
+        if (value != null) SelectedLocale = value.Key;
+    }
+
     /// <summary>受信ファイルの保存先ディレクトリ。</summary>
     [ObservableProperty]
     public partial string SaveDirectory { get; set; } = string.Empty;
@@ -303,6 +316,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     partial void OnSelectedLocaleChanged(string value)
     {
+        // ComboBox 側の選択項目へ反映（設定復元など、キー文字列側から変わった経路の同期）
+        SelectedLocaleItem = App.LocaleOptions.FirstOrDefault(l => l.Key == value);
+
         // ロケール差し替えは MergedDictionaries.Remove → Add 方式 (App.SetLocale)。
         // Theme ComboBox は ComboBoxItem.Content="{DynamicResource ...}" 直接参照で、
         // ItemsSource を触らないので SelectedIndex は不変。VM 側で再評価は不要。
