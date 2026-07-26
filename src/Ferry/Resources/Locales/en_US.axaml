@@ -202,4 +202,22 @@ This cannot be undone.</x:String>
 
   <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">The settings file was corrupted and has been reset. Your pairing information has been preserved where possible.</x:String>
 
+  <!-- 追補 #C-09: サービス層が UI へ出す文言（転送失敗理由・接続エラー・コード貼付ペアリング結果） -->
+  <x:String x:Key="Text.Transfer.Error.Disconnected" xml:space="preserve">The connection was lost</x:String>
+  <x:String x:Key="Text.Transfer.Error.RejectedByPeer" xml:space="preserve">The other device declined the transfer</x:String>
+  <x:String x:Key="Text.Transfer.Error.SizeExceeded" xml:space="preserve">Received data exceeded the declared size</x:String>
+  <x:String x:Key="Text.Transfer.Error.HashMismatch" xml:space="preserve">File integrity check failed (SHA-256 mismatch)</x:String>
+  <x:String x:Key="Text.Transfer.Error.Cancelled" xml:space="preserve">Cancelled</x:String>
+  <x:String x:Key="Text.Transfer.Error.ReceiveRejected" xml:space="preserve">You declined the transfer</x:String>
+  <x:String x:Key="Text.Connection.Error.PeerUnreachable" xml:space="preserve">No response from the other device (it may be offline, outdated, or unreachable)</x:String>
+  <x:String x:Key="Text.Connection.Error.NoAnswer" xml:space="preserve">No answer was received</x:String>
+  <x:String x:Key="Text.Connection.Error.AllFailed" xml:space="preserve">All connection methods failed</x:String>
+  <x:String x:Key="Text.Connection.Error.NoTransport" xml:space="preserve">No connection route was established</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.NotWatching" xml:space="preserve">Start waiting for pairing first, then try again.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.EmptyCode" xml:space="preserve">The code is empty.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.InvalidCode" xml:space="preserve">This is not a Ferry pairing code (32 alphanumeric characters).</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SelfCode" xml:space="preserve">This is your own PC's code. Paste the code from the other PC.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">The pairing session was not found. Make sure Ferry is running on the other PC.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">Paired "{0}" with "{1}".</x:String>
+
 </ResourceDictionary>

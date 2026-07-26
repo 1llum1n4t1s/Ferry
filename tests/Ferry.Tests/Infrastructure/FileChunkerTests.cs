@@ -763,4 +763,61 @@ public class FileChunkerTests : IDisposable
         Assert.NotNull(parsed);
         Assert.Equal(sha256, parsed);
     }
+
+    // === rere レビュー #C-10: FileReject の reason サニタイズ ===
+    // reason は相手プロセス由来の自由文で、そのまま UI (ErrorMessage) とログへ流れる。
+    // FileMeta.FileName は制御文字を弾いているのに reason は素通しだった非対称を埋める。
+
+    private static byte[] BuildRejectMessage(Guid transferId, string reason)
+    {
+        var reasonBytes = System.Text.Encoding.UTF8.GetBytes(reason);
+        var msg = new byte[1 + 16 + reasonBytes.Length];
+        msg[0] = TransferProtocol.FileReject;
+        transferId.TryWriteBytes(msg.AsSpan(1, 16));
+        reasonBytes.CopyTo(msg, 17);
+        return msg;
+    }
+
+    [Fact]
+    public void ParseReject_改行やNUL等の制御文字を空白へ畳むこと()
+    {
+        var tid = Guid.NewGuid();
+        var msg = BuildRejectMessage(tid, "拒否\r\nFAKE LOG LINE\0tail");
+
+        var parsed = FileChunker.ParseReject(msg);
+
+        Assert.NotNull(parsed);
+        Assert.Equal(tid, parsed!.Value.TransferId);
+        // 制御文字が残っていない = ログの行構造を偽装できない
+        Assert.DoesNotContain(parsed.Value.Reason, c => char.IsControl(c));
+        Assert.Contains("FAKE LOG LINE", parsed.Value.Reason);
+    }
+
+    [Fact]
+    public void ParseReject_長すぎるreasonを上限で切り詰めること()
+    {
+        var tid = Guid.NewGuid();
+        var msg = BuildRejectMessage(tid, new string('あ', 5000));
+
+        var parsed = FileChunker.ParseReject(msg);
+
+        Assert.NotNull(parsed);
+        // 上限 + 省略記号 "…" の 1 文字ぶんまで
+        Assert.True(
+            parsed!.Value.Reason.Length <= FileChunker.MaxRejectReasonLength + 1,
+            $"reason が切り詰められていない: {parsed.Value.Reason.Length} 文字");
+        Assert.EndsWith("…", parsed.Value.Reason);
+    }
+
+    [Fact]
+    public void ParseReject_通常のreasonはそのまま通ること()
+    {
+        var tid = Guid.NewGuid();
+        var msg = BuildRejectMessage(tid, "ユーザーが拒否しました");
+
+        var parsed = FileChunker.ParseReject(msg);
+
+        Assert.NotNull(parsed);
+        Assert.Equal("ユーザーが拒否しました", parsed!.Value.Reason);
+    }
 }

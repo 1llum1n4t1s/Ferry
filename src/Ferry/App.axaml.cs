@@ -55,27 +55,41 @@ public partial class App : Application
     /// <summary>サポートロケールの表示順+表示名の単一の真実の源。<see cref="Dictionary{TKey,TValue}"/> の
     /// 列挙順は言語仕様上保証されないため、順序を要する <see cref="SupportedLocales"/> はこの配列から
     /// 明示的に導出する（CodeRabbit nitpick #0613f719）。</summary>
-    private static readonly (string Key, string Name)[] LocaleDisplayEntries =
+    /// <summary>
+    /// ロケール定義。Rtl は右横書き（right-to-left）言語かどうか。
+    ///
+    /// rere レビュー #C-36: 旧実装は (Key, Name) の 2 要素で書字方向のメタデータを持たず、
+    /// リポジトリ全体で FlowDirection の指定もゼロだった。Avalonia はカルチャから
+    /// 書字方向を自動判定しないので、宣言しない限り常に LTR のままになる。
+    /// それでいて he_IL（ヘブライ語＝RTL）を全キー完備で出荷していたため、選択すると
+    /// サイドバー・アドレスバー・転送行のレイアウトが LTR のままテキストだけ RTL で流れていた。
+    /// 方向を宣言して <see cref="ApplyFlowDirection"/> でウィンドウへ適用する。
+    /// </summary>
+    private static readonly (string Key, string Name, bool Rtl)[] LocaleDisplayEntries =
     [
-        ("en_US", "English"),
-        ("ja_JP", "日本語"),
-        ("zh_CN", "简体中文"),
-        ("zh_TW", "繁體中文"),
-        ("de_DE", "Deutsch"),
-        ("fr_FR", "Français"),
-        ("es_ES", "Español"),
-        ("it_IT", "Italiano"),
-        ("pt_BR", "Português (Brasil)"),
-        ("ru_RU", "Русский"),
-        ("uk_UA", "Українська"),
-        ("id_ID", "Bahasa Indonesia"),
-        ("fil_PH", "Tagalog"),
-        ("ta_IN", "தமிழ்"),
-        ("ko_KR", "한국어"),
-        ("la_VA", "Latina"),
-        ("sa_IN", "संस्कृतम्"),
-        ("he_IL", "עברית עתיקה"),
+        ("en_US", "English", false),
+        ("ja_JP", "日本語", false),
+        ("zh_CN", "简体中文", false),
+        ("zh_TW", "繁體中文", false),
+        ("de_DE", "Deutsch", false),
+        ("fr_FR", "Français", false),
+        ("es_ES", "Español", false),
+        ("it_IT", "Italiano", false),
+        ("pt_BR", "Português (Brasil)", false),
+        ("ru_RU", "Русский", false),
+        ("uk_UA", "Українська", false),
+        ("id_ID", "Bahasa Indonesia", false),
+        ("fil_PH", "Tagalog", false),
+        ("ta_IN", "தமிழ்", false),
+        ("ko_KR", "한국어", false),
+        ("la_VA", "Latina", false),
+        ("sa_IN", "संस्कृतम्", false),
+        ("he_IL", "עברית עתיקה", true),
     ];
+
+    /// <summary>RTL（右横書き）ロケールのキー集合。#C-36</summary>
+    private static readonly HashSet<string> RtlLocales =
+        [.. LocaleDisplayEntries.Where(e => e.Rtl).Select(e => e.Key)];
 
     /// <summary>ロケール表示名（ネイティブ言語名）。</summary>
     public static readonly Dictionary<string, string> LocaleDisplayNames =
@@ -561,7 +575,26 @@ public partial class App : Application
         // UI スレッドである SetLocale 内で文言をキャッシュへ反映する
         Util.ErrorText.RefreshCache();
 
+        // #C-36: 書字方向をウィンドウへ適用する（子コントロールは FlowDirection を継承する）
+        ApplyFlowDirection(localeKey);
+
         LocaleChanged?.Invoke(null, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// rere レビュー #C-36: 選択ロケールの書字方向をウィンドウへ適用する。
+    /// Avalonia はカルチャから自動判定しないため明示が必要。FlowDirection は論理ツリーを
+    /// 継承するので、トップレベルに設定すればサイドバー・転送行まで一括で反転する。
+    /// </summary>
+    private static void ApplyFlowDirection(string localeKey)
+    {
+        var direction = RtlLocales.Contains(localeKey)
+            ? Avalonia.Media.FlowDirection.RightToLeft
+            : Avalonia.Media.FlowDirection.LeftToRight;
+
+        if (Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop) return;
+        foreach (var window in desktop.Windows)
+            window.FlowDirection = direction;
     }
 
     /// <summary>

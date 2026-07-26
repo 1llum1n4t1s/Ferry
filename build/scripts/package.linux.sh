@@ -26,11 +26,18 @@ esac
 # 実行しようとする経路も開いていた（失敗が「実行時の謎のエラー」に化ける）。
 # deploy-relay.yml が wrangler を「サプライチェーン攻撃防止のため」固定しているのと方針を揃える。
 #
-# ⚠ APPIMAGETOOL_SHA256 は未設定。埋めるには次を実行して出た値をここへ書き写す:
-#     curl -fLsS -o /tmp/appimagetool "$APPIMAGETOOL_URL" && sha256sum /tmp/appimagetool
-#   値を入れると以降は不一致でビルドが止まる（差し替え検知）。空のままだと警告のみで続行する。
-APPIMAGETOOL_URL=https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-APPIMAGETOOL_SHA256=""
+# ローリングタグ `continuous` ではなく**不変タグ**に固定する。continuous は上流が push する
+# たび中身が変わるので、sha256 を固定しても更新のたびに CI が落ちて意味を成さない。
+# x86_64 版だけで足りる（下の ARCH 環境変数で arm64 向け AppImage もクロス生成する）。
+#
+# 更新手順:
+#   1. gh api repos/AppImage/appimagetool/releases --jq '.[].tag_name' で新しいタグを確認
+#   2. curl -fLsS -o /tmp/appimagetool "<新 URL>" && sha256sum /tmp/appimagetool
+#   3. APPIMAGETOOL_TAG と APPIMAGETOOL_SHA256 を書き換える
+# sha256 が一致しなければビルドを止める（差し替え検知）。
+APPIMAGETOOL_TAG=1.9.1
+APPIMAGETOOL_URL="https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_TAG}/appimagetool-x86_64.AppImage"
+APPIMAGETOOL_SHA256=ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
 
 cd build
 
@@ -39,17 +46,13 @@ if [[ ! -f "appimagetool" ]]; then
     curl --fail --location --show-error --silent -o appimagetool "$APPIMAGETOOL_URL"
 
     actual_sha=$(sha256sum appimagetool | cut -d' ' -f1)
-    if [[ -n "$APPIMAGETOOL_SHA256" ]]; then
-        if [[ "$actual_sha" != "$APPIMAGETOOL_SHA256" ]]; then
-            echo "appimagetool の sha256 が一致しません" >&2
-            echo "  expected: $APPIMAGETOOL_SHA256" >&2
-            echo "  actual  : $actual_sha" >&2
-            rm -f appimagetool
-            exit 1
-        fi
-    else
-        echo "::warning::appimagetool の sha256 が未固定です (取得物: $actual_sha)。" \
-             "package.linux.sh の APPIMAGETOOL_SHA256 に設定してください。"
+    if [[ "$actual_sha" != "$APPIMAGETOOL_SHA256" ]]; then
+        echo "appimagetool の sha256 が一致しません（上流の差し替え、または取得失敗）" >&2
+        echo "  expected: $APPIMAGETOOL_SHA256" >&2
+        echo "  actual  : $actual_sha" >&2
+        echo "  tag     : $APPIMAGETOOL_TAG" >&2
+        rm -f appimagetool
+        exit 1
     fi
 
     chmod +x appimagetool

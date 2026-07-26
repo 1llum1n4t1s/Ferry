@@ -357,28 +357,31 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// </summary>
     public async Task<(bool Success, string Message)> PairFromCodeAsync(string code, CancellationToken ct = default)
     {
+        // rere レビュー #C-09: これらは AddMemberView にそのまま表示される UI 文言なので、
+        // 日本語リテラルではなくロケール辞書経由にする（18 言語を出荷しているのに
+        // ペアリング失敗時だけ日本語が出ていた）。
         if (_signaling == null)
-            return (false, "ペアリング待機を開始してから実行してください。");
+            return (false, App.Text("Connection.PairFromCode.NotWatching"));
         if (string.IsNullOrWhiteSpace(code))
-            return (false, "コードが空です。");
+            return (false, App.Text("Connection.PairFromCode.EmptyCode"));
 
         var sidB = code.Trim();
 
         // 32 文字 hex (Guid "N" 形式) の検証
         if (!Guid.TryParseExact(sidB, "N", out _))
-            return (false, "Ferry のペアリングコードではありません (32 文字の英数字)。");
+            return (false, App.Text("Connection.PairFromCode.InvalidCode"));
 
         if (sidB == _deviceId)
-            return (false, "これは自分の PC のコードです。もう片方の PC のコードを貼り付けてください。");
+            return (false, App.Text("Connection.PairFromCode.SelfCode"));
 
         // 相手セッションの存在確認（rere #D-001(b): 相手の公開鍵も取得して PairSecret 導出に使う）
         var (exists, displayName, peerPublicKey) = await _signaling.CheckSessionAsync(sidB, ct);
         if (!exists)
-            return (false, "ペアリング先のセッションが見つかりません。相手の PC でアプリが起動していることを確認してください。");
+            return (false, App.Text("Connection.PairFromCode.SessionNotFound"));
 
         var resolvedNameB = displayName ?? "PC-B";
         await _signaling.SubmitPairingAsync(_deviceId, _displayName, sidB, resolvedNameB, PublicKeyForQr, peerPublicKey ?? "", ct);
-        return (true, $"「{_displayName}」と「{resolvedNameB}」をペアリングしました。");
+        return (true, App.Text("Connection.PairFromCode.Success", _displayName, resolvedNameB));
     }
 
     public async Task CancelPairingAsync(CancellationToken ct = default)
@@ -1201,9 +1204,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     // answerTimedOut = 相手が answer を一切返さなかった = オフライン/未起動/到達不可。
                     // 専用型で投げて送信側のリトライループに「これは即終了（20s 空打ちを繰り返さない）」と伝える。
                     if (answerTimedOut)
-                        throw new PeerUnreachableException(
-                            "相手から応答がありません（オフライン / 旧バージョン / 接続不可の可能性）");
-                    throw new InvalidOperationException("Answer を受信できませんでした");
+                        throw new PeerUnreachableException(App.Text("Connection.Error.PeerUnreachable"));
+                    throw new InvalidOperationException(App.Text("Connection.Error.NoAnswer"));
                 }
 
                 Util.Logger.Log("Answer が TCP 失敗報告 → STUN/UDP ホールパンチ試行");
@@ -1246,7 +1248,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                     StatusMessageChanged?.Invoke(this, "Status.Phase.Relay");
                     var relayConnected = await TryRelayConnectAsync(session, pairId, "offer", peerId, linked);
                     if (!relayConnected)
-                        throw new InvalidOperationException("全ての接続方法が失敗しました");
+                        throw new InvalidOperationException(App.Text("Connection.Error.AllFailed"));
                 }
             }
 
@@ -1258,7 +1260,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             // 防御: どの経路でも transport が確立していなければ Connected を立てない (偽 Connected 残留の安全網)
             var establishedTransport = session.Transport;
             if (establishedTransport == null || !establishedTransport.IsConnected)
-                throw new InvalidOperationException("接続経路が確立されていません");
+                throw new InvalidOperationException(App.Text("Connection.Error.NoTransport"));
 
             var peerInfo = new PeerInfo
             {

@@ -205,4 +205,22 @@ Esta ação não pode ser desfeita.</x:String>
   <x:String x:Key="Text.Tray.CheckForUpdate" xml:space="preserve">Procurar atualizações…</x:String>
   <x:String x:Key="Text.Warn" xml:space="preserve">Aviso</x:String>
 
+  <!-- 追補 #C-09: サービス層が UI へ出す文言（転送失敗理由・接続エラー・コード貼付ペアリング結果） -->
+  <x:String x:Key="Text.Transfer.Error.Disconnected" xml:space="preserve">A conexão foi perdida</x:String>
+  <x:String x:Key="Text.Transfer.Error.RejectedByPeer" xml:space="preserve">O outro dispositivo recusou a transferência</x:String>
+  <x:String x:Key="Text.Transfer.Error.SizeExceeded" xml:space="preserve">Os dados recebidos excederam o tamanho declarado</x:String>
+  <x:String x:Key="Text.Transfer.Error.HashMismatch" xml:space="preserve">Falha na verificação de integridade (SHA-256 divergente)</x:String>
+  <x:String x:Key="Text.Transfer.Error.Cancelled" xml:space="preserve">Cancelado</x:String>
+  <x:String x:Key="Text.Transfer.Error.ReceiveRejected" xml:space="preserve">Você recusou a transferência</x:String>
+  <x:String x:Key="Text.Connection.Error.PeerUnreachable" xml:space="preserve">Sem resposta do outro dispositivo (pode estar off-line, desatualizado ou inacessível)</x:String>
+  <x:String x:Key="Text.Connection.Error.NoAnswer" xml:space="preserve">Nenhuma resposta foi recebida</x:String>
+  <x:String x:Key="Text.Connection.Error.AllFailed" xml:space="preserve">Todos os métodos de conexão falharam</x:String>
+  <x:String x:Key="Text.Connection.Error.NoTransport" xml:space="preserve">Nenhuma rota de conexão foi estabelecida</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.NotWatching" xml:space="preserve">Inicie primeiro a espera de pareamento e tente novamente.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.EmptyCode" xml:space="preserve">O código está vazio.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.InvalidCode" xml:space="preserve">Este não é um código de pareamento do Ferry (32 caracteres alfanuméricos).</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SelfCode" xml:space="preserve">Este é o código do seu próprio PC. Cole o código do outro PC.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">Sessão de pareamento não encontrada. Verifique se o Ferry está aberto no outro PC.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">"{0}" foi pareado com "{1}".</x:String>
+
 </ResourceDictionary>

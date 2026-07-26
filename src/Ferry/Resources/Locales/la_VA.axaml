@@ -202,4 +202,22 @@ Hoc revocari non potest.</x:String>
   <x:String x:Key="Text.Tray.CheckForUpdate" xml:space="preserve">Quaere renovationes…</x:String>
   <x:String x:Key="Text.Warn" xml:space="preserve">Monitum</x:String>
 
+  <!-- 追補 #C-09: サービス層が UI へ出す文言（転送失敗理由・接続エラー・コード貼付ペアリング結果） -->
+  <x:String x:Key="Text.Transfer.Error.Disconnected" xml:space="preserve">Nexus interruptus est</x:String>
+  <x:String x:Key="Text.Transfer.Error.RejectedByPeer" xml:space="preserve">Alterum machinamentum translationem recusavit</x:String>
+  <x:String x:Key="Text.Transfer.Error.SizeExceeded" xml:space="preserve">Data accepta magnitudinem declaratam excesserunt</x:String>
+  <x:String x:Key="Text.Transfer.Error.HashMismatch" xml:space="preserve">Probatio integritatis defecit (SHA-256 non congruit)</x:String>
+  <x:String x:Key="Text.Transfer.Error.Cancelled" xml:space="preserve">Abrogatum</x:String>
+  <x:String x:Key="Text.Transfer.Error.ReceiveRejected" xml:space="preserve">Translationem recusavisti</x:String>
+  <x:String x:Key="Text.Connection.Error.PeerUnreachable" xml:space="preserve">Nullum responsum ab altero machinamento (fortasse absens, vetus, aut inaccessibile)</x:String>
+  <x:String x:Key="Text.Connection.Error.NoAnswer" xml:space="preserve">Nullum responsum acceptum est</x:String>
+  <x:String x:Key="Text.Connection.Error.AllFailed" xml:space="preserve">Omnes modi nectendi defecerunt</x:String>
+  <x:String x:Key="Text.Connection.Error.NoTransport" xml:space="preserve">Nulla via nexus constituta est</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.NotWatching" xml:space="preserve">Prius exspectationem coniunctionis incipe, deinde itera.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.EmptyCode" xml:space="preserve">Codex vacuus est.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.InvalidCode" xml:space="preserve">Hic non est codex coniunctionis Ferry (32 litterae vel numeri).</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SelfCode" xml:space="preserve">Hic est codex computatri tui. Codicem alterius computatri insere.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">Sessio coniunctionis non inventa. Confirma Ferry in altero computatro currere.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">"{0}" cum "{1}" coniunctum est.</x:String>
+
 </ResourceDictionary>

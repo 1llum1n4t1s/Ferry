@@ -331,8 +331,21 @@ public sealed class TcpDirectTransport : ITransport
     private static void ConfigureTcpClient(TcpClient client)
     {
         client.NoDelay = true; // Nagle アルゴリズム無効化（低レイテンシ）
-        client.ReceiveBufferSize = 256 * 1024; // 256KB
-        client.SendBufferSize = 256 * 1024;
+
+        // rere レビュー #C-24: ReceiveBufferSize (SO_RCVBUF) を明示設定しない。
+        //
+        // 旧実装は送受信とも 256KB を明示していたが、SO_RCVBUF を明示すると Windows の
+        // TCP 受信ウィンドウ自動チューニングが無効化され、受信ウィンドウが 256KB に固定される。
+        // すると帯域遅延積の大きい経路でスループットが「256KB / RTT」で頭打ちになる:
+        //   RTT   0.5ms (LAN)        → 約 4 Gbps 相当（実質無害）
+        //   RTT  30ms (国内 WAN)     → 約  70 Mbps
+        //   RTT 100ms (海外 / VPN)   → 約  21 Mbps
+        // ※ 上記は BDP からの理論値であって実測ではない。
+        // CLAUDE.md が IPoE 環境の救済として推している「end-to-end IPv6 での TCP 直結」は
+        // まさにこの WAN 経路なので、自動チューニングに任せた方が速い。
+        // 送信側 (SO_SNDBUF) も同様に OS の自動調整へ委ねる。
+        // 低速回線での過大バッファリングはアプリ層のフロー制御（FileFlowAck）とは無関係
+        // （FlowAck はリレー経路専用で、TCP 直結では TCP 自身の輻輳制御が効く）。
     }
 
     /// <summary>

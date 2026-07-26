@@ -202,4 +202,22 @@
   <x:String x:Key="Text.Tray.CheckForUpdate" xml:space="preserve">नवीकरणानि परीक्षतु…</x:String>
   <x:String x:Key="Text.Warn" xml:space="preserve">सावधानम्</x:String>
 
+  <!-- 追補 #C-09: サービス層が UI へ出す文言（転送失敗理由・接続エラー・コード貼付ペアリング結果） -->
+  <x:String x:Key="Text.Transfer.Error.Disconnected" xml:space="preserve">सम्बन्धः विच्छिन्नः</x:String>
+  <x:String x:Key="Text.Transfer.Error.RejectedByPeer" xml:space="preserve">अपरं यन्त्रं प्रेषणं निराकृतवत्</x:String>
+  <x:String x:Key="Text.Transfer.Error.SizeExceeded" xml:space="preserve">प्राप्तानि दत्तांशानि उक्तपरिमाणम् अतिक्रान्तानि</x:String>
+  <x:String x:Key="Text.Transfer.Error.HashMismatch" xml:space="preserve">सञ्चिकायाः अखण्डतापरीक्षा विफला (SHA-256 न मिलति)</x:String>
+  <x:String x:Key="Text.Transfer.Error.Cancelled" xml:space="preserve">निरस्तम्</x:String>
+  <x:String x:Key="Text.Transfer.Error.ReceiveRejected" xml:space="preserve">भवान् प्रेषणं निराकृतवान्</x:String>
+  <x:String x:Key="Text.Connection.Error.PeerUnreachable" xml:space="preserve">अपरात् यन्त्रात् प्रत्युत्तरं नास्ति (असंयुक्तम्, पुरातनं वा अगम्यं वा)</x:String>
+  <x:String x:Key="Text.Connection.Error.NoAnswer" xml:space="preserve">प्रत्युत्तरं न प्राप्तम्</x:String>
+  <x:String x:Key="Text.Connection.Error.AllFailed" xml:space="preserve">सर्वे सम्बन्धोपायाः विफलाः</x:String>
+  <x:String x:Key="Text.Connection.Error.NoTransport" xml:space="preserve">कोऽपि सम्बन्धमार्गः न स्थापितः</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.NotWatching" xml:space="preserve">प्रथमं योजनप्रतीक्षां आरभस्व, ततः पुनः प्रयतस्व।</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.EmptyCode" xml:space="preserve">सङ्केतः रिक्तः।</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.InvalidCode" xml:space="preserve">अयं Ferry-योजनसङ्केतः नास्ति (द्वात्रिंशत् अक्षराणि)।</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SelfCode" xml:space="preserve">अयं भवतः स्वस्य सङ्गणकस्य सङ्केतः। अपरस्य सङ्गणकस्य सङ्केतं स्थापयतु।</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">योजनसत्रं न प्राप्तम्। अपरे सङ्गणके Ferry चलति इति निश्चिनोतु।</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">"{0}" "{1}" इत्यनेन सह योजितम्।</x:String>
+
 </ResourceDictionary>

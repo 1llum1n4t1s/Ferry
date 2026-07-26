@@ -204,4 +204,22 @@
   <x:String x:Key="Text.Tray.CheckForUpdate" xml:space="preserve">Проверить обновления…</x:String>
   <x:String x:Key="Text.Warn" xml:space="preserve">Предупреждение</x:String>
 
+  <!-- 追補 #C-09: サービス層が UI へ出す文言（転送失敗理由・接続エラー・コード貼付ペアリング結果） -->
+  <x:String x:Key="Text.Transfer.Error.Disconnected" xml:space="preserve">Соединение разорвано</x:String>
+  <x:String x:Key="Text.Transfer.Error.RejectedByPeer" xml:space="preserve">Другое устройство отклонило передачу</x:String>
+  <x:String x:Key="Text.Transfer.Error.SizeExceeded" xml:space="preserve">Полученные данные превысили заявленный размер</x:String>
+  <x:String x:Key="Text.Transfer.Error.HashMismatch" xml:space="preserve">Проверка целостности не пройдена (несовпадение SHA-256)</x:String>
+  <x:String x:Key="Text.Transfer.Error.Cancelled" xml:space="preserve">Отменено</x:String>
+  <x:String x:Key="Text.Transfer.Error.ReceiveRejected" xml:space="preserve">Вы отклонили передачу</x:String>
+  <x:String x:Key="Text.Connection.Error.PeerUnreachable" xml:space="preserve">Нет ответа от другого устройства (не в сети, устаревшая версия или недоступно)</x:String>
+  <x:String x:Key="Text.Connection.Error.NoAnswer" xml:space="preserve">Ответ не получен</x:String>
+  <x:String x:Key="Text.Connection.Error.AllFailed" xml:space="preserve">Все способы подключения не сработали</x:String>
+  <x:String x:Key="Text.Connection.Error.NoTransport" xml:space="preserve">Маршрут подключения не установлен</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.NotWatching" xml:space="preserve">Сначала запустите ожидание связывания, затем повторите попытку.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.EmptyCode" xml:space="preserve">Код пуст.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.InvalidCode" xml:space="preserve">Это не код связывания Ferry (32 буквенно-цифровых символа).</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SelfCode" xml:space="preserve">Это код вашего собственного ПК. Вставьте код с другого ПК.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">Сессия связывания не найдена. Убедитесь, что Ferry запущен на другом ПК.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">«{0}» связан с «{1}».</x:String>
+
 </ResourceDictionary>

@@ -95,15 +95,44 @@ public static class FileChunker
         return message;
     }
 
-    /// <summary>FileReject メッセージから TransferId と理由を抽出する。</summary>
+    /// <summary>FileReject の reason に許す最大文字数（rere #C-10）。</summary>
+    public const int MaxRejectReasonLength = 200;
+
+    /// <summary>
+    /// FileReject メッセージから TransferId と理由を抽出する。
+    ///
+    /// rere レビュー #C-10: reason は「相手プロセスが送ってきた自由文」で、そのまま UI と
+    /// ログへ流れる（<c>ErrorMessage = $"相手が受信を拒否しました: {reason}"</c> /
+    /// <c>Logger.Log($"... 理由={reason}")</c>）。にもかかわらず長さも内容も検証しておらず、
+    /// フレーム上限（16MB）まで許容していた。同じ相手からの入力である <c>FileMeta.FileName</c> は
+    /// <c>SafePath.ContainsControlChar</c> で制御文字を弾いているのに、こちらだけ素通しという
+    /// 非対称な状態だった。改行を混ぜればログの行構造を偽装でき、巨大文字列は UI とログを膨らませる。
+    /// ペア済み相手は準信頼だが、表示・ログへ入る前に長さと制御文字を正規化しておく。
+    /// </summary>
     public static (Guid TransferId, string Reason)? ParseReject(ReadOnlySpan<byte> message)
     {
         if (message.Length < 1 + 16) return null;
         var transferId = new Guid(message.Slice(1, 16));
         var reason = message.Length > 17
-            ? Encoding.UTF8.GetString(message.Slice(17))
+            ? SanitizeRejectReason(Encoding.UTF8.GetString(message.Slice(17)))
             : string.Empty;
         return (transferId, reason);
+    }
+
+    /// <summary>reason から制御文字を除去し、<see cref="MaxRejectReasonLength"/> で切り詰める（#C-10）。</summary>
+    internal static string SanitizeRejectReason(string raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return string.Empty;
+
+        var span = raw.Length > MaxRejectReasonLength ? raw.AsSpan(0, MaxRejectReasonLength) : raw.AsSpan();
+        var sb = new System.Text.StringBuilder(span.Length);
+        foreach (var c in span)
+        {
+            // 制御文字（改行・タブ・NUL 等）は空白へ畳む。ログの行構造偽装と UI の表示崩れを防ぐ。
+            sb.Append(char.IsControl(c) ? ' ' : c);
+        }
+        var result = sb.ToString().Trim();
+        return raw.Length > MaxRejectReasonLength ? result + "…" : result;
     }
 
     /// <summary>

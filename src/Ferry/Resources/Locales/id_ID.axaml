@@ -202,4 +202,22 @@ Tindakan ini tidak dapat dibatalkan.</x:String>
   <x:String x:Key="Text.Tray.CheckForUpdate" xml:space="preserve">Periksa pembaruan…</x:String>
   <x:String x:Key="Text.Warn" xml:space="preserve">Peringatan</x:String>
 
+  <!-- 追補 #C-09: サービス層が UI へ出す文言（転送失敗理由・接続エラー・コード貼付ペアリング結果） -->
+  <x:String x:Key="Text.Transfer.Error.Disconnected" xml:space="preserve">Koneksi terputus</x:String>
+  <x:String x:Key="Text.Transfer.Error.RejectedByPeer" xml:space="preserve">Perangkat lain menolak transfer</x:String>
+  <x:String x:Key="Text.Transfer.Error.SizeExceeded" xml:space="preserve">Data yang diterima melebihi ukuran yang dinyatakan</x:String>
+  <x:String x:Key="Text.Transfer.Error.HashMismatch" xml:space="preserve">Pemeriksaan integritas gagal (SHA-256 tidak cocok)</x:String>
+  <x:String x:Key="Text.Transfer.Error.Cancelled" xml:space="preserve">Dibatalkan</x:String>
+  <x:String x:Key="Text.Transfer.Error.ReceiveRejected" xml:space="preserve">Anda menolak transfer</x:String>
+  <x:String x:Key="Text.Connection.Error.PeerUnreachable" xml:space="preserve">Tidak ada respons dari perangkat lain (mungkin luring, versi lama, atau tidak terjangkau)</x:String>
+  <x:String x:Key="Text.Connection.Error.NoAnswer" xml:space="preserve">Tidak ada jawaban yang diterima</x:String>
+  <x:String x:Key="Text.Connection.Error.AllFailed" xml:space="preserve">Semua metode koneksi gagal</x:String>
+  <x:String x:Key="Text.Connection.Error.NoTransport" xml:space="preserve">Tidak ada rute koneksi yang terbentuk</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.NotWatching" xml:space="preserve">Mulai penantian penyandingan dulu, lalu coba lagi.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.EmptyCode" xml:space="preserve">Kode kosong.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.InvalidCode" xml:space="preserve">Ini bukan kode penyandingan Ferry (32 karakter alfanumerik).</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SelfCode" xml:space="preserve">Ini kode PC Anda sendiri. Tempel kode dari PC yang lain.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">Sesi penyandingan tidak ditemukan. Pastikan Ferry berjalan di PC yang lain.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">"{0}" telah disandingkan dengan "{1}".</x:String>
+
 </ResourceDictionary>

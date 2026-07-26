@@ -140,6 +140,27 @@ public sealed class CloudflareSignaling : ISignalingService
         });
     }
 
+    /// <summary>
+    /// rere レビュー #C-13: エラーレスポンスの <c>{ error, message }</c> を診断用の 1 行にする。
+    /// ログに残す用途なので、ボディが JSON でない・空の場合も例外にせず短い代替文字列を返す。
+    /// </summary>
+    private static async Task<string> TryReadErrorDetailAsync(HttpResponseMessage resp, CancellationToken ct)
+    {
+        try
+        {
+            var json = await resp.Content.ReadAsStringAsync(ct);
+            if (string.IsNullOrWhiteSpace(json)) return "(空ボディ)";
+            var dto = JsonSerializer.Deserialize(json, CfAuthJsonContext.Default.AuthErrorResponse);
+            if (dto == null || string.IsNullOrEmpty(dto.Error))
+                return json.Length > 200 ? json[..200] + "…" : json;
+            return string.IsNullOrEmpty(dto.Message) ? dto.Error : $"{dto.Error}: {dto.Message}";
+        }
+        catch (Exception ex)
+        {
+            return $"(ボディ読み取り失敗: {ex.GetType().Name})";
+        }
+    }
+
     /// <summary>relay Worker のエラーレスポンス（<c>{ error, message }</c>）からエラーコードだけ取り出す。
     /// DTO は <see cref="AuthErrorResponse"/>（CfTokenProvider と共有、二重定義しない）。</summary>
     private static async Task<string?> TryReadErrorCodeAsync(HttpResponseMessage resp, CancellationToken ct)
@@ -575,7 +596,12 @@ public sealed class CloudflareSignaling : ISignalingService
                 }
                 else if (IsSevere(resp.StatusCode))
                 {
-                    throw new HttpRequestException($"{label} GET HTTP {(int)resp.StatusCode}");
+                    // rere レビュー #C-13: サーバーがボディに詰めたエラーコード（DO_ERROR や
+                    // その message）を読まずに捨てていたため、PairDO の storage 例外などが
+                    // 「HTTP 500」としか残らず、サーバー側にも痕跡が無い（#C-14 で console.error を
+                    // 足した）状態と合わせて両端で原因が消えていた。ボディを読んで理由まで残す。
+                    throw new HttpRequestException(
+                        $"{label} GET HTTP {(int)resp.StatusCode}: {await TryReadErrorDetailAsync(resp, ct)}");
                 }
                 consecutiveErrors = 0;
             }

@@ -188,7 +188,7 @@ public sealed class TransferService : ITransferService, IDisposable
             if (_receiveStates.TryRemove(tid, out var state))
             {
                 state.Item.State = TransferState.Cancelled;
-                state.Item.ErrorMessage = "接続が切断されました";
+                state.Item.ErrorMessage = Util.ErrorText.Disconnected;
                 CleanupReceiveState(state);
                 TransferError?.Invoke(this, state.Item);
             }
@@ -201,7 +201,7 @@ public sealed class TransferService : ITransferService, IDisposable
             if (_pendingApprovals.TryRemove(tid, out var pending))
             {
                 pending.Item.State = TransferState.Cancelled;
-                pending.Item.ErrorMessage = "接続が切断されました";
+                pending.Item.ErrorMessage = Util.ErrorText.Disconnected;
                 // 複数ペア同時接続対応 Stage 2 leak fix (PR #12 review): pending approval は
                 // CleanupReceiveState に到達しないため、_transferPeerId 索引を直接掃除する。
                 _transferPeerId.TryRemove(tid, out _);
@@ -226,7 +226,7 @@ public sealed class TransferService : ITransferService, IDisposable
                 // ErrorMessage は WaitForApprovalAsync の fallback ("相手が受信を拒否しました") を上書き
                 if (_activeTransfers.TryGetValue(tid, out var sendItem))
                 {
-                    sendItem.ErrorMessage = "接続が切断されました";
+                    sendItem.ErrorMessage = Util.ErrorText.Disconnected;
                 }
                 tcs.TrySetException(new ConnectionLostDuringTransferException("接続が切断されました（承認待ち中）"));
             }
@@ -374,7 +374,7 @@ public sealed class TransferService : ITransferService, IDisposable
         }
 
         var startChunk = 0;
-        Util.Logger.Log($"転送レジューム: {item.FileName}, 先頭から再送 (全 {item.TotalChunks} チャンク)");
+        Util.Logger.Log($"転送レジューム: {Util.Logger.MaskFilename(item.FileName)}, 先頭から再送 (全 {item.TotalChunks} チャンク)");
 
         // rere #B1-004: SendFileAsync と同様に _sendCts を登録し、レジューム送信中も
         // CancelTransfer / 相手 reject / 接続断（_pausedSends）で送信ループを止められるようにする。
@@ -407,7 +407,7 @@ public sealed class TransferService : ITransferService, IDisposable
             if (!approved)
             {
                 // resume の場合は throw せず false を返す (SendFileAsync と挙動を分ける)
-                Util.Logger.Log($"レジューム拒否: {item.FileName}");
+                Util.Logger.Log($"レジューム拒否: {Util.Logger.MaskFilename(item.FileName)}");
                 return false;
             }
 
@@ -460,7 +460,7 @@ public sealed class TransferService : ITransferService, IDisposable
                 Util.Logger.Log($"受信側が拒否: {displayName} / 理由={item.ErrorMessage}", Util.LogLevel.Warning);
                 item.State = TransferState.Cancelled;
                 if (string.IsNullOrEmpty(item.ErrorMessage))
-                    item.ErrorMessage = "相手が受信を拒否しました";
+                    item.ErrorMessage = Util.ErrorText.RejectedByPeer;
                 TransferError?.Invoke(this, item);
             }
             return approved;
@@ -606,6 +606,13 @@ public sealed class TransferService : ITransferService, IDisposable
     /// </summary>
     private async Task SendChunksAsync(string filePath, Guid transferId, int startChunk, TransferItem item, string peerId, CancellationToken ct, System.Security.Cryptography.IncrementalHash? hashSink = null)
     {
+        // rere レビュー #C-17: 送信側にも相関 ID Scope を張る（AsyncLocal なので await を跨いで継承される）。
+        // MaxParallelSends=10 で同一ピアへ並行送信するため、transferId 無しでは
+        // フロー制御の発火ログや失敗ログがどの転送のものか判別できない。
+        using var _scope = Util.Logger.Scope(
+            ("transferId", transferId),
+            ("peer", Util.Logger.MaskDeviceId(peerId)));
+
         // P-11: 進捗通知の throttle (UI スレッドへの Post と PropertyChanged 発火を抑制)。
         // 時間ベース (60ms = 16fps 相当) に切り替え、UI から見える滑らかさは維持しつつ通知頻度を一定化
         var lastProgressTick = Environment.TickCount64;
@@ -906,7 +913,7 @@ public sealed class TransferService : ITransferService, IDisposable
             var safeName = Util.SafePath.SafeFileName(meta.FileName);
             if (safeName is null)
             {
-                Util.Logger.Log($"不正なファイル名を拒否: {meta.FileName}", Util.LogLevel.Warning);
+                Util.Logger.Log($"不正なファイル名を拒否: {Util.Logger.MaskFilename(meta.FileName)}", Util.LogLevel.Warning);
                 SendRejectFireAndForget(transferIdGuid, "不正なファイル名");
                 return;
             }
@@ -1026,12 +1033,12 @@ public sealed class TransferService : ITransferService, IDisposable
         // 申告サイズを超える書き込みを拒否（ディスク枯渇 DoS 防止）
         if (offset + chunkLength > state.FileSize)
         {
-            Util.Logger.Log($"チャンクが申告サイズを超過: {state.FileName}", Util.LogLevel.Warning);
+            Util.Logger.Log($"チャンクが申告サイズを超過: {Util.Logger.MaskFilename(state.FileName)}", Util.LogLevel.Warning);
             // rere #C2-001 review: 終端確定権を atomic に取り、勝者だけが TransferError を発火する
             // (CancelTransfer / OnConnectionLost / VerifyAndFinalize と二重終端イベントにしない。他 4 経路と揃える)。
             if (!_receiveStates.TryRemove(state.TransferId, out _)) return;
             state.Item.State = TransferState.Error;
-            state.Item.ErrorMessage = "受信データが申告サイズを超過しました";
+            state.Item.ErrorMessage = Util.ErrorText.SizeExceeded;
             TransferError?.Invoke(this, state.Item);
             CleanupReceiveState(state);
             return;
@@ -1148,7 +1155,7 @@ public sealed class TransferService : ITransferService, IDisposable
                 try { fs.Dispose(); } catch { /* dispose の最終 flush 失敗も無視（同上。ハンドルは解放される） */ }
             }
 
-            Util.Logger.Log($"全チャンク受信完了: {state.FileName}, 検証中…");
+            Util.Logger.Log($"全チャンク受信完了: {Util.Logger.MaskFilename(state.FileName)}, 検証中…");
             _ = Task.Run(() => VerifyAndFinalizeReceive(state));
         }
         catch (Exception ex)
@@ -1172,6 +1179,15 @@ public sealed class TransferService : ITransferService, IDisposable
     /// CancelTransfer と奪い合う(codex P2 #3416006457: 検証中の可視性確保 + 二重終端イベント防止)。</summary>
     private void VerifyAndFinalizeReceive(ReceiveState state)
     {
+        // rere レビュー #C-17: 相関 ID Scope を配線する。Logger.Scope は実装済みだったのに
+        // 呼び出しがゼロで、受信ログの識別子は事実上 FileName だけだった。同名ファイル
+        // (report.pdf 等) を複数ピアから並行受信すると「全チャンク受信完了」「SHA-256 検証失敗」が
+        // 交錯し、どちらの転送が失敗したかログから確定できなかった。#C-17 で FileName を
+        // マスクしたことで識別性はさらに落ちるため、ここで transferId / peer を必ず添える。
+        using var _scope = Util.Logger.Scope(
+            ("transferId", state.TransferId),
+            ("peer", Util.Logger.MaskDeviceId(state.Item.PeerId)));
+
         byte[]? sha256Bytes = null;
         var hashMatch = false;
         string? errorMessage = null;
@@ -1209,7 +1225,7 @@ public sealed class TransferService : ITransferService, IDisposable
 
             if (errorMessage == null && hashMatch)
             {
-                Util.Logger.Log($"SHA-256 検証成功: {state.FileName}");
+                Util.Logger.Log($"SHA-256 検証成功: {Util.Logger.MaskFilename(state.FileName)}");
                 state.Item.State = TransferState.Completed;
                 state.Item.TransferredBytes = state.FileSize;
                 state.Item.SavedFilePath = state.SavePath;
@@ -1223,7 +1239,7 @@ public sealed class TransferService : ITransferService, IDisposable
             {
                 // SHA-256 不一致（検証は完了したが内容が壊れている）
                 state.Item.State = TransferState.Error;
-                state.Item.ErrorMessage = "ファイルの整合性検証に失敗しました（SHA-256 不一致）";
+                state.Item.ErrorMessage = Util.ErrorText.HashMismatch;
                 SendFireAndForget(state.Item.PeerId ?? string.Empty, FileChunker.CreateAckMessage(false, sha256Bytes!), "ACK");
                 TransferError?.Invoke(this, state.Item);
                 // 不正なファイルを削除
@@ -1300,7 +1316,7 @@ public sealed class TransferService : ITransferService, IDisposable
         if (_receiveStates.TryGetValue(transferId, out var state))
         {
             state.ExpectedSha256 = hex;
-            Util.Logger.Log($"FileHash 受信: {state.FileName}, SHA256={hex[..16]}…");
+            Util.Logger.Log($"FileHash 受信: {Util.Logger.MaskFilename(state.FileName)}, SHA256={hex[..16]}…");
             TryCompleteReceiveIfReady(state);
             return;
         }
@@ -1477,7 +1493,7 @@ public sealed class TransferService : ITransferService, IDisposable
             return;
         }
 
-        Util.Logger.Log($"受信承認: {state.FileName}");
+        Util.Logger.Log($"受信承認: {Util.Logger.MaskFilename(state.FileName)}");
 
         // 受信用ファイルストリームを開く
         // rere #C2-001: バッファを 1MB に拡大 (デフォルト 4KB) + SetLength で全長を事前確保する。
@@ -1542,9 +1558,9 @@ public sealed class TransferService : ITransferService, IDisposable
             return;
         }
 
-        Util.Logger.Log($"受信拒否: {state.FileName}");
+        Util.Logger.Log($"受信拒否: {Util.Logger.MaskFilename(state.FileName)}");
         state.Item.State = TransferState.Cancelled;
-        state.Item.ErrorMessage = "受信を拒否しました";
+        state.Item.ErrorMessage = Util.ErrorText.ReceiveRejected;
 
         // FileReject メッセージを送信側に通知 — fire-and-forget でブロッキングを回避
         // v1.0.38: TransferId プレフィックス付きに変更 (同時複数転送の区別のため)
@@ -1566,7 +1582,7 @@ public sealed class TransferService : ITransferService, IDisposable
         {
             Util.Logger.Log($"受信キャンセル: {receiveState.FileName}");
             receiveState.Item.State = TransferState.Cancelled;
-            receiveState.Item.ErrorMessage = "キャンセルされました";
+            receiveState.Item.ErrorMessage = Util.ErrorText.Cancelled;
             CleanupReceiveState(receiveState);
             SendRejectFireAndForget(tid, "受信側がキャンセルしました");
             TransferError?.Invoke(this, receiveState.Item);
@@ -1578,7 +1594,7 @@ public sealed class TransferService : ITransferService, IDisposable
         {
             Util.Logger.Log($"承認待ちキャンセル: {pendingState.FileName}");
             pendingState.Item.State = TransferState.Cancelled;
-            pendingState.Item.ErrorMessage = "キャンセルされました";
+            pendingState.Item.ErrorMessage = Util.ErrorText.Cancelled;
             // 複数ペア同時接続対応 Stage 2 leak fix (PR #12 review): SendRejectFireAndForget 内で
             // _transferPeerId 索引から peerId を引くので、Remove はこの後で行う。
             SendRejectFireAndForget(tid, "受信側がキャンセルしました");
@@ -1593,7 +1609,7 @@ public sealed class TransferService : ITransferService, IDisposable
         {
             Util.Logger.Log($"送信キャンセル: {sendItem.FileName}");
             sendItem.State = TransferState.Cancelled;
-            sendItem.ErrorMessage = "キャンセルされました";
+            sendItem.ErrorMessage = Util.ErrorText.Cancelled;
             _pausedSends.TryRemove(tid, out _);  // 一時停止中でも確実にループを抜けさせる
 
             // CodeRabbit 指摘: 送信側承認待ち TCS も解放しないと、FileMeta 送信後の承認待ち中に
@@ -1618,7 +1634,7 @@ public sealed class TransferService : ITransferService, IDisposable
         if (!Guid.TryParse(transferId, out var tid)) return false;
         if (!_activeTransfers.TryGetValue(tid, out var item) || item.State != TransferState.InProgress) return false;
         _pausedSends[tid] = 0;
-        Util.Logger.Log($"送信一時停止: {item.FileName}");
+        Util.Logger.Log($"送信一時停止: {Util.Logger.MaskFilename(item.FileName)}");
         return true;
     }
 

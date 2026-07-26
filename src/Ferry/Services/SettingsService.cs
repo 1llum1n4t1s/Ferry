@@ -48,10 +48,26 @@ public sealed partial class SettingsService : ISettingsService, IDisposable
     public SettingsService(string filePath)
     {
         _filePath = filePath;
+        _deviceIdBackupPath = Path.Combine(Path.GetDirectoryName(_filePath) ?? ".", "device-id");
         var dir = Path.GetDirectoryName(_filePath);
         if (dir != null) Directory.CreateDirectory(dir);
         Load();
     }
+
+    /// <summary>
+    /// rere レビュー #C-33: DeviceId の副本ファイル。
+    ///
+    /// DeviceId は pairId / presence の基盤で、変わると peers.json 内の全ペアが
+    /// 別 pairId を指す幽霊になる（相手からも自分が消える）。破損経路は
+    /// <see cref="Load"/> の regex サルベージで救えるが、settings.json が
+    /// <b>消失</b>した場合（OS 復元、部分バックアップからの復旧、プロファイル移行、
+    /// 設定リセット等）は救済も通知も走らず、新しい DeviceId が無言で採番されていた。
+    /// しかも identity.key は残るため <c>/auth/token</c> は「新 deviceId の初回登録」として
+    /// 200 を返し、KV の first-write-wins にも引っかからず <c>IdentityLost</c> も発火しない
+    /// ＝ clean slate UI すら出ないまま全ペアが静かに失われる。
+    /// DeviceId だけを平文で併置しておき、settings.json が無いときはここから復元する。
+    /// </summary>
+    private readonly string _deviceIdBackupPath;
 
     /// <summary>
     /// コンストラクタから同期的に呼び出す。
@@ -60,6 +76,16 @@ public sealed partial class SettingsService : ISettingsService, IDisposable
     {
         if (!File.Exists(_filePath))
         {
+            // rere レビュー #C-33: settings.json 消失時は、初回起動と決めつけず
+            // 副本から DeviceId を復元する（復元できれば既存ペアがそのまま生き残る）。
+            if (TryRestoreDeviceIdFromBackup())
+            {
+                WasCorrupted = true;  // 「設定が失われた」ことはユーザーへ一度通知する
+                Util.Logger.Log(
+                    $"settings.json が見つからないため副本から DeviceId を復元: {Util.Logger.MaskDeviceId(Settings.DeviceId)}",
+                    Util.LogLevel.Warning);
+            }
+
             // 初回起動: デフォルト設定を保存して DeviceId を確定させる。
             Save();
             return;
@@ -119,10 +145,50 @@ public sealed partial class SettingsService : ISettingsService, IDisposable
         {
             var json = JsonSerializer.SerializeToUtf8Bytes(Settings, AppSettingsJsonContext.Default.AppSettings);
             Util.AtomicFile.Write(_filePath, json);  // rere #B2-001: アトミック保存を共通ヘルパーへ集約
+            SaveDeviceIdBackup();                    // rere #C-33
         }
         catch (Exception ex)
         {
             Util.Logger.Log($"settings.json の保存に失敗: {ex.Message}", Util.LogLevel.Error);
+        }
+    }
+
+    /// <summary>rere #C-33: DeviceId の副本を書き出す（best-effort。失敗しても保存自体は成功扱い）。</summary>
+    private void SaveDeviceIdBackup()
+    {
+        try
+        {
+            var id = Settings.DeviceId;
+            if (string.IsNullOrEmpty(id)) return;
+            // 既に同じ値なら書かない（毎回の保存でディスクを叩かない）
+            if (File.Exists(_deviceIdBackupPath)
+                && string.Equals(File.ReadAllText(_deviceIdBackupPath).Trim(), id, StringComparison.OrdinalIgnoreCase))
+                return;
+            Util.AtomicFile.Write(_deviceIdBackupPath, System.Text.Encoding.UTF8.GetBytes(id));
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"DeviceId 副本の保存に失敗: {ex.Message}", Util.LogLevel.Warning);
+        }
+    }
+
+    /// <summary>rere #C-33: 副本から DeviceId を復元する。復元できたら true。</summary>
+    private bool TryRestoreDeviceIdFromBackup()
+    {
+        try
+        {
+            if (!File.Exists(_deviceIdBackupPath)) return false;
+            var id = File.ReadAllText(_deviceIdBackupPath).Trim().ToLowerInvariant();
+            // settings.json の DeviceId と同じ 32 桁 hex 形式だけ受け入れる
+            if (id.Length != 32 || !System.Linq.Enumerable.All(id, c => (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
+                return false;
+            Settings.DeviceId = id;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"DeviceId 副本の読み取りに失敗: {ex.Message}", Util.LogLevel.Warning);
+            return false;
         }
     }
 
@@ -143,6 +209,7 @@ public sealed partial class SettingsService : ISettingsService, IDisposable
         {
             var json = JsonSerializer.SerializeToUtf8Bytes(Settings, AppSettingsJsonContext.Default.AppSettings);
             await Util.AtomicFile.WriteAsync(_filePath, json);  // rere #B2-001
+            SaveDeviceIdBackup();                               // rere #C-33
         }
         catch (Exception ex)
         {

@@ -886,16 +886,28 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                     PeerName = peerName,
                 };
                 AddTransfer(item);
+                // 新規行は集計対象が増えたので必ず再集計する
+                RecomputeIsTransferring();
             }
 
             if (item.IsTerminal) return; // 終端状態の行は遅延進捗で巻き戻さない
+
+            // rere レビュー #C-21: 旧実装は進捗イベントのたびに RecomputeIsTransferring() を呼び、
+            // Transfers 全件走査 + Dictionary 新規確保 + PairedPeers 全件走査を実行していた。
+            // 進捗は 60ms throttle × 最大 10 並列 = 最大 ~167 回/秒なので、履歴が育つほど
+            // UI スレッドが集計に食われる（走査コストは「進行中の転送数」ではなく
+            // 「生涯の履歴件数」に比例する）。
+            // 集計結果が変わるのは State が遷移したときだけで、TransferredBytes の更新では
+            // 変わらない。状態が実際に変化した場合に限って再集計する。
+            var previousState = item.State;
 
             item.TransferredBytes = e.TransferredBytes;
             // service が通知する非終端状態（Pending/InProgress/Paused）を反映する
             if (e.State is TransferState.Pending or TransferState.InProgress or TransferState.Paused)
                 item.State = e.State;
 
-            RecomputeIsTransferring();
+            if (item.State != previousState)
+                RecomputeIsTransferring();
         });
     }
 

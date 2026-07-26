@@ -205,4 +205,22 @@
 
   <x:String x:Key="Text.Settings.CorruptedNotice" xml:space="preserve">設定ファイルが破損していたため初期化しました。ペア情報は可能な限り保持されています。</x:String>
 
+  <!-- 追補 #C-09: サービス層が UI へ出す文言（転送失敗理由・接続エラー・コード貼付ペアリング結果） -->
+  <x:String x:Key="Text.Transfer.Error.Disconnected" xml:space="preserve">接続が切断されました</x:String>
+  <x:String x:Key="Text.Transfer.Error.RejectedByPeer" xml:space="preserve">相手が受信を拒否しました</x:String>
+  <x:String x:Key="Text.Transfer.Error.SizeExceeded" xml:space="preserve">受信データが申告サイズを超過しました</x:String>
+  <x:String x:Key="Text.Transfer.Error.HashMismatch" xml:space="preserve">ファイルの整合性検証に失敗しました（SHA-256 不一致）</x:String>
+  <x:String x:Key="Text.Transfer.Error.Cancelled" xml:space="preserve">キャンセルされました</x:String>
+  <x:String x:Key="Text.Transfer.Error.ReceiveRejected" xml:space="preserve">受信を拒否しました</x:String>
+  <x:String x:Key="Text.Connection.Error.PeerUnreachable" xml:space="preserve">相手から応答がありません（オフライン / 旧バージョン / 接続不可の可能性）</x:String>
+  <x:String x:Key="Text.Connection.Error.NoAnswer" xml:space="preserve">Answer を受信できませんでした</x:String>
+  <x:String x:Key="Text.Connection.Error.AllFailed" xml:space="preserve">全ての接続方法が失敗しました</x:String>
+  <x:String x:Key="Text.Connection.Error.NoTransport" xml:space="preserve">接続経路が確立されていません</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.NotWatching" xml:space="preserve">ペアリング待機を開始してから実行してください。</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.EmptyCode" xml:space="preserve">コードが空です。</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.InvalidCode" xml:space="preserve">Ferry のペアリングコードではありません (32 文字の英数字)。</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SelfCode" xml:space="preserve">これは自分の PC のコードです。もう片方の PC のコードを貼り付けてください。</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">ペアリング先のセッションが見つかりません。相手の PC でアプリが起動していることを確認してください。</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">「{0}」と「{1}」をペアリングしました。</x:String>
+
 </ResourceDictionary>

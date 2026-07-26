@@ -200,4 +200,22 @@
   <x:String x:Key="Text.Tray.CheckForUpdate" xml:space="preserve">בדוק עדכונים…</x:String>
   <x:String x:Key="Text.Warn" xml:space="preserve">אזהרה</x:String>
 
+  <!-- 追補 #C-09: サービス層が UI へ出す文言（転送失敗理由・接続エラー・コード貼付ペアリング結果） -->
+  <x:String x:Key="Text.Transfer.Error.Disconnected" xml:space="preserve">החיבור נותק</x:String>
+  <x:String x:Key="Text.Transfer.Error.RejectedByPeer" xml:space="preserve">המכשיר השני דחה את ההעברה</x:String>
+  <x:String x:Key="Text.Transfer.Error.SizeExceeded" xml:space="preserve">הנתונים שהתקבלו חרגו מהגודל שהוצהר</x:String>
+  <x:String x:Key="Text.Transfer.Error.HashMismatch" xml:space="preserve">בדיקת שלמות הקובץ נכשלה (אי-התאמה ב-SHA-256)</x:String>
+  <x:String x:Key="Text.Transfer.Error.Cancelled" xml:space="preserve">בוטל</x:String>
+  <x:String x:Key="Text.Transfer.Error.ReceiveRejected" xml:space="preserve">דחית את ההעברה</x:String>
+  <x:String x:Key="Text.Connection.Error.PeerUnreachable" xml:space="preserve">אין תגובה מהמכשיר השני (ייתכן שאינו מחובר, מיושן או בלתי נגיש)</x:String>
+  <x:String x:Key="Text.Connection.Error.NoAnswer" xml:space="preserve">לא התקבלה תשובה</x:String>
+  <x:String x:Key="Text.Connection.Error.AllFailed" xml:space="preserve">כל שיטות החיבור נכשלו</x:String>
+  <x:String x:Key="Text.Connection.Error.NoTransport" xml:space="preserve">לא נוצר נתיב חיבור</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.NotWatching" xml:space="preserve">התחל תחילה בהמתנה להתאמה ולאחר מכן נסה שוב.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.EmptyCode" xml:space="preserve">הקוד ריק.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.InvalidCode" xml:space="preserve">זה אינו קוד התאמה של Ferry (32 תווים אלפאנומריים).</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SelfCode" xml:space="preserve">זהו הקוד של המחשב שלך. הדבק את הקוד מהמחשב השני.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">לא נמצאה סשן התאמה. ודא ש-Ferry פועל במחשב השני.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">"{0}" הותאם עם "{1}".</x:String>
+
 </ResourceDictionary>

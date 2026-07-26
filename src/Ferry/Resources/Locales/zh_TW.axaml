@@ -187,4 +187,22 @@
   <x:String x:Key="Text.Tray.CheckForUpdate" xml:space="preserve">檢查更新…</x:String>
   <x:String x:Key="Text.Warn" xml:space="preserve">警告</x:String>
 
+  <!-- 追補 #C-09: サービス層が UI へ出す文言（転送失敗理由・接続エラー・コード貼付ペアリング結果） -->
+  <x:String x:Key="Text.Transfer.Error.Disconnected" xml:space="preserve">連線已中斷</x:String>
+  <x:String x:Key="Text.Transfer.Error.RejectedByPeer" xml:space="preserve">對方拒絕了這次傳輸</x:String>
+  <x:String x:Key="Text.Transfer.Error.SizeExceeded" xml:space="preserve">接收到的資料超出了宣告的大小</x:String>
+  <x:String x:Key="Text.Transfer.Error.HashMismatch" xml:space="preserve">檔案完整性驗證失敗（SHA-256 不一致）</x:String>
+  <x:String x:Key="Text.Transfer.Error.Cancelled" xml:space="preserve">已取消</x:String>
+  <x:String x:Key="Text.Transfer.Error.ReceiveRejected" xml:space="preserve">您拒絕了這次傳輸</x:String>
+  <x:String x:Key="Text.Connection.Error.PeerUnreachable" xml:space="preserve">對方沒有回應（可能離線、版本過舊或無法連線）</x:String>
+  <x:String x:Key="Text.Connection.Error.NoAnswer" xml:space="preserve">未收到回應</x:String>
+  <x:String x:Key="Text.Connection.Error.AllFailed" xml:space="preserve">所有連線方式均失敗</x:String>
+  <x:String x:Key="Text.Connection.Error.NoTransport" xml:space="preserve">未建立任何連線路徑</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.NotWatching" xml:space="preserve">請先開始等待配對，然後再試一次。</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.EmptyCode" xml:space="preserve">代碼為空。</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.InvalidCode" xml:space="preserve">這不是 Ferry 的配對代碼（32 位英數字）。</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SelfCode" xml:space="preserve">這是您本機的代碼。請貼上另一台電腦的代碼。</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">找不到配對工作階段。請確認另一台電腦上的 Ferry 正在執行。</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">已將「{0}」與「{1}」配對。</x:String>
+
 </ResourceDictionary>

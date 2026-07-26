@@ -73,6 +73,22 @@ jobs:
         run: dotnet build -c Release
       - name: Publish
         run: dotnet publish src/Ferry/Ferry.csproj -c Release -o publish -r ${{ matrix.runtime }}
+      # rere レビュー #C-26: 依存グラフ（transitive 込み）を成果物として残す。
+      # 直接依存は csproj で固定文字列だが、NuGet の Version="x.y.z" は「最小バージョン」なので
+      # transitive は restore のたびに解決し直される。上流が差し替えられても検知手段が無く、
+      # 障害時に「どの依存で壊れたか」を過去のリリースと突き合わせられなかった。
+      # ⚠️ packages.lock.json は使えない: NuGet の lock は Configuration を区別しないため、
+      #    Debug 限定参照 (AvaloniaUI.DiagnosticsSupport) と Release 限定の AOT パッケージ
+      #    (ILCompiler / ILLink) が Debug↔Release の切替のたびに lock を書き換えてしまう。
+      #    RID 別 publish (5 ランタイム) も同様。記録だけを残す形にする。
+      - name: Record dependency graph
+        run: dotnet list src/Ferry/Ferry.csproj package --include-transitive > "deps.${{ matrix.runtime }}.txt"
+      - name: Upload dependency graph
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: deps.${{ matrix.runtime }}
+          path: deps.${{ matrix.runtime }}.txt
+          retention-days: 90
       - name: Rename executable file
         if: startsWith(matrix.runtime, 'linux-')
         run: mv publish/Ferry publish/ferry

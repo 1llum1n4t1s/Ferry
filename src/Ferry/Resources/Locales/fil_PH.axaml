@@ -202,4 +202,22 @@ Hindi ito maibabalik.</x:String>
   <x:String x:Key="Text.Tray.CheckForUpdate" xml:space="preserve">Maghanap ng update…</x:String>
   <x:String x:Key="Text.Warn" xml:space="preserve">Babala</x:String>
 
+  <!-- 追補 #C-09: サービス層が UI へ出す文言（転送失敗理由・接続エラー・コード貼付ペアリング結果） -->
+  <x:String x:Key="Text.Transfer.Error.Disconnected" xml:space="preserve">Naputol ang koneksyon</x:String>
+  <x:String x:Key="Text.Transfer.Error.RejectedByPeer" xml:space="preserve">Tinanggihan ng kabilang device ang paglilipat</x:String>
+  <x:String x:Key="Text.Transfer.Error.SizeExceeded" xml:space="preserve">Lumampas ang natanggap na data sa idineklarang laki</x:String>
+  <x:String x:Key="Text.Transfer.Error.HashMismatch" xml:space="preserve">Nabigo ang pagsusuri ng integridad (hindi tugma ang SHA-256)</x:String>
+  <x:String x:Key="Text.Transfer.Error.Cancelled" xml:space="preserve">Kinansela</x:String>
+  <x:String x:Key="Text.Transfer.Error.ReceiveRejected" xml:space="preserve">Tinanggihan mo ang paglilipat</x:String>
+  <x:String x:Key="Text.Connection.Error.PeerUnreachable" xml:space="preserve">Walang tugon mula sa kabilang device (maaaring offline, luma, o hindi maabot)</x:String>
+  <x:String x:Key="Text.Connection.Error.NoAnswer" xml:space="preserve">Walang natanggap na sagot</x:String>
+  <x:String x:Key="Text.Connection.Error.AllFailed" xml:space="preserve">Nabigo ang lahat ng paraan ng koneksyon</x:String>
+  <x:String x:Key="Text.Connection.Error.NoTransport" xml:space="preserve">Walang naitatag na ruta ng koneksyon</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.NotWatching" xml:space="preserve">Simulan muna ang paghihintay ng pagpapares, saka subukang muli.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.EmptyCode" xml:space="preserve">Walang laman ang code.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.InvalidCode" xml:space="preserve">Hindi ito Ferry pairing code (32 alphanumeric na karakter).</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SelfCode" xml:space="preserve">Code ito ng sarili mong PC. I-paste ang code mula sa kabilang PC.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">Hindi natagpuan ang pairing session. Tiyaking tumatakbo ang Ferry sa kabilang PC.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">Naipares ang "{0}" sa "{1}".</x:String>
+
 </ResourceDictionary>

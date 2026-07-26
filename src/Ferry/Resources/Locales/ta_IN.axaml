@@ -202,4 +202,22 @@
   <x:String x:Key="Text.Tray.CheckForUpdate" xml:space="preserve">புதுப்பிப்புகளைச் சரிபார்…</x:String>
   <x:String x:Key="Text.Warn" xml:space="preserve">எச்சரிக்கை</x:String>
 
+  <!-- 追補 #C-09: サービス層が UI へ出す文言（転送失敗理由・接続エラー・コード貼付ペアリング結果） -->
+  <x:String x:Key="Text.Transfer.Error.Disconnected" xml:space="preserve">இணைப்பு துண்டிக்கப்பட்டது</x:String>
+  <x:String x:Key="Text.Transfer.Error.RejectedByPeer" xml:space="preserve">மறுமுனை சாதனம் பரிமாற்றத்தை நிராகரித்தது</x:String>
+  <x:String x:Key="Text.Transfer.Error.SizeExceeded" xml:space="preserve">பெறப்பட்ட தரவு அறிவிக்கப்பட்ட அளவை மீறியது</x:String>
+  <x:String x:Key="Text.Transfer.Error.HashMismatch" xml:space="preserve">கோப்பு ஒருமைப்பாட்டு சரிபார்ப்பு தோல்வி (SHA-256 பொருந்தவில்லை)</x:String>
+  <x:String x:Key="Text.Transfer.Error.Cancelled" xml:space="preserve">ரத்துசெய்யப்பட்டது</x:String>
+  <x:String x:Key="Text.Transfer.Error.ReceiveRejected" xml:space="preserve">நீங்கள் பரிமாற்றத்தை நிராகரித்தீர்கள்</x:String>
+  <x:String x:Key="Text.Connection.Error.PeerUnreachable" xml:space="preserve">மறுமுனை சாதனத்திடமிருந்து பதில் இல்லை (இணைப்பில் இல்லை, பழைய பதிப்பு அல்லது அணுக முடியாதது)</x:String>
+  <x:String x:Key="Text.Connection.Error.NoAnswer" xml:space="preserve">பதில் எதுவும் கிடைக்கவில்லை</x:String>
+  <x:String x:Key="Text.Connection.Error.AllFailed" xml:space="preserve">அனைத்து இணைப்பு முறைகளும் தோல்வியடைந்தன</x:String>
+  <x:String x:Key="Text.Connection.Error.NoTransport" xml:space="preserve">இணைப்புப் பாதை எதுவும் நிறுவப்படவில்லை</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.NotWatching" xml:space="preserve">முதலில் இணைப்புக் காத்திருப்பைத் தொடங்கி, பின்னர் மீண்டும் முயற்சிக்கவும்.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.EmptyCode" xml:space="preserve">குறியீடு காலியாக உள்ளது.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.InvalidCode" xml:space="preserve">இது Ferry இணைப்புக் குறியீடு அல்ல (32 எழுத்து-எண் எழுத்துகள்).</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SelfCode" xml:space="preserve">இது உங்கள் சொந்த கணினியின் குறியீடு. மற்ற கணினியின் குறியீட்டை ஒட்டவும்.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">இணைப்பு அமர்வு கிடைக்கவில்லை. மற்ற கணினியில் Ferry இயங்குகிறதா எனச் சரிபார்க்கவும்.</x:String>
+  <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">"{0}" மற்றும் "{1}" இணைக்கப்பட்டன.</x:String>
+
 </ResourceDictionary>
