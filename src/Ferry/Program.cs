@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Avalonia;
 using Ferry.Util;
@@ -7,8 +8,10 @@ using Velopack;
 
 namespace Ferry;
 
-internal sealed class Program
+internal sealed partial class Program
 {
+    private const string AppUserModelId = "velopack.Ferry";
+
     /// <summary>
     /// アプリケーションのエントリポイント。Velopack のブートストラップを最初に実行し、
     /// Avalonia アプリを起動する。
@@ -21,6 +24,11 @@ internal sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (OperatingSystem.IsWindows())
+        {
+            TrySetCurrentProcessAppUserModelId();
+        }
+
         VelopackApp.Build().Run();
 
         // 多重起動防止（v1.0.47）: 既に起動済みなら既存ウィンドウを前面化させて、このプロセスは即終了する。
@@ -90,4 +98,13 @@ internal sealed class Program
             .UsePlatformDetect()
             .WithInterFont()
             .LogToTrace();
+
+    private static void TrySetCurrentProcessAppUserModelId()
+    {
+        try { _ = SetCurrentProcessExplicitAppUserModelID(AppUserModelId); }
+        catch { /* シェル連携の失敗だけで起動を止めない */ }
+    }
+
+    [LibraryImport("shell32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial int SetCurrentProcessExplicitAppUserModelID(string appId);
 }
