@@ -255,7 +255,7 @@ public static class FileChunker
     public static string ComputeSha256Hex(string filePath)
     {
         var hash = ComputeSha256(filePath);
-        return Convert.ToHexString(hash).ToLowerInvariant();
+        return Convert.ToHexStringLower(hash);
     }
 
     /// <summary>

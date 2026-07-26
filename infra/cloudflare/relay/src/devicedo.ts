@@ -16,6 +16,8 @@
  *   inbox    = InboxEvent[]   (TTL/上限で prune。WS 未接続時の取りこぼし救済キュー)
  */
 
+import { readJsonObject } from './http';
+
 const INBOX_TTL_MS = 60 * 60 * 1000; // 1h
 const INBOX_MAX = 50;
 
@@ -67,7 +69,9 @@ export class DeviceDO {
   // ---- presence (poll) ----
 
   private async writePresence(req: Request): Promise<Response> {
-    const body = (await req.json()) as { displayName?: unknown; version?: unknown };
+    const parsed = await readJsonObject(req);
+    if ('error' in parsed) return parsed.error;
+    const body = parsed.value;
     const p: Presence = {
       lastSeen: Date.now(), // server now (クライアント時計に依存しない)
       displayName: typeof body.displayName === 'string' ? body.displayName : '',

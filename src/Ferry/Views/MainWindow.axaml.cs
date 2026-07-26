@@ -112,7 +112,7 @@ public partial class MainWindow : Window
     /// <summary>
     /// ① ウィンドウの可視状態に合わせて presence ポーリングの稼働を切り替える。
     /// 画面に出ていて最小化されていないときだけポーリングを回し、トレイ格納/最小化中は止めて
-    /// Firebase ダウンロード帯域を節約する（Heartbeat は ConnectionViewModel 側で継続）。
+    /// リクエスト数と帯域を節約する（Heartbeat は ConnectionViewModel 側で継続）。
     /// DataContext 未設定（ConnectionVm == null）の早期発火は ?. で安全にスキップする。
     /// </summary>
     private void UpdatePresenceForeground()

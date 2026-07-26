@@ -129,15 +129,35 @@ public sealed class WebSocketRelayTransport : ITransport
         _receiveCts?.Dispose();
         _receiveCts = null;
 
-        // fire-and-forget で非同期クローズ（sync-over-async のデッドロックを回避）
-        if (_ws.State == WebSocketState.Open)
+        var ws = _ws;
+        _ws = null;
+
+        if (ws.State != WebSocketState.Open)
         {
-            _ = _ws.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "切断", CancellationToken.None)
-                .ContinueWith(_ => { }, TaskScheduler.Default);
+            ws.Dispose();
+            return;
         }
 
-        _ws.Dispose();
-        _ws = null;
+        // fire-and-forget で非同期クローズ（sync-over-async のデッドロックを回避）。
+        // ⚠️ Dispose は close フレームの送出完了を待ってから行う。旧実装は CloseOutputAsync を投げた
+        // 直後に Dispose していたため、close フレームがワイヤに出ないまま TCP が切れることがあり、
+        // RelayDO 側に CLOSING のソケットが残って正当な再接続が 409 (Pair already full) で弾かれた。
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var closeCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                await ws.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "切断", closeCts.Token);
+            }
+            catch
+            {
+                /* 相手が先に落ちている等。切断処理なので失敗しても続行 */
+            }
+            finally
+            {
+                ws.Dispose();
+            }
+        });
     }
 
     public void Dispose()
@@ -202,10 +222,21 @@ public sealed class WebSocketRelayTransport : ITransport
     /// <summary>受信集約バッファのサイズ上限。LengthPrefixedStream の MaxMessageSize と揃えてある。</summary>
     private const int MaxAggregatedMessageSize = 16 * 1024 * 1024;
 
+    /// <summary>
+    /// 固定受信バッファのサイズ。「チャンクメッセージ 1 個 + 暗号封筒」がちょうど収まる大きさにする。
+    ///
+    /// 旧実装は 64KB 固定で、実際のチャンクメッセージ（ヘッダ 21B + ペイロード 64KB + 封筒 29B = 65,586B）が
+    /// 必ず溢れていたため、リレー受信は 100% が MemoryStream 集約パスに落ちていた（下の「ホットパス」分岐を
+    /// 一度も通らない）。1GB 転送あたり MemoryStream + ToArray で約 32,700 回の追加確保と 2GB 超の
+    /// 追加コピーが発生していた。定数から算出して将来 ChunkSize を変えてもズレないようにする。
+    /// </summary>
+    internal const int ReceiveFrameBufferSize =
+        Models.TransferProtocol.ChunkHeaderSize + Models.TransferProtocol.ChunkSize + PairCrypto.EnvelopeOverhead;
+
     private async Task ReceiveLoopAsync(CancellationToken ct)
     {
-        // 64KB の固定受信バッファ。1 フレーム分の読み取りに使い回す。
-        var frameBuffer = new byte[64 * 1024];
+        // 1 フレーム分の読み取りに使い回す固定受信バッファ。
+        var frameBuffer = new byte[ReceiveFrameBufferSize];
         System.IO.MemoryStream? aggregate = null;
         var overflowDropping = false; // サイズ超過後、EndOfMessage まで読み捨てるためのフラグ
 

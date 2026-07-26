@@ -15,10 +15,14 @@ import type { Env } from './index';
 import { hashPairId } from './index';
 import { verifySessionToken } from './auth';
 import { notifyInbox } from './device-routes';
+import { jsonError } from './http';
 
 const PAIR_ID_RE = /^[a-f0-9]{32}_[a-f0-9]{32}$/;
 
-export async function handleSignaling(req: Request, env: Env, url: URL): Promise<Response> {
+/** ctx.waitUntil だけを使うので最小形で受ける（テストからスタブを渡せる）。 */
+type WaitUntil = Pick<ExecutionContext, 'waitUntil'>;
+
+export async function handleSignaling(req: Request, env: Env, url: URL, ctx?: WaitUntil): Promise<Response> {
   // path: /sig/{pairId}/{rest...}
   const segs = url.pathname.split('/').filter((s) => s.length > 0); // ["sig", pairId, ...rest]
   if (segs.length < 2) return jsonError(400, 'BAD_PATH', 'expected /sig/{pairId}/...');
@@ -60,20 +64,21 @@ export async function handleSignaling(req: Request, env: Env, url: URL): Promise
   // push する（type=knock・transient、DeviceDO は storage に積まず接続中 WS にだけ送る）。
   // クライアント listener はこのノックを主検知経路にして、常時 400ms ポーリング（~20万 req/日/ペア）を
   // 低頻度の安全網ポーリングへ落とす。answer/endpoint は送信側が能動ポーリング（数秒で有界）なので不要。
+  // ノック配送はレスポンス値に使わず失敗も無害なので、待たずに ctx.waitUntil へ逃がす
+  // （相手 DeviceDO が cold start だと subrequest 1 往復ぶん offer POST が遅れ、接続確立の
+  //   有界予算〔answer 20s / offer-v2 8s / endpoint 10s〕を無駄に食う）。
   if (resp.ok && req.method === 'POST' && (action === 'offer' || action === 'probe-offer')) {
     const peer = claims.deviceId === a ? b : a;
-    try {
-      await notifyInbox(env, peer, { type: 'knock', pairId, from: claims.deviceId, createdAt: Date.now() });
-    } catch {
+    const knock = notifyInbox(env, peer, {
+      type: 'knock',
+      pairId,
+      from: claims.deviceId,
+      createdAt: Date.now(),
+    }).catch(() => {
       /* ノック失敗は無害（listener の安全網ポーリングが拾う）。offer 書込自体は成功済み */
-    }
+    });
+    if (ctx) ctx.waitUntil(knock);
+    else await knock; // ctx 無し（テスト等）は従来どおり待つ
   }
   return resp;
-}
-
-function jsonError(status: number, code: string, message: string): Response {
-  return new Response(JSON.stringify({ error: code, message }), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
 }

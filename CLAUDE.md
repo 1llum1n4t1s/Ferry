@@ -160,6 +160,8 @@ Velopack による自動更新の配信元は **Cloudflare R2**（カスタム�
 
 バージョンは `Directory.Build.props` の `<Version>` 単一管理（CI では `version` job が抽出、ローカルスクリプトも同ファイルを読む）。GitHub Actions はコミット SHA で固定。
 
+> アプリ内で使う `Ferry.AppVersion.Value`（About 表示 / presence のバージョン報告 / `IgnoreUpdateTag` の陳腐化判定）は、`Ferry.csproj` の `GenerateAppVersion` ターゲットが `$(Version)` から `obj/**/AppVersion.g.cs` を毎ビルド生成する。**手書きの `AppVersion.cs` は置かない**（Native AOT でリフレクションに頼れないため compile-time 定数である点は維持しつつ、正本を 1 つにしてドリフトを構造的に防ぐ。旧・手書き定数は実際に 3 リリース分ズレて `IgnoreUpdateTag` の自動クリアが効かなくなっていた）。
+
 ### 転送プロトコル
 
 TCP / WebSocket 上の長さプレフィクス付きバイナリプロトコル（`TransferProtocol.cs` + `FileChunker.cs` + `LengthPrefixedStream.cs`）。チャンクサイズ **64KB** (P-15 で旧 16KB から 4 倍化、`TransferProtocol.ChunkSize` 定数参照)。

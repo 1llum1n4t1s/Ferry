@@ -25,7 +25,7 @@ public sealed class CfTokenProvider : IDisposable
     private readonly TimeSpan _expiryMargin = TimeSpan.FromMinutes(2);
     private readonly TimeSpan _maxBackoff = TimeSpan.FromMinutes(5);
     private readonly Random _jitter = new();
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private readonly SemaphoreSlim _signInSemaphore = new(1, 1);
 
     private sealed record TokenState(string Token, long ExpiresAtMs);

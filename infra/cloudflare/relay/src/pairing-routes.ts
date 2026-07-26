@@ -22,6 +22,7 @@
 import type { Env } from './index';
 import { verifySessionToken } from './auth';
 import { notifyInbox } from './device-routes';
+import { jsonOk, jsonError, readJsonObject } from './http';
 
 const HEX32 = /^[a-f0-9]{32}$/;
 const PAIR_ID_RE = /^[a-f0-9]{32}_[a-f0-9]{32}$/;
@@ -51,20 +52,23 @@ export async function handlePairSession(req: Request, env: Env, url: URL): Promi
 
   // POST /pair/session — 自分のセッション登録
   if (method === 'POST' && segs.length === 2) {
-    const body = (await req.json()) as Record<string, unknown>;
+    const parsed = await readJsonObject(req);
+    if ('error' in parsed) return parsed.error;
+    const body = parsed.value;
     const nonce = str(body.pairingNonce);
     if (!HEX32.test(nonce)) return jsonError(400, 'BAD_NONCE', 'pairingNonce must be 32 hex');
     const now = Date.now();
-    await env.DB.prepare(
-      'INSERT OR REPLACE INTO sessions (sid, display_name, public_key, created_at) VALUES (?,?,?,?)',
-    )
-      .bind(claims.deviceId, str(body.displayName), str(body.publicKey), now)
-      .run();
-    await env.DB.prepare(
-      'INSERT OR REPLACE INTO pairing_nonces (sid, nonce, created_at) VALUES (?,?,?)',
-    )
-      .bind(claims.deviceId, nonce, now)
-      .run();
+    // sessions と pairing_nonces は 1 つの論理操作なので batch (単一トランザクション) で書く。
+    // 別々の run() だと 1 文目成功・2 文目失敗で「GET /pair/session は成功して QR も出るのに
+    // /pair/create が INVALID_NONCE_MATCH を返す」中間状態が残り、再登録するまで直らない。
+    await env.DB.batch([
+      env.DB.prepare(
+        'INSERT OR REPLACE INTO sessions (sid, display_name, public_key, created_at) VALUES (?,?,?,?)',
+      ).bind(claims.deviceId, str(body.displayName), str(body.publicKey), now),
+      env.DB.prepare(
+        'INSERT OR REPLACE INTO pairing_nonces (sid, nonce, created_at) VALUES (?,?,?)',
+      ).bind(claims.deviceId, nonce, now),
+    ]);
     return jsonOk({ ok: true });
   }
 
@@ -80,8 +84,11 @@ export async function handlePairSession(req: Request, env: Env, url: URL): Promi
   }
   if (method === 'DELETE') {
     if (claims.deviceId !== sid) return jsonError(403, 'NOT_SELF', 'can only revoke own session');
-    await env.DB.prepare('DELETE FROM sessions WHERE sid=?').bind(sid).run();
-    await env.DB.prepare('DELETE FROM pairing_nonces WHERE sid=?').bind(sid).run();
+    // POST と同じ理由で batch (片方だけ消えた中間状態を残さない)。
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM sessions WHERE sid=?').bind(sid),
+      env.DB.prepare('DELETE FROM pairing_nonces WHERE sid=?').bind(sid),
+    ]);
     return jsonOk({ ok: true });
   }
   return jsonError(405, 'METHOD_NOT_ALLOWED', method);
@@ -98,7 +105,9 @@ export async function handlePairCreate(req: Request, env: Env): Promise<Response
     if (!success) return jsonError(429, 'IP_RATE_LIMIT', 'IP rate limit exceeded');
   }
 
-  const body = (await req.json()) as Record<string, unknown>;
+  const parsed = await readJsonObject(req);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.value;
   const sidA = str(body.sidA);
   const sidB = str(body.sidB);
   const nonceA = str(body.nonceA);
@@ -190,7 +199,9 @@ export async function handlePairLink(req: Request, env: Env): Promise<Response> 
     if (!success) return jsonError(429, 'DEVICE_RATE_LIMIT', 'deviceId rate limit exceeded');
   }
 
-  const body = (await req.json()) as Record<string, unknown>;
+  const parsed = await readJsonObject(req);
+  if ('error' in parsed) return parsed.error;
+  const body = parsed.value;
   const sidA = claims.deviceId;
   const sidB = str(body.sidB);
   if (!HEX32.test(sidB)) return jsonError(400, 'BAD_SID', 'sidB must be 32 hex');
@@ -219,7 +230,9 @@ export async function handlePairs(req: Request, env: Env, url: URL): Promise<Res
   const method = req.method;
 
   if (method === 'PUT') {
-    const body = (await req.json()) as Record<string, unknown>;
+    const parsed = await readJsonObject(req);
+    if ('error' in parsed) return parsed.error;
+    const body = parsed.value;
     const createdAt = typeof body.createdAt === 'number' ? body.createdAt : Date.now();
     await env.DB.prepare(
       'INSERT OR REPLACE INTO pairs (pair_id, name_a, name_b, created_at) VALUES (?,?,?,?)',
@@ -245,12 +258,3 @@ export async function handlePairs(req: Request, env: Env, url: URL): Promise<Res
   return jsonError(405, 'METHOD_NOT_ALLOWED', method);
 }
 
-function jsonOk(body: object): Response {
-  return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
-}
-function jsonError(status: number, code: string, message: string): Response {
-  return new Response(JSON.stringify({ error: code, message }), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
-}

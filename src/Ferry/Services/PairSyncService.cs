@@ -13,7 +13,7 @@ namespace Ferry.Services;
 /// <summary>
 /// rere #D-001(a) Phase B §6.2: pairs/{pairId} SSoT のローカル同期サービス。
 ///
-/// 起動時即 + 5min + 1h のハイブリッドポーリングで Firebase pairs/{pairId} を GET し、
+/// 起動時即 + 5min + 1h のハイブリッドポーリングで D1 台帳の pairs/{pairId} を GET し、
 /// 404 を検出したら相手が削除したと判定してローカル peers.json から該当ペアを削除する。
 ///
 /// Robustness（peers.json 全消失の不可逆破壊を防ぐ）:

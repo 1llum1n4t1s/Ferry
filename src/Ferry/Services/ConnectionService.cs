@@ -133,7 +133,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// Dispose まで生かす。ノック（相手の offer/probe 書込の合図）を受けたら該当 Session の listener を
     /// 即時に起こす。これが主検知経路で、listener 自身のポーリングは低頻度の安全網に落とす。</summary>
     private ISignalingService? _knockWatcher;
-    private readonly object _knockWatcherLock = new();
+    private readonly Lock _knockWatcherLock = new();
 
     /// <summary>
     /// v1.0.38 review fix: 現在 StartListeningForConnection で監視中のピア ID。
@@ -316,12 +316,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         _signaling = NewSignaling();
         // Codex P2 fix (第9弾 #2): 旧実装は StartPairingSessionAsync の度に _seenPairingIds.Clear() で
         // 過去 consumed の pairingId を忘れていた。 これだと「直前まで pairing してた peer を remove 直後に
-        // Add peer を開く」と、 Firebase に残った old pairings entry (replay filter の -60s tolerance 内)
-        // が OnPairingDetected を誤って fire させて peer 再追加 → 新 pairing session が revoke される race
-        // になっていた。 _seenPairingIds はアプリ寿命全期間で持続させて、 過去 consumed pairingId は二度と
-        // 受け付けないようにする。 _signaling.Dispose() でインスタンスが入れ替わっても、 _seenPairingIds は
-        // ConnectionService 側に残るので持続する。
-        // _seenPairingIds.Clear();  ← 削除
+        // Add peer を開く」と、 サーバー側 inbox に残った old pairing イベント (replay filter の -60s
+        // tolerance 内) が OnPairingDetected を誤って fire させて peer 再追加 → 新 pairing session が
+        // revoke される race になっていた。 _seenPairingIds はアプリ寿命全期間で持続させて、 過去 consumed
+        // pairingId は二度と受け付けないようにする。 _signaling.Dispose() でインスタンスが入れ替わっても、
+        // _seenPairingIds は ConnectionService 側に残るので持続する。
 
         // rere #D-001(b): 自分の公開鍵も session に載せる（コード貼付ペアリングで相手が読み取る）。
         var sessionId = await _signaling.RegisterSessionAsync(_deviceId, _displayName, PublicKeyForQr, ct);
@@ -637,7 +636,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         // 誤って巻き戻さないよう、自分が立てたときだけ復旧する)
         var processingOffer = false;
 
-        // ポーリング用 Firebase クライアントはループ全体で再利用する
+        // ポーリング用 signaling クライアントはループ全体で再利用する
         // （毎反復で new すると接続/TLS ハンドシェイクの churn が発生するため）
         using var pollingSignaling = NewSignaling();
 
@@ -1770,7 +1769,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     /// <summary>
     /// UDP ホールパンチを試行する（Offer 側）。
-    /// Answer 側の外部エンドポイントを Firebase からポーリングし、取得後にホールパンチを実行する。
+    /// Answer 側の外部エンドポイントを PairDO (endpoint:{sender}) からポーリングし、取得後にホールパンチを実行する。
     /// Stage 4: per-session の signaling / Session を受けて当該 peer 専用の経路として動かす（_signaling 直参照を撤去）。
     /// </summary>
     private async Task<bool> TryUdpHolePunchOfferAsync(UdpHolePunchTransport udpTransport, ISignalingService sig, ConnectionSession session, string pairId, string peerId, CancellationToken ct)
@@ -1889,7 +1888,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     /// <summary>
     /// UDP ホールパンチを試行する（Answer 側）。
-    /// STUN で自身の外部エンドポイントを取得し、Firebase に書き込んでからホールパンチを実行する。
+    /// STUN で自身の外部エンドポイントを取得し、PairDO に publish してからホールパンチを実行する。
     /// Stage 4: per-session の signaling / Session を受けて当該 peer 専用の経路として動かす。
     /// </summary>
     private async Task<bool> TryUdpHolePunchAnswerAsync(ConnectionInfo offer, ISignalingService sig, ConnectionSession session, string pairId, string peerId, CancellationToken ct)
@@ -1911,7 +1910,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
             Util.Logger.Log($"STUN 外部エンドポイント取得: {Util.Logger.MaskIp(stunResult.Value.ip)}:{stunResult.Value.port}");
 
-            // 自身の外部エンドポイントを Firebase に書き込み（Offer 側が読む）。
+            // 自身の外部エンドポイントを PairDO に publish（Offer 側が読む）。
             // rere #D-001: 送信元 deviceId を埋め込み、Offer 側が MITM 検証できるようにする。
             await sig.SendEndpointAsync(pairId, _deviceId, $"{stunResult.Value.ip}:{stunResult.Value.port}", ct);
 
@@ -2081,22 +2080,6 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         session.OnChannelClosedHandler = null;
         session.OnDataReceivedHandler = null;
         session.OnRouteChangedHandler = null;
-    }
-
-    /// <summary>Stage 3b: peerId 不明な経路（DisconnectAsync 等）から、指定 transport に attach 済みの
-    /// 全 Session ハンドラを掃除する。<see cref="_sessions"/> を走査して該当 Session を見つけて detach する
-    /// （Stage 4 で並列接続が解禁されても、転送中の transport を取り違えない）。</summary>
-    private void DetachTransportEventsForTransport(ITransport? transport)
-    {
-        if (transport == null) return;
-        foreach (var kvp in _sessions)
-        {
-            if (ReferenceEquals(kvp.Value.Transport, transport))
-            {
-                DetachSessionHandlers(kvp.Value, transport);
-                kvp.Value.Transport = null;
-            }
-        }
     }
 
     private void OnSessionChannelOpened(string peerId, ITransport transport)
@@ -2282,16 +2265,6 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         try { await transport.SendAsync(frame); }
         catch (Exception ex) { Util.Logger.Log($"ハンドシェイクフレーム送信失敗: {ex.Message}", Util.LogLevel.Warning); }
     }
-
-    /// <summary>複数ペア同時接続対応: 現在の <see cref="_transport"/> から PeerId を引く便宜ヘルパー。
-    /// Stage 5 で SendAsync(peerId) になったら本ヘルパーは削除し peerId 直引きに置換する。</summary>
-    private string? GetCurrentTransportPeerId() => _transport switch
-    {
-        TcpDirectTransport t when !string.IsNullOrEmpty(t.PeerId) => t.PeerId,
-        UdpHolePunchTransport u when !string.IsNullOrEmpty(u.PeerId) => u.PeerId,
-        WebSocketRelayTransport w when !string.IsNullOrEmpty(w.PeerId) => w.PeerId,
-        _ => null,
-    };
 
     /// <summary>Stage 3c: 現在の単数 <see cref="_transport"/> に対応する <see cref="ConnectionSession"/> を引く
     /// （SendAsync など peerId を持たない経路向け）。Stage 5 で SendAsync が peerId 直引きになったら本ヘルパーは
@@ -2693,7 +2666,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
         /// <summary>暗号チャネル状態機械の直列化ロック（Session 単位）。
         /// OnFrame / Start / OnTimeout / ApplySecureStep の各経路が並行しうるためチャネル操作を直列化する。</summary>
-        public readonly object SecureLock = new();
+        public readonly Lock SecureLock = new();
 
         /// <summary>Stage 3c: 暗号ハンドシェイク完了通知。true=確立 / false=平文フォールバック / 例外=HMAC 失敗。
         /// 送信側はこれを待ってから封筒化要否を判断する。</summary>
@@ -2847,8 +2820,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 }
 
 /// <summary>
-/// Firebase 経由で交換する接続情報。
-/// SDP の代わりに IP:port 情報を交換する。
+/// シグナリング (PairDO) 経由で交換する接続情報。
+/// WebRTC の SDP ではなく IP:port 情報を交換する。
 /// </summary>
 public sealed class ConnectionInfo
 {

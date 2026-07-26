@@ -12,6 +12,7 @@
 import type { Env } from './index';
 import { hashPairId } from './index'; // 汎用 salted SHA-256 (pairId/deviceId 共通の DO 名ハッシュ)
 import { verifySessionToken } from './auth';
+import { jsonError } from './http';
 
 const DEVICE_RE = /^[a-f0-9]{32}$/;
 
@@ -77,11 +78,4 @@ export async function notifyInbox(env: Env, deviceId: string, event: object): Pr
       body: JSON.stringify(event),
     }),
   );
-}
-
-function jsonError(status: number, code: string, message: string): Response {
-  return new Response(JSON.stringify({ error: code, message }), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
 }

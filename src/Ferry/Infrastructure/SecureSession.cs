@@ -31,7 +31,7 @@ public sealed class SecureSession
     private ulong _sendCounter;
 
     // 受信 anti-replay 窓。_rxInitialized=false の間は未受信。_rxHighest はこれまで受理した最大カウンタ。
-    private readonly object _rxLock = new();
+    private readonly Lock _rxLock = new();
     private bool _rxInitialized;
     private ulong _rxHighest;
     private readonly bool[] _rxSeen = new bool[ReplayWindowSize];

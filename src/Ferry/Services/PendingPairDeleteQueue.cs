@@ -22,7 +22,7 @@ namespace Ferry.Services;
 public sealed class PendingPairDeleteQueue : IDisposable
 {
     private readonly string _filePath;
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     // Codex P2 fix (第7弾 #5): SaveAsync を lock 外で実行していたため、 ProcessAsync retry 失敗時 SaveAsync と
     // 再ペアリングの RemoveAsync SaveAsync が並走すると古い non-empty snapshot が後勝ちして queue が resurrect し、
     // 後の retry が新ペアを誤削除する race があった。 PeerRegistryService 同様 SemaphoreSlim で書込をシリアライズし、

@@ -36,6 +36,32 @@
     <Exec Command="powershell -ExecutionPolicy Bypass -NoProfile -File &quot;$(ProjectDir)..\..\icon\generate_icon.ps1&quot;" />
   </Target>
 
+  <!-- AppVersion.Value を Directory.Build.props の <Version> から毎ビルド生成する。
+       手書き定数だと /vava のたびに同期漏れが起き、実際に 1.0.65 のまま 3 リリース放置された
+       (About 表示・presence のバージョン分布・IgnoreUpdateTag の陳腐化判定が全部ズレる)。
+       Native AOT でリフレクションに頼れないので、compile-time 定数であることは維持したまま
+       「単一の正本から生成する」形にしてドリフトを構造的に潰す。 -->
+  <Target Name="GenerateAppVersion" BeforeTargets="BeforeCompile;CoreCompile">
+    <!-- IntermediateOutputPath は .targets 評価後にしか確定しないので、必ず Target 内で解決する。 -->
+    <PropertyGroup>
+      <AppVersionGeneratedPath>$(IntermediateOutputPath)AppVersion.g.cs</AppVersionGeneratedPath>
+    </PropertyGroup>
+    <ItemGroup>
+      <AppVersionLines Include="// 自動生成ファイル: Ferry.csproj の GenerateAppVersion が Directory.Build.props の Version から生成する。手で編集しない。" />
+      <AppVersionLines Include="namespace Ferry%3B" />
+      <AppVersionLines Include="// アプリケーションバージョンの compile-time 定数。正本は Directory.Build.props の Version。" />
+      <AppVersionLines Include="internal static class AppVersion" />
+      <AppVersionLines Include="{" />
+      <AppVersionLines Include="    public const string Value = &quot;$(Version)&quot;%3B" />
+      <AppVersionLines Include="}" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(AppVersionGeneratedPath)" Lines="@(AppVersionLines)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Compile Include="$(AppVersionGeneratedPath)" />
+      <FileWrites Include="$(AppVersionGeneratedPath)" />
+    </ItemGroup>
+  </Target>
+
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.0.5" />
     <PackageReference Include="Avalonia.Desktop" Version="12.0.5" />

@@ -420,7 +420,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         Util.Logger.Log($"ピア一覧を手動更新: {peers.Length} 件");
 
         // Probe クールダウン全リセット (手動更新時は最新化を優先)
-        lock (_lastProbeAt) { _lastProbeAt.Clear(); }
+        lock (_lastProbeAtLock) { _lastProbeAt.Clear(); }
 
         var tasks = peers.Select(async peer =>
         {
@@ -1107,6 +1107,9 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
 
     /// <summary>peer.PeerId → 最終 Probe 時刻。cooldown 判定で使う。</summary>
     private readonly Dictionary<string, DateTimeOffset> _lastProbeAt = new();
+    /// <summary><see cref="_lastProbeAt"/> 専用ロック。コレクション実体を lock 対象にすると
+    /// 実装型を差し替えた瞬間に保護が静かに消えるため、_probeQueueLock と同じく専用オブジェクトにする。</summary>
+    private readonly Lock _lastProbeAtLock = new();
     /// <summary>同時 Probe を 1 件に絞るセマフォ (シグナリングノード競合防止)。</summary>
     private readonly SemaphoreSlim _probeSemaphore = new(1, 1);
     /// <summary>v1.0.38 review fix v10: セマフォ取得失敗で skip された peer の待ちキュー。
@@ -1135,7 +1138,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         // v1.0.38 review fix v5: cooldown の記録はセマフォ取得後に移動。
         // 旧実装は WaitAsync(0) 失敗で skip された peer も cooldown に乗ってしまい、
         // 複数 peer 同時 Online 時に最初の 1 つを除いて永久 refresh されないバグがあった
-        lock (_lastProbeAt)
+        lock (_lastProbeAtLock)
         {
             if (_lastProbeAt.TryGetValue(peer.PeerId, out var last) && now - last < ProbeCooldown)
             {
@@ -1163,7 +1166,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         }
 
         // セマフォ取得成功 → ここで初めて cooldown を記録 (実際に probe を走らせる peer のみ)
-        lock (_lastProbeAt)
+        lock (_lastProbeAtLock)
         {
             _lastProbeAt[peer.PeerId] = DateTimeOffset.UtcNow;
         }

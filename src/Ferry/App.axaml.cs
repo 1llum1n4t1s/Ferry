@@ -263,8 +263,12 @@ public partial class App : Application
             // 下流（ConnectionService / PairSyncService / DeleteOne / presence）は具象に依存せず
             // signalingFactory / ensureAuthAsync / presenceFactory 経由で動く。
             // IdentityLost (401 DEVICE_PUBKEY_MISMATCH) で clean slate を発火する。
-            var cfTokenProvider = new Infrastructure.CfTokenProvider(deviceIdentity, settings.DeviceId);
+            // cfHttp は /auth/token を含む CF 通信すべてで共有する。CfTokenProvider に渡し忘れると
+            // 認証だけ HttpClient 既定の 100 秒タイムアウトになり、SendAsync が毎回先頭で通す
+            // EnsureTokenAsync が最大 100 秒返らない → 接続確立の有界待機（answer 20s / endpoint 10s）が
+            // 空振りしてリレー転落や PeerUnreachableException に化ける。
             var cfHttp = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            var cfTokenProvider = new Infrastructure.CfTokenProvider(deviceIdentity, settings.DeviceId, cfHttp);
             cfTokenProvider.IdentityLost += onIdentityLost;
             Func<Infrastructure.ISignalingService> signalingFactory =
                 () => new Infrastructure.CloudflareSignaling(cfTokenProvider, settings.DeviceId, cfHttp);

@@ -29,9 +29,6 @@ public sealed class TokenBucket
     /// <summary>Reserve の同時呼び出し直列化用。複数転送並列でもトークン会計が壊れないようにする。</summary>
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    /// <summary>現在のレートが「無制限」 (= 0) か。Wait 呼び出し側の早期 return 判定に使う。</summary>
-    public bool IsUnlimited => Volatile.Read(ref _ratePerSec) == 0;
-
     /// <summary>レートを更新する。0 以下は無制限扱い。</summary>
     /// <param name="kbps">KB/s (1024 B/s 単位)。0 で無制限。</param>
     public void SetRate(int kbps)

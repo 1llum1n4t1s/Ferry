@@ -10,7 +10,7 @@ namespace Ferry.Services;
 /// <summary>
 /// 接続管理サービス。
 /// ペアリング（QR スキャン → Bridge ページ経由のマッチング）と
-/// オンデマンド接続（転送時の一時的な WebRTC 接続）を分離して管理する。
+/// オンデマンド接続（転送時の一時的な P2P / リレー接続）を分離して管理する。
 /// </summary>
 public interface IConnectionService
 {
@@ -41,7 +41,7 @@ public interface IConnectionService
     /// 既存実装/テスト互換のため default で空集合を返す。Stage 4 で全ペア常時 listen を駆動する際に実装側を埋める。</summary>
     IReadOnlyCollection<string> ListeningPeerIds => Array.Empty<string>();
 
-    /// <summary>現在の接続経路（LAN 直接 / STUN P2P / TURN リレー）。
+    /// <summary>現在の接続経路（LAN 直接 / STUN P2P / WebSocket リレー）。
     /// 複数ペア同時接続対応 Stage 2: 単数プロパティは『最後に確定したペアの Route』の便宜値。
     /// 送信先 peer の Route を引きたい場合は <see cref="RouteOf"/> を使うこと。</summary>
     ConnectionRoute Route { get; }
@@ -88,7 +88,7 @@ public interface IConnectionService
     /// <summary>
     /// ペアリングセッションを開始し、セッション ID を返す。
     /// QR コード URL 生成に使用する。
-    /// Firebase でマッチング完了を監視し、完了時に PairingCompleted を発火する。
+    /// DeviceDO inbox でマッチング完了を監視し、完了時に PairingCompleted を発火する。
     /// </summary>
     Task<string> StartPairingSessionAsync(CancellationToken ct = default);
 
@@ -139,7 +139,7 @@ public interface IConnectionService
 
     /// <summary>
     /// ペアリング済みピアに接続する（Offer を作成して送信）。
-    /// Firebase シグナリングで SDP/ICE 交換 → WebRTC 確立。
+    /// シグナリング (PairDO) で接続情報を交換し、TCP 直結 → UDP ホールパンチ → リレーの順に確立する。
     /// </summary>
     Task ConnectToPeerAsync(string peerId, CancellationToken ct = default);
 
@@ -201,6 +201,6 @@ public interface IConnectionService
     /// <summary>外部から pairId を導出するための公開ヘルパー（既定実装は空文字＝旧テストの互換維持）。</summary>
     string GeneratePairIdFor(string peerId) => string.Empty;
 
-    /// <summary>Firebase pairs/{pairId} を SSoT として削除する（既定実装は no-op＝旧テストの互換維持）。</summary>
+    /// <summary>D1 台帳の pairs/{pairId} を SSoT として削除する（既定実装は no-op＝旧テストの互換維持）。</summary>
     Task DeletePairFromRelayAsync(string peerId, CancellationToken ct = default) => Task.CompletedTask;
 }

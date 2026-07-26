@@ -7,7 +7,7 @@ using Ferry.Models;
 namespace Ferry.Services;
 
 /// <summary>
-/// 接続サービスのスタブ実装。Firebase/WebRTC が未実装の間のプレースホルダー。
+/// 接続サービスのスタブ実装。UI 開発・テストで実シグナリングを使わないためのプレースホルダー。
 /// StartPairingSession 後、3 秒後に自動でペアリング完了をシミュレートする。
 /// </summary>
 #pragma warning disable CS0067 // スタブ実装のため未使用イベントを許容

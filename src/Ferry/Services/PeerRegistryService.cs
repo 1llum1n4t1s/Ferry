@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Ferry.Infrastructure;
 using Ferry.Models;
@@ -28,7 +29,7 @@ public sealed class PeerRegistryService : IPeerRegistryService, IDisposable
     // UI thread や pairing 経路から AddOrUpdatePeerAsync / RemovePeerAsync が走ると
     // InvalidOperationException が出て LoopAsync の outer catch で永久終了し、
     // 以降の remote unpair が反映されなくなる事故を防ぐ。
-    private readonly object _peersLock = new();
+    private readonly Lock _peersLock = new();
     // Codex 第7弾 #3 (P2): SaveAsync 自体を直列化して「snapshot 取得→Save」の順序を保つ。
     // 旧実装は snapshot 取得後に lock 外で SaveAsync が並走するため、
     // 新しい snapshot を取った後に古い snapshot の書込が後勝ちする race があり、

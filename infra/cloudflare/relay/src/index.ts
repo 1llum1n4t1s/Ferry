@@ -43,17 +43,15 @@ export interface Env {
   RATELIMIT_SESSION?: RateLimit;
 }
 
-/** Cloudflare Rate Limit binding の最小型（@cloudflare/workers-types の正式型と互換）。 */
-interface RateLimit {
-  limit(opts: { key: string }): Promise<{ success: boolean }>;
-}
+// RateLimit / RateLimitOptions は @cloudflare/workers-types がグローバルに提供する。
+// ここでローカル定義すると公式型を shadow して、公式側の変更に追従できなくなる。
 
 // CF 単独完結移行: DO クラスを entry module から re-export (Workers の DO クラス公開要件)。
 export { PairDO } from './pairdo';
 export { DeviceDO } from './devicedo';
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
 
     // ヘルスチェック (curl https://watashiba.kagayoi.com/health で疎通確認)
@@ -76,7 +74,7 @@ export default {
     // C# desktop クライアントからの呼出なので CORS は不要 (ブラウザ経由は Bridge の /pair/* のみ)。
     if (url.pathname.startsWith('/sig/')) {
       const { handleSignaling } = await import('./signaling-routes');
-      return handleSignaling(req, env, url);
+      return handleSignaling(req, env, url, ctx);
     }
 
     // CF 単独完結移行 Step 2: presence (poll) と pairing inbox (WS push)。
@@ -245,25 +243,33 @@ export class RelayDO {
   /** 片側が切れたら相手側も同コードで close する (転送中の片側切断検知)。 */
   async webSocketClose(ws: WebSocket, _code: number, _reason: string, _wasClean: boolean): Promise<void> {
     console.log(`[relay] close room=${this.state.id.toString().slice(0, 8)} code=${_code} clean=${_wasClean}`);
-    for (const peer of this.state.getWebSockets()) {
-      if (peer !== ws) {
-        try {
-          peer.close(1001, 'Peer disconnected');
-        } catch {
-          /* 既に close 済みのケースは無視 */
-        }
-      }
-    }
+    this.closeAllExcept(ws, 1001, 'Peer disconnected');
   }
 
   async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
     console.error(`[relay] error room=${this.state.id.toString().slice(0, 8)}: ${_error}`);
+    this.closeAllExcept(ws, 1011, 'Peer errored');
+  }
+
+  /**
+   * 自分側 (`ws`) を閉じてから相方を閉じる。
+   *
+   * Hibernation API では受け側が `ws.close()` を呼んで初めて closing handshake が完了する。
+   * 呼ばないと当該ソケットが CLOSING のまま `getWebSockets()` に残り、再接続時の admission が
+   * live 数を誤って数えて 409 (Pair already full) を返す事故につながる (DeviceDO.webSocketClose と同形)。
+   */
+  private closeAllExcept(ws: WebSocket, code: number, reason: string): void {
+    try {
+      ws.close(code, reason);
+    } catch {
+      /* 既に閉じている */
+    }
     for (const peer of this.state.getWebSockets()) {
       if (peer !== ws) {
         try {
-          peer.close(1011, 'Peer errored');
+          peer.close(code, reason);
         } catch {
-          /* 同上 */
+          /* 既に close 済みのケースは無視 */
         }
       }
     }

@@ -44,10 +44,6 @@ public sealed class TransferService : ITransferService, IDisposable
     /// <summary>受信側のダウンロード帯域制限。0 で無制限。Settings.DownloadKBps に追従する。</summary>
     private readonly Util.TokenBucket _downloadBucket = new();
 
-    /// <summary>外部から帯域制限器にアクセスするためのプロパティ (テスト用、および設定変更ハンドラ用)。</summary>
-    public Util.TokenBucket UploadBucket => _uploadBucket;
-    public Util.TokenBucket DownloadBucket => _downloadBucket;
-
     /// <summary>送信中の転送アイテム（レジューム用に保持）。</summary>
     private readonly ConcurrentDictionary<Guid, TransferItem> _activeTransfers = new();
 
@@ -328,7 +324,7 @@ public sealed class TransferService : ITransferService, IDisposable
 
             // 4. 確定したハッシュを後送り
             var sha256Bytes = hashSink.GetHashAndReset();
-            item.Sha256Hash = Convert.ToHexString(sha256Bytes).ToLowerInvariant();
+            item.Sha256Hash = Convert.ToHexStringLower(sha256Bytes);
             var hashMessage = FileChunker.CreateFileHashMessage(transferId, sha256Bytes);
             await SendToPeerAsync(sendPeerId, hashMessage, ct);
 
@@ -1054,7 +1050,13 @@ public sealed class TransferService : ITransferService, IDisposable
                 // chunkIndex をオフセットに変換して書き込む（順不同到着でも正しい位置に置く）。重複チャンクは無視
                 if (state.ReceivedChunkSet != null && !state.ReceivedChunkSet[chunkIndex])
                 {
-                    state.FileStream!.Seek(offset, SeekOrigin.Begin);
+                    // 既に目的のオフセットにいるなら Seek しない。FileStream の書き込みバッファ
+                    // (1MB で open) は Seek のたびに強制 flush されるため、毎チャンク Seek すると
+                    // バッファが機能せず 64KB ごとの write syscall になる。順序到着（TCP / リレー）は
+                    // Position == offset が常に成り立つので、書き込み syscall が 1/16 に減る。
+                    // 順不同到着（UDP）では従来どおり Seek する。
+                    if (state.FileStream!.Position != offset)
+                        state.FileStream.Seek(offset, SeekOrigin.Begin);
                     state.FileStream.Write(data.AsSpan(TransferProtocol.ChunkHeaderSize));
                     state.ReceivedChunkSet[chunkIndex] = true;
                     state.ReceivedChunks++;
@@ -1177,7 +1179,7 @@ public sealed class TransferService : ITransferService, IDisposable
         {
             // SHA-256 検証（1回のハッシュ計算で検証と ACK 送信の両方に使用）
             sha256Bytes = FileChunker.ComputeSha256(state.SavePath);
-            var actualHash = Convert.ToHexString(sha256Bytes).ToLowerInvariant();
+            var actualHash = Convert.ToHexStringLower(sha256Bytes);
             hashMatch = string.Equals(actualHash, state.ExpectedSha256, StringComparison.OrdinalIgnoreCase);
             if (!hashMatch)
                 Util.Logger.Log($"SHA-256 検証失敗: 期待={state.ExpectedSha256[..16]}…, 実際={actualHash[..16]}…", Util.LogLevel.Error);
@@ -1280,7 +1282,7 @@ public sealed class TransferService : ITransferService, IDisposable
                 var legacyState = legacyEntry.Value;
                 if (string.IsNullOrEmpty(legacyState.ExpectedSha256))
                 {
-                    legacyState.ExpectedSha256 = Convert.ToHexString(legacySha).ToLowerInvariant();
+                    legacyState.ExpectedSha256 = Convert.ToHexStringLower(legacySha);
                     Util.Logger.Log($"FileHash (旧形式) 受信: {legacyState.FileName}, SHA256={legacyState.ExpectedSha256[..16]}…");
                     TryCompleteReceiveIfReady(legacyState);
                     return;
@@ -1294,7 +1296,7 @@ public sealed class TransferService : ITransferService, IDisposable
         // 旧実装は「最初の ExpectedSha256 未確定 state」に紐付けており、並列転送
         // (ParallelTransferCount>1) で別ファイルのハッシュを取り違える余地があった。
         var (transferId, sha256Bytes) = parsed.Value;
-        var hex = Convert.ToHexString(sha256Bytes).ToLowerInvariant();
+        var hex = Convert.ToHexStringLower(sha256Bytes);
         if (_receiveStates.TryGetValue(transferId, out var state))
         {
             state.ExpectedSha256 = hex;
@@ -1711,7 +1713,7 @@ public sealed class TransferService : ITransferService, IDisposable
         /// しうる（従来は受信 1 本＝直列前提）。check-and-set（重複判定→Seek→Write→ビットマップ→カウンタ）を
         /// このロックで critical section 化し、二重書き込み/カウンタ過大計上による早期完了誤判定を防ぐ。
         /// 単一ストリーム経路では競合しないので実質 no-op（軽量 uncontended lock）。</summary>
-        public readonly object WriteLock = new();
+        public readonly Lock WriteLock = new();
         /// <summary>承認前に到着したチャンクのバッファ。</summary>
         public List<byte[]>? BufferedChunks { get; set; }
         /// <summary>承認待ちバッファの累積バイト数（OOM 防止の上限管理用）。</summary>

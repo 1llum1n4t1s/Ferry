@@ -14,6 +14,7 @@
  */
 
 import type { Env } from './index';
+import { jsonOk, jsonError, readJsonBody } from './http';
 
 // ---------- Public handlers ----------
 
@@ -224,29 +225,3 @@ export function base64UrlDecode(s: string): Uint8Array {
   return out;
 }
 
-async function readJsonBody(req: Request): Promise<{ value: unknown } | { error: Response }> {
-  try {
-    const v = await req.json();
-    if (v === null || typeof v !== 'object') {
-      return { error: jsonError(400, 'INVALID_JSON', 'JSON body must be an object') };
-    }
-    return { value: v };
-  } catch {
-    return { error: jsonError(400, 'INVALID_JSON', 'JSON parse failed') };
-  }
-}
-
-function jsonOk(body: object): Response {
-  return new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { 'content-type': 'application/json' },
-  });
-}
-
-function jsonError(status: number, code: string, message: string, extra?: object): Response {
-  const body = { error: code, message, ...(extra ?? {}) };
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
-}

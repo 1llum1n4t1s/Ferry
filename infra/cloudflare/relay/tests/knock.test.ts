@@ -94,6 +94,31 @@ describe('handleSignaling 接続ノック', () => {
     const res = await sigRequest(env, A, 'POST', `/sig/${PAIR_ID}/offer`, { sdp: 'x', createdAt: 1 });
     expect(res.status).toBe(200);
   });
+
+  it('ctx がある場合はノック完了を待たずに応答し、waitUntil に載せる', async () => {
+    const env = makeEnv();
+    let release: () => void = () => {};
+    notifyInboxMock.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (release = resolve)),
+    );
+    const pending: Promise<unknown>[] = [];
+    const ctx = { waitUntil: (p: Promise<unknown>) => void pending.push(p) };
+
+    const token = await mintSessionToken(A, 3600, env);
+    const url = new URL(`https://relay.test/sig/${PAIR_ID}/offer`);
+    const req = new Request(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ sdp: 'x', createdAt: 1 }),
+    });
+
+    // ノックが未解決のままでもレスポンスは返る（DO cold start が offer POST を遅らせない）
+    const res = await handleSignaling(req, env, url, ctx);
+    expect(res.status).toBe(200);
+    expect(pending.length).toBe(1);
+    release();
+    await pending[0];
+  });
 });
 
 // ------------------ DeviceDO.notify: knock は transient ------------------

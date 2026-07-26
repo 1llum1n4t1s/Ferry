@@ -83,6 +83,21 @@ public class WebSocketRelayTransportTests
     }
 
     [Fact]
+    public void 受信フレームバッファは暗号封筒込みのチャンクメッセージ1個を単一フレームで収容できる()
+    {
+        // リレー受信のホットパス (単一フレーム完結) が実際に通ることを固定する。
+        // バッファがチャンクメッセージより小さいと EndOfMessage=false になり、全チャンクが
+        // MemoryStream 集約パスへ落ちて 1GB あたり数万回の追加確保とコピーが発生する
+        // (旧実装の 64KB 固定バッファがこの状態だった)。ChunkSize 変更時の回帰も検出する。
+        var chunkMessageSize = TransferProtocol.ChunkHeaderSize + TransferProtocol.ChunkSize;
+        var encryptedSize = chunkMessageSize + PairCrypto.EnvelopeOverhead;
+
+        Assert.True(
+            WebSocketRelayTransport.ReceiveFrameBufferSize >= encryptedSize,
+            $"受信バッファ {WebSocketRelayTransport.ReceiveFrameBufferSize} は暗号化チャンク {encryptedSize} 以上である必要がある");
+    }
+
+    [Fact]
     public void コンストラクタ引数のrelayUrlとpairIdとroleが受け入れられる()
     {
         // null や空文字でも例外なく構築できること (実 ConnectAsync 時に Uri 例外で弾かれる契約)

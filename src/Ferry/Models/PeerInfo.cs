@@ -29,7 +29,7 @@ public enum PeerState
     /// <summary>Bridge ページ経由でマッチング待機中。</summary>
     WaitingForMatch,
 
-    /// <summary>WebRTC 接続確立中。</summary>
+    /// <summary>データチャネル確立中。</summary>
     Connecting,
 
     /// <summary>接続済み（ファイル転送可能）。</summary>
@@ -56,6 +56,6 @@ public enum ConnectionRoute
     /// <summary>STUN による NAT 越え P2P 接続。サーバー非経由。</summary>
     StunAssisted,
 
-    /// <summary>TURN サーバー経由のリレー接続。サーバーがボトルネック。</summary>
+    /// <summary>WebSocket リレー (Cloudflare RelayDO) 経由の接続。サーバーがボトルネック。</summary>
     Relay,
 }

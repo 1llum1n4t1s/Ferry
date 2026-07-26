@@ -369,7 +369,7 @@ public class FileChunkerTests : IDisposable
         Assert.Matches("^[0-9a-f]{64}$", hex);
 
         // 期待値と一致すること
-        var expected = Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
+        var expected = Convert.ToHexStringLower(SHA256.HashData(data));
         Assert.Equal(expected, hex);
     }
 

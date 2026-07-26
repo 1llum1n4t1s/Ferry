@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 
 namespace Ferry.Models;
 
@@ -141,6 +142,9 @@ public sealed class AppSettings
     /// </summary>
     public List<string> SeenPairingIds { get; set; } = [];
 
+    /// <summary><see cref="AddSeenPairingId"/> の copy-on-write を直列化する専用ロック。</summary>
+    private readonly Lock _seenPairingIdsLock = new();
+
     /// <summary>
     /// <see cref="SeenPairingIds"/> に pairingId を LRU で追加する。既出なら false（呼び出し側は保存不要）。
     ///
@@ -156,7 +160,10 @@ public sealed class AppSettings
     /// <returns>新規追加なら true、既出で変更なしなら false。</returns>
     public bool AddSeenPairingId(string pairingId, int cap)
     {
-        lock (this)
+        // 専用ロック。lock(this) は AppSettings インスタンスを持つ任意のコードが同じモニタを
+        // 取れてしまい、排他の到達範囲がクラス外へ漏れる（private field は source-gen JSON の
+        // シリアライズ対象外なので settings.json の形状には影響しない）。
+        lock (_seenPairingIdsLock)
         {
             if (SeenPairingIds.Contains(pairingId)) return false;
             var next = new List<string>(SeenPairingIds.Count + 1);

@@ -201,3 +201,32 @@ describe('handlePairCreate rate limit', () => {
     expect(prepareSpy).not.toHaveBeenCalled();
   });
 });
+
+// ------------------ 不正 JSON ボディ (500 ではなく 400 INVALID_JSON) ------------------
+
+describe('壊れた JSON ボディ', () => {
+  function badBodyRequest(url: string, token?: string): Request {
+    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return new Request(url, { method: 'POST', headers, body: 'not-json' });
+  }
+
+  it('/pair/link は 400 INVALID_JSON を返す (CF 既定の 500 に落ちない)', async () => {
+    const db = new FakeD1();
+    const env = makeEnv(db);
+    const token = await bearerFor(A, env);
+    const res = await handlePairLink(badBodyRequest('https://relay.test/pair/link', token), env);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe('INVALID_JSON');
+  });
+
+  it('/pair/create は 400 INVALID_JSON を返し D1 へ問い合わせない', async () => {
+    const db = new FakeD1();
+    const prepareSpy = vi.spyOn(db, 'prepare');
+    const env = makeEnv(db);
+    const res = await handlePairCreate(badBodyRequest('https://relay.test/pair/create'), env);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe('INVALID_JSON');
+    expect(prepareSpy).not.toHaveBeenCalled();
+  });
+});
