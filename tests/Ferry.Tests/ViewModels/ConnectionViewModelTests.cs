@@ -147,7 +147,7 @@ public class ConnectionViewModelTests : IDisposable
         await vm.StartSessionCommand.ExecuteAsync(null);
 
         _qrCodeService.Received(1).GenerateQrBitmap(
-            Arg.Is<string>(url => url.Contains("sid=sid123") && url.Contains("name=TestPC")));
+            Arg.Is<string>(url => url != null && url.Contains("sid=sid123") && url.Contains("name=TestPC")));
     }
 
     [Fact]
@@ -162,7 +162,7 @@ public class ConnectionViewModelTests : IDisposable
 
         // CF 単独完結: QR の宛先は常に CF 版 Bridge（relay Worker の Static Assets）固定
         _qrCodeService.Received(1).GenerateQrBitmap(
-            Arg.Is<string>(url => url.StartsWith(Ferry.AppConstants.CfBridgePageUrl) && url.Contains("sid=sid123")));
+            Arg.Is<string>(url => url != null && url.StartsWith(Ferry.AppConstants.CfBridgePageUrl) && url.Contains("sid=sid123")));
     }
 
     [Fact]

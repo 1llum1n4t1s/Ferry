@@ -506,7 +506,7 @@ public class TransferViewModelTests : IDisposable
         typeof(TransferItem).GetProperty(nameof(TransferItem.TransferId))!
             .SetValue(progressItem, item.TransferId);
 
-        _transferService.ProgressChanged += Raise.Event<EventHandler<TransferItem>>(null, progressItem);
+        _transferService.ProgressChanged += Raise.Event<EventHandler<TransferItem>>(null!, progressItem);
 
         Assert.Equal(500, item.TransferredBytes);
     }
@@ -530,7 +530,7 @@ public class TransferViewModelTests : IDisposable
         };
         // 異なる TransferId（デフォルトで新しい GUID が生成される）
 
-        _transferService.ProgressChanged += Raise.Event<EventHandler<TransferItem>>(null, progressItem);
+        _transferService.ProgressChanged += Raise.Event<EventHandler<TransferItem>>(null!, progressItem);
 
         Assert.Equal(0, item.TransferredBytes);
     }
@@ -555,7 +555,7 @@ public class TransferViewModelTests : IDisposable
         typeof(TransferItem).GetProperty(nameof(TransferItem.TransferId))!
             .SetValue(progressItem, item.TransferId);
 
-        _transferService.ProgressChanged += Raise.Event<EventHandler<TransferItem>>(null, progressItem);
+        _transferService.ProgressChanged += Raise.Event<EventHandler<TransferItem>>(null!, progressItem);
 
         // Completed なので更新されない
         Assert.Equal(1000, item.TransferredBytes);
@@ -575,7 +575,7 @@ public class TransferViewModelTests : IDisposable
             State = TransferState.Completed,
         };
 
-        _transferService.FileReceived += Raise.Event<EventHandler<TransferItem>>(null, receivedItem);
+        _transferService.FileReceived += Raise.Event<EventHandler<TransferItem>>(null!, receivedItem);
 
         Assert.Single(vm.Transfers);
         Assert.Equal("received.txt", vm.Transfers[0].FileName);
@@ -602,7 +602,7 @@ public class TransferViewModelTests : IDisposable
         typeof(TransferItem).GetProperty(nameof(TransferItem.TransferId))!
             .SetValue(errorItem, item.TransferId);
 
-        _transferService.TransferError += Raise.Event<EventHandler<TransferItem>>(null, errorItem);
+        _transferService.TransferError += Raise.Event<EventHandler<TransferItem>>(null!, errorItem);
 
         Assert.Equal(TransferState.Error, item.State);
         Assert.Equal("転送中断", item.ErrorMessage);
@@ -624,7 +624,7 @@ public class TransferViewModelTests : IDisposable
             ErrorMessage = "エラー",
         };
 
-        _transferService.TransferError += Raise.Event<EventHandler<TransferItem>>(null, errorItem);
+        _transferService.TransferError += Raise.Event<EventHandler<TransferItem>>(null!, errorItem);
 
         Assert.Equal(TransferState.InProgress, item.State);
         Assert.Null(item.ErrorMessage);
