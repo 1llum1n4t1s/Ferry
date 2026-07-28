@@ -98,9 +98,9 @@ internal sealed partial class Program
             .UsePlatformDetect()
             .WithInterFont()
 #if DEBUG
-            // DevTools インフラを有効化する。実際の接続は App.Initialize の
-            // AttachDeveloperTools が行う（両方必要）。パッケージ自体が Debug 限定参照なので
-            // Release / Native AOT 発行には一切入らない。
+            // DevTools を有効化する。これ自体が after-setup コールバックで AttachDeveloperTools を
+            // 呼ぶので、アタッチ地点はここ **だけ**（App.Initialize でも呼ぶと二重アタッチ例外で
+            // 起動できない）。パッケージ自体が Debug 限定参照なので Release / Native AOT には入らない。
             .WithDeveloperTools()
 #endif
             .LogToTrace();

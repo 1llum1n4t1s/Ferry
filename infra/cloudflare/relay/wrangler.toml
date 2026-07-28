@@ -91,6 +91,16 @@ type = "ratelimit"
 namespace_id = "1002"
 simple = { limit = 30, period = 60 }
 
+# /sig/* 専用枠。シグナリングは接続 1 回で数十 req を消費する（offer POST + answer GET を
+# 400ms ポーリング ≒ 52 req、経路 Probe 1 回 ≒ 17 req）ため、低頻度用の RATELIMIT_DEVICE
+# (30/60s) を共有すると送信側が自分の枠を焼いて answer を読めなくなる（2026-07-28 の障害）。
+# 実測ピーク ≒ 90 req/分 に複数ピア・リトライの余裕を見て 600/60s。
+[[unsafe.bindings]]
+name = "RATELIMIT_SIG"
+type = "ratelimit"
+namespace_id = "1004"
+simple = { limit = 600, period = 60 }
+
 [[unsafe.bindings]]
 name = "RATELIMIT_SESSION"
 type = "ratelimit"

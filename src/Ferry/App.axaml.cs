@@ -119,11 +119,10 @@ public partial class App : Application
         // "Ferry" を入れることで .app 起動 / dotnet run のどちらでもメニューバーが Ferry になる。
         Name = "Ferry";
         AvaloniaXamlLoader.Load(this);
-#if DEBUG
-        // AvaloniaUI.DeveloperTools（グローバルツール）へ接続する。
-        // 旧 Avalonia.Diagnostics の AttachDevTools 相当。Release には含めない。
-        this.AttachDeveloperTools();
-#endif
+        // DevTools への接続はここでは行わない。AvaloniaUI.DiagnosticsSupport の
+        // AppBuilder.WithDeveloperTools()（Program.BuildAvaloniaApp）が after-setup コールバックで
+        // AttachDeveloperTools を呼ぶため、ここでも呼ぶと二重アタッチになり
+        // InvalidOperationException「Developer tools have already been attached.」で起動できない。
     }
 
     [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Reflection used by Avalonia data validation plugins and ViewLocator")]

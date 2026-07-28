@@ -68,7 +68,7 @@
                      全体をオフスクリーン合成＋ブラーに通すため、中のピアリストが再描画されるたびに
                      ペイン全体のブラーが走る。BoxShadow は枠の外側だけを描くので子ツリーを巻き込まない。 -->
                 <Border Grid.Column="0" Background="{DynamicResource SidebarBrush}"
-                        CornerRadius="4" Margin="8,4,4,8"
+                        CornerRadius="4" Margin="8,4,0,8"
                         BorderBrush="#3300F0FF"
                         BorderThickness="1"
                         BoxShadow="0 0 20 0 #5900F0FF"
@@ -263,11 +263,16 @@
                     </Grid>
                 </Border>
 
-                <!-- v1.0.38: 左右ペイン仕切り (ROG NEON: 中央にシアンライン) -->
+                <!-- v1.0.38: 左右ペイン仕切り。見た目は透明（線を出さない）にして幅も細くするが、
+                     Background="Transparent" はヒットテスト対象なのでドラッグ操作は従来どおり効く
+                     （null にすると掴めなくなるので Transparent を明示する）。
+                     ⚠️ ペイン間の見た目の隙間 = 左 Border の右 Margin + この Width + 右 Border の左 Margin。
+                     細く見せるために両 Border の内側 Margin は 0 にしてあるので、隙間はこの Width と一致する
+                     （= 掴める幅でもあるため、これ以上詰めるとドラッグしづらくなる）。 -->
                 <GridSplitter Grid.Column="1"
                               x:Name="PaneSplitter"
-                              Width="4"
-                              Background="#5500F0FF"
+                              Width="3"
+                              Background="Transparent"
                               ResizeBehavior="PreviousAndNext"
                               HorizontalAlignment="Center"
                               VerticalAlignment="Stretch" />
@@ -276,7 +281,7 @@
                      サイドバーと同じ理由で Effect ではなく BoxShadow を使う（中の転送リストは
                      進捗バーが毎フレーム動くので、Effect だとペイン全体が毎フレーム再合成される）。 -->
                 <Border Grid.Column="2" Background="{DynamicResource SurfaceBrush}"
-                        CornerRadius="4" Margin="4,4,8,8" ClipToBounds="True"
+                        CornerRadius="4" Margin="0,4,8,8" ClipToBounds="True"
                         BorderBrush="#33FF2D8A"
                         BorderThickness="1"
                         BoxShadow="0 0 20 0 #4CFF2D8A">

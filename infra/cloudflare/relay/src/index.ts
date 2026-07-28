@@ -41,6 +41,10 @@ export interface Env {
   RATELIMIT_IP?: RateLimit;
   RATELIMIT_DEVICE?: RateLimit;
   RATELIMIT_SESSION?: RateLimit;
+  /** `/sig/*` 専用の device-scoped rate limit。シグナリングは接続 1 回あたり数十 req を
+   *  ポーリングで消費するため、低頻度な `/auth/token`・`/pair/link` 用の RATELIMIT_DEVICE
+   *  (30/60s) とは枠を分ける（共有すると正規の接続が自分で自分を締め出す。§signaling-routes）。 */
+  RATELIMIT_SIG?: RateLimit;
 }
 
 // RateLimit / RateLimitOptions は @cloudflare/workers-types がグローバルに提供する。

@@ -114,6 +114,8 @@ STUN は **Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google S
 | `/pairs/{pairId}`（PUT/GET/DELETE、bearer 当事者のみ） | D1 `pairs` | ペア台帳 SSoT。GET 404 で remote-unpair 検出（`PairSyncService`）。DELETE は相手 inbox へ unpair push |
 | `/ferry-relay`（WebSocket） | **RelayDO** | 転送リレー本体（Hibernation 対応）。pairId は `SALT` 付き SHA-256 で DO 名化（生 pairId 漏洩による横入り防止） |
 
+**Rate limit の枠分け**（`wrangler.toml` の `unsafe.bindings`）: `RATELIMIT_IP`(60/60s、bearer 無しの `/auth/token`・`/pair/create`) / `RATELIMIT_DEVICE`(30/60s、**低頻度**な `/auth/token`・`/pair/link`) / `RATELIMIT_SIG`(600/60s、`/sig/*` 専用) / `RATELIMIT_SESSION`(5/60s)。⚠️ **`/sig/*` に `RATELIMIT_DEVICE` を流用しないこと**。シグナリングは接続 1 回で **offer POST + answer GET 400ms ポーリング ≒ 52 req**、経路 Probe 1 回 ≒ 17 req を消費するため 30/60s では枠を焼き切り、**送信側が「相手が返した answer を読む GET」を自分で 429 させて必ず `PeerUnreachableException`（相手から応答がありません）で失敗する**（v1.0.70 で実際に発生。429 も枠を消費するのでポーリング継続中は回復せず自己閉塞する）。実測ピーク ≒ 90 req/分。回帰は `tests/signaling-ratelimit.test.ts`。
+
 **Cleanup ポリシー**（旧 firebase-cleanup.yml の置換）:
 
 - **PairDO（signaling）**: 書込時に 1h alarm を仕掛け、TTL 経過で `deleteAll` して休眠（lazy・全 DO を短間隔で起こさない）

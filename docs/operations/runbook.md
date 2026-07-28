@@ -90,6 +90,11 @@ Release ビルドは Info 以上を出力し 7 日保持。アプリのトレイ
    `CLOCK_SKEW` / `EXPIRED_SESSION` / `DEVICE_RATE_LIMIT` など）。
    Durable Object の例外は `PairDO error` / `DeviceDO error` として出る。
 
+   > ⚠️ クライアントログに `SDP ポーリングエラー(CF, answer): ... 429: DEVICE_RATE_LIMIT` が出て
+   > いる場合、続く「相手から応答がありません」は**相手のオフラインではなく送信側の枠切れ**。
+   > `/sig/*` は `RATELIMIT_SIG`（600/60s）を使う設計で、`RATELIMIT_DEVICE`（30/60s）を流用すると
+   > 接続 1 回（≒52 req）で自己閉塞する。`wrangler.toml` の binding を確認する。
+
 5. **クライアントログを回収**（上表のパス。障害発生時刻の前後 60 分）
 
 6. **Status pages**

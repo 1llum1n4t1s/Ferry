@@ -46,13 +46,21 @@ export async function handleSignaling(req: Request, env: Env, url: URL, ctx?: Wa
   }
 
   // 2.5. rere レビュー #C-31: device-scoped rate limit。
-  // 旧実装は /sig/* だけ rate limit を通していなかった（/auth/token・/pair/link にはある）。
   // 当事者検証は「pairId の 2 要素の一方が自分」しか見ず D1 `pairs` の実在を確認しないため、
   // cfToken を 1 つ取れば `{自分}_{任意の32hex}` を無数に作って PairDO を生成でき、
-  // 各々が storage 書込 + 1h alarm を保持する（DO/storage 課金の増殖）。
-  // 認可判断そのものは変えず、正規クライアントの通常レートに影響しない上限だけを掛ける。
-  if (env.RATELIMIT_DEVICE) {
-    const { success } = await env.RATELIMIT_DEVICE.limit({ key: claims.deviceId });
+  // 各々が storage 書込 + 1h alarm を保持する（DO/storage 課金の増殖）。それを抑止する。
+  //
+  // ⚠️ 枠は **RATELIMIT_SIG（/sig/* 専用）** を使う。v1.0.70 で低頻度用の RATELIMIT_DEVICE
+  // (30 req/60s、/auth/token は約 50 分に 1 回・/pair/link はペアリング時のみ) を流用したが、
+  // シグナリングの実レートは桁が違う（接続 1 回 = offer POST + answer GET 400ms×20s ≒ 52 req、
+  // 経路 Probe 1 回 ≒ 17 req）。結果として **送信側が自分の枠を焼き切り、相手が返した answer を
+  // 読む GET が 429 で弾かれ続けて「相手から応答がありません」で必ず失敗**していた
+  // (2026-07-28 実測。429 も枠を消費するのでポーリング継続中は枠が回復せず自己閉塞する)。
+  // 上限は実測ピーク（接続 1 + Probe 2 ≒ 90 req/分）に複数ピア・リトライ分の余裕を見た値。
+  // RATELIMIT_DEVICE へフォールバックしないのは、それが上記の障害そのものを復活させるため
+  // （binding は wrangler.toml で宣言済みなので本番では常に存在する）。
+  if (env.RATELIMIT_SIG) {
+    const { success } = await env.RATELIMIT_SIG.limit({ key: claims.deviceId });
     if (!success) return jsonError(429, 'DEVICE_RATE_LIMIT', 'deviceId rate limit exceeded');
   }
 

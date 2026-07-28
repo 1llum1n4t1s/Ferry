@@ -72,7 +72,7 @@
          グローバルツール AvaloniaUI.DeveloperTools が提供する
          (導入は dotnet tool install で global 指定)。
          Debug 限定なので Release / Native AOT 発行には含まれない
-         (Program.cs の WithDeveloperTools / App.Initialize の AttachDeveloperTools も #if DEBUG)。 -->
+         (Program.cs の WithDeveloperTools も #if DEBUG。アタッチはそこ 1 箇所だけ行う)。 -->
     <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3" Condition="'$(Configuration)' == 'Debug'" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <!-- Komorebi と同じローカライズ＆アイコン注入パターンで自動更新ダイアログを提供する。

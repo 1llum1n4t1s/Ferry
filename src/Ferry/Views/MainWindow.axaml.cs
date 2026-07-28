@@ -33,7 +33,7 @@ public partial class MainWindow : Window
     private const double DefaultSidebarWidth = 220;
     private const double MinSidebarWidth = 180;
     private const double MinMainPaneWidth = 300;
-    private const double SplitterWidth = 4;
+    private const double SplitterWidth = 3;
 
     /// <summary>ウィンドウ位置保存のデバウンスタイマー（500ms）。</summary>
     private System.Threading.Timer? _savePositionDebounceTimer;
