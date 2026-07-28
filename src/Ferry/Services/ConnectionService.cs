@@ -68,6 +68,21 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// フォールバックする (per-sender ノード #D-003 で同時 offer は安全なので回帰しない)。</summary>
     private const int RoleDeferListenTimeoutSeconds = 15;
 
+    /// <summary>送信起点の <see cref="ConnectToPeerAsync"/> が「同じ peer の接続が既に確立途中」だったときに、
+    /// それを中断せず完走を待つ上限(ms)。着信(answer)側の確立は TCP(5s)→UDP(8s)→リレー合流(15s) と進むため、
+    /// その全体をカバーする値にする。
+    /// ⚠️ この待ちが無いと、リレー合流待ちまで進んだ着信接続をユーザーの「送信」操作が問答無用で破棄し、
+    /// さらに offerer 経路のシグナリング削除で相手の offer まで消してしまう。相手は既にリレーで待機しているので
+    /// 誰も answer を返さず、20s 後に PeerUnreachableException（相手から応答がありません）で必ず失敗する
+    /// （2026-07-28 実測。相手はオンラインで到達可能だった）。</summary>
+    private const int InFlightConnectJoinMs = 30_000;
+
+    /// <summary>進行中接続を中断した後、その接続が <see cref="PeerState.Connecting"/> を抜けるのを待つ上限(ms)。
+    /// 中断直後の状態はまだ Connecting のままで、これを待たずに role調停へ進むと
+    /// <see cref="WaitForListenerConnectedAsync"/> が「死にかけの旧接続の Connecting」を委譲先 listener の
+    /// 進捗と誤認し、直後の Disconnected 遷移で 200ms でフォールバックしてしまう。</summary>
+    private const int ConnectSettleWaitMs = 3_000;
+
     /// <summary>Answer 側が TCP 成功を通知する route 値。</summary>
     private const string RouteDirect = "direct";
 
@@ -963,10 +978,30 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         // で従来どおり直列化する。
         var session = _sessions.GetOrAdd(peerId, id => new ConnectionSession(id));
 
-        // 進行中の接続 (孤児ポーラー含む) を先に中断してから直列化ゲートを取る。
+        // ① 同じ peer の接続が既に確立途中なら、中断せず完走を待って相乗りする。
+        // ユーザーの「送信」は未接続なら必ずここへ来るため、着信(answer)側がリレー合流待ちまで進んだ接続を
+        // 送信操作が破棄してしまうと、相手は既にリレーで待っているのに誰も応答せず必ず失敗する（§InFlightConnectJoinMs）。
+        // ゲートを取る前に状態を見るだけなので、孤児ポーラーを抱えた自己デッドロックは起きない。
+        if (session.State == PeerState.Connecting)
+        {
+            Util.Logger.Log($"接続確立中のため完了を待機: peer={Util.Logger.MaskDeviceId(peerId)}");
+            if (await WaitForConnectSettledAsync(session, InFlightConnectJoinMs, ct) == PeerState.Connected)
+            {
+                Util.Logger.Log($"確立中だった接続に相乗り: peer={Util.Logger.MaskDeviceId(peerId)}");
+                return;
+            }
+        }
+
+        // ② 進行中の接続 (孤児ポーラー含む) を先に中断してから直列化ゲートを取る。
         // 順序を逆 (Gate→Cancel) にすると、自然完了しない孤児ポーラーを抱えたまま待ち、自己デッドロックする。
         session.ConnectCts?.Cancel();
         await session.ConnectGate.WaitAsync(ct);
+
+        // ③ 中断した接続が Connecting を抜けるまで待ってから先へ進む。
+        // 待たないと、下の role調停が起動する listener の進捗を WaitForListenerConnectedAsync が観測する際に
+        // 「中断された旧接続の Connecting」を掴み、直後の Disconnected 遷移で即フォールバックする（§ConnectSettleWaitMs）。
+        if (session.State == PeerState.Connecting)
+            await WaitForConnectSettledAsync(session, ConnectSettleWaitMs, ct);
 
         // 所有権がまだ _transport に移っていないローカル transport を例外/キャンセル経路で確実に破棄する。
         // (bound ソケット / LISTEN ポートが GC ファイナライザ回収までリークするのを防ぐ。Dispose は冪等)
@@ -1324,6 +1359,27 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// Stage 4: 旧版は単数 <c>State</c> を読んでいたため、別 peer の connect が並走すると挙動が混線していた。
     /// per-Session の <see cref="ConnectionSession.State"/> を読むことで当該 peer の listener 進捗だけを観測する。
     /// </summary>
+    /// <summary>
+    /// 指定 Session が <see cref="PeerState.Connecting"/> を抜ける（確立 or 失敗が確定する）まで最大
+    /// <paramref name="timeoutMs"/> 待ち、そのときの状態を返す。timeout した場合は最後に観測した状態
+    /// （= まだ Connecting）を返すので、呼び出し側は「確立しなかった」として扱える。
+    /// 状態を読むだけで ConnectGate は取らないため、進行中の接続処理と並走しても deadlock しない。
+    /// </summary>
+    private static async Task<PeerState> WaitForConnectSettledAsync(
+        ConnectionSession session, int timeoutMs, CancellationToken ct)
+    {
+        const int PollMs = 100;
+        var waited = 0;
+        while (waited < timeoutMs)
+        {
+            var s = session.State;
+            if (s != PeerState.Connecting) return s;
+            await Task.Delay(PollMs, ct);
+            waited += PollMs;
+        }
+        return session.State;
+    }
+
     private async Task<bool> WaitForListenerConnectedAsync(string peerId, int timeoutMs, CancellationToken ct)
     {
         const int PollMs = 200;

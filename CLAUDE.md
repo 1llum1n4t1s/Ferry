@@ -9,6 +9,10 @@ This file provides guidance to Claude Code and other coding agents working in th
 dotnet build src/Ferry/Ferry.csproj
 dotnet build Ferry.slnx          # アプリ + テストを一括ビルド
 
+# アプリをローカル起動して実機確認する（Debug は AvaloniaUI.DeveloperTools へ接続する）
+# ビルドが通っても起動時に落ちる類のバグ（DevTools 二重アタッチ等）はここでしか見つからない
+dotnet run --project src/Ferry/Ferry.csproj
+
 # リリース発行 (Native AOT、ランタイム指定が必須)
 # CI は win-x64 / win-arm64 / osx-arm64 / linux-x64 / linux-arm64 の 5 ランタイムを発行する
 dotnet publish src/Ferry/Ferry.csproj -c Release -r win-x64
@@ -22,6 +26,10 @@ dotnet test tests/Ferry.Tests/Ferry.Tests.csproj --filter "FullyQualifiedName~Fi
 # relay Worker（シグナリング / リレー / Bridge ページ）の型チェック + テスト
 cd infra/cloudflare/relay && pnpm exec tsc --noEmit && pnpm test
 
+# relay Worker のテスト単体実行（ファイル指定 / テスト名フィルタ）
+cd infra/cloudflare/relay && pnpm vitest run tests/signaling-ratelimit.test.ts
+cd infra/cloudflare/relay && pnpm vitest run -t "rate limit"
+
 # relay Worker の手動デプロイ（通常は main push で deploy-relay.yml が自動配信するので不要）
 cd infra/cloudflare/relay && pnpm dlx wrangler deploy
 ```
@@ -29,6 +37,8 @@ cd infra/cloudflare/relay && pnpm dlx wrangler deploy
 > Windows 向けリリースは `pwsh scripts/release-local.ps1` でローカル実行する（コード署名のため）。macOS / Linux は `release/**` ブランチへの push で CI が配信する（後述「自動更新と配信」）。Bridge ページ（QR ペアリング）は relay Worker の Static Assets（`infra/cloudflare/relay/public/`）なので relay と一緒に配信される。
 >
 > PR（→ main）は `.github/workflows/dotnet-build.yml`（".NET Build"）が build + test で検証する。`release/**` トリガーの配信 CI（後述）とは別ワークフローなので、コード変更の正否はこの PR CI で確認する。
+>
+> **relay（`infra/cloudflare/relay/**`）の PR は別ワークフロー `relay-check.yml`（"Relay Check"）**が上記の `tsc --noEmit` + `pnpm test` をそのままゲートにする。`dotnet-build.yml` は .NET しか見ず relay を素通りするので、relay 変更の正否はこちらで確認する。⚠️ 旧構成では relay の TypeScript を検証する経路がどの workflow にも無く、**vitest スイートが一度も走らないまま main にマージされて本番へ配信されうる**状態だった（rere #C-05）。同じステップは `deploy-relay.yml`（main push）にも置いてあるので、PR を経由しない直 push でも検証は外れない。
 
 ## アーキテクチャ
 
@@ -288,6 +298,7 @@ xUnit v3 + NSubstitute。テスト内の非同期メソッドには `TestContext
 
 ## 既知の制限と注意事項
 
+0. **確立途中の接続は送信操作で奪わない**: `ConnectToPeerAsync` は同じ peer が `PeerState.Connecting` なら、まず完走を待って**相乗り**する（`InFlightConnectJoinMs`=30s）。待たずに `ConnectCts.Cancel()` すると、着信(answer)側がリレー合流待ちまで進んだ接続をユーザーの「送信」が破棄し、続く offerer 経路の**シグナリング削除で相手の offer まで消える**。相手は既にリレーで待機しているので誰も answer を返さず、20s 後に `PeerUnreachableException`（相手から応答がありません）で必ず失敗する（2026-07-28 実測。相手はオンラインで到達可能だった）。中断した場合も `Connecting` を抜けるまで待つ（`ConnectSettleWaitMs`=3s）— 待たないと `WaitForListenerConnectedAsync` が**死にかけの旧接続の Connecting** を委譲先 listener の進捗と誤認し、直後の `Disconnected` 遷移で 15s 待たず 200ms でフォールバックする。回帰は `ConnectionServiceInFlightJoinTests`。
 1. **同時接続の競合**: rere #D-003 で offer を per-sender キー（PairDO `offer:{senderDeviceId}`）化したため、2台が同時に接続を試みても **offer の相互上書きは構造的に起きない**。さらに deviceId 序列の **deferral（`CompareOrdinal` で大きい側が answerer に委譲）** で「双方が offerer になり相互の answer を待ち続けるデッドロック」を収束させる。ただし deferral 判定の瞬間に相手がまだ offer を書いていない**同時ウィンドウ**は残る（完全収束は今後の課題）。基本は接続確立後にファイル送信するのが安全。
 2. **Native AOT 制約**: JSON の動的シリアライズは使えないため、モデル追加時は `*JsonContext` も追加する。
 3. **信頼モデル**: シグナリング認可は CF 単独完結の cfToken（自前 HMAC bearer + ECDSA デバイス署名チャレンジ + KV first-write-wins 鍵束縛。§Cloudflare バックエンド構造）。E2E 暗号は `ConnectionService.CreateSecureChannel` / `StartSecureHandshake` / `ApplySecureStep` に配線済みで **常時 ON**（v1.0.48 で旧トグル撤去）。QR ペアリング時に長期 ECDH 公開鍵を交換して PairSecret を導出し、HMAC 相互認証 + AES-GCM 封筒化する。**v1.0.65 で 2 台実機検証済み**（別回線 2 台でログ「暗号セッション確立（HMAC 相互認証成功）」+ 数百 MB 転送の SHA-256 検証を確認）。PairSecret を持たない旧ペア（公開鍵交換前の peers.json）は**平文フォールバック**のまま — 再ペアリングすると暗号化される。
