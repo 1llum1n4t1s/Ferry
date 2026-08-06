@@ -63,10 +63,10 @@
   </Target>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="12.1.0" />
-    <PackageReference Include="Avalonia.Desktop" Version="12.1.0" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.0" />
+    <PackageReference Include="Avalonia" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.1" />
     <!-- デベロッパーツール。旧 Avalonia.Diagnostics は非推奨 (かつ 11 系止まりで本体 12 系と不揃い)
          だったため AvaloniaUI.DiagnosticsSupport へ移行した。UI は別プロセスの
          グローバルツール AvaloniaUI.DeveloperTools が提供する
@@ -77,9 +77,9 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <!-- Komorebi と同じローカライズ＆アイコン注入パターンで自動更新ダイアログを提供する。
          自前の SelfUpdateWindow/VM/Model は撤去し、このライブラリの UpdateDialogWindow に統一 -->
-    <PackageReference Include="VelopackUpdateDialog.Avalonia" Version="1.0.13" />
+    <PackageReference Include="VelopackUpdateDialog.Avalonia" Version="1.0.14" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
-    <PackageReference Include="SuperLightLogger" Version="1.0.10" />
+    <PackageReference Include="SuperLightLogger" Version="1.0.12" />
     <!-- Avalonia の Linux サポートが Tmds.DBus.Protocol を transitive に引くため、
          CVE 対応版 (0.93.0) を直接指定して上書きする。-->
     <PackageReference Include="Tmds.DBus.Protocol" Version="0.94.2" />
