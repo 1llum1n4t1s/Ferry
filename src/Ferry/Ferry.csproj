@@ -9,6 +9,12 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+    <!--
+      IL3053 は「このアセンブリが AOT 解析警告を出した」という第三者アセンブリ単位の集約通知で、
+      対象は自前で直せない。TreatWarningsAsErrors=true と併用すると ILC 実行時にエラー化して
+      AOT publish が失敗するため抑制する (Lhamiel / Kiriha / Komorebi と同じ対処)。
+    -->
+    <NoWarn>$(NoWarn);IL3053</NoWarn>
 
     <Product>Ferry</Product>
     <!-- Version は Directory.Build.props で単一管理 (ここで再定義すると props を上書きして同期漏れの元) -->
@@ -18,7 +24,8 @@
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <PublishAot>true</PublishAot>
     <PublishTrimmed>true</PublishTrimmed>
-    <TrimMode>link</TrimMode>
+    <!-- TrimMode は指定しない。Native AOT が常に full トリムを行うため (公式に AOT 併用時は設定しない指針)。
+         旧値 'link' は .NET 6 以前の名称で、現在の有効値は full / partial のみ。 -->
   </PropertyGroup>
 
   <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
