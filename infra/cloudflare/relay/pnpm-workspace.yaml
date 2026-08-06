@@ -3,3 +3,10 @@ allowBuilds:
   esbuild: true
   sharp: true
   workerd: true
+minimumReleaseAgeExclude:
+  - miniflare@5.20260801.0-alpha
+  - wrangler@4.119.0
+# wrangler > miniflare が undici を厳密固定 (7.28.0) しており、脆弱性 5 件 (GHSA-4cwx-7wf7-3272 他、
+# undici <7.29.0 対象) を直接依存の更新だけでは解消できないため override する。
+overrides:
+  undici: "^7.29.0"
