@@ -107,27 +107,46 @@ public class SecureChannelTests
     }
 
     [Fact]
-    public void 相手が平文アプリデータを送ってきたら平文フォールバックして配送すること()
+    public void PairSecret保有時にHello待ちへ平文が来たら降格せず切断すること()
     {
-        // 対応側 A が Hello を出したが、相手は非対応で平文アプリデータを返してくるケース。
+        // ダウングレード防御: PairSecret を持つ正規ペアは必ず Hello を返すので、Hello 待ちに
+        // 平文アプリデータが来るのは第三者の注入か鍵喪失。旧実装はここで平文へ降格していたため、
+        // 経路上の第三者がフレームを 1 通注入するだけで E2E 暗号を無効化できた。
         var a = new SecureChannel(DevA, DevB, Secret(0x11), secureEnabled: true);
         var start = a.Start();
         Assert.Single(start.Send); // Hello 送信済み（AwaitingHello）
 
         var app = new byte[] { TransferProtocol.FileMeta, 5 };
         var step = a.OnFrame(app);
-        Assert.Equal(SecureOutcome.FellBackToPlaintext, step.Outcome);
-        Assert.Equal(app, Assert.Single(step.Deliver)); // 取りこぼさず配送
+        Assert.Equal(SecureOutcome.Failed, step.Outcome);
+        Assert.Empty(step.Deliver); // 注入フレームを上位へ配送しない
         Assert.False(a.IsSecure);
     }
 
     [Fact]
-    public void Hello待ちのタイムアウトは平文フォールバックすること()
+    public void PairSecret保有時のHello待ちタイムアウトは降格せず切断すること()
     {
+        // Hello を握り潰すだけで暗号が外れる経路を塞ぐ（fail-closed）。
         var a = new SecureChannel(DevA, DevB, Secret(0x11), secureEnabled: true);
         a.Start();
         var step = a.OnTimeout();
-        Assert.Equal(SecureOutcome.FellBackToPlaintext, step.Outcome);
+        Assert.Equal(SecureOutcome.Failed, step.Outcome);
+        Assert.False(a.IsSecure);
+    }
+
+    [Fact]
+    public void PairSecret無しの旧ペアは従来どおり平文で通ること()
+    {
+        // 降格禁止の対象は PairSecret 保有チャネルのみ。公開鍵交換前の旧ペアは ctor が
+        // 平文専用チャネルを作るので、Hello を送らず平文素通しのまま（互換維持）。
+        var ch = new SecureChannel(DevA, DevB, pairSecret: null, secureEnabled: true);
+        var start = ch.Start();
+        Assert.Equal(SecureOutcome.FellBackToPlaintext, start.Outcome);
+        Assert.Empty(start.Send);
+
+        var app = new byte[] { TransferProtocol.FileMeta, 5 };
+        Assert.Equal(app, Assert.Single(ch.OnFrame(app).Deliver));
+        Assert.Equal(SecureOutcome.None, ch.OnTimeout().Outcome); // 平文確定後のタイムアウトは無害
     }
 
     [Fact]

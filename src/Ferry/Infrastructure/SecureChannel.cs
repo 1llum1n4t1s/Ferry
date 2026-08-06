@@ -40,9 +40,13 @@ public sealed class SecureChannelStep
 ///
 /// ネゴシエーション（混在環境の安全な後方互換）:
 ///   - 両端対応 → ハンドシェイク成立 → 以降 AES-GCM 封筒。
-///   - 相手が非対応 → 自分の Hello に応えず平文アプリデータを送ってくる → それを検知して平文フォールバック。
 ///   - 自分が非対応(PairSecret 無/フラグ OFF) → Hello を送らず、届いた 0x30/0x31 は黙って捨て、全て平文配送
-///     （= 現状動作と完全に同一。ConnectionService は非対応時そもそも本クラスを生成しない）。
+///     （= 公開鍵交換前の旧ペア互換。ConnectionService は PairSecret 未保有時そもそも本クラスを生成しない）。
+///   - 自分が対応(PairSecret 有)なのに相手が Hello を返さない → **平文へ降格せず Failed で切断する**。
+///     PairSecret はペアリング時に両端が ECDH で対称に導出するため、正規のピアは必ず Hello を返す。
+///     ここで降格を許すと、経路上の第三者が任意フレームを 1 通注入する / Hello を握り潰すだけで
+///     両端を平文へ収束させられる（HMAC 相互認証も AES-GCM も確立前にスキップされる）ダウングレード
+///     攻撃が成立する。リレー経路は入室に pairId しか要求しないため、この降格経路は実際に到達可能だった。
 ///
 /// I/O 非依存の純ロジック（フレーム in → 副作用 out）なので、ConnectionService 結線（2 台実機検証）に
 /// 先立って negotiation/封筒/フォールバック/HMAC 失敗の全分岐を単体テストで決定的に固定できる。
@@ -170,19 +174,17 @@ public sealed class SecureChannel
             Process(f, step); // 状態は AwaitingHello / Plaintext に遷移済みなので通常処理に乗る
     }
 
-    /// <summary>ハンドシェイクのタイムアウト。Hello 待ちは平文フォールバック、Confirm 待ちは失敗扱い。</summary>
+    /// <summary>ハンドシェイクのタイムアウト。PairSecret 保有チャネルは平文へ降格せず失敗（切断）にする。</summary>
     public SecureChannelStep OnTimeout()
     {
         var step = new SecureChannelStep();
-        if (_state == S.AwaitingHello)
+        if (_state is S.AwaitingHello or S.AwaitingConfirm)
         {
-            // 相手が Hello を返さない = 暗号非対応 → 平文へ。
-            _state = S.Plaintext;
-            step.Outcome = SecureOutcome.FellBackToPlaintext;
-        }
-        else if (_state == S.AwaitingConfirm)
-        {
-            // 相手は Hello を出したのに Confirm を完了しない = 異常 → 安全側で切断。
+            // AwaitingHello / AwaitingConfirm は PairSecret 保有時にしか入らない状態。同じ PairSecret を
+            // 持つ正規ピアならハンドシェイクは対称に進むので、Hello / Confirm が返らないのは異常
+            // （相手が鍵を失っている、または経路上の第三者がフレームを握り潰している）。
+            // 旧実装は Hello 待ちだけ平文へ降格していたが、それは「Hello を落とせば暗号が外れる」という
+            // ダウングレード攻撃そのものなので、安全側で切断する。
             _state = S.Closed;
             step.Outcome = SecureOutcome.Failed;
         }
@@ -216,10 +218,12 @@ public sealed class SecureChannel
         }
         else
         {
-            // 相手が平文アプリデータを送ってきた = 暗号非対応 → 平文フォールバック。
-            _state = S.Plaintext;
-            step.Deliver.Add(frame);
-            step.Outcome = SecureOutcome.FellBackToPlaintext;
+            // Hello 待ちに平文アプリデータが来た。PairSecret 保有ペアの正規ピアは必ず Hello を返すので、
+            // これは (a) 経路上の第三者がフレームを注入した (b) 相手が鍵を失っている のいずれか。
+            // どちらも平文で続行してよい理由にならないため、降格せず切断する（フレームも配送しない）。
+            // 暗号非対応の旧ペア（PairSecret 無し）は ctor が平文専用チャネルを作るのでここへ来ない。
+            _state = S.Closed;
+            step.Outcome = SecureOutcome.Failed;
         }
     }
 
