@@ -124,6 +124,21 @@ export async function handlePairCreate(req: Request, env: Env): Promise<Response
 
   // 公開鍵は body.pkA / body.pkB ではなく D1 の権威データを使う (#C-32)
   const pairingId = await notifyPairEstablished(env, sidA, str(body.nameA), sidB, str(body.nameB));
+
+  // 成立した nonce を server 権威で消費して単回使用にする。
+  // 旧実装は verifyNonce が SELECT のみで、消費はクライアント側の revoke
+  // (OnPairingDetected → DELETE /pair/session) 任せの best-effort だった。相手 PC がオフラインで
+  // inbox push を受け取れないケースや revoke 要求が失敗したケースでは nonce が TTL(1h) いっぱい
+  // 有効なまま残り、撮影・流出した QR の nonce で何度でも /pair/create を通せる
+  // (攻撃者が自分の sid を相手に据えれば、利用者が「使い終わった」と思っている QR で
+  //  そのままペアを張れる)。ここで消すと単回使用がサーバ側で保証される。
+  // 通常運用に影響は無い: ペア成立した PC は元々自分のセッションを revoke するため、
+  // 表示中の QR は既に無効。次のペアリングはペアリング画面を開き直して新しい nonce を発行する。
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM pairing_nonces WHERE sid=?').bind(sidA),
+    env.DB.prepare('DELETE FROM pairing_nonces WHERE sid=?').bind(sidB),
+  ]);
+
   return jsonOk({ ok: true, pairingId });
 }
 

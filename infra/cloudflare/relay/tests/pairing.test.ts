@@ -41,11 +41,16 @@ describe('derivePairId', () => {
 // ------------------ handlePairLink (D1 stub + notifyInbox mock) ------------------
 
 class FakeD1 {
-  private nonces = new Map<string, number>(); // sid -> created_at
+  private nonces = new Map<string, { nonce: string; createdAt: number }>(); // sid -> pairing_nonces 行
   private publicKeys = new Map<string, string>(); // sid -> sessions.public_key
 
-  setSessionActive(sid: string, createdAt: number) {
-    this.nonces.set(sid, createdAt);
+  setSessionActive(sid: string, createdAt: number, nonce = 'n'.repeat(32)) {
+    this.nonces.set(sid, { nonce, createdAt });
+  }
+
+  /** pairing_nonces 行が残っているか（/pair/create の nonce 消費を検証する）。 */
+  hasNonce(sid: string): boolean {
+    return this.nonces.has(sid);
   }
 
   /** rere #C-32 用: sessions.public_key（サーバーが持つ権威データ）を仕込む。 */
@@ -58,6 +63,7 @@ class FakeD1 {
     const publicKeys = this.publicKeys;
     // sessions と pairing_nonces で返す列が違うので SQL で振り分ける
     const isSessions = sql.includes('FROM sessions');
+    const isDeleteNonce = sql.includes('DELETE FROM pairing_nonces');
     return {
       bind: (...args: unknown[]) => ({
         first: async <T>(): Promise<T | null> => {
@@ -66,11 +72,22 @@ class FakeD1 {
             if (!publicKeys.has(sid)) return null;
             return { public_key: publicKeys.get(sid)! } as unknown as T;
           }
-          if (!nonces.has(sid)) return null;
-          return { created_at: nonces.get(sid)! } as unknown as T;
+          const row = nonces.get(sid);
+          if (!row) return null;
+          return { nonce: row.nonce, created_at: row.createdAt } as unknown as T;
+        },
+        // batch() から実行される DELETE を反映するための擬似 statement。
+        __run: () => {
+          if (isDeleteNonce) nonces.delete(args[0] as string);
         },
       }),
     };
+  }
+
+  /** env.DB.batch(stmts) 相当。prepare().bind() が返す擬似 statement の __run を順に適用する。 */
+  async batch(stmts: Array<{ __run?: () => void }>): Promise<unknown[]> {
+    for (const s of stmts) s.__run?.();
+    return stmts.map(() => ({ success: true }));
   }
 }
 
@@ -252,6 +269,67 @@ describe('handlePairCreate rate limit', () => {
     expect(((await res.json()) as { error: string }).error).toBe('IP_RATE_LIMIT');
     expect(limitSpy).toHaveBeenCalledWith({ key: '1.2.3.4' });
     expect(prepareSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ------------------ handlePairCreate の nonce 単回使用 ------------------
+
+describe('handlePairCreate の nonce 消費', () => {
+  const NA = 'a1'.repeat(16);
+  const NB = 'b2'.repeat(16);
+
+  function createReq(nonceA: string, nonceB: string): Request {
+    return new Request('https://relay.test/pair/create', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sidA: A, sidB: B, nonceA, nonceB, nameA: 'PC-A', nameB: 'PC-B' }),
+    });
+  }
+
+  beforeEach(() => {
+    notifyInboxMock.mockClear();
+  });
+
+  it('成立したら両 sid の pairing_nonces を削除する (server 権威の単回使用)', async () => {
+    const db = new FakeD1();
+    db.setSessionActive(A, Date.now(), NA);
+    db.setSessionActive(B, Date.now(), NB);
+    const env = makeEnv(db);
+
+    const res = await handlePairCreate(createReq(NA, NB), env);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { pairingId: string }).pairingId).toBe(derivePairId(A, B));
+    expect(notifyInboxMock).toHaveBeenCalledTimes(2);
+    expect(db.hasNonce(A)).toBe(false);
+    expect(db.hasNonce(B)).toBe(false);
+  });
+
+  it('同じ nonce の再送 (撮影された QR のリプレイ) は 404 になり inbox へ再 push しない', async () => {
+    const db = new FakeD1();
+    db.setSessionActive(A, Date.now(), NA);
+    db.setSessionActive(B, Date.now(), NB);
+    const env = makeEnv(db);
+
+    expect((await handlePairCreate(createReq(NA, NB), env)).status).toBe(200);
+    notifyInboxMock.mockClear();
+
+    const replay = await handlePairCreate(createReq(NA, NB), env);
+    expect(replay.status).toBe(404);
+    expect(((await replay.json()) as { error: string }).error).toBe('SESSION_NOT_FOUND');
+    expect(notifyInboxMock).not.toHaveBeenCalled();
+  });
+
+  it('nonce 不一致では消費しない (失敗リクエストで正規の nonce を潰さない)', async () => {
+    const db = new FakeD1();
+    db.setSessionActive(A, Date.now(), NA);
+    db.setSessionActive(B, Date.now(), NB);
+    const env = makeEnv(db);
+
+    const res = await handlePairCreate(createReq(NA, 'c3'.repeat(16)), env);
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: string }).error).toBe('INVALID_NONCE_MATCH');
+    expect(db.hasNonce(A)).toBe(true);
+    expect(db.hasNonce(B)).toBe(true);
   });
 });
 
