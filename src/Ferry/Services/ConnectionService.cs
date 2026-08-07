@@ -102,8 +102,23 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     /// <summary>CF 使用量削減: inbox WS 切断中（ノックが届かない）の安全網ポーリング間隔（ms）。
     /// WS が使えない網（プロキシ等）でも着信検知が数秒で済むよう短めに保つ。
-    /// ここはノックが構造的に届かない状態なので、検知遅延と直結する = 延ばさない。</summary>
+    /// ここはノックが構造的に届かない状態なので、検知遅延と直結する = 延ばさない。
+    /// ただしこの間隔を無期限に維持すると枠を焼くため、<see cref="NoInboxFastWindowMs"/> を超えた
+    /// 持続切断では <see cref="IdleListenPollNoInboxSustainedMs"/> へ落とす。</summary>
     private const int IdleListenPollNoInboxMs = 3_000;
+
+    /// <summary>inbox WS 切断を 3s ポーリングで押し切る時間（ms）。DO 再起動やネットワーク瞬断による
+    /// 再接続はこの窓に収まるので、通常の検知レイテンシは従来どおり数秒のまま維持される。</summary>
+    private const int NoInboxFastWindowMs = 120_000;
+
+    /// <summary>inbox WS が持続的に切断されているときの安全網ポーリング間隔（ms）。
+    /// ⚠️ 3s のまま持続すると **1 ペアあたり 28,800 req/日** を PairDO に流す。2026-07-31〜08-02 の
+    /// 実測ではこの退行だけで PairDO が 1 日 46,595〜58,393 req（正常値 ~2,600 の 18〜22 倍）に跳ね、
+    /// 30 日ローリングで含有枠 100 万の 90% を占める主因になっていた（2 ペア × 28,800 = 57,600 と一致）。
+    /// 上限は送信側の answer 待ち <see cref="OfferAnswerWaitSeconds"/>(20s) が縛る。listener は offer を
+    /// 読んでから TCP 試行(最大 5s) と answer 書込を 20s 以内に終える必要があるため、10s なら
+    /// 10 + 5 + 書込 ≒ 16s で余裕が残る（15s 以上にすると予算を食い潰して着信を落とす）。</summary>
+    private const int IdleListenPollNoInboxSustainedMs = 10_000;
 
     /// <summary>CF 使用量削減: probe offer をノック無しで読み直す安全網の周回数。
     /// probe offer の書き込みでも relay はノックを push する（signaling-routes.ts の
@@ -162,6 +177,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// 即時に起こす。これが主検知経路で、listener 自身のポーリングは低頻度の安全網に落とす。</summary>
     private ISignalingService? _knockWatcher;
     private readonly Lock _knockWatcherLock = new();
+
+    /// <summary>inbox WS の切断を最初に観測した時刻（Unix ms）。0 = 接続中。
+    /// 全 listener が共有し、瞬断（fast 窓）と持続切断を区別して安全網の間隔を選ぶ。</summary>
+    private long _inboxDownSinceMs;
 
     /// <summary>
     /// v1.0.38 review fix: 現在 StartListeningForConnection で監視中のピア ID。
@@ -646,6 +665,34 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// バックグラウンドで Offer（接続情報）をポーリングし、
     /// 検知したら TCP 接続 / WebSocket リレー接続を確立する。
     /// </summary>
+    /// <summary>
+    /// 着信 listener の安全網ポーリング間隔を決める。
+    ///
+    /// ノック（inbox WS push）が主検知経路なので、WS が生きている間は <see cref="IdleListenPollMs"/>(120s)。
+    /// 切断中はノックが構造的に届かないので詰めるが、**3s のまま持続させない**のが要点。
+    /// 2026-07-31〜08-02 の実測では、inbox が張れないまま 3s ポーリングを続けた結果 PairDO が
+    /// 1 日 46,595〜58,393 req（正常値 ~2,600 の 18〜22 倍。2 ペア × 28,800 と一致）に跳ね、
+    /// 30 日ローリングで Workers Paid 含有枠 100 万の 90% を占めていた。切断が
+    /// <see cref="NoInboxFastWindowMs"/> を超えたら <see cref="IdleListenPollNoInboxSustainedMs"/> に落とす。
+    /// DO 再起動や瞬断の再接続は fast 窓に収まるため、通常の検知レイテンシは変わらない。
+    /// </summary>
+    private int ResolveIdleListenPollMs()
+    {
+        if (_knockWatcher?.InboxConnected ?? false)
+        {
+            Volatile.Write(ref _inboxDownSinceMs, 0);
+            return IdleListenPollMs;
+        }
+
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        // 複数 listener が同時に観測するため、最初の 1 本だけが開始時刻を書ける CAS で共有する。
+        var since = Interlocked.CompareExchange(ref _inboxDownSinceMs, now, 0);
+        if (since == 0) since = now;
+        return now - since < NoInboxFastWindowMs
+            ? IdleListenPollNoInboxMs
+            : IdleListenPollNoInboxSustainedMs;
+    }
+
     private async Task ListenForIncomingConnectionAsync(string peerId, CancellationToken ct)
     {
         var pairId = GeneratePairId(_deviceId, peerId);
@@ -739,7 +786,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 {
                     // ノックが来たら即時に次 iteration（probe + offer 再読み）。来なければ安全網間隔で再読み。
                     // inbox WS 切断中はノックが届かないため間隔を詰めて検知遅延を数秒に抑える。
-                    var idleMs = (_knockWatcher?.InboxConnected ?? false) ? IdleListenPollMs : IdleListenPollNoInboxMs;
+                    var idleMs = ResolveIdleListenPollMs();
                     // 戻り値 true = ノックで起きた / false = 安全網タイムアウト。
                     // ノックで起きた周は probe も読み直し、タイムアウトの周は offer だけ読む（PairDO リクエスト半減）。
                     wokenByKnock = await session.WaitForKnockAsync(idleMs, ct);

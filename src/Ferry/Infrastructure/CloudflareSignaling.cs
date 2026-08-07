@@ -41,6 +41,13 @@ public sealed class CloudflareSignaling : ISignalingService
     /// <summary>inbox WS の接続状態（1=接続中）。listener が安全網ポーリング間隔の調整に読む。</summary>
     private int _inboxConnected;
 
+    /// <summary>inbox WS 再接続バックオフの上限（秒）。</summary>
+    private const double InboxMaxBackoffSeconds = 30;
+
+    /// <summary>この時間以上継続した inbox WS 接続は「安定していた」とみなしてバックオフ段数をリセットする。
+    /// 接続成立の瞬間にリセットすると「繋がる→即切れる」ループで常に最短間隔が選ばれてしまう。</summary>
+    private const long InboxStableSessionMs = 60_000;
+
     /// <summary>presence ETag キャッシュ（peerId → (ETag, LastSeen)）。Firebase 版と同じ帯域節約。</summary>
     private readonly ConcurrentDictionary<string, (string ETag, long LastSeen)> _presenceCache = new();
 
@@ -211,6 +218,10 @@ public sealed class CloudflareSignaling : ISignalingService
         var attempt = 0;
         while (!ct.IsCancellationRequested)
         {
+            // この周で接続が成立した時刻（0 = 未成立）。切断後のバックオフ判定に使う。
+            var connectedAtMs = 0L;
+            // 例外で落ちた場合の理由（正常クローズなら null のままでログ文言を切り替える）。
+            string? lastError = null;
             try
             {
                 await _tokens.EnsureTokenAsync(ct);
@@ -225,7 +236,7 @@ public sealed class CloudflareSignaling : ISignalingService
                 ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
                 ws.Options.KeepAliveTimeout = TimeSpan.FromSeconds(20);
                 await ws.ConnectAsync(new Uri(AppConstants.CfInboxWsUrl), ct);
-                attempt = 0;
+                connectedAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 Volatile.Write(ref _inboxConnected, 1);
                 Util.Logger.Log("CF inbox WebSocket 接続成立", Util.LogLevel.Debug);
 
@@ -254,12 +265,34 @@ public sealed class CloudflareSignaling : ISignalingService
             catch (Exception ex)
             {
                 Volatile.Write(ref _inboxConnected, 0);
-                attempt++;
-                var backoff = Math.Min(Math.Pow(2, attempt - 1), 30);
-                Util.Logger.Log($"CF inbox WS 切断（{backoff:F0}s 後に再接続）: {ex.Message}", Util.LogLevel.Debug);
-                try { await Task.Delay(TimeSpan.FromSeconds(backoff), ct); }
-                catch (OperationCanceledException) { return; }
+                lastError = ex.Message;
             }
+
+            // 切断後の共通バックオフ。
+            // ⚠️ 例外経路だけでなく「サーバが正常クローズした（close フレーム受信 / State!=Open で
+            // 内側ループを抜けた）」経路も必ずここを通す。旧実装は正常クローズだと catch を通らず
+            // 待機ゼロで即再接続していたため、バックエンドが接続直後に閉じ続ける状況
+            // （DeviceDO の "Durable Object reset because its code was updated." 連鎖、デプロイ
+            //   ロールアウト中、SESSION_HMAC_SECRET ローテ直後の 401）で、出荷済み全クライアントが
+            // /inbox を無制限に叩き続けるリトライループになっていた。
+            // また attempt は接続成立で即 0 に戻していたため、「繋がる→即切れる」を繰り返す間は
+            // 常に最短間隔が選ばれ、バックオフが構造的に効かなかった。安定して張れていた
+            // (InboxStableSessionMs 以上) ときだけリセットする。
+            if (ct.IsCancellationRequested) break;
+            var sessionMs = connectedAtMs > 0
+                ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - connectedAtMs
+                : 0;
+            if (sessionMs >= InboxStableSessionMs) attempt = 0;
+            attempt++;
+            // jitter は複数クライアントが同じ DO 再起動で一斉に戻る thundering herd を崩すため。
+            var backoff = Math.Min(Math.Pow(2, attempt - 1), InboxMaxBackoffSeconds)
+                * (1.0 + Random.Shared.NextDouble() * 0.25);
+            Util.Logger.Log(
+                $"CF inbox WS 切断（{backoff:F1}s 後に再接続, 接続継続={sessionMs}ms）: {lastError ?? "サーバーが接続を閉じました"}",
+                Util.LogLevel.Debug);
+            lastError = null;
+            try { await Task.Delay(TimeSpan.FromSeconds(backoff), ct); }
+            catch (OperationCanceledException) { return; }
         }
         Volatile.Write(ref _inboxConnected, 0);
     }
