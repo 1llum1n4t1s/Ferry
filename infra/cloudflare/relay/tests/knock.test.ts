@@ -177,4 +177,36 @@ describe('DeviceDO.notify の knock transient 化', () => {
     expect(putSpy).toHaveBeenCalledTimes(1); // inbox に永続化される
     expect(sent.length).toBe(1);
   });
+
+  it('同じ pairingId の再通知は積み増さず最新 1 件に畳む (inbox 押し出し防止)', async () => {
+    if (!(globalThis as { WebSocket?: unknown }).WebSocket) {
+      (globalThis as { WebSocket?: unknown }).WebSocket = { OPEN: 1 };
+    }
+    const { state, store } = makeFakeState();
+    const dev = new DeviceDO(state as never, {});
+    const post = (body: unknown) =>
+      dev.fetch(
+        new Request('https://do/notify', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        }),
+      );
+
+    // /pair/link は同じ相手に何度でも成立できるため、同一 pairingId が繰り返し届きうる。
+    // 積み増すと INBOX_MAX(50) を溢れさせて他ピアの未読イベントを押し出せてしまう。
+    for (let i = 0; i < 5; i++) {
+      await post({ pairingId: 'p1', sidA: A, sidB: B, createdAt: Date.now() + i });
+    }
+    // 別ペアのイベントは残る（畳み込みは pairingId 単位）
+    await post({ pairingId: 'p2', sidA: A, sidB: B, createdAt: Date.now() });
+    // unpair は type が違うので成立イベントとは別枠で保持される
+    await post({ type: 'unpair', pairingId: 'p1', createdAt: Date.now() });
+
+    const inbox = store.get('inbox') as Array<{ pairingId: string; type?: string }>;
+    expect(inbox.filter((x) => x.pairingId === 'p1' && x.type === undefined)).toHaveLength(1);
+    expect(inbox.filter((x) => x.pairingId === 'p2')).toHaveLength(1);
+    expect(inbox.filter((x) => x.type === 'unpair')).toHaveLength(1);
+    expect(inbox).toHaveLength(3);
+  });
 });

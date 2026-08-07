@@ -155,8 +155,18 @@ export class DeviceDO {
     if (!transient) {
       const events = (await this.state.storage.get<InboxEvent[]>('inbox')) ?? [];
       const now = Date.now();
-      events.push(e);
-      const pruned = events.filter((x) => now - x.createdAt < INBOX_TTL_MS).slice(-INBOX_MAX);
+      // 同じ (pairingId, type) のイベントは積み増さず最新 1 件に畳む。
+      // /pair/link は相手セッションが 1h アクティブな間なら何度でも成立でき（設計どおり: 相手の
+      // nonce 値所有を要求しない認可モデル）、同一 sidA→sidB の繰り返しは常に同じ pairingId を生む。
+      // 積み増すと RATELIMIT_DEVICE(30/60s) の範囲でも 2 分弱で INBOX_MAX(50) を溢れさせ、
+      // **他ピアの未読ペア成立/unpair イベントを押し出せる**（WS 未接続の相手が取りこぼす）。
+      // クライアントは元々 SeenPairingIds で重複を捨てるため、畳んでも観測される挙動は変わらない。
+      const pairingId = typeof e.pairingId === 'string' ? e.pairingId : null;
+      const kept = pairingId === null
+        ? events
+        : events.filter((x) => !(x.pairingId === pairingId && x.type === e.type));
+      kept.push(e);
+      const pruned = kept.filter((x) => now - x.createdAt < INBOX_TTL_MS).slice(-INBOX_MAX);
       await this.state.storage.put('inbox', pruned);
     }
 

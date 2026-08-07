@@ -64,6 +64,8 @@ class FakeD1 {
     // sessions と pairing_nonces で返す列が違うので SQL で振り分ける
     const isSessions = sql.includes('FROM sessions');
     const isDeleteNonce = sql.includes('DELETE FROM pairing_nonces');
+    // 条件付き DELETE (WHERE sid=? AND nonce=?) は compare-and-swap。nonce 不一致なら消えない。
+    const isConditionalDelete = isDeleteNonce && sql.includes('nonce=?');
     return {
       bind: (...args: unknown[]) => ({
         first: async <T>(): Promise<T | null> => {
@@ -76,18 +78,25 @@ class FakeD1 {
           if (!row) return null;
           return { nonce: row.nonce, created_at: row.createdAt } as unknown as T;
         },
-        // batch() から実行される DELETE を反映するための擬似 statement。
-        __run: () => {
-          if (isDeleteNonce) nonces.delete(args[0] as string);
+        // batch() から実行される DELETE を反映するための擬似 statement。影響行数を返す
+        // （/pair/create の単回使用は「消せた側だけが成立する」ので changes が判定の実体）。
+        __run: (): number => {
+          if (!isDeleteNonce) return 0;
+          const sid = args[0] as string;
+          const row = nonces.get(sid);
+          if (!row) return 0;
+          if (isConditionalDelete && row.nonce !== (args[1] as string)) return 0;
+          nonces.delete(sid);
+          return 1;
         },
       }),
     };
   }
 
-  /** env.DB.batch(stmts) 相当。prepare().bind() が返す擬似 statement の __run を順に適用する。 */
-  async batch(stmts: Array<{ __run?: () => void }>): Promise<unknown[]> {
-    for (const s of stmts) s.__run?.();
-    return stmts.map(() => ({ success: true }));
+  /** env.DB.batch(stmts) 相当。prepare().bind() が返す擬似 statement の __run を順に適用し、
+   *  D1 と同じく meta.changes を返す。 */
+  async batch(stmts: Array<{ __run?: () => number }>): Promise<unknown[]> {
+    return stmts.map((s) => ({ success: true, meta: { changes: s.__run?.() ?? 0 } }));
   }
 }
 
@@ -330,6 +339,29 @@ describe('handlePairCreate の nonce 消費', () => {
     expect(((await res.json()) as { error: string }).error).toBe('INVALID_NONCE_MATCH');
     expect(db.hasNonce(A)).toBe(true);
     expect(db.hasNonce(B)).toBe(true);
+  });
+
+  it('並列の二重 create は片方だけが成立する (単回使用が並列でも破れない)', async () => {
+    const db = new FakeD1();
+    db.setSessionActive(A, Date.now(), NA);
+    db.setSessionActive(B, Date.now(), NB);
+    const env = makeEnv(db);
+
+    // 検証(SELECT) と消費(DELETE) が非原子的だった旧実装では、両方が verifyNonce を通過して
+    // 双方が notifyPairEstablished を実行できた（QR 撮影直後の二重送信 / 攻撃者の同時リプレイ）。
+    // 条件付き DELETE の compare-and-swap により、消せた 1 本だけが成立する。
+    const [r1, r2] = await Promise.all([
+      handlePairCreate(createReq(NA, NB), env),
+      handlePairCreate(createReq(NA, NB), env),
+    ]);
+
+    const statuses = [r1.status, r2.status].sort();
+    expect(statuses[0]).toBe(200);
+    expect(statuses[1]).toBeGreaterThanOrEqual(400);
+    // ペア成立 push は勝った 1 本ぶん (両者へ 1 回ずつ) だけ
+    expect(notifyInboxMock).toHaveBeenCalledTimes(2);
+    expect(db.hasNonce(A)).toBe(false);
+    expect(db.hasNonce(B)).toBe(false);
   });
 });
 

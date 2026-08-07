@@ -122,10 +122,33 @@ export async function handlePairCreate(req: Request, env: Env): Promise<Response
   const errB = await verifyNonce(env, sidB, nonceB, 'B');
   if (errB) return errB;
 
+  // 成立させる**前に** nonce を条件付き DELETE で消費する（単回使用を並列でも保証する）。
+  //
+  // 旧実装は verifyNonce の SELECT で検証 → notifyPairEstablished → その後に `DELETE WHERE sid=?`
+  // という順序だったため、検証と消費が原子的でなかった。同じ sid/nonce への並列 POST は両方とも
+  // SELECT を通過でき、双方がペア成立を push できる（QR 撮影直後の二重送信や、nonce を握った
+  // 攻撃者による同時リプレイ）。「サーバ権威で単回使用」というこの関数の契約が並列下で破れていた。
+  //
+  // 対策は「検証してから消す」ではなく「消せた側だけが成立する」への反転。DELETE の WHERE に
+  // nonce 値を入れることで compare-and-swap になり、D1 batch は単一トランザクションなので
+  // 両 sid の消費は不可分に決まる。changes!==1 は他リクエストが先に消費した＝競合に負けた側で、
+  // notify せずに 409 を返す（負けた側が push を出さないことが単回使用の実体）。
+  //
+  // verifyNonce（SELECT）は残す。エラーコード SESSION_NOT_FOUND / INVALID_NONCE_MATCH /
+  // EXPIRED_SESSION の返し分けはクライアントとテストが依存する外部契約で、条件付き DELETE 一発に
+  // 畳むとすべて 409 に潰れてしまうため。検証＝診断、DELETE＝認可、と役割を分ける。
+  const consumed = await env.DB.batch([
+    env.DB.prepare('DELETE FROM pairing_nonces WHERE sid=? AND nonce=?').bind(sidA, nonceA),
+    env.DB.prepare('DELETE FROM pairing_nonces WHERE sid=? AND nonce=?').bind(sidB, nonceB),
+  ]);
+  if (changesOf(consumed[0]) !== 1 || changesOf(consumed[1]) !== 1) {
+    return jsonError(409, 'NONCE_ALREADY_CONSUMED', 'pairing nonce was already consumed');
+  }
+
   // 公開鍵は body.pkA / body.pkB ではなく D1 の権威データを使う (#C-32)
   const pairingId = await notifyPairEstablished(env, sidA, str(body.nameA), sidB, str(body.nameB));
 
-  // 成立した nonce を server 権威で消費して単回使用にする。
+  // （消費は上の条件付き DELETE で完了済み）単回使用がサーバ側で保証されることの背景:
   // 旧実装は verifyNonce が SELECT のみで、消費はクライアント側の revoke
   // (OnPairingDetected → DELETE /pair/session) 任せの best-effort だった。相手 PC がオフラインで
   // inbox push を受け取れないケースや revoke 要求が失敗したケースでは nonce が TTL(1h) いっぱい
@@ -134,12 +157,15 @@ export async function handlePairCreate(req: Request, env: Env): Promise<Response
   //  そのままペアを張れる)。ここで消すと単回使用がサーバ側で保証される。
   // 通常運用に影響は無い: ペア成立した PC は元々自分のセッションを revoke するため、
   // 表示中の QR は既に無効。次のペアリングはペアリング画面を開き直して新しい nonce を発行する。
-  await env.DB.batch([
-    env.DB.prepare('DELETE FROM pairing_nonces WHERE sid=?').bind(sidA),
-    env.DB.prepare('DELETE FROM pairing_nonces WHERE sid=?').bind(sidB),
-  ]);
 
   return jsonOk({ ok: true, pairingId });
+}
+
+/** D1 の実行結果から影響行数を取り出す（条件付き DELETE の compare-and-swap 判定用）。
+ *  meta が無い / changes が数値でない実装差は「消せなかった」= 0 に倒して安全側に寄せる。 */
+function changesOf(result: unknown): number {
+  const meta = (result as { meta?: { changes?: unknown } } | undefined)?.meta;
+  return typeof meta?.changes === 'number' ? meta.changes : 0;
 }
 
 async function verifyNonce(env: Env, sid: string, nonce: string, label: string): Promise<Response | null> {
