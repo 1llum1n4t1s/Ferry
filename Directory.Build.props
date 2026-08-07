@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <Version>1.0.74</Version>
+    <Version>1.0.75</Version>
     <!-- 製作者情報。Company は exe のプロパティに載るので屋号で統一する。 -->
     <Authors>Kagayoi</Authors>
     <Company>Kagayoi</Company>
