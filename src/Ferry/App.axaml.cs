@@ -326,7 +326,8 @@ public partial class App : Application
             // Codex P2 fix (第4弾): ConnectionService に注入して pairs/{pairId} 書込成功時に queued delete を取り消す。
             var pendingPairDeletes = new PendingPairDeleteQueue();
             // CF 単独完結: signaling/auth は signalingFactory / ensureAuthAsync 経由で経路非依存に注入する。
-            var connectionService = new ConnectionService(settings.DeviceId, settings.DisplayName, deviceIdentity, peerRegistry, settingsService, pendingPairDeletes, signalingFactory, ensureAuthAsync)
+            // bearerTokenAsync: リレー WebSocket に cfToken を載せるための取得口（サーバ側の必須化は普及後）。
+            var connectionService = new ConnectionService(settings.DeviceId, settings.DisplayName, deviceIdentity, peerRegistry, settingsService, pendingPairDeletes, signalingFactory, ensureAuthAsync, cfTokenProvider.GetCfTokenAsync)
             {
                 RelayUrl = AppConstants.RelayUrl,
             };

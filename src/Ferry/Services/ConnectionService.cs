@@ -292,6 +292,17 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// <summary>認証完了を待つデリゲート（CF=CfTokenProvider.EnsureTokenAsync）。</summary>
     private readonly Func<CancellationToken, Task>? _ensureAuthAsync;
 
+    /// <summary>リレー WebSocket に付与する cfToken の取得デリゲート（CF=CfTokenProvider.GetCfTokenAsync）。
+    ///
+    /// ⚠️ **現時点でサーバ側 `/ferry-relay` はこの Bearer を検証していない**（`index.ts` は pairId と role
+    /// だけで RelayDO に入室させる）。pairId は deviceId の Ordinal 連結で決定的に導出できるため、
+    /// 相手の deviceId を知る第三者は同じルームに入って 2 スロットを埋め、正当な合流を 409 で
+    /// 遮断できる（PairSecret を持たない旧ペアでは中継データの盗聴・改竄も成立する）。
+    /// 恒久対策はシグナリングと同じ「Bearer 必須 + pairId 当事者検証」だが、必須化した瞬間に
+    /// **Bearer を送らない出荷済みクライアントのリレー転送が全滅する**ため、まずクライアント側の
+    /// 付与だけを先行させて普及を待つ（サーバ側での必須化は普及後の別作業）。null 許容はテスト用。</summary>
+    private readonly Func<Task<string>>? _bearerTokenAsync;
+
     /// <summary>signaling 実装を生成する。</summary>
     private ISignalingService NewSignaling() => _signalingFactory();
 
@@ -311,8 +322,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     public ConnectionService(string deviceId, string displayName,
         DeviceIdentity? identity = null, IPeerRegistryService? peerRegistry = null, ISettingsService? settings = null,
         PendingPairDeleteQueue? pendingPairDeleteQueue = null,
-        Func<ISignalingService>? signalingFactory = null, Func<CancellationToken, Task>? ensureAuthAsync = null)
+        Func<ISignalingService>? signalingFactory = null, Func<CancellationToken, Task>? ensureAuthAsync = null,
+        Func<Task<string>>? bearerTokenAsync = null)
     {
+        _bearerTokenAsync = bearerTokenAsync;
         _deviceId = deviceId;
         _displayName = displayName;
         _identity = identity;
@@ -1693,8 +1706,32 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 await transport.SendAsync(channel.Encrypt(data), ct);
                 return;
             }
+            ThrowIfSecureRequired(channel, session);
         }
         await transport.SendAsync(data, ct);
+    }
+
+    /// <summary>
+    /// PairSecret を持つチャネルが未確立のまま平文送信へ落ちるのを止める（fail-closed）。
+    ///
+    /// SecureChannel 側は PairSecret 保持時のタイムアウト / 非 Hello を Failed（切断）に倒して
+    /// fail-closed 化しているが、送信ゲートだけが `IsSecure == false` を無条件に平文送信として
+    /// 素通ししていた。<see cref="ResetSecureChannel"/> と Session.Dispose は宙吊りの送信を
+    /// 解放するため SecureReadyTcs を TrySetResult(false) で解決するので、ハンドシェイク進行中
+    /// （AwaitingHello）に切断が重なると待機中の送信が解放され、平文でワイヤに出る。
+    /// <see cref="DisconnectAsync(CancellationToken)"/> は ResetAllSecureChannels を先に呼び
+    /// transport.Close は後なので、`transport.IsConnected` が true のままのこの窓は実在する。
+    ///
+    /// TrySetResult(false) 自体を例外解決へ変えないのは、待機解放は「接続が畳まれた」正当な合図で
+    /// あり、他の待機者に未観測例外を撒く副作用の方が大きいため。平文が実際に外へ出る地点＝この
+    /// ゲートだけを閉じるのが最小で確実。PairSecret を持たない旧ペア（正当な平文フォールバック）は
+    /// <see cref="SecureChannel.HasPairSecret"/> が false なので従来どおり素通しする。
+    /// </summary>
+    private static void ThrowIfSecureRequired(SecureChannel channel, ConnectionSession session)
+    {
+        if (!channel.HasPairSecret) return;
+        throw new InvalidOperationException(
+            $"暗号セッション未確立のため送信を中止しました（peer={Util.Logger.MaskDeviceId(session.PeerId)}）");
     }
 
     /// <summary>Stage 5: 共通化された送信コア（<see cref="ReadOnlyMemory{T}"/> 版）。</summary>
@@ -1715,6 +1752,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 await transport.SendAsync(channel.Encrypt(data.Span), ct);
                 return;
             }
+            ThrowIfSecureRequired(channel, session);
         }
         await transport.SendAsync(data, ct);
     }
@@ -2114,7 +2152,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         {
             Util.Logger.Log($"WebSocket リレー接続試行: role={role}");
             // 複数ペア同時接続対応 Stage 1: peerId を transport へ伝播。
-            var single = new WebSocketRelayTransport(RelayUrl, pairId, role, peerId);
+            var single = new WebSocketRelayTransport(RelayUrl, pairId, role, peerId, _bearerTokenAsync);
             using var relayCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             relayCts.CancelAfter(TimeSpan.FromSeconds(RelayPeerWaitSeconds));
             await single.ConnectAsync(relayCts.Token);

@@ -124,7 +124,9 @@ STUN は **Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google S
 | `/inbox`（WebSocket） | DeviceDO | ペア成立通知の真 push + **接続ノック**（§着信検知）。未読はキュー（TTL 1h・最大 50 件）に積んで接続時 flush。knock は transient で積まない |
 | `/pair/session`・`/pair/create`・`/pair/link` | **D1** `ferry_ledger`（`sessions` / `pairing_nonces` / `pairs`） | セッション登録・QR ペア成立・コード貼付ペア成立（認可モデルは上記） |
 | `/pairs/{pairId}`（PUT/GET/DELETE、bearer 当事者のみ） | D1 `pairs` | ペア台帳 SSoT。GET 404 で remote-unpair 検出（`PairSyncService`）。DELETE は相手 inbox へ unpair push |
-| `/ferry-relay`（WebSocket） | **RelayDO** | 転送リレー本体（Hibernation 対応）。pairId は `SALT` 付き SHA-256 で DO 名化（生 pairId 漏洩による横入り防止） |
+| `/ferry-relay`（WebSocket） | **RelayDO** | 転送リレー本体（Hibernation 対応）。pairId は `SALT` 付き SHA-256 で DO 名化（生 pairId 漏洩による横入り防止）。⚠️ **入室認可は未実装**（下記） |
+
+**⚠️ `/ferry-relay` の入室認可は未完（移行途中）**: `index.ts` は `Upgrade: websocket` + query の `pairId`/`role` だけで RelayDO へ入れており、cfToken も当事者検証も無い。pairId は deviceId の Ordinal 連結で**決定的に導出できる**ため、相手の deviceId を知る第三者は同じルームに入って 2 スロットを埋め、正当な合流を 409 で遮断できる（PairSecret を持たない旧ペアでは中継データの盗聴・改竄も成立する。`SALT` ハッシュは `idFromName` の推測防止であって入室防御ではない）。恒久対策は `/sig/*` と同じ **Bearer 必須 + pairId 当事者検証**だが、必須化した瞬間に **Bearer を送らない出荷済みクライアントのリレー転送が全滅する**。そのため段階移行にしてあり、**クライアント側の Bearer 送出だけ先行実装済み**（`WebSocketRelayTransport` の `bearerTokenAsync`、`App.axaml.cs` が `CfTokenProvider.GetCfTokenAsync` を注入）。**サーバ側の必須化は Bearer 付きクライアントが行き渡ってから**行う（それまでこの表の「入室認可」は無いものとして扱う）。
 
 **Rate limit の枠分け**（`wrangler.toml` の `unsafe.bindings`）: `RATELIMIT_IP`(60/60s、bearer 無しの `/auth/token`・`/pair/create`) / `RATELIMIT_DEVICE`(30/60s、**低頻度**な `/auth/token`・`/pair/link`) / `RATELIMIT_SIG`(600/60s、`/sig/*` 専用) / `RATELIMIT_SESSION`(5/60s)。⚠️ **`/sig/*` に `RATELIMIT_DEVICE` を流用しないこと**。シグナリングは接続 1 回で **offer POST + answer GET 400ms ポーリング ≒ 52 req**、経路 Probe 1 回 ≒ 17 req を消費するため 30/60s では枠を焼き切り、**送信側が「相手が返した answer を読む GET」を自分で 429 させて必ず `PeerUnreachableException`（相手から応答がありません）で失敗する**（v1.0.70 で実際に発生。429 も枠を消費するのでポーリング継続中は回復せず自己閉塞する）。実測ピーク ≒ 90 req/分。回帰は `tests/signaling-ratelimit.test.ts`。
 

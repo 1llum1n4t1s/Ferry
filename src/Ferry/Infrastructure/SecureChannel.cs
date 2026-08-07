@@ -80,6 +80,12 @@ public sealed class SecureChannel
     /// <summary>暗号セッションが確立済みか（確立後の送信は封筒化する）。</summary>
     public bool IsSecure => _state == S.Secure;
 
+    /// <summary>PairSecret を保持する（＝暗号化されるべき）チャネルか。
+    /// false は公開鍵交換前の旧ペアで、平文フォールバックが正当な唯一のケース
+    /// （<see cref="Start"/> が即 <see cref="SecureOutcome.FellBackToPlaintext"/> を返す経路）。
+    /// 送信側はこれを見て「PairSecret があるのに未確立」を平文で流さず失敗させる（fail-closed）。</summary>
+    public bool HasPairSecret => _pairSecret != null;
+
     /// <summary>
     /// 接続相手とのチャネルを構築する。<paramref name="secureEnabled"/> が false または
     /// <paramref name="pairSecret"/> が null のときは平文専用チャネル（Start は即フォールバックを返す）。

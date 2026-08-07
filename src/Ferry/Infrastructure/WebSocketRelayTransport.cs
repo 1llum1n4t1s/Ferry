@@ -23,6 +23,7 @@ public sealed class WebSocketRelayTransport : ITransport
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly string _relayUrl;
     private readonly string _pairId;
+    private readonly Func<Task<string>>? _bearerTokenAsync;
     private readonly string _role; // "offer" or "answer"
 
     /// <summary>リレールームで相手の参加 ("ready") を待つ絶対上限（秒）= 防御的バックストップ。
@@ -53,12 +54,18 @@ public sealed class WebSocketRelayTransport : ITransport
     /// <param name="role">役割（"offer" または "answer"）。</param>
     /// <param name="peerId">複数ペア同時接続対応 Stage 1: 受信元 peerId(SessionId) を DataReceivedEventArgs に付帯させるため。
     /// テスト互換のため既定値 ""（後段の逆引きフォールバック用）を許容する。</param>
-    public WebSocketRelayTransport(string relayUrl, string pairId, string role, string peerId = "")
+    /// <param name="bearerTokenAsync">リレー接続に付与する cfToken の取得デリゲート。
+    /// サーバ側 `/ferry-relay` は現時点でこの Bearer を検証しないため、これは将来の
+    /// 「Bearer 必須 + pairId 当事者検証」への移行を先行させるための送出のみ
+    /// （出荷済みクライアントを壊さずに必須化へ進むための普及待ち）。null なら従来どおり付けない。</param>
+    public WebSocketRelayTransport(string relayUrl, string pairId, string role, string peerId = "",
+        Func<Task<string>>? bearerTokenAsync = null)
     {
         _relayUrl = relayUrl;
         _pairId = pairId;
         _role = role;
         PeerId = peerId;
+        _bearerTokenAsync = bearerTokenAsync;
     }
 
     /// <summary>
@@ -77,6 +84,25 @@ public sealed class WebSocketRelayTransport : ITransport
         // 送信側は FlowAckStallTimeoutMs=60s で打ち切れるのに受信側には無通信タイムアウトが無く、
         // リレー受信中に経路が black-hole 化すると UI が InProgress のまま無期限に固まっていた。
         _ws.Options.KeepAliveTimeout = TimeSpan.FromSeconds(20);
+
+        // cfToken を Bearer で付与する（/inbox と同じく ClientWebSocket は任意ヘッダを載せられる）。
+        // サーバ側 /ferry-relay は現時点でこれを検証しない = 今日のセキュリティは変わらない。
+        // 目的は「Bearer を送るクライアント」を先に行き渡らせ、後日サーバ側で必須化しても
+        // 出荷済みクライアントのリレー転送を落とさずに済む状態を作ること。取得失敗は無視して
+        // 従来どおり接続する（トークンが無いことで転送そのものを止めない）。
+        if (_bearerTokenAsync != null)
+        {
+            try
+            {
+                var token = await _bearerTokenAsync();
+                if (!string.IsNullOrEmpty(token))
+                    _ws.Options.SetRequestHeader("Authorization", "Bearer " + token);
+            }
+            catch (Exception ex)
+            {
+                Util.Logger.Log($"リレー用 cfToken の取得に失敗（Bearer なしで続行）: {ex.Message}", Util.LogLevel.Debug);
+            }
+        }
 
         // リレーサーバーに接続（URL にルーム情報を含める）
         var uri = new Uri($"{_relayUrl}?pairId={Uri.EscapeDataString(_pairId)}&role={Uri.EscapeDataString(_role)}");

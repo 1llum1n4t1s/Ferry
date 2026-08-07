@@ -107,6 +107,23 @@ public class SecureChannelTests
     }
 
     [Fact]
+    public void HasPairSecretが暗号必須チャネルと正当な平文チャネルを区別すること()
+    {
+        // ConnectionService.SendAsyncCore の fail-closed ゲートがこの述語に依存する。
+        // 「PairSecret があるのに IsSecure でない」= 切断/リセット進行中なので平文送信を止める。
+        // 逆に PairSecret 非保有（公開鍵交換前の旧ペア）は平文フォールバックが正当なので素通しする。
+        Assert.True(new SecureChannel(DevA, DevB, Secret(0x11), secureEnabled: true).HasPairSecret);
+        Assert.False(new SecureChannel(DevA, DevB, null, secureEnabled: true).HasPairSecret);
+        Assert.False(new SecureChannel(DevA, DevB, Secret(0x11), secureEnabled: false).HasPairSecret);
+
+        // ハンドシェイク進行中（AwaitingHello）は HasPairSecret かつ !IsSecure = ゲートが閉じる状態
+        var ch = new SecureChannel(DevA, DevB, Secret(0x11), secureEnabled: true);
+        ch.Start();
+        Assert.True(ch.HasPairSecret);
+        Assert.False(ch.IsSecure);
+    }
+
+    [Fact]
     public void PairSecret保有時にHello待ちへ平文が来たら降格せず切断すること()
     {
         // ダウングレード防御: PairSecret を持つ正規ペアは必ず Hello を返すので、Hello 待ちに
