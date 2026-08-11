@@ -10,8 +10,9 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 OUTPUT_ICNS="$ROOT_DIR/build/resources/app/App.icns"
 ICONSET_DIR="$ROOT_DIR/build/resources/app/App.iconset"
 
-# macOS の Dock は透過アイコンだと小さく浮いて見える (船が宙に浮く)。透過を白の角丸カードで
-# 埋めた mac 専用フルブリード版 (app_icon_mac.png) があれば優先し、無ければ従来の透過版を使う。
+# macOS の Dock は透過アイコンだと小さく浮いて見える (船が宙に浮く)。Apple 標準の内寸
+# (1024 中 824px の角丸スクエア) に濃紺タイルを敷いた mac 専用版 (app_icon_mac.png) があれば
+# 優先し、無ければ透過版を使う。ネオン発光の意匠は暗いタイル上で最もコントラストが出る。
 # Win(.ico)/Linux(.png) は各 OS が独自に角丸/枠を扱うため透過の app_icon.png のままで良い。
 MAC_PNG="$ROOT_DIR/icon/app_icon_mac.png"
 SOURCE_PNG="$ROOT_DIR/icon/app_icon.png"
