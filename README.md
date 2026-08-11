@@ -27,10 +27,10 @@ Cloudflare R2 (`https://ferry.kagayoi.com`) から配信。**Setup インスト�
 |---|---|---|
 | x64 | AppImage | <https://ferry.kagayoi.com/Ferry-linux-x64.AppImage> |
 | ARM64 | AppImage | <https://ferry.kagayoi.com/Ferry-linux-arm64.AppImage> |
-| x64 (Debian/Ubuntu) | .deb | <https://ferry.kagayoi.com/ferry_1.0.75-1_amd64.deb> |
-| ARM64 (Debian/Ubuntu) | .deb | <https://ferry.kagayoi.com/ferry_1.0.75-1_arm64.deb> |
-| x86_64 (RHEL/Fedora) | .rpm | <https://ferry.kagayoi.com/ferry-1.0.75-1.x86_64.rpm> |
-| aarch64 (RHEL/Fedora) | .rpm | <https://ferry.kagayoi.com/ferry-1.0.75-1.aarch64.rpm> |
+| x64 (Debian/Ubuntu) | .deb | <https://ferry.kagayoi.com/ferry_1.0.76-1_amd64.deb> |
+| ARM64 (Debian/Ubuntu) | .deb | <https://ferry.kagayoi.com/ferry_1.0.76-1_arm64.deb> |
+| x86_64 (RHEL/Fedora) | .rpm | <https://ferry.kagayoi.com/ferry-1.0.76-1.x86_64.rpm> |
+| aarch64 (RHEL/Fedora) | .rpm | <https://ferry.kagayoi.com/ferry-1.0.76-1.aarch64.rpm> |
 
 > 💡 .deb / .rpm は **バージョン入りファイル名** で配信されます。最新バージョン番号は [`releases.linux-x64.json`](https://ferry.kagayoi.com/releases.linux-x64.json) などの manifest を参照してください。
 
