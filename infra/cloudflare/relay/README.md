@@ -83,6 +83,8 @@ Client B ──┘
 |---|---|
 | 接続パス | `/ferry-relay` (`/health` はヘルスチェック) |
 | 必須クエリ | `pairId=<id>` `role=<offer\|answer>` |
+| pairId 形式 | `{32hex}_{32hex}`（C# `Util.PairId.Generate` と一致）。外れると 400 |
+| 入室レート制限 | `RATELIMIT_RELAY` を CF-Connecting-IP で消費（60/60s）。超過は 429 |
 | DO ID 計算 | `SHA-256(pairId + "\|" + SALT)` の hex |
 | 接続可能 peer 数 | 1 ペアあたり 2 peer (3 人目は 409 Conflict) |
 | 接続成立通知 | DO が両 peer に `"ready"` テキストフレームを送る |

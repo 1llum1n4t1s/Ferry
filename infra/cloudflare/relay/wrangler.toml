@@ -101,6 +101,17 @@ type = "ratelimit"
 namespace_id = "1004"
 simple = { limit = 600, period = 60 }
 
+# `/ferry-relay` WebSocket 入室専用枠。入室は無認可（Bearer 検証は普及待ち）なので IP でしか
+# 絞れない。RATELIMIT_IP と共有すると、リレー乱打が /auth/token・/pair/create まで 429 で
+# 巻き添えにするため枠を分ける（RATELIMIT_SIG を分けたのと同じ理由）。
+# 1 転送あたりの Upgrade は offer/answer 各 1 回。再接続・複数ピア・同一 NAT 配下の複数台を
+# 見込んでも 60/60s なら正規利用は触れない。
+[[unsafe.bindings]]
+name = "RATELIMIT_RELAY"
+type = "ratelimit"
+namespace_id = "1005"
+simple = { limit = 60, period = 60 }
+
 [[unsafe.bindings]]
 name = "RATELIMIT_SESSION"
 type = "ratelimit"

@@ -45,7 +45,16 @@ export interface Env {
    *  ポーリングで消費するため、低頻度な `/auth/token`・`/pair/link` 用の RATELIMIT_DEVICE
    *  (30/60s) とは枠を分ける（共有すると正規の接続が自分で自分を締め出す。§signaling-routes）。 */
   RATELIMIT_SIG?: RateLimit;
+  /** `/ferry-relay` WebSocket 入室専用の IP-scoped rate limit。入室は現時点で無認可なので
+   *  deviceId で絞れず IP しか鍵に使えない。`/auth/token`・`/pair/create` の RATELIMIT_IP とは
+   *  枠を分ける（共有すると、リレー乱打が正規クライアントの認証・ペアリングまで 429 で巻き添えに
+   *  する。RATELIMIT_SIG を分けたのと同じ理由）。 */
+  RATELIMIT_RELAY?: RateLimit;
 }
+
+/** リレー入室で受け付ける pairId の形式。C# 側 `Util.PairId.Generate` が作る `{小}_{大}` と一致
+ *  （deviceId は `Guid.ToString("N")` = 小文字 32hex）。`/sig/*`・`/pairs/*` と同一の規約。 */
+const RELAY_PAIR_ID_RE = /^[a-f0-9]{32}_[a-f0-9]{32}$/;
 
 // RateLimit / RateLimitOptions は @cloudflare/workers-types がグローバルに提供する。
 // ここでローカル定義すると公式型を shadow して、公式側の変更に追従できなくなる。
@@ -161,6 +170,26 @@ export default {
     if (!pairId) {
       return new Response('Missing pairId', { status: 400 });
     }
+
+    // 入室認可（Bearer 必須 + pairId 当事者検証）は出荷済みクライアントへの Bearer 普及待ちで
+    // まだ課せない（WebSocketRelayTransport は送出のみ、サーバは未検証）。認可が入るまでの間、
+    // 「任意の文字列を pairId にして idFromName で RelayDO を無制限に起こす」入口だけは閉じる。
+    // 正規クライアントの pairId は必ずこの形式なので、この検証で弾かれる正規接続は無い。
+    if (!RELAY_PAIR_ID_RE.test(pairId)) {
+      return new Response('Bad pairId', { status: 400 });
+    }
+
+    // 同上の理由で deviceId を鍵にできないため、per-IP の枠で DO 量産 flood を頭打ちにする。
+    // 1 転送あたりの Upgrade は offer/answer 各 1 回なので、正規利用が枠に触れることはない。
+    if (env.RATELIMIT_RELAY) {
+      const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
+      const { success } = await env.RATELIMIT_RELAY.limit({ key: ip });
+      if (!success) {
+        console.log('[relay] 429 ip-rate-limit');
+        return new Response('Rate limited', { status: 429 });
+      }
+    }
+
     const role = url.searchParams.get('role') ?? 'unknown';
 
     // pairId をハッシュ化して DO ID に使う (生 pairId 直入れによる横入りを防ぐ)
