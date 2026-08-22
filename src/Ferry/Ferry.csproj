@@ -89,7 +89,7 @@
     <PackageReference Include="SuperLightLogger" Version="1.0.12" />
     <!-- Avalonia の Linux サポートが Tmds.DBus.Protocol を transitive に引くため、
          CVE 対応版 (0.93.0) を直接指定して上書きする。-->
-    <PackageReference Include="Tmds.DBus.Protocol" Version="0.94.2" />
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.95.0" />
   </ItemGroup>
 
   <ItemGroup>
