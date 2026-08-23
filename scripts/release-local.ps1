@@ -119,7 +119,9 @@ foreach ($runtime in $Runtimes) {
 
     Write-Host "== publish: $runtime ==" -ForegroundColor Cyan
     Invoke-Native "dotnet publish ($runtime)" {
-        dotnet publish src/Ferry/Ferry.csproj -c Release -r $runtime -o $publishDir
+        # Native AOT は MSBuild の OS property で host OS を判定する。Codex 等の最小環境では
+        # Windows 上でも OS 環境変数が無いことがあるため、Windows 専用スクリプト側で明示する。
+        dotnet publish src/Ferry/Ferry.csproj -c Release -r $runtime -o $publishDir -p:OS=Windows_NT
     }
 
     if (-not (Test-Path (Join-Path $publishDir 'Ferry.exe'))) {
