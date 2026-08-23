@@ -222,15 +222,17 @@ public sealed class StubConnectionServiceTests
         Assert.Null(ex);
     }
 
-    /// <summary>Stage 5: peerId 指定の <see cref="IConnectionService.DisconnectAsync(string, System.Threading.CancellationToken)"/>
-    /// は既定実装で全切断 (peerId なし版) にフォールバックすること。
-    /// Stub では DisconnectAsync(ct) が状態をリセットする実装になっているため、Disconnected に戻ることを確認。</summary>
     [Fact]
-    public async Task DisconnectAsync_peerId指定版_既定実装が全切断にフォールバックすること()
+    public async Task DisconnectAsync_peerId指定版_一致する接続だけを切断すること()
     {
         IConnectionService svc = new StubConnectionService();
         await svc.ConnectToPeerAsync("peer-X", TestContext.Current.CancellationToken);
         Assert.Equal(PeerState.Connected, svc.State);
+
+        await svc.DisconnectAsync("peer-Y", TestContext.Current.CancellationToken);
+
+        Assert.Equal(PeerState.Connected, svc.State);
+        Assert.Equal("peer-X", svc.ConnectedPeer?.SessionId);
 
         await svc.DisconnectAsync("peer-X", TestContext.Current.CancellationToken);
 

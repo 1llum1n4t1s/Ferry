@@ -1057,12 +1057,6 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         session.ConnectCts?.Cancel();
         await session.ConnectGate.WaitAsync(ct);
 
-        // ③ 中断した接続が Connecting を抜けるまで待ってから先へ進む。
-        // 待たないと、下の role調停が起動する listener の進捗を WaitForListenerConnectedAsync が観測する際に
-        // 「中断された旧接続の Connecting」を掴み、直後の Disconnected 遷移で即フォールバックする（§ConnectSettleWaitMs）。
-        if (session.State == PeerState.Connecting)
-            await WaitForConnectSettledAsync(session, ConnectSettleWaitMs, ct);
-
         // 所有権がまだ _transport に移っていないローカル transport を例外/キャンセル経路で確実に破棄する。
         // (bound ソケット / LISTEN ポートが GC ファイナライザ回収までリークするのを防ぐ。Dispose は冪等)
         TcpDirectTransport? tcpTransport = null;
@@ -1081,6 +1075,13 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
         try
         {
+            // ③ 中断した接続が Connecting を抜けるまで待ってから先へ進む。
+            // この待機も gate の try/finally 内へ置き、キャンセル時に ConnectGate を取りっぱなしにしない。
+            // 待たないと、下の role調停が起動する listener の進捗を WaitForListenerConnectedAsync が観測する際に
+            // 「中断された旧接続の Connecting」を掴み、直後の Disconnected 遷移で即フォールバックする（§ConnectSettleWaitMs）。
+            if (session.State == PeerState.Connecting)
+                await WaitForConnectSettledAsync(session, ConnectSettleWaitMs, ct);
+
             session.ConnectCts?.Dispose();
             session.ConnectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             var linked = session.ConnectCts.Token;
@@ -2147,16 +2148,15 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             return false;
         }
 
-        ITransport? relayTransport = null;
+        WebSocketRelayTransport? relayTransport = null;
         try
         {
             Util.Logger.Log($"WebSocket リレー接続試行: role={role}");
             // 複数ペア同時接続対応 Stage 1: peerId を transport へ伝播。
-            var single = new WebSocketRelayTransport(RelayUrl, pairId, role, peerId, _bearerTokenAsync);
+            relayTransport = new WebSocketRelayTransport(RelayUrl, pairId, role, peerId, _bearerTokenAsync);
             using var relayCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             relayCts.CancelAfter(TimeSpan.FromSeconds(RelayPeerWaitSeconds));
-            await single.ConnectAsync(relayCts.Token);
-            relayTransport = single;
+            await relayTransport.ConnectAsync(relayCts.Token);
 
             // Stage 4: 当該 Session 内の旧 transport だけ畳む。
             var prev = session.Transport;
@@ -2574,10 +2574,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         };
         // CodeRabbit 指摘: 引数 sig は呼出側 (_signaling) の参照で、責任者側は即時に使う一方
         // 非責任者は 30s Task.Delay 後に使う。その間に _signaling.Dispose() が走ると ObjectDisposedException
-        // で fallback 書込が消失する。fallback 用に dedicated FirebaseSignaling を作って sig 寿命と切り離す。
+        // で fallback 書込が消失する。fallback 用に dedicated signaling を作って sig 寿命と切り離す。
         // 責任者側も async/await の継続後に sig が無効化されるレースを避けるため tempSig 化する (僅か数 ms の追加)。
         // PII 防止: pairId は両 deviceId を含むのでログマスクする。
-        var maskedPair = MaskPairId(pairId);
+        var maskedPair = Util.Logger.MaskPairId(pairId);
         if (isResponsible)
         {
             _ = Task.Run(async () =>
@@ -2718,14 +2718,6 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         {
             Util.Logger.Log($"pairs/{maskedPair} 書込成功後の PendingPairDeleteQueue.Remove 失敗（無視）: {ex.Message}", Util.LogLevel.Warning);
         }
-    }
-
-    /// <summary>pairId (deviceId_deviceId) を両端だけマスクしてログ用に短くする。 </summary>
-    private static string MaskPairId(string pairId)
-    {
-        var underscoreIdx = pairId.IndexOf('_');
-        if (underscoreIdx < 0) return Util.Logger.MaskDeviceId(pairId);
-        return Util.Logger.MaskDeviceId(pairId[..underscoreIdx]) + "_" + Util.Logger.MaskDeviceId(pairId[(underscoreIdx + 1)..]);
     }
 
     /// <summary>外部から pairId を導出するための公開ヘルパー（ConnectionViewModel.RemovePeerAsync で使う）。</summary>

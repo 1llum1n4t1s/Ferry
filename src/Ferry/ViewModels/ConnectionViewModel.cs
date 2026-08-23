@@ -290,14 +290,10 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             if (SelectedPeer?.PeerId == peerId)
             {
                 SelectedPeer = null;
-                await _connectionService.DisconnectAsync();
             }
-            else if (_connectionService.CurrentListeningPeerId == peerId)
-            {
-                // タブ切替 (DeselectKeepingListener) で SelectedPeer 外のピアを着信監視中に、
-                // そのピアが削除されたケース。削除済みピアの offer を受け続けないよう監視を停止する。
-                _connectionService.StopListeningForConnection();
-            }
+            // 選択状態や CurrentListeningPeerId（単数の互換値）に依存せず、削除対象の
+            // listener / transport / signaling だけを確実に畳む。他ピアの接続・転送は維持する。
+            await _connectionService.DisconnectAsync(peerId);
 
             // ペアが全て削除されたら QR コードを再表示
             if (PairedPeers.Count == 0)
@@ -323,7 +319,11 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private async Task DisconnectAsync()
     {
-        await _connectionService.DisconnectAsync();
+        var selectedPeerId = SelectedPeer?.PeerId;
+        if (selectedPeerId != null)
+            await _connectionService.DisconnectAsync(selectedPeerId);
+        else
+            await _connectionService.DisconnectAsync();
         ClearQrCodeImage();
         PeerName = string.Empty;
         SessionId = string.Empty;
@@ -565,7 +565,8 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         {
             // 通常の選択解除（ピア削除など）。タブ切替による一時解除のときは
             // _keepListeningOnDeselect=true なので止めず、直前ピアの着信監視を維持する。
-            _connectionService.StopListeningForConnection();
+            if (oldValue != null)
+                _connectionService.StopListeningForConnection(oldValue.PeerId);
         }
     }
 
@@ -585,10 +586,6 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
 
         if (ConnectionState == PeerState.Connected && _connectionService.ConnectedPeer?.SessionId == peer.PeerId)
             return; // 既に接続済み
-
-        // 前の接続を切断
-        if (ConnectionState is PeerState.Connected or PeerState.Connecting)
-            await _connectionService.DisconnectAsync();
 
         IsConnecting = true;
         peer.ConnectionStatusText = App.Text("Status.Connecting");
@@ -800,14 +797,18 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     /// 値等価なので、再構築をまたいで同じ見出しは同一視され不要な削除・再追加が避けられる。</summary>
     private void ReconcileVisiblePeers(List<object> target)
     {
+        var targetSet = new HashSet<object>(target);
+
         // 1) target に無い項目を後ろから除去（PairedPeer は参照等価、PeerListSection は値等価）。
         for (int i = VisiblePeers.Count - 1; i >= 0; i--)
-            if (!target.Contains(VisiblePeers[i]))
+            if (!targetSet.Contains(VisiblePeers[i]))
                 VisiblePeers.RemoveAt(i);
         // 2) target の順序に合わせて挿入 / 移動。
         for (int i = 0; i < target.Count; i++)
         {
             var item = target[i];
+            if (i < VisiblePeers.Count && Equals(VisiblePeers[i], item))
+                continue;
             int cur = VisiblePeers.IndexOf(item);
             if (cur < 0) VisiblePeers.Insert(i, item);
             else if (cur != i) VisiblePeers.Move(cur, i);
@@ -913,13 +914,10 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                 if (SelectedPeer?.PeerId == peerId)
                 {
                     SelectedPeer = null;
-                    try { await _connectionService.DisconnectAsync(); }
-                    catch (Exception ex) { Util.Logger.Log($"PairSync 削除後の DisconnectAsync エラー (継続): {ex.Message}", Util.LogLevel.Debug); }
                 }
-                else if (_connectionService.CurrentListeningPeerId == peerId)
-                {
-                    _connectionService.StopListeningForConnection();
-                }
+                // remote unpair でも削除対象だけを切断し、他ピアの listener / 転送を巻き込まない。
+                try { await _connectionService.DisconnectAsync(peerId); }
+                catch (Exception ex) { Util.Logger.Log($"PairSync 削除後の DisconnectAsync エラー (継続): {ex.Message}", Util.LogLevel.Debug); }
 
                 if (PairedPeers.Count == 0)
                 {

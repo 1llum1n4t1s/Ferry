@@ -286,7 +286,7 @@ public class ConnectionViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task RemovePeerAsync_選択中ピアを削除したらSelectedPeerがnullになりDisconnectが呼ばれること()
+    public async Task RemovePeerAsync_選択中ピアを削除したら対象ピアだけDisconnectされること()
     {
         var peer = new PairedPeer { PeerId = "peer1", DisplayName = "PC-1" };
         var peers = new List<PairedPeer> { peer };
@@ -301,7 +301,8 @@ public class ConnectionViewModelTests : IDisposable
         await vm.RemovePeerCommand.ExecuteAsync("peer1");
 
         Assert.Null(vm.SelectedPeer);
-        await _connectionService.Received().DisconnectAsync(Arg.Any<CancellationToken>());
+        await _connectionService.Received(1).DisconnectAsync("peer1", Arg.Any<CancellationToken>());
+        await _connectionService.DidNotReceive().DisconnectAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -319,6 +320,8 @@ public class ConnectionViewModelTests : IDisposable
         await vm.RemovePeerCommand.ExecuteAsync("peer2");
 
         Assert.Equal(peer1, vm.SelectedPeer);
+        await _connectionService.Received(1).DisconnectAsync("peer2", Arg.Any<CancellationToken>());
+        await _connectionService.DidNotReceive().DisconnectAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -403,6 +406,8 @@ public class ConnectionViewModelTests : IDisposable
         await vm.DisconnectCommand.ExecuteAsync(null);
 
         Assert.Equal(string.Empty, peer.ConnectionStatusText);
+        await _connectionService.Received(1).DisconnectAsync("peer1", Arg.Any<CancellationToken>());
+        await _connectionService.DidNotReceive().DisconnectAsync(Arg.Any<CancellationToken>());
     }
 
     // === ConnectToSelectedPeerAsync（OnSelectedPeerChanged 経由） ===
@@ -452,6 +457,26 @@ public class ConnectionViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task ConnectToSelectedPeerAsync_別ピア接続中でも全切断せず対象へ接続すること()
+    {
+        var peer = new PairedPeer { PeerId = "peer2", DisplayName = "PC-2" };
+        _peerRegistry.GetPairedPeers().Returns(new List<PairedPeer> { peer });
+        _connectionService.State.Returns(PeerState.Connected);
+        _connectionService.ConnectedPeer.Returns(new PeerInfo { SessionId = "peer1" });
+        _connectionService.ConnectToPeerAsync("peer2", Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+        using var vm = CreateViewModel();
+        vm.ConnectionState = PeerState.Connected;
+        vm.SelectedPeer = peer;
+        _connectionService.ClearReceivedCalls();
+
+        await vm.ConnectToSelectedPeerAsync(TestContext.Current.CancellationToken);
+
+        await _connectionService.Received(1).ConnectToPeerAsync("peer2", Arg.Any<CancellationToken>());
+        await _connectionService.DidNotReceive().DisconnectAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public void ピア選択時は宛先を記憶するだけで接続しないこと()
     {
         var peer = new PairedPeer { PeerId = "peer1", DisplayName = "PC-1" };
@@ -495,6 +520,22 @@ public class ConnectionViewModelTests : IDisposable
         vm.SelectedPeer = null;
 
         _connectionService.DidNotReceive().ConnectToPeerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public void 選択解除は直前ピアの着信監視だけを停止すること()
+    {
+        var peer = new PairedPeer { PeerId = "peer1", DisplayName = "PC-1" };
+        _peerRegistry.GetPairedPeers().Returns(new List<PairedPeer> { peer });
+
+        using var vm = CreateViewModel();
+        vm.SelectedPeer = peer;
+        _connectionService.ClearReceivedCalls();
+
+        vm.SelectedPeer = null;
+
+        _connectionService.Received(1).StopListeningForConnection("peer1");
+        _connectionService.DidNotReceive().StopListeningForConnection();
     }
 
     // === Dispatcher が必要なメソッドのスキップ ===

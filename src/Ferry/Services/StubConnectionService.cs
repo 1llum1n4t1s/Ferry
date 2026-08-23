@@ -51,6 +51,7 @@ public sealed class StubConnectionService : IConnectionService
 
     public void StartListeningForConnection(string peerId) { }
     public void StopListeningForConnection() { }
+    public void StopListeningForConnection(string peerId) { }
 
     public Task ConnectToPeerAsync(string peerId, CancellationToken ct = default)
     {
@@ -76,6 +77,14 @@ public sealed class StubConnectionService : IConnectionService
         Route = ConnectionRoute.Unknown;
         StateChanged?.Invoke(this, State);
         return Task.CompletedTask;
+    }
+
+    public Task DisconnectAsync(string peerId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(peerId);
+        return string.Equals(ConnectedPeer?.SessionId, peerId, StringComparison.Ordinal)
+            ? DisconnectAsync(ct)
+            : Task.CompletedTask;
     }
 
     /// <summary>

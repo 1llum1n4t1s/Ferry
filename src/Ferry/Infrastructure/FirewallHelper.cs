@@ -17,8 +17,8 @@ public static class FirewallHelper
     /// <summary>
     /// Windows 環境でのみ、ファイアウォールルールの有無を確認し、
     /// なければ UAC 昇格で netsh を実行して追加する。
-    /// N-15: 同期 Process API を Process.WaitForExitAsync / ReadToEndAsync に置換し、
-    /// 呼び出し側の Task.Run スレッド占有を回避（async 一貫性）。
+    /// Process の出力読取・終了待機・UAC 経由のルール追加をすべて非同期で行い、
+    /// 起動中の UI スレッドを占有しない。
     /// </summary>
     public static async Task EnsureFirewallRuleAsync(CancellationToken ct = default)
     {
@@ -27,14 +27,14 @@ public static class FirewallHelper
 
         try
         {
-            if (await RuleExistsAsync(ct))
+            if (await RuleExistsAsync(ct).ConfigureAwait(false))
             {
                 Util.Logger.Log("ファイアウォールルール確認済み");
                 return;
             }
 
             Util.Logger.Log("ファイアウォールルールが未登録、追加を試行…");
-            AddRule();
+            await AddRuleAsync(ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -62,22 +62,33 @@ public static class FirewallHelper
         using var process = Process.Start(psi);
         if (process == null) return false;
 
-        var output = await process.StandardOutput.ReadToEndAsync(ct);
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
-        try { await process.WaitForExitAsync(timeoutCts.Token); }
-        catch (OperationCanceledException) { /* タイムアウトでも判定継続 */ }
+        try
+        {
+            // stdout/stderr を終了待機と並行して drain し、パイプ満杯によるプロセス停止を防ぐ。
+            var outputTask = process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+            var errorTask = process.StandardError.ReadToEndAsync(timeoutCts.Token);
+            await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
+            var output = await outputTask.ConfigureAwait(false);
+            _ = await errorTask.ConfigureAwait(false);
 
-        // TCP ルールが存在するか確認（旧 UDP ルールとの区別）
-        return output.Contains(RuleName, StringComparison.OrdinalIgnoreCase)
-               && output.Contains("TCP", StringComparison.OrdinalIgnoreCase);
+            // TCP ルールが存在するか確認（旧 UDP ルールとの区別）
+            return output.Contains(RuleName, StringComparison.OrdinalIgnoreCase)
+                   && output.Contains("TCP", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            TryTerminate(process);
+            throw new TimeoutException("ファイアウォールルール確認がタイムアウトしました");
+        }
     }
 
     /// <summary>
     /// UAC 昇格で netsh を実行し、受信許可ルールを追加する。
     /// ユーザーに UAC ダイアログが表示される。
     /// </summary>
-    private static void AddRule()
+    private static async Task AddRuleAsync(CancellationToken ct)
     {
         var exePath = Environment.ProcessPath;
         if (string.IsNullOrEmpty(exePath))
@@ -93,8 +104,7 @@ public static class FirewallHelper
         {
             FileName = "netsh",
             Arguments = arguments,
-            // Verb = "runas" は UseShellExecute = true の場合のみ有効
-            // → 昇格は cmd /c 経由で行う
+            // Verb = "runas" は UseShellExecute = true の場合のみ有効。
             UseShellExecute = true,
             Verb = "runas",
             WindowStyle = ProcessWindowStyle.Hidden,
@@ -109,7 +119,18 @@ public static class FirewallHelper
                 return;
             }
 
-            process.WaitForExit(10000);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
+            try
+            {
+                await process.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                TryTerminate(process);
+                Util.Logger.Log("ファイアウォールルール追加がタイムアウトしました", Util.LogLevel.Warning);
+                return;
+            }
 
             if (process.ExitCode == 0)
             {
@@ -124,6 +145,19 @@ public static class FirewallHelper
         {
             // ERROR_CANCELLED: ユーザーが UAC ダイアログで「いいえ」を選択
             Util.Logger.Log("ファイアウォールルール追加: ユーザーがキャンセル", Util.LogLevel.Warning);
+        }
+    }
+
+    private static void TryTerminate(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+        catch
+        {
+            // 終了処理は best-effort。元のタイムアウトを優先して呼び出し側へ返す。
         }
     }
 }

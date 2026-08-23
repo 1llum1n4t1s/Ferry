@@ -755,8 +755,11 @@ public sealed class TransferService : ITransferService, IDisposable
     /// fire-and-forget で握り潰してハンドラ側をブロックしない。
     /// Stage 5: transferId から peerId を引いて per-peer 送信に流す（不明なら旧単数経路に fallback）。
     /// </summary>
-    private void SendRejectFireAndForget(Guid transferId, string reason)
-        => SendFireAndForget(ResolvePeerIdForTransfer(transferId), FileChunker.CreateRejectMessage(transferId, reason), "FileReject");
+    private void SendRejectFireAndForget(Guid transferId, string reason, string peerId = "")
+        => SendFireAndForget(
+            string.IsNullOrEmpty(peerId) ? ResolvePeerIdForTransfer(transferId) : peerId,
+            FileChunker.CreateRejectMessage(transferId, reason),
+            "FileReject");
 
     /// <summary>
     /// opop C-6: 制御メッセージ (Reject / ACK / Pong / ResumeResponse / Approve) の fire-and-forget
@@ -800,6 +803,21 @@ public sealed class TransferService : ITransferService, IDisposable
             return;
         }
 
+        // TransferId は Reject と state 構築の双方で必要。形式不正なら送信側も照合不能なので破棄する。
+        if (!Guid.TryParse(meta.TransferId, out var transferIdGuid))
+        {
+            Util.Logger.Log($"不正な TransferId 形式: {meta.TransferId}", Util.LogLevel.Warning);
+            return;
+        }
+
+        // Reject を TransferId→peerId 索引へ登録する前から正しい相手へ返せるよう、受信元を先に確定する。
+        // transport が運んだ peerId を権威値とし、空文字の後方互換経路だけ単数プロパティへフォールバックする。
+        var receivePeerId = !string.IsNullOrEmpty(peerIdFromTransport)
+            ? peerIdFromTransport
+            : (_connectionService.ConnectedPeer?.SessionId
+               ?? _connectionService.CurrentListeningPeerId
+               ?? string.Empty);
+
         // メタデータの整合性検証（攻撃者制御の値で巨大確保・ディスク枯渇を起こさせない）
         // rere #A2-001: FileSize の絶対上限を先に検証する。上限なしだと CalculateTotalChunks の
         // int キャスト桁溢れにより負の TotalChunks が一致検証を素通りし、承認時の
@@ -809,15 +827,7 @@ public sealed class TransferService : ITransferService, IDisposable
             || meta.TotalChunks < 0 || meta.TotalChunks != FileChunker.CalculateTotalChunks(meta.FileSize))
         {
             Util.Logger.Log($"不正なメタデータを拒否: FileSize={meta.FileSize}, TotalChunks={meta.TotalChunks}", Util.LogLevel.Warning);
-            // この時点では TransferId のパース可否すら未確認なので Reject 送信はスキップ
-            // (送信側にとって不明な TransferId の Reject は無視されるだけだが、無駄な通信なので避ける)
-            return;
-        }
-
-        // TransferId は以降の Reject 送信・state 構築で必要なため、ここで早期にパース
-        if (!Guid.TryParse(meta.TransferId, out var transferIdGuid))
-        {
-            Util.Logger.Log($"不正な TransferId 形式: {meta.TransferId}", Util.LogLevel.Warning);
+            SendRejectFireAndForget(transferIdGuid, "不正なファイルメタデータ", receivePeerId);
             return;
         }
 
@@ -828,7 +838,7 @@ public sealed class TransferService : ITransferService, IDisposable
         if (Util.SafePath.ContainsControlChar(meta.FileName) || Util.SafePath.ContainsControlChar(meta.RelativePath))
         {
             Util.Logger.Log("制御文字を含むファイル名/パスを拒否", Util.LogLevel.Warning);
-            SendRejectFireAndForget(transferIdGuid, "不正なファイル名 (制御文字)");
+            SendRejectFireAndForget(transferIdGuid, "不正なファイル名 (制御文字)", receivePeerId);
             return;
         }
 
@@ -836,17 +846,6 @@ public sealed class TransferService : ITransferService, IDisposable
         Util.Logger.Log($"ファイル受信開始: {displayName}, サイズ={meta.FileSize}, チャンク数={meta.TotalChunks}, TransferId={meta.TransferId}");
 
         var saveDir = _settingsService.Settings.SaveDirectory;
-
-        // 接続元ピアを FileMeta 到着時点で確定（フォルダ構造マッピングのキーと ReceiveState の双方で使う）。
-        // 複数ペア同時接続対応 Stage 2: transport から運ばれた peerId を権威値として優先採用。
-        // 空文字（後方互換経路、テスト経路）の場合のみ旧 ConnectedPeer 単数の逆引きにフォールバックする。
-        // Stage 4 で並行接続が解禁された時点で逆引きは取り違える可能性があるが、その時点では
-        // 必ず transport から peerId が運ばれてくる（Stage 1 で配線済み）ので逆引きは事実上死に経路。
-        var receivePeerId = !string.IsNullOrEmpty(peerIdFromTransport)
-            ? peerIdFromTransport
-            : (_connectionService.ConnectedPeer?.SessionId
-               ?? _connectionService.CurrentListeningPeerId
-               ?? string.Empty);
 
         // 複数ペア同時接続対応 Stage 2: TransferId→peerId 索引を記入。
         // Stage 5 の SendFlowAckAsync / SendRejectFireAndForget / フロー制御 Route 判定がこの索引から
@@ -871,7 +870,7 @@ public sealed class TransferService : ITransferService, IDisposable
                 || Util.SafePath.HasUnsafeRoot(normalizedRelativePath))
             {
                 Util.Logger.Log($"不正な RelativePath を検出: {meta.RelativePath}", Util.LogLevel.Warning);
-                SendRejectFireAndForget(transferIdGuid, "不正なファイルパス (パストラバーサル)");
+                SendRejectFireAndForget(transferIdGuid, "不正なファイルパス (パストラバーサル)", receivePeerId);
                 return;
             }
 
@@ -914,7 +913,7 @@ public sealed class TransferService : ITransferService, IDisposable
             if (safeName is null)
             {
                 Util.Logger.Log($"不正なファイル名を拒否: {Util.Logger.MaskFilename(meta.FileName)}", Util.LogLevel.Warning);
-                SendRejectFireAndForget(transferIdGuid, "不正なファイル名");
+                SendRejectFireAndForget(transferIdGuid, "不正なファイル名", receivePeerId);
                 return;
             }
             savePath = Path.Combine(saveDir, safeName);
@@ -930,7 +929,7 @@ public sealed class TransferService : ITransferService, IDisposable
         if (!Util.SafePath.IsWithinDirectory(saveDir, savePath))
         {
             Util.Logger.Log($"保存パスが保存先ディレクトリ外を指しています: {savePath}", Util.LogLevel.Warning);
-            SendRejectFireAndForget(transferIdGuid, "保存パスが許可範囲外です");
+            SendRejectFireAndForget(transferIdGuid, "保存パスが許可範囲外です", receivePeerId);
             return;
         }
 
@@ -944,7 +943,7 @@ public sealed class TransferService : ITransferService, IDisposable
                 // CodeRabbit 指摘: ex.Message に保存先絶対パス / ユーザー名等のローカル PII が含まれうるため、
                 // 詳細はローカルログだけに残し、ネットワーク越しの FileReject 理由は固定文言に絞る
                 Util.Logger.Log($"保存先ディレクトリ作成失敗: {ex.Message}", Util.LogLevel.Error);
-                SendRejectFireAndForget(transferIdGuid, "保存先ディレクトリ作成失敗");
+                SendRejectFireAndForget(transferIdGuid, "保存先ディレクトリ作成失敗", receivePeerId);
                 return;
             }
         }
@@ -1450,10 +1449,14 @@ public sealed class TransferService : ITransferService, IDisposable
             Util.Logger.Log($"FlowAck 受信: transferId={transferId} acked={ackedChunks} found={found}", Util.LogLevel.Debug);
         if (found && item != null)
         {
-            if (ackedChunks > Volatile.Read(ref item.FlowAckedChunks))
+            if (IsValidFlowAckCount(ackedChunks, item.TotalChunks)
+                && ackedChunks > Volatile.Read(ref item.FlowAckedChunks))
                 Volatile.Write(ref item.FlowAckedChunks, ackedChunks);
         }
     }
+
+    internal static bool IsValidFlowAckCount(int ackedChunks, int totalChunks)
+        => ackedChunks >= 0 && ackedChunks <= totalChunks;
 
     private void HandlePing(string peerId)
     {

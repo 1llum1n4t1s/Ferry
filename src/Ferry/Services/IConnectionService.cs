@@ -119,9 +119,14 @@ public interface IConnectionService
     void StartListeningForConnection(string peerId);
 
     /// <summary>
-    /// 着信接続監視を停止する。
+    /// 全ピアの着信接続監視を停止する。アプリ終了や全体切断でのみ使用する。
     /// </summary>
     void StopListeningForConnection();
+
+    /// <summary>
+    /// 指定ピアの着信接続監視だけを停止する（他ピアの監視は維持）。
+    /// </summary>
+    void StopListeningForConnection(string peerId);
 
     /// <summary>現在着信監視中のピア ID（未監視なら null）。</summary>
     string? CurrentListeningPeerId => null;
@@ -190,11 +195,9 @@ public interface IConnectionService
 
     /// <summary>
     /// 複数ペア同時接続対応 Stage 5: 指定 peer の接続だけを切断する（他 peer の接続は維持）。
-    /// 既定実装は peerId を捨てて全切断へフォールバック（テスト/旧経路互換）。
-    /// <see cref="ConnectionService"/> 実装は対応する <see cref="ConnectionSession"/> のみ Dispose する。
+    /// 実装は対応する接続だけを破棄し、全切断へフォールバックしてはならない。
     /// </summary>
-    Task DisconnectAsync(string peerId, CancellationToken ct = default)
-        => DisconnectAsync(ct);
+    Task DisconnectAsync(string peerId, CancellationToken ct = default);
 
     // === #D-001a Phase B: pairs/{pairId} SSoT 連携 ===
 

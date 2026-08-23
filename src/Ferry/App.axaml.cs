@@ -126,9 +126,11 @@ public partial class App : Application
     }
 
     [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Reflection used by Avalonia data validation plugins and ViewLocator")]
-#pragma warning disable IL2046 // Avalonia の基底メソッドに属性が付与されていないため抑制
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2046",
+        Justification = "Avalonia の基底メソッドに RequiresUnreferencedCodeAttribute が付与されていないため")]
     public override void OnFrameworkInitializationCompleted()
-#pragma warning restore IL2046
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
