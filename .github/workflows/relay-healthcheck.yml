@@ -26,12 +26,26 @@ jobs:
         run: |
           set +e
           url="https://watashiba.kagayoi.com/health"
-          status=$(curl --silent --max-time 30 --retry 3 --retry-delay 5 \
+          error_file=$(mktemp)
+          status=$(curl --silent --show-error --max-time 30 \
+                       --retry 3 --retry-delay 5 --retry-all-errors \
                        --output /dev/null --write-out "%{http_code}" \
-                       "$url")
-          echo "status=$status" >> "$GITHUB_OUTPUT"
-          if [[ "$status" != "200" ]]; then
-            echo "::error::Relay /health が ${status} を返しました (期待: 200)"
+                       "$url" 2>"$error_file")
+          curl_exit=$?
+          curl_error=$(tr '\r\n' '  ' < "$error_file" | sed -E 's/[[:space:]]+/ /g' | cut -c1-1000)
+          rm -f "$error_file"
+
+          status=${status:-000}
+          curl_error=${curl_error:-none}
+          {
+            echo "status=$status"
+            echo "curl_exit=$curl_exit"
+            echo "curl_error=$curl_error"
+          } >> "$GITHUB_OUTPUT"
+
+          if [[ "$curl_exit" -ne 0 || "$status" != "200" ]]; then
+            echo "curl stderr: $curl_error"
+            echo "::error::Relay /health に失敗しました (HTTP $status, curl exit $curl_exit)"
             exit 1
           fi
           echo "✅ Relay /health OK"
@@ -73,13 +87,21 @@ jobs:
       - name: 失敗時に Issue を作成
         if: failure()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          HEALTH_HTTP_STATUS: ${{ steps.probe.outputs.status }}
+          HEALTH_CURL_EXIT: ${{ steps.probe.outputs.curl_exit }}
+          HEALTH_CURL_ERROR: ${{ steps.probe.outputs.curl_error }}
         with:
           script: |
-            const status = '${{ steps.probe.outputs.status }}';
-            const title = `[Auto] Relay healthcheck failed (HTTP ${status})`;
+            const status = process.env.HEALTH_HTTP_STATUS || '000';
+            const curlExit = process.env.HEALTH_CURL_EXIT || 'unknown';
+            const curlError = (process.env.HEALTH_CURL_ERROR || 'none').replaceAll('`', "'");
+            const title = `[Auto] Relay healthcheck failed (HTTP ${status}, curl ${curlExit})`;
             const body = `## 障害発生通知\n\n` +
               `- **時刻**: ${new Date().toISOString()}\n` +
               `- **HTTP ステータス**: ${status}\n` +
+              `- **curl 終了コード**: ${curlExit}\n` +
+              `- **curl エラー**: \`${curlError}\`\n` +
               `- **対象**: https://watashiba.kagayoi.com/health\n\n` +
               `## 確認手順\n\n` +
               `1. Cloudflare ステータス: https://www.cloudflarestatus.com/\n` +
@@ -109,7 +131,11 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: existing[0].number,
-                body: `## 再発通知\n\n- 時刻: ${new Date().toISOString()}\n- HTTP: ${status}`
+                body: `## 再発通知\n\n` +
+                  `- 時刻: ${new Date().toISOString()}\n` +
+                  `- HTTP: ${status}\n` +
+                  `- curl exit: ${curlExit}\n` +
+                  `- curl error: \`${curlError}\``
               });
               return;
             }

@@ -405,6 +405,7 @@ gh run list --workflow release.yml --limit 3
 
 - `https://watashiba.kagayoi.com/health` への HTTP 200 確認
 - 失敗時に Issue 自動作成（本文からこの runbook のシナリオ B へ誘導）
+- HTTP 応答前の通信失敗は `HTTP 000` と curl 終了コード・エラー内容を Issue に記録
 
 `/health` は D1 / KV / `SESSION_HMAC_SECRET` / `SALT` を実際に検査し、壊れている依存名を
 `failed` 配列で返す（v1.0.70 以降）。それ以前は無条件 200 だったため、依存の障害を検知できなかった。
