@@ -85,7 +85,7 @@
          自前の SelfUpdateWindow/VM/Model は撤去し、このライブラリの UpdateDialogWindow に統一 -->
     <PackageReference Include="VelopackUpdateDialog.Avalonia" Version="1.0.14" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
-    <PackageReference Include="SuperLightLogger" Version="1.0.12" />
+    <PackageReference Include="SuperLightLogger" Version="1.0.13" />
     <!-- Avalonia の Linux サポートが Tmds.DBus.Protocol を transitive に引くため、
          CVE 対応版 (0.93.0) を直接指定して上書きする。-->
     <PackageReference Include="Tmds.DBus.Protocol" Version="0.95.0" />
