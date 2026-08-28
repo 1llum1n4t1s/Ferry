@@ -6,7 +6,7 @@
  * - handlePairLink: PC コード貼付ペアリング (bearer 必須 + 相手セッション存在のみ要求) の認可ロジックを固定する。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { derivePairId, handlePairCreate, handlePairLink } from '../src/pairing-routes';
+import { derivePairId, handlePairCreate, handlePairLink, handlePairSession, handlePairs } from '../src/pairing-routes';
 import { mintSessionToken } from '../src/auth';
 import type { Env } from '../src/index';
 
@@ -42,10 +42,13 @@ describe('derivePairId', () => {
 
 class FakeD1 {
   private nonces = new Map<string, { nonce: string; createdAt: number }>(); // sid -> pairing_nonces 行
+  private sessions = new Map<string, { displayName: string; publicKey: string; createdAt: number }>();
   private publicKeys = new Map<string, string>(); // sid -> sessions.public_key
+  private pairs = new Map<string, { nameA: string; nameB: string; createdAt: number }>();
 
   setSessionActive(sid: string, createdAt: number, nonce = 'n'.repeat(32)) {
     this.nonces.set(sid, { nonce, createdAt });
+    this.sessions.set(sid, { displayName: '', publicKey: this.publicKeys.get(sid) ?? '', createdAt });
   }
 
   /** pairing_nonces 行が残っているか（/pair/create の nonce 消費を検証する）。 */
@@ -56,40 +59,146 @@ class FakeD1 {
   /** rere #C-32 用: sessions.public_key（サーバーが持つ権威データ）を仕込む。 */
   setSessionPublicKey(sid: string, publicKey: string) {
     this.publicKeys.set(sid, publicKey);
+    const session = this.sessions.get(sid);
+    if (session) session.publicKey = publicKey;
+  }
+
+  hasPair(pairId: string): boolean {
+    return this.pairs.has(pairId);
+  }
+
+  getPair(pairId: string): { nameA: string; nameB: string; createdAt: number } | undefined {
+    return this.pairs.get(pairId);
+  }
+
+  setPair(pairId: string, nameA = '', nameB = '', createdAt = Date.now()): void {
+    this.pairs.set(pairId, { nameA, nameB, createdAt });
   }
 
   prepare(sql: string) {
     const nonces = this.nonces;
+    const sessions = this.sessions;
     const publicKeys = this.publicKeys;
+    const pairs = this.pairs;
     // sessions と pairing_nonces で返す列が違うので SQL で振り分ける
     const isSessions = sql.includes('FROM sessions');
+    const isSessionInsert = sql.includes('INTO sessions');
+    const isSessionDelete = sql.includes('DELETE FROM sessions');
+    const isNonceInsert = sql.includes('INTO pairing_nonces');
     const isDeleteNonce = sql.includes('DELETE FROM pairing_nonces');
+    const isNonceClaim = sql.includes('UPDATE pairing_nonces SET nonce=?');
+    const isPairSelect = sql.includes('FROM pairs');
+    const isPairInsert = sql.includes('INTO pairs');
+    const isPairUpdate = sql.includes('UPDATE pairs');
+    const isPairDelete = sql.includes('DELETE FROM pairs');
     // 条件付き DELETE (WHERE sid=? AND nonce=?) は compare-and-swap。nonce 不一致なら消えない。
     const isConditionalDelete = isDeleteNonce && sql.includes('nonce=?');
     return {
-      bind: (...args: unknown[]) => ({
-        first: async <T>(): Promise<T | null> => {
-          const sid = args[0] as string;
-          if (isSessions) {
-            if (!publicKeys.has(sid)) return null;
-            return { public_key: publicKeys.get(sid)! } as unknown as T;
+      bind: (...args: unknown[]) => {
+        const apply = (): number => {
+          if (isSessionInsert) {
+            const sid = args[0] as string;
+            const displayName = args[1] as string;
+            const publicKey = args[2] as string;
+            const createdAt = args[3] as number;
+            sessions.set(sid, { displayName, publicKey, createdAt });
+            publicKeys.set(sid, publicKey);
+            return 1;
           }
-          const row = nonces.get(sid);
-          if (!row) return null;
-          return { nonce: row.nonce, created_at: row.createdAt } as unknown as T;
-        },
-        // batch() から実行される DELETE を反映するための擬似 statement。影響行数を返す
-        // （/pair/create の単回使用は「消せた側だけが成立する」ので changes が判定の実体）。
-        __run: (): number => {
+          if (isSessionDelete) {
+            const existed = sessions.delete(args[0] as string);
+            publicKeys.delete(args[0] as string);
+            return existed ? 1 : 0;
+          }
+          if (isNonceInsert) {
+            nonces.set(args[0] as string, { nonce: args[1] as string, createdAt: args[2] as number });
+            return 1;
+          }
+          if (isNonceClaim) {
+            const claim = args[0] as string;
+            const sidA = args[3] as string;
+            const nonceA = args[4] as string;
+            const cutoffA = args[5] as number;
+            const sidB = args[6] as string;
+            const nonceB = args[7] as string;
+            const cutoffB = args[8] as number;
+            const rowA = nonces.get(sidA);
+            const rowB = nonces.get(sidB);
+            if (!rowA || !rowB || rowA.nonce !== nonceA || rowB.nonce !== nonceB) return 0;
+            if (rowA.createdAt < cutoffA || rowB.createdAt < cutoffB) return 0;
+            rowA.nonce = claim;
+            rowB.nonce = claim;
+            return 2;
+          }
+          if (isPairInsert) {
+            const pairId = args[0] as string;
+            const nameA = args[1] as string;
+            const nameB = args[2] as string;
+            const createdAt = args[3] as number;
+            // /pair/create の INSERT ... SELECT は、両 nonce が同じ claim 値かを条件にする。
+            if (sql.includes('SELECT')) {
+              const rowA = nonces.get(args[4] as string);
+              const rowB = nonces.get(args[5] as string);
+              if (!rowA || !rowB || rowA.nonce !== args[6] || rowB.nonce !== args[6]) return 0;
+            }
+            pairs.set(pairId, { nameA, nameB, createdAt });
+            return 1;
+          }
+          if (isPairUpdate) {
+            const pairId = args[3] as string;
+            if (!pairs.has(pairId)) return 0;
+            pairs.set(pairId, { nameA: args[0] as string, nameB: args[1] as string, createdAt: args[2] as number });
+            return 1;
+          }
+          if (isPairDelete) {
+            const existed = pairs.delete(args[0] as string);
+            return existed ? 1 : 0;
+          }
           if (!isDeleteNonce) return 0;
+          if (sql.includes('sid IN')) {
+            const claim = args[2] as string;
+            let changes = 0;
+            for (const sid of [args[0] as string, args[1] as string]) {
+              if (nonces.get(sid)?.nonce === claim) {
+                nonces.delete(sid);
+                changes += 1;
+              }
+            }
+            return changes;
+          }
           const sid = args[0] as string;
           const row = nonces.get(sid);
           if (!row) return 0;
           if (isConditionalDelete && row.nonce !== (args[1] as string)) return 0;
           nonces.delete(sid);
           return 1;
-        },
-      }),
+        };
+        return {
+          first: async <T>(): Promise<T | null> => {
+            const sid = args[0] as string;
+            if (isSessions) {
+              const session = sessions.get(sid);
+              if (!session && !publicKeys.has(sid)) return null;
+              return {
+                display_name: session?.displayName ?? '',
+                public_key: session?.publicKey ?? publicKeys.get(sid) ?? '',
+              } as unknown as T;
+            }
+            if (isPairSelect) {
+              const pairId = sid;
+              const pair = pairs.get(pairId);
+              if (!pair) return null;
+              return { pair_id: pairId, name_a: pair.nameA, name_b: pair.nameB, created_at: pair.createdAt } as unknown as T;
+            }
+            const row = nonces.get(sid);
+            if (!row) return null;
+            return { nonce: row.nonce, created_at: row.createdAt } as unknown as T;
+          },
+          // batch() から実行される DELETE/INSERT/UPDATE を反映する擬似 statement。
+          __run: apply,
+          run: async () => ({ success: true, meta: { changes: apply() } }),
+        };
+      },
     };
   }
 
@@ -133,6 +242,7 @@ describe('handlePairLink', () => {
     const j = (await res.json()) as { ok: boolean; pairingId: string };
     expect(j.ok).toBe(true);
     expect(j.pairingId).toBe(derivePairId(A, B));
+    expect(db.hasPair(derivePairId(A, B))).toBe(true);
     expect(notifyInboxMock).toHaveBeenCalledTimes(2);
     const calledWith = notifyInboxMock.mock.calls.map((c) => c[1]);
     expect(calledWith).toEqual(expect.arrayContaining([A, B]));
@@ -259,6 +369,126 @@ describe('handlePairLink', () => {
   });
 });
 
+// ------------------ pairs 台帳 mode gate / server timestamp ------------------
+
+function pairRequest(pairId: string, body: unknown, token: string): Request {
+  return new Request(`https://relay.test/pairs/${pairId}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+}
+
+describe('handlePairs PUT の段階移行', () => {
+  it('required では未登録 pair の legacy PUT を 409 PAIR_PROOF_REQUIRED で拒否する', async () => {
+    const db = new FakeD1();
+    const env = { ...makeEnv(db), PAIR_LEDGER_MODE: 'required' } as unknown as Env;
+    const token = await bearerFor(A, env);
+    const res = await handlePairs(pairRequest(derivePairId(A, B), { nameA: 'A', nameB: 'B', createdAt: 1 }, token), env, new URL(`https://relay.test/pairs/${derivePairId(A, B)}`));
+
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toBe('PAIR_PROOF_REQUIRED');
+    expect(db.hasPair(derivePairId(A, B))).toBe(false);
+  });
+
+  it('transition では legacy backfill を許可するが rate limit を消費し、createdAt は server 時刻にする', async () => {
+    const db = new FakeD1();
+    const limit = vi.fn(async () => ({ success: true }));
+    const env = { ...makeEnv(db), RATELIMIT_DEVICE: { limit } } as unknown as Env;
+    const token = await bearerFor(A, env);
+    const pairId = derivePairId(A, B);
+    const url = new URL(`https://relay.test/pairs/${pairId}`);
+    const res = await handlePairs(pairRequest(pairId, { nameA: 'A', nameB: 'B', createdAt: 1 }, token), env, url);
+
+    expect(res.status).toBe(200);
+    expect(limit).toHaveBeenCalledWith({ key: A });
+    expect(db.getPair(pairId)?.createdAt).toBeGreaterThan(1);
+  });
+
+  it('required では既存行の UPDATE は許可し、申告 createdAt を保存しない', async () => {
+    const db = new FakeD1();
+    const pairId = derivePairId(A, B);
+    db.setPair(pairId, 'old-A', 'old-B', 100);
+    const env = { ...makeEnv(db), PAIR_LEDGER_MODE: 'required' } as unknown as Env;
+    const token = await bearerFor(A, env);
+    const url = new URL(`https://relay.test/pairs/${pairId}`);
+    const res = await handlePairs(pairRequest(pairId, { nameA: 'new-A', nameB: 'new-B', createdAt: 1 }, token), env, url);
+
+    expect(res.status).toBe(200);
+    expect(db.getPair(pairId)?.nameA).toBe('new-A');
+    expect(db.getPair(pairId)?.createdAt).toBeGreaterThan(1);
+  });
+
+  it('pairs PUT は非 canonical pairId を拒否する', async () => {
+    const db = new FakeD1();
+    const env = makeEnv(db);
+    const token = await bearerFor(B, env);
+    const reverse = `${B}_${A}`;
+    const url = new URL(`https://relay.test/pairs/${reverse}`);
+    const res = await handlePairs(pairRequest(reverse, {}, token), env, url);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe('BAD_PAIR_ID');
+  });
+
+  it('明示された不正な PAIR_LEDGER_MODE は transition に降格せず 503', async () => {
+    const db = new FakeD1();
+    const env = { ...makeEnv(db), PAIR_LEDGER_MODE: 'typo' } as unknown as Env;
+    const token = await bearerFor(A, env);
+    const pairId = derivePairId(A, B);
+    const url = new URL(`https://relay.test/pairs/${pairId}`);
+    const res = await handlePairs(pairRequest(pairId, {}, token), env, url);
+
+    expect(res.status).toBe(503);
+    expect(((await res.json()) as { error: string }).error).toBe('PAIR_LEDGER_MISCONFIGURED');
+    expect(db.hasPair(pairId)).toBe(false);
+  });
+});
+
+// ------------------ /pair/session rate limit / input bounds ------------------
+
+describe('handlePairSession', () => {
+  function sessionRequest(body: unknown, token: string): Request {
+    return new Request('https://relay.test/pair/session', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('本人 deviceId を key に RATELIMIT_SESSION を消費して登録する', async () => {
+    const db = new FakeD1();
+    const limit = vi.fn(async () => ({ success: true }));
+    const env = { ...makeEnv(db), RATELIMIT_SESSION: { limit } } as unknown as Env;
+    const token = await bearerFor(A, env);
+    const res = await handlePairSession(
+      sessionRequest({ displayName: 'PC', publicKey: 'pk', pairingNonce: 'c'.repeat(32) }, token),
+      env,
+      new URL('https://relay.test/pair/session'),
+    );
+
+    expect(res.status).toBe(200);
+    expect(limit).toHaveBeenCalledWith({ key: A });
+  });
+
+  it('displayName/publicKey の上限超過は D1 を書き込まず 400 にする', async () => {
+    const db = new FakeD1();
+    const env = makeEnv(db);
+    const token = await bearerFor(A, env);
+    const overName = await handlePairSession(
+      sessionRequest({ displayName: 'x'.repeat(129), publicKey: '', pairingNonce: 'c'.repeat(32) }, token),
+      env,
+      new URL('https://relay.test/pair/session'),
+    );
+    expect(overName.status).toBe(400);
+    const overKey = await handlePairSession(
+      sessionRequest({ displayName: '', publicKey: 'x'.repeat(257), pairingNonce: 'd'.repeat(32) }, token),
+      env,
+      new URL('https://relay.test/pair/session'),
+    );
+    expect(overKey.status).toBe(400);
+  });
+});
+
 // ------------------ handlePairCreate rate limit (bearer 不要の公開エンドポイント) ------------------
 
 describe('handlePairCreate rate limit', () => {
@@ -288,10 +518,14 @@ describe('handlePairCreate の nonce 消費', () => {
   const NB = 'b2'.repeat(16);
 
   function createReq(nonceA: string, nonceB: string): Request {
+    return createReqFor(A, B, nonceA, nonceB);
+  }
+
+  function createReqFor(sidA: string, sidB: string, nonceA: string, nonceB: string): Request {
     return new Request('https://relay.test/pair/create', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sidA: A, sidB: B, nonceA, nonceB, nameA: 'PC-A', nameB: 'PC-B' }),
+      body: JSON.stringify({ sidA, sidB, nonceA, nonceB, nameA: 'PC-A', nameB: 'PC-B' }),
     });
   }
 
@@ -311,6 +545,9 @@ describe('handlePairCreate の nonce 消費', () => {
     expect(notifyInboxMock).toHaveBeenCalledTimes(2);
     expect(db.hasNonce(A)).toBe(false);
     expect(db.hasNonce(B)).toBe(false);
+    const pair = db.getPair(derivePairId(A, B));
+    expect(pair).toBeDefined();
+    expect(pair?.createdAt).toBeGreaterThan(Date.now() - 5_000);
   });
 
   it('同じ nonce の再送 (撮影された QR のリプレイ) は 404 になり inbox へ再 push しない', async () => {
@@ -362,6 +599,28 @@ describe('handlePairCreate の nonce 消費', () => {
     expect(notifyInboxMock).toHaveBeenCalledTimes(2);
     expect(db.hasNonce(A)).toBe(false);
     expect(db.hasNonce(B)).toBe(false);
+  });
+
+  it('同じ sid を別の相手へ使う並列 create でも台帳は勝者 1 組だけ残す', async () => {
+    const sidC = 'c'.repeat(32);
+    const nonceC = 'c3'.repeat(16);
+    const db = new FakeD1();
+    db.setSessionActive(A, Date.now(), NA);
+    db.setSessionActive(B, Date.now(), NB);
+    db.setSessionActive(sidC, Date.now(), nonceC);
+    const env = makeEnv(db);
+
+    const [ab, ac] = await Promise.all([
+      handlePairCreate(createReqFor(A, B, NA, NB), env),
+      handlePairCreate(createReqFor(A, sidC, NA, nonceC), env),
+    ]);
+
+    expect([ab.status, ac.status].filter((status) => status === 200)).toHaveLength(1);
+    expect([db.hasPair(derivePairId(A, B)), db.hasPair(derivePairId(A, sidC))]
+      .filter(Boolean)).toHaveLength(1);
+    expect(notifyInboxMock).toHaveBeenCalledTimes(2);
+    // 負け側の相手 nonce は claim されず、別の正規ペアリングへ再利用できる。
+    expect(db.hasNonce(B) || db.hasNonce(sidC)).toBe(true);
   });
 });
 

@@ -33,6 +33,19 @@ function makeEnv(extra: Partial<Env> = {}): { env: Env; doFetch: ReturnType<type
   return { env, doFetch };
 }
 
+function pairLedgerDb(row: object | null | Error): D1Database {
+  return {
+    prepare: vi.fn(() => ({
+      bind: vi.fn(() => ({
+        first: vi.fn(async () => {
+          if (row instanceof Error) throw row;
+          return row;
+        }),
+      })),
+    })),
+  } as unknown as D1Database;
+}
+
 async function sigRequest(env: Env, deviceId: string, method: string, path: string, body?: object): Promise<Response> {
   const token = await mintSessionToken(deviceId, 3600, env);
   const url = new URL(`https://relay.test${path}`);
@@ -82,5 +95,66 @@ describe('handleSignaling rate limit の枠分離', () => {
     expect(res.status).toBe(200);
     expect(deviceLimit).not.toHaveBeenCalled();
     expect(doFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('handleSignaling の正式 pair 台帳 gate', () => {
+  it('required では未登録 pair を 404 で拒否し PairDO を起こさない', async () => {
+    const { env, doFetch } = makeEnv({
+      DB: pairLedgerDb(null),
+      PAIR_LEDGER_MODE: 'required',
+    } as unknown as Partial<Env>);
+
+    const res = await sigRequest(env, A, 'GET', `/sig/${PAIR_ID}/answer?from=${B}`);
+
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { error: string }).error).toBe('PAIR_NOT_FOUND');
+    expect(doFetch).not.toHaveBeenCalled();
+  });
+
+  it('transition では未登録 pair を legacy 互換許可する', async () => {
+    const { env, doFetch } = makeEnv({ DB: pairLedgerDb(null) } as unknown as Partial<Env>);
+
+    const res = await sigRequest(env, A, 'GET', `/sig/${PAIR_ID}/answer?from=${B}`);
+
+    expect(res.status).toBe(200);
+    expect(doFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('D1 例外は 503 で fail closed にし、PairDO を起こさない', async () => {
+    const { env, doFetch } = makeEnv({ DB: pairLedgerDb(new Error('D1 down')) } as unknown as Partial<Env>);
+
+    const res = await sigRequest(env, A, 'GET', `/sig/${PAIR_ID}/answer?from=${B}`);
+
+    expect(res.status).toBe(503);
+    expect(doFetch).not.toHaveBeenCalled();
+  });
+
+  it('非 canonical pairId は台帳照会前に拒否する', async () => {
+    const db = pairLedgerDb({ pair_id: `${B}_${A}` });
+    const { env, doFetch } = makeEnv({ DB: db } as unknown as Partial<Env>);
+    const token = await mintSessionToken(A, 3600, env);
+    const reverse = `${B}_${A}`;
+    const url = new URL(`https://relay.test/sig/${reverse}/answer`);
+    const req = new Request(url, { headers: { Authorization: `Bearer ${token}` } });
+
+    const res = await handleSignaling(req, env, url);
+
+    expect(res.status).toBe(400);
+    expect(doFetch).not.toHaveBeenCalled();
+    expect((db.prepare as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+
+  it('明示された不正な PAIR_LEDGER_MODE は transition に降格せず 503', async () => {
+    const { env, doFetch } = makeEnv({
+      DB: pairLedgerDb(null),
+      PAIR_LEDGER_MODE: 'typo',
+    } as unknown as Partial<Env>);
+
+    const res = await sigRequest(env, A, 'GET', `/sig/${PAIR_ID}/answer?from=${B}`);
+
+    expect(res.status).toBe(503);
+    expect(((await res.json()) as { error: string }).error).toBe('PAIR_LEDGER_MISCONFIGURED');
+    expect(doFetch).not.toHaveBeenCalled();
   });
 });

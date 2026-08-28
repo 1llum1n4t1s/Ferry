@@ -48,13 +48,19 @@ public sealed class CfTokenProvider : IDisposable
         _ownsHttp = http == null;
     }
 
-    /// <summary>現在の cfToken（未取得なら例外）。CloudflareSignaling の Bearer 注入から呼ばれる。</summary>
-    public Task<string> GetCfTokenAsync()
+    /// <summary>fresh な cfToken を返す。未取得または期限切れなら取得完了まで待つ。</summary>
+    public async Task<string> GetCfTokenAsync()
     {
+        // Relay の WebSocket callback など、呼び出し側が先に EnsureTokenAsync を呼ばない経路でも
+        // 期限切れトークンを Bearer に載せない。EnsureTokenAsync は semaphore で直列化されるため、
+        // 通常の signaling 呼び出しとの同時実行も既存契約のまま保てる。
+        if (!IsFresh())
+            await EnsureTokenAsync().ConfigureAwait(false);
+
         var t = _token;
-        if (t == null || string.IsNullOrEmpty(t.Token))
-            return Task.FromException<string>(new InvalidOperationException("CfTokenProvider not signed in yet"));
-        return Task.FromResult(t.Token);
+        if (t == null || string.IsNullOrEmpty(t.Token) || !IsFresh())
+            throw new InvalidOperationException("CfTokenProvider has no fresh token");
+        return t.Token;
     }
 
     private bool IsFresh()

@@ -11,7 +11,7 @@
 Ferry は QR コードでペアリングし、TCP 直接接続（LAN）/ UDP ホールパンチ（NAT 越え P2P）/ WebSocket リレー（最終手段）で PC 間ファイルを P2P 転送するデスクトップアプリ。ファイル転送に特化しており、チャット機能は含まない。
 
 - **`src/Ferry/`** — .NET 10 Avalonia UI デスクトップアプリ（Native AOT、クロスプラットフォーム: win-x64 / win-arm64 / osx-arm64 / linux-x64 / linux-arm64）
-- **`infra/cloudflare/relay/`** — バックエンド一式 (TypeScript)。Cloudflare Workers + Durable Objects + D1 で **シグナリング（PairDO）/ プレゼンス + inbox（DeviceDO）/ ペア台帳（D1）/ WebSocket リレー（RelayDO、`wss://watashiba.kagayoi.com/ferry-relay`）/ QR ペアリング用 Bridge ページ（`public/` を Static Assets 配信）** を 1 Worker に集約。テストは vitest（`pnpm test`）。**`infra/cloudflare/relay/**` を main に push すると `deploy-relay.yml` が `wrangler deploy` で自動配信**（手動 `wrangler deploy` も可）。死活監視は `relay-healthcheck.yml`（15 分ごとの cron）。⚠️ 旧来は手動デプロイのみでリリースに紐づかず、本番が古いまま残り `/auth/token` が 426 を返す事故（2026-06-23）が起きたため CI 化した
+- **`infra/cloudflare/relay/`** — バックエンド一式 (TypeScript)。Cloudflare Workers + Durable Objects + D1 で **シグナリング（PairDO）/ プレゼンス + inbox（DeviceDO）/ ペア台帳（D1）/ WebSocket リレー（RelayDO）/ リレー quota 予約（RelayQuotaDO）/ QR ペアリング用 Bridge ページ（`public/` を Static Assets 配信）** を 1 Worker に集約。リレー endpoint は `wss://watashiba.kagayoi.com/ferry-relay`。テストは vitest（`pnpm test`）。**`infra/cloudflare/relay/**` を main に push すると `deploy-relay.yml` が `wrangler deploy` で自動配信**（手動 `wrangler deploy` も可）。死活監視は `relay-healthcheck.yml`（15 分ごとの cron）。⚠️ 旧来は手動デプロイのみでリリースに紐づかず、本番が古いまま残り `/auth/token` が 426 を返す事故（2026-06-23）が起きたため CI 化した
 - **`web/`** — ダウンロード用ランディングページ（`index.html` + Cloudflare Worker `worker.js` + `wrangler.toml`）。QR ペアリングの Bridge ページとは別物。`web/` 配下を main に push すると `deploy-landing.yml` が Cloudflare に配信
 - **`tests/Ferry.Tests/`** — xUnit v3 + NSubstitute によるユニットテスト
 
@@ -40,7 +40,7 @@ Infrastructure/         → CloudflareSignaling（+ CfTokenProvider 認証）, T
 
 1. **Offer 側**: TCP リスナー起動（**IPv6 デュアルスタック**、`IPv6Any + DualMode` の 1 ポートで v4/v6 両受け。v6 スタック無しは v4 にフォールバック）→ **offer-v1 送信（STUN 情報なし）** → TCP accept と Answer ポーリングを `WhenAny` で同時待機
 2. **Answer 側**: offer 受信 → TCP 接続試行 → 結果を answer に `route` フィールドで通知
-   - offer の `Ips` は **IPv4 + IPv6（GUA/ULA、リンクローカル等は除外・最大 3 個）を「v4[0], v6[0], v4[1], …」インターリーブ**で並び、Answer は各 IP 3s / 全体 5s 予算で**順次**試行（`TcpDirectTransport.GetLocalIpAddresses` / `IsAdvertisableIpv6`）。LAN の v4 即成功は従来最速のまま、**IPv4 が CGNAT でも end-to-end IPv6 なら UDP/リレーへ行かず TCP 直結**できる（相手側ルータの IPv6 SPI ファイアウォールが inbound を落とす環境では不成立→従来どおり UDP へ）。並列レースにしないのは「Answer が捨てた側の接続を Offer が accept する」不整合を避けるため。旧バージョン Answer は v4 ソケット固定で v6 エントリに即例外→次の IP へ進むだけで無害（プロトコル互換、`ConnectionInfo` 変更なし）
+   - offer の `Ips` は **IPv4 + IPv6（GUA/ULA、リンクローカル等は除外・最大 3 個）を「v4[0], v6[0], v4[1], …」インターリーブ**で並び、Answer は各 IP 3s / 全体 5s 予算で**順次**試行（`TcpDirectTransport.GetLocalIpAddresses` / `IsAdvertisableIpv6`）。LAN の v4 即成功は従来最速のまま、**IPv4 が CGNAT でも end-to-end IPv6 なら UDP/リレーへ行かず TCP 直結**できる（相手側ルータの IPv6 SPI ファイアウォールが inbound を落とす環境では不成立→従来どおり UDP へ）。並列レースにしないのは「Answer が捨てた側の接続を Offer が accept する」不整合を避けるため。旧バージョン Answer は v4 ソケット固定で v6 エントリに即例外→次の IP へ進むだけで無害（プロトコル互換、`ConnectionInfo` 変更なし）。TCP/UDP とも `PeerEndpointPolicy` を通し、private IPv4・通常の IPv4 link-local・IPv6 GUA/ULA は維持しつつ、loopback・未指定・multicast・scope の無い IPv6 link-local・既知 metadata endpoint を接続前に拒否する
    - TCP 成功 → `route = "direct"` → 両側 TCP で接続完了
    - TCP 失敗 → `route = "needRelay"` → 双方が次ステップ（UDP）へ
 3. **TCP 失敗時（UDP ホールパンチ）**: ここが非対称で**順序が肝**。外部エンドポイントの交換は更に非対称で、**Offer 側の endpoint は offer-v2 ペイロード（`ConnectionInfo.ExternalIp/ExternalPort`）で運ばれ、Answer 側の endpoint だけが `/sig/{pairId}/endpoint`（PairDO キー `endpoint:{answererDeviceId}`）経由**で渡る（rere #D-003 で per-sender 化。書き手は自分の deviceId キー、読み手はペア相手の deviceId キー）。
@@ -84,21 +84,39 @@ STUN は **Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google S
 | ルート | 実体 | 内容 |
 |---|---|---|
 | `/sig/{pairId}/offer・answer・endpoint`（per-sender）、`probe-offer/{nonce}`・`probe-offers`・`probe-answer/{nonce}`（per-nonce） | **PairDO**（pairId ごと 1 DO） | storage キー `offer:{sender}` / `answer:{sender}` / `endpoint:{sender}` / `probeOffer:{nonce}` / `probeAnswer:{nonce}`。当事者検証 + sender キー強制（`X-Ferry-Device`）は Worker 側（`signaling-routes.ts`）で完結し、旧 Firebase rules の per-sender なりすまし防止（#D-003）をコードで担保 |
-| `/presence/{deviceId}`（POST/DELETE=本人のみ、GET・`/last-seen`=認証済みなら可） | **DeviceDO**（deviceId ごと 1 DO） | presence（`lastSeen` は server now）。`/last-seen` は ETag/304 対応（帯域節約） |
-| `/inbox`（WebSocket） | DeviceDO | ペア成立通知の真 push + **接続ノック**（§着信検知）。未読はキュー（TTL 1h・最大 50 件）に積んで接続時 flush。knock は transient で積まない |
+| `/presence/{deviceId}`（POST/DELETE=本人のみ、peer GET・`/last-seen`=D1正式ペア） | **DeviceDO**（deviceId ごと 1 DO） | presence（`lastSeen` は server now）。`/last-seen` は ETag/304 対応（帯域節約）。transition 中だけ旧ペアの未登録台帳を許容 |
+| `/inbox`（WebSocket） | DeviceDO | ペア成立通知の真 push + **接続ノック**（§着信検知）。未読はキュー（TTL 1h・最大 50 件）に積んで接続時 flush。knock は transient で積まない。device 別接続 rate limit + 1 DeviceDO 最大 4 接続 |
 | `/pair/session`・`/pair/create`・`/pair/link` | **D1** `ferry_ledger`（`sessions` / `pairing_nonces` / `pairs`） | セッション登録・QR ペア成立・コード貼付ペア成立（認可モデルは上記） |
 | `/pairs/{pairId}`（PUT/GET/DELETE、bearer 当事者のみ） | D1 `pairs` | ペア台帳 SSoT。GET 404 で remote-unpair 検出（`PairSyncService`）。DELETE は相手 inbox へ unpair push |
-| `/ferry-relay`（WebSocket） | **RelayDO** | 転送リレー本体（Hibernation 対応）。pairId は `SALT` 付き SHA-256 で DO 名化（生 pairId 漏洩による横入り防止）。⚠️ **入室認可は未実装**（下記） |
+| `/ferry-relay`（WebSocket） | **RelayDO + RelayQuotaDO** | 転送リレー本体（Hibernation 対応）と quota 予約。`wrangler.toml` の `QUOTA` / migration v4（v1〜v3 は不変）。pairId は `SALT` 付き SHA-256 で DO 名化（生 pairId 漏洩による横入り防止）。入室認可は optional 段階移行（下記） |
 
-**⚠️ `/ferry-relay` の入室認可は未完（移行途中）**: `index.ts` は `Upgrade: websocket` + query の `pairId`/`role` だけで RelayDO へ入れており、cfToken も当事者検証も無い。pairId は deviceId の Ordinal 連結で**決定的に導出できる**ため、相手の deviceId を知る第三者は同じルームに入って 2 スロットを埋め、正当な合流を 409 で遮断できる（PairSecret を持たない旧ペアでは中継データの盗聴・改竄も成立する。`SALT` ハッシュは `idFromName` の推測防止であって入室防御ではない）。恒久対策は `/sig/*` と同じ **Bearer 必須 + pairId 当事者検証**だが、必須化した瞬間に **Bearer を送らない出荷済みクライアントのリレー転送が全滅する**。そのため段階移行にしてあり、**クライアント側の Bearer 送出だけ先行実装済み**（`WebSocketRelayTransport` の `bearerTokenAsync`、`App.axaml.cs` が `CfTokenProvider.GetCfTokenAsync` を注入）。**サーバ側の必須化は Bearer 付きクライアントが行き渡ってから**行う（それまでこの表の「入室認可」は無いものとして扱う）。
+**`/ferry-relay` の入室認可と段階移行**: `RELAY_AUTH_MODE=optional` / `PAIR_LEDGER_MODE=transition` では、`Upgrade: websocket` の前に Bearer と D1 台帳を判定する。
 
-**Rate limit の枠分け**（`wrangler.toml` の `unsafe.bindings`）: `RATELIMIT_IP`(60/60s、bearer 無しの `/auth/token`・`/pair/create`) / `RATELIMIT_DEVICE`(30/60s、**低頻度**な `/auth/token`・`/pair/link`) / `RATELIMIT_SIG`(600/60s、`/sig/*` 専用) / `RATELIMIT_SESSION`(5/60s)。⚠️ **`/sig/*` に `RATELIMIT_DEVICE` を流用しないこと**。シグナリングは接続 1 回で **offer POST + answer GET 400ms ポーリング ≒ 52 req**、経路 Probe 1 回 ≒ 17 req を消費するため 30/60s では枠を焼き切り、**送信側が「相手が返した answer を読む GET」を自分で 429 させて必ず `PeerUnreachableException`（相手から応答がありません）で失敗する**（v1.0.70 で実際に発生。429 も枠を消費するのでポーリング継続中は回復せず自己閉塞する）。実測ピーク ≒ 90 req/分。回帰は `tests/signaling-ratelimit.test.ts`。
+- **有効な Bearer + D1 participant**: `cfToken` の subject と pairId 当事者を照合し、auth quota 枠で入室する。
+- **Bearer なし、または台帳未移行で participant を確認できない**: 互換性のため legacy 小枠へ入室する。未認証を無制限にはしない。
+- **Bearer が存在するが署名・期限・participant 検証に失敗**: 拒否する。invalid bearer を legacy へ降格してはならない。
+
+現行クライアントはリレー Bearer を fail-closed で取得・送出し、取得失敗・空値・期限切れなら接続しない。legacy 枠を使うのは Bearer をまだ送らない出荷済み旧版だけである。普及後に `RELAY_AUTH_MODE=required` / `PAIR_LEDGER_MODE=required` へ反転し、legacy 経路を廃止する。
+
+`RelayQuotaDO` は SQLite-backed Durable Object として、global breaker、同時 room 数、bytes / messages / duration の月次・セッション quota、idle timeout、1 MiB frame cap の予約を強整合に直列化する。予約は入室前に行い、セッション中のフレーム処理は lease の bytes / messages / duration / frame 上限で制御する。auth/legacy が同じ room に混在した場合は共有 lease を legacy 小枠へ原子的に降格し、legacy 月次枠にも予約する。同じ lease の `offer` / `answer` は各1回だけ入室でき、settle/応答障害後の再入室で上限を反復利用できない。quota 状態と次回 alarm は同じ storage transaction で確定し、クラッシュ・強制終了・異常切断時は未確定予約を全消費扱いにする（安全側）。RelayDO 側も quota reserve の `await` をまたぐ入室判定を直列化し、同一 role の同時接続を1本に限定する。reserve 待機中に旧 room の close/settle 世代が変わった場合は、実測 settle の完了を待って stale lease の accept を拒否する。room 合算 counter は両 attachment へ複製するため、片方の socket が切断一覧から先に消えても残存側だけで全量を settle できる。breaker / quota 設定不備は認証・D1 より前に遮断する。
+
+| 枠 | bytes | messages | duration | idle / concurrency |
+|---|---:|---:|---:|---:|
+| global 月次（auth + legacy 合算） | 500 GiB | 10,000,000 | 500 h | — |
+| auth セッション | 10 GiB | 200,000 | 3 h | 5 min |
+| legacy 月次 | 10 GiB | 200,000 | 10 h | — |
+| legacy セッション | 256 MiB | 8,192 | 15 min | 2 min |
+| global | — | — | — | 16 rooms / `RELAY_CIRCUIT_OPEN` |
+
+**Rate limit の枠分け**（`wrangler.toml` の `unsafe.bindings`）: `RATELIMIT_IP`(60/60s、bearer 無しの `/auth/token`・`/pair/create`) / `RATELIMIT_DEVICE`(30/60s、**低頻度**な `/auth/token`・`/pair/link` と `inbox:{deviceId}` の独立 key) / `RATELIMIT_SIG`(600/60s、`/sig/*` 専用) / `RATELIMIT_SESSION`(5/60s) / `RATELIMIT_RELAY`(60/60s、relay upgrade 専用)。⚠️ **`/sig/*` に `RATELIMIT_DEVICE` を流用しないこと**。シグナリングは接続 1 回で **offer POST + answer GET 400ms ポーリング ≒ 52 req**、経路 Probe 1 回 ≒ 17 req を消費するため 30/60s では枠を焼き切り、**送信側が「相手が返した answer を読む GET」を自分で 429 させて必ず `PeerUnreachableException`（相手から応答がありません）で失敗する**（v1.0.70 で実際に発生。429 も枠を消費するのでポーリング継続中は回復せず自己閉塞する）。実測ピーク ≒ 90 req/分。`RATELIMIT_RELAY` は IP 単位の乱打を抑える補助であり、入室 quota の正本ではない。
+
+**料金と採用範囲**: 料金・無料枠・月額への適合は契約プランと実使用で変わるため断言しない。Cloudflare 公式の [WebSocket Hibernation](https://developers.cloudflare.com/durable-objects/best-practices/websockets/) では、Hibernation 可能なアイドル中 DO は duration 課金が発生しない。[料金仕様](https://developers.cloudflare.com/durable-objects/platform/pricing/) では compute request billing に限り incoming WebSocket message に 20:1 の換算が適用される（メトリクスの実数は変わらない）。リレーのデータ経路として R2 ペイロード保管・TURN・BYO relay は今回採用せず、後段候補とする（更新配信の R2 は別用途）。
 
 **Cleanup ポリシー**（旧 firebase-cleanup.yml の置換）:
 
 - **PairDO（signaling）**: 書込時に 1h alarm を仕掛け、TTL 経過で `deleteAll` して休眠（lazy・全 DO を短間隔で起こさない）
 - **probe（per-nonce）**: probe sender の finally で `CleanupProbeAsync(nonce)` により**即時削除**
-- **D1 `sessions` / `pairing_nonces`**: 読み時に `created_at` が 1h 超なら失効扱い（`EXPIRED_SESSION`）
+- **D1 `sessions` / `pairing_nonces`**: 読み時に `created_at` が 1h 超なら失効扱い（`EXPIRED_SESSION`）。日次 scheduled handler が期限切れ行を同一 D1 batch で削除（`pairs` は永続 SSoT なので対象外）
 - **presence**: 削除でなく `LastSeen` の老化（`OfflineThresholdMs`=60s）で UI 側が offline 判定
 
 `ConnectionInfo` の `Probe / From / Nonce` フィールド (v12-v14 追加):
@@ -173,7 +191,7 @@ TCP / WebSocket 上の長さプレフィクス付きバイナリプロトコル�
 | Ping / Pong | 0x10 / 0x11 | キープアライブ |
 | ResumeRequest / ResumeResponse | 0x20 / 0x21 | レジューム関連 (現状応答は false 固定) |
 
-受信側（`TransferService.HandleFileChunk`）は **TransferId で受信状態を引き、`chunkIndex × ChunkSize` のオフセットへ `Seek` して書き込む**ため、UDP の順不同到着でも正しく再構成できる。受信完了は全 chunkIndex 受信（ビットマップ `ReceivedChunkSet`）で判定し、最後に SHA-256 でファイル整合性を検証する。受信ファイル名・相対パスはパストラバーサル防止のため保存先ディレクトリ配下に収まることを検証する。検証ロジックは純関数 `Util.SafePath`（`NormalizeSeparators` / `HasParentTraversal` / `HasUnsafeRoot` / `SafeFileName` / `IsWithinDirectory`）に集約。**送信元 OS のパス区切りに依存しない**よう受信した `FileName`/`RelativePath` を `\`→`/` 正規化してから basename 抽出・`..` パス要素判定し（Windows 送信 → mac/Linux 受信の混在を吸収。単独ファイル経路も正規化して非対称を解消）、最終防御は `StartsWith` ではなく `Path.GetRelativePath` ベースで saveDir 配下を強制する（区切り・大小・正規化のクロス OS 差を OS 既定の比較規則に委ねる）。加えて **NUL 等の制御文字を含む `FileName`/`RelativePath` は `HandleFileMeta` 冒頭で早期 `FileReject`**（`SafePath.ContainsControlChar`）し、`SafePath.IsWithinDirectory` も例外安全化（throw せず false に倒す）する。これが無いと細工 `FileMeta` の NUL で `Path.*` が `ArgumentException`→受信ループ→`ChannelClosed` で進行中転送を切断できる**リモート DoS**（ペア済み peer から 1 通で発火、early-return しないので `FileReject` も飛ばない）になる。シンボリックリンク追跡は文字列防御の対象外（攻撃には saveDir への事前書込権限が必要で、信頼モデル§の設計途上事項）。回帰は `SafePathTests`。
+受信側（`TransferService.HandleFileChunk`）は **TransferId で受信状態を引き、`chunkIndex × ChunkSize` のオフセットへ `Seek` して書き込む**ため、UDP の順不同到着でも正しく再構成できる。受信完了は全 chunkIndex 受信（ビットマップ `ReceivedChunkSet`）で判定し、最後に SHA-256 でファイル整合性を検証する。受信ファイル名・相対パスはパストラバーサル防止のため保存先ディレクトリ配下に収まることを検証する。検証ロジックは純関数 `Util.SafePath`（`NormalizeSeparators` / `HasParentTraversal` / `HasUnsafeRoot` / `SafeFileName` / `IsWithinDirectory`）に集約。**送信元 OS のパス区切りに依存しない**よう受信した `FileName`/`RelativePath` を `\`→`/` 正規化してから basename 抽出・`..` パス要素判定し（Windows 送信 → mac/Linux 受信の混在を吸収。単独ファイル経路も正規化して非対称を解消）、最終防御は `StartsWith` ではなく `Path.GetRelativePath` ベースで saveDir 配下を強制する（区切り・大小・正規化のクロス OS 差を OS 既定の比較規則に委ねる）。加えて **NUL 等の制御文字を含む `FileName`/`RelativePath` は `HandleFileMeta` 冒頭で早期 `FileReject`**（`SafePath.ContainsControlChar`）し、`SafePath.IsWithinDirectory` も例外安全化（throw せず false に倒す）する。これが無いと細工 `FileMeta` の NUL で `Path.*` が `ArgumentException`→受信ループ→`ChannelClosed` で進行中転送を切断できる**リモート DoS**（ペア済み peer から 1 通で発火、early-return しないので `FileReject` も飛ばない）になる。保存パスの重複回避・フォルダマッピング・ディレクトリ/ファイル作成は **ユーザー承認後の `ApproveTransfer` で初めて実行**し、`FileMeta` だけではディスクへ副作用を出さない。承認待ちは同一 peer 32 件・全 peer 合算 128 件で打ち切り、超過分へ即 `FileReject` を返す。シンボリックリンク追跡は文字列防御の対象外（攻撃には saveDir への事前書込権限が必要で、信頼モデル§の設計途上事項）。回帰は `SafePathTests` / `TransferServiceValidationTests`。
 
 UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レイヤー（選択的 ACK・フラグメンテーション 1187 bytes・スライディングウィンドウ 128）を提供する。順序保証はトランスポート層ではなく上記の chunkIndex ベース書き込みで担保している。
 
@@ -193,7 +211,7 @@ UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レ
 
 - 受信側拒否時は `FileReject (0x04, TransferId プレフィクス付き)` を送信
 - 送信側 60s タイムアウト時も `FileReject` を受信側に投げて **symmetric expiry** (v8)
-- `HandleFileMeta` の early return (パストラバーサル / 保存パス異常 / dir 作成失敗) でも `FileReject` を sender に送信 (v7)
+- `HandleFileMeta` の early return（パストラバーサル / 不正メタデータ / 承認待ち上限）と、承認後の保存パス・dir/file 作成失敗でも `FileReject` を sender に送信
 - `HandleFileReject` は 4 ケース対応: `_pendingSendApprovals` / `_activeTransfers` / `_pendingApprovals` / `_receiveStates` (race ケース) (v8)
 - 拒否理由は `item.ErrorMessage` に詰めてから TCS 解決して UI に伝える (v12)
 - `SendRejectFireAndForget(Guid, string)` ヘルパーで `TransferService` 内の FileReject 送信を統一 (v9)

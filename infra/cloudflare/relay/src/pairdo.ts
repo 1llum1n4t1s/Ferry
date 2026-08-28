@@ -21,7 +21,19 @@
  * して休眠、活動が進んでいれば再設定。短間隔で全 DO を起こさない (CF 公式警告) よう lazy + 1h TTL。
  */
 
+import { readJsonObject } from './http';
+
 const SIGNALING_TTL_MS = 60 * 60 * 1000; // 1h。Firebase の firebase-cleanup.yml と同じ stale 閾値。
+
+/** PairDO へ届く識別子はクライアント入力なので、storage キーへ使う前に形式を固定する。 */
+const HEX32_RE = /^[a-f0-9]{32}$/;
+
+/** SDP / endpoint は値単位でも上限を設け、JSON 本文上限の内側で扱えるようにする。 */
+export const MAX_SDP_BYTES = 16 * 1024;
+export const MAX_ENDPOINT_BYTES = 2 * 1024;
+
+/** 同じ PairDO に残せる probe offer の最大数（同時 probe の想定数 + 余裕）。 */
+export const MAX_PROBE_OFFERS = 16;
 
 /** rere レビュー #C-06: offer 鮮度判定で許容するクライアント↔サーバの時計ズレ。
  *  /auth/token の CLOCK_SKEW ガード (auth.ts) と同じ 60s に揃える。 */
@@ -75,13 +87,13 @@ export class PairDO {
         // 分岐しているのに非対称)。他アクションと同じくメソッドを強制する。
         case 'probe-offer':
           return method === 'POST'
-            ? await this.writeProbe('probeOffer', segs[1] ?? '', req)
+            ? await this.writeProbe('probeOffer', segs[1] ?? '', device, req)
             : json(405, { error: 'METHOD_NOT_ALLOWED', action, method });
         case 'probe-offers':
           return await this.readProbeOffers();
         case 'probe-answer':
           return method === 'POST'
-            ? await this.writeProbe('probeAnswer', segs[1] ?? '', req)
+            ? await this.writeProbe('probeAnswer', segs[1] ?? '', device, req)
             : await this.readProbeAnswer(segs[1] ?? '');
         case 'probe':
           return method === 'DELETE'
@@ -105,9 +117,13 @@ export class PairDO {
   // ---- offer (per-sender, 鮮度あり) ----
 
   private async writeOffer(sender: string, req: Request): Promise<Response> {
-    if (!sender) return json(400, { error: 'NO_SENDER' });
-    const body = (await req.json()) as { sdp?: unknown; createdAt?: unknown };
+    const senderError = validateSender(sender);
+    if (senderError) return senderError;
+    const parsed = await readJsonObject(req);
+    if ('error' in parsed) return parsed.error;
+    const body = parsed.value;
     if (typeof body.sdp !== 'string') return json(400, { error: 'BAD_BODY' });
+    if (!isWithinUtf8Limit(body.sdp, MAX_SDP_BYTES)) return bodyTooLarge('sdp');
     // rere レビュー #C-06: createdAt は必ずサーバ時刻で刻む。
     // 旧実装は offerer がボディで申告した createdAt をそのまま保存し、listener 側が渡す
     // minCreatedAt (listener のローカル時計) と直接比較していた = cross-device の時計比較。
@@ -124,9 +140,10 @@ export class PairDO {
 
   private async readOffer(url: URL): Promise<Response> {
     const from = url.searchParams.get('from') ?? '';
+    if (!HEX32_RE.test(from)) return json(400, { error: 'BAD_DEVICE' });
     const minCreatedAt = Number(url.searchParams.get('minCreatedAt') ?? '0');
     const v = await this.state.storage.get<TimedValue>(`offer:${from}`);
-    if (!v || !v.data) return json(404, { error: 'NOT_FOUND' });
+    if (!v || !isWithinUtf8Limit(v.data, MAX_SDP_BYTES) || !v.data) return json(404, { error: 'NOT_FOUND' });
     // #C-06: minCreatedAt は listener のローカル時計なので、サーバ時刻との差を許容する。
     // 許容幅は /auth/token の CLOCK_SKEW と同じ 60s。offer の TTL は 1h あるので、
     // 60s ぶん緩めても「本当に古い offer」を拾う実害はない（むしろ取りこぼしの方が痛い）。
@@ -139,37 +156,51 @@ export class PairDO {
   // ---- answer (per-sender, 鮮度なし) ----
 
   private async writeAnswer(sender: string, req: Request): Promise<Response> {
-    if (!sender) return json(400, { error: 'NO_SENDER' });
-    const body = (await req.json()) as { sdp?: unknown };
+    const senderError = validateSender(sender);
+    if (senderError) return senderError;
+    const parsed = await readJsonObject(req);
+    if ('error' in parsed) return parsed.error;
+    const body = parsed.value;
     if (typeof body.sdp !== 'string') return json(400, { error: 'BAD_BODY' });
+    if (!isWithinUtf8Limit(body.sdp, MAX_SDP_BYTES)) return bodyTooLarge('sdp');
     await this.state.storage.put(`answer:${sender}`, { data: body.sdp } satisfies PlainValue);
+    await this.bumpCreatedAt(Date.now());
     return json(200, { ok: true });
   }
 
   private async readAnswer(url: URL): Promise<Response> {
     const from = url.searchParams.get('from') ?? '';
+    if (!HEX32_RE.test(from)) return json(400, { error: 'BAD_DEVICE' });
     const v = await this.state.storage.get<PlainValue>(`answer:${from}`);
-    if (!v || !v.data) return json(404, { error: 'NOT_FOUND' });
+    if (!v || !isWithinUtf8Limit(v.data, MAX_SDP_BYTES) || !v.data) return json(404, { error: 'NOT_FOUND' });
     return json(200, { data: v.data });
   }
 
   // ---- endpoint (per-sender, From 二重防護) ----
 
   private async writeEndpoint(sender: string, req: Request): Promise<Response> {
-    if (!sender) return json(400, { error: 'NO_SENDER' });
-    const body = (await req.json()) as { endpoint?: unknown };
+    const senderError = validateSender(sender);
+    if (senderError) return senderError;
+    const parsed = await readJsonObject(req);
+    if ('error' in parsed) return parsed.error;
+    const body = parsed.value;
     if (typeof body.endpoint !== 'string') return json(400, { error: 'BAD_BODY' });
+    if (!isWithinUtf8Limit(body.endpoint, MAX_ENDPOINT_BYTES)) return bodyTooLarge('endpoint');
     await this.state.storage.put(
       `endpoint:${sender}`,
       { data: body.endpoint, from: sender } satisfies EndpointValue,
     );
+    await this.bumpCreatedAt(Date.now());
     return json(200, { ok: true });
   }
 
   private async readEndpoint(url: URL): Promise<Response> {
     const from = url.searchParams.get('from') ?? '';
+    if (!HEX32_RE.test(from)) return json(400, { error: 'BAD_DEVICE' });
     const v = await this.state.storage.get<EndpointValue>(`endpoint:${from}`);
-    if (!v || !v.data) return json(404, { error: 'NOT_FOUND' });
+    if (!v || !isWithinUtf8Limit(v.data, MAX_ENDPOINT_BYTES) || !v.data || !HEX32_RE.test(v.from)) {
+      return json(404, { error: 'NOT_FOUND' });
+    }
     // storage キーが sender なので from は構造的に保証されるが、payload の from も返して
     // クライアント側の From==peer 検証 (FirebaseSignaling と同じ二重防護) を維持できるようにする。
     return json(200, { endpoint: v.data, from: v.from });
@@ -177,33 +208,70 @@ export class PairDO {
 
   // ---- probe (per-nonce) ----
 
-  private async writeProbe(prefix: 'probeOffer' | 'probeAnswer', nonce: string, req: Request): Promise<Response> {
+  private async writeProbe(
+    prefix: 'probeOffer' | 'probeAnswer',
+    nonce: string,
+    sender: string,
+    req: Request,
+  ): Promise<Response> {
+    const senderError = validateSender(sender);
+    if (senderError) return senderError;
     if (!nonce) return json(400, { error: 'NO_NONCE' });
-    const body = (await req.json()) as { sdp?: unknown };
+    if (!HEX32_RE.test(nonce)) return json(400, { error: 'BAD_NONCE' });
+    const parsed = await readJsonObject(req);
+    if ('error' in parsed) return parsed.error;
+    const body = parsed.value;
     if (typeof body.sdp !== 'string') return json(400, { error: 'BAD_BODY' });
-    await this.state.storage.put(`${prefix}:${nonce}`, { data: body.sdp, createdAt: Date.now() } satisfies TimedValue);
-    await this.bumpCreatedAt(Date.now());
+    if (!isWithinUtf8Limit(body.sdp, MAX_SDP_BYTES)) return bodyTooLarge('sdp');
+
+    const key = `${prefix}:${nonce}`;
+    // offer だけを制限すると probeAnswer:{nonce} を無制限に作れるため、両 prefix を
+    // 同じ件数上限で束縛する。同じ nonce の再送は上限到達後も上書き可能。
+    const existing = await this.state.storage.get<TimedValue>(key);
+    if (existing === undefined) {
+      const probes = await this.state.storage.list<TimedValue>({
+        prefix: `${prefix}:`,
+        limit: MAX_PROBE_OFFERS,
+      });
+      if (probes.size >= MAX_PROBE_OFFERS) {
+        return json(429, { error: 'PROBE_LIMIT', message: 'probe entry limit exceeded' });
+      }
+    }
+
+    const createdAt = Date.now();
+    await this.state.storage.put(key, { data: body.sdp, createdAt } satisfies TimedValue);
+    await this.bumpCreatedAt(createdAt);
     return json(200, { ok: true });
   }
 
   private async readProbeOffers(): Promise<Response> {
-    const map = await this.state.storage.list<TimedValue>({ prefix: 'probeOffer:' });
+    const map = await this.state.storage.list<TimedValue>({
+      prefix: 'probeOffer:',
+      limit: MAX_PROBE_OFFERS,
+    });
     const offers: { nonce: string; sdp: string }[] = [];
     for (const [key, v] of map) {
-      if (v && v.data) offers.push({ nonce: key.slice('probeOffer:'.length), sdp: v.data });
+      if (offers.length >= MAX_PROBE_OFFERS) break;
+      const nonce = key.slice('probeOffer:'.length);
+      // 旧データや直接 storage を汚された場合も、未検証値をレスポンスへ流出させない。
+      if (HEX32_RE.test(nonce) && v && v.data && isWithinUtf8Limit(v.data, MAX_SDP_BYTES)) {
+        offers.push({ nonce, sdp: v.data });
+      }
     }
     return json(200, { offers });
   }
 
   private async readProbeAnswer(nonce: string): Promise<Response> {
     if (!nonce) return json(400, { error: 'NO_NONCE' });
+    if (!HEX32_RE.test(nonce)) return json(400, { error: 'BAD_NONCE' });
     const v = await this.state.storage.get<TimedValue>(`probeAnswer:${nonce}`);
-    if (!v || !v.data) return json(404, { error: 'NOT_FOUND' });
+    if (!v || !v.data || !isWithinUtf8Limit(v.data, MAX_SDP_BYTES)) return json(404, { error: 'NOT_FOUND' });
     return json(200, { sdp: v.data });
   }
 
   private async deleteProbe(nonce: string): Promise<Response> {
     if (!nonce) return json(400, { error: 'NO_NONCE' });
+    if (!HEX32_RE.test(nonce)) return json(400, { error: 'BAD_NONCE' });
     await this.state.storage.delete(`probeOffer:${nonce}`);
     await this.state.storage.delete(`probeAnswer:${nonce}`);
     return json(200, { ok: true });
@@ -249,4 +317,21 @@ function json(status: number, body: object): Response {
     status,
     headers: { 'content-type': 'application/json' },
   });
+}
+
+/** sender は storage キーの一部なので、未指定と形式不正を区別して拒否する。 */
+function validateSender(sender: string): Response | null {
+  if (!sender) return json(400, { error: 'NO_SENDER' });
+  if (!HEX32_RE.test(sender)) return json(400, { error: 'BAD_DEVICE' });
+  return null;
+}
+
+/** UTF-8 の実バイト数で値フィールドを制限する（JavaScript の UTF-16 文字数ではない）。 */
+function isWithinUtf8Limit(value: string, maxBytes: number): boolean {
+  return new TextEncoder().encode(value).byteLength <= maxBytes;
+}
+
+/** フィールド上限超過も入力本文の過大入力として同じエラー契約で返す。 */
+function bodyTooLarge(field: string): Response {
+  return json(413, { error: 'BODY_TOO_LARGE', message: `${field} exceeds the size limit` });
 }

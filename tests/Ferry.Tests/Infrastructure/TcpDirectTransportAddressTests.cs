@@ -86,4 +86,43 @@ public class TcpDirectTransportAddressTests
 
         Assert.Equal(["10.0.0.1", "2001:db8::1", "2001:db8::2", "2001:db8::3"], result);
     }
+
+    [Theory]
+    [InlineData("192.168.1.10")]
+    [InlineData("10.0.0.20")]
+    [InlineData("169.254.10.20")]
+    [InlineData("2001:db8::20")]
+    [InlineData("fd12:3456:789a::20")]
+    public void PeerEndpointPolicy_LANとIPv6直接接続に必要なアドレスを許可する(string ip)
+    {
+        Assert.True(PeerEndpointPolicy.IsAllowedAddress(IPAddress.Parse(ip)));
+    }
+
+    [Theory]
+    [InlineData("0.0.0.0")]
+    [InlineData("127.0.0.1")]
+    [InlineData("224.0.0.1")]
+    [InlineData("255.255.255.255")]
+    [InlineData("169.254.169.254")]
+    [InlineData("169.254.170.2")]
+    [InlineData("::")]
+    [InlineData("::1")]
+    [InlineData("fe80::1")]
+    [InlineData("ff02::1")]
+    [InlineData("::ffff:127.0.0.1")]
+    [InlineData("fd00:ec2::254")]
+    public void PeerEndpointPolicy_ローカルサービスとメタデータ向けアドレスを拒否する(string ip)
+    {
+        Assert.False(PeerEndpointPolicy.IsAllowedAddress(IPAddress.Parse(ip)));
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    [InlineData(65535, true)]
+    [InlineData(65536, false)]
+    public void PeerEndpointPolicy_ポート範囲を検証する(int port, bool expected)
+    {
+        Assert.Equal(expected, PeerEndpointPolicy.IsAllowedPort(port));
+    }
 }

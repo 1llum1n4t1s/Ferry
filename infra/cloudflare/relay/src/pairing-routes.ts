@@ -27,6 +27,66 @@ import { jsonOk, jsonError, readJsonObject } from './http';
 const HEX32 = /^[a-f0-9]{32}$/;
 const PAIR_ID_RE = /^[a-f0-9]{32}_[a-f0-9]{32}$/;
 const NONCE_TTL_MS = 60 * 60 * 1000;
+const MAX_DISPLAY_NAME_LEN = 128;
+const MAX_PUBLIC_KEY_LEN = 256;
+
+/**
+ * 台帳の段階移行フラグ。
+ *
+ * Env は index.ts 側で宣言されるが、このファイルは型宣言の更新前でも単体テスト
+ * できるよう、ここでは実行時の optional field として扱う。未設定だけは既存
+ * クライアント互換の transition とし、明示された値は厳密に検証する。
+ */
+type PairLedgerMode = 'transition' | 'required';
+type RuntimeEnv = Env & { PAIR_LEDGER_MODE?: unknown };
+
+function pairLedgerMode(env: Env): PairLedgerMode | null {
+  const configured = (env as RuntimeEnv).PAIR_LEDGER_MODE;
+  if (configured === undefined) return 'transition';
+  if (configured === 'transition' || configured === 'required') return configured;
+  return null;
+}
+
+function ledgerMisconfigured(): Response {
+  return jsonError(503, 'PAIR_LEDGER_MISCONFIGURED', 'PAIR_LEDGER_MODE must be transition or required');
+}
+
+function d1Unavailable(): Response {
+  return jsonError(503, 'D1_UNAVAILABLE', 'pair ledger unavailable');
+}
+
+/** 任意文字列を上限付きで読む。未指定は旧クライアント互換で空文字とする。 */
+function boundedText(
+  body: Record<string, unknown>,
+  key: string,
+  max: number,
+  errorCode: string,
+): { value: string } | { error: Response } {
+  const value = body[key];
+  if (value === undefined) return { value: '' };
+  if (typeof value !== 'string' || value.length > max) {
+    return { error: jsonError(400, errorCode, `${key} must be a string of at most ${max} characters`) };
+  }
+  return { value };
+}
+
+function readPairNames(body: Record<string, unknown>): { nameA: string; nameB: string } | { error: Response } {
+  const nameA = boundedText(body, 'nameA', MAX_DISPLAY_NAME_LEN, 'BAD_NAME');
+  if ('error' in nameA) return nameA;
+  const nameB = boundedText(body, 'nameB', MAX_DISPLAY_NAME_LEN, 'BAD_NAME');
+  if ('error' in nameB) return nameB;
+  return { nameA: nameA.value, nameB: nameB.value };
+}
+
+/** pairId / pairs の列順を C# の Ordinal 昇順へ揃える。 */
+function orientPairNames(
+  sidA: string,
+  nameA: string,
+  sidB: string,
+  nameB: string,
+): { nameA: string; nameB: string } {
+  return sidA < sidB ? { nameA, nameB } : { nameA: nameB, nameB: nameA };
+}
 
 /** C# ConnectionService.GeneratePairId と同じ規約: deviceId を Ordinal 昇順に並べて "_" 連結。
  *  hex 小文字なら JS 文字列比較 (UTF-16 code unit) は .NET Ordinal と一致する。 */
@@ -52,23 +112,44 @@ export async function handlePairSession(req: Request, env: Env, url: URL): Promi
 
   // POST /pair/session — 自分のセッション登録
   if (method === 'POST' && segs.length === 2) {
+    // セッション発行は低頻度操作なので専用枠を本人 deviceId で消費する。
+    // 認証前に deviceId を受け取って課金すると他人の枠を焼けるため、必ず bearer 検証後に行う。
+    if (env.RATELIMIT_SESSION) {
+      try {
+        const { success } = await env.RATELIMIT_SESSION.limit({ key: claims.deviceId });
+        if (!success) return jsonError(429, 'SESSION_RATE_LIMIT', 'session rate limit exceeded');
+      } catch (e) {
+        console.error('pair/session rate limit failed', String(e));
+        return jsonError(503, 'RATE_LIMIT_UNAVAILABLE', 'rate limit unavailable');
+      }
+    }
     const parsed = await readJsonObject(req);
     if ('error' in parsed) return parsed.error;
     const body = parsed.value;
     const nonce = str(body.pairingNonce);
     if (!HEX32.test(nonce)) return jsonError(400, 'BAD_NONCE', 'pairingNonce must be 32 hex');
+    const displayName = boundedText(body, 'displayName', MAX_DISPLAY_NAME_LEN, 'BAD_DISPLAY_NAME');
+    if ('error' in displayName) return displayName.error;
+    const publicKey = boundedText(body, 'publicKey', MAX_PUBLIC_KEY_LEN, 'BAD_PUBLIC_KEY');
+    if ('error' in publicKey) return publicKey.error;
     const now = Date.now();
     // sessions と pairing_nonces は 1 つの論理操作なので batch (単一トランザクション) で書く。
     // 別々の run() だと 1 文目成功・2 文目失敗で「GET /pair/session は成功して QR も出るのに
     // /pair/create が INVALID_NONCE_MATCH を返す」中間状態が残り、再登録するまで直らない。
-    await env.DB.batch([
-      env.DB.prepare(
-        'INSERT OR REPLACE INTO sessions (sid, display_name, public_key, created_at) VALUES (?,?,?,?)',
-      ).bind(claims.deviceId, str(body.displayName), str(body.publicKey), now),
-      env.DB.prepare(
-        'INSERT OR REPLACE INTO pairing_nonces (sid, nonce, created_at) VALUES (?,?,?)',
-      ).bind(claims.deviceId, nonce, now),
-    ]);
+    if (!env.DB) return d1Unavailable();
+    try {
+      await env.DB.batch([
+        env.DB.prepare(
+          'INSERT OR REPLACE INTO sessions (sid, display_name, public_key, created_at) VALUES (?,?,?,?)',
+        ).bind(claims.deviceId, displayName.value, publicKey.value, now),
+        env.DB.prepare(
+          'INSERT OR REPLACE INTO pairing_nonces (sid, nonce, created_at) VALUES (?,?,?)',
+        ).bind(claims.deviceId, nonce, now),
+      ]);
+    } catch (e) {
+      console.error('pair/session D1 failed', String(e));
+      return d1Unavailable();
+    }
     return jsonOk({ ok: true });
   }
 
@@ -76,19 +157,32 @@ export async function handlePairSession(req: Request, env: Env, url: URL): Promi
   if (!HEX32.test(sid)) return jsonError(400, 'BAD_SID', 'sid must be 32 hex');
 
   if (method === 'GET') {
-    const row = await env.DB.prepare('SELECT display_name, public_key FROM sessions WHERE sid=?')
-      .bind(sid)
-      .first<{ display_name: string; public_key: string }>();
+    if (!env.DB) return d1Unavailable();
+    let row: { display_name: string; public_key: string } | null;
+    try {
+      row = await env.DB.prepare('SELECT display_name, public_key FROM sessions WHERE sid=?')
+        .bind(sid)
+        .first<{ display_name: string; public_key: string }>();
+    } catch (e) {
+      console.error('pair/session GET D1 failed', String(e));
+      return d1Unavailable();
+    }
     if (!row) return jsonError(404, 'NOT_FOUND', 'session not present');
     return jsonOk({ displayName: row.display_name, publicKey: row.public_key });
   }
   if (method === 'DELETE') {
     if (claims.deviceId !== sid) return jsonError(403, 'NOT_SELF', 'can only revoke own session');
     // POST と同じ理由で batch (片方だけ消えた中間状態を残さない)。
-    await env.DB.batch([
-      env.DB.prepare('DELETE FROM sessions WHERE sid=?').bind(sid),
-      env.DB.prepare('DELETE FROM pairing_nonces WHERE sid=?').bind(sid),
-    ]);
+    if (!env.DB) return d1Unavailable();
+    try {
+      await env.DB.batch([
+        env.DB.prepare('DELETE FROM sessions WHERE sid=?').bind(sid),
+        env.DB.prepare('DELETE FROM pairing_nonces WHERE sid=?').bind(sid),
+      ]);
+    } catch (e) {
+      console.error('pair/session DELETE D1 failed', String(e));
+      return d1Unavailable();
+    }
     return jsonOk({ ok: true });
   }
   return jsonError(405, 'METHOD_NOT_ALLOWED', method);
@@ -115,38 +209,94 @@ export async function handlePairCreate(req: Request, env: Env): Promise<Response
   if (!HEX32.test(sidA) || !HEX32.test(sidB)) return jsonError(400, 'BAD_SID', 'sidA/sidB must be 32 hex');
   if (sidA === sidB) return jsonError(400, 'SAME_SID', 'sidA and sidB must differ');
   if (!HEX32.test(nonceA) || !HEX32.test(nonceB)) return jsonError(400, 'BAD_NONCE', 'nonceA/nonceB must be 32 hex');
+  const names = readPairNames(body);
+  if ('error' in names) return names.error;
+  if (!env.DB) return d1Unavailable();
 
   // 両 sid の nonce を D1 で server 検証 (Ghost peer 注入防止: nonce 値一致 + 1h 以内)。
-  const errA = await verifyNonce(env, sidA, nonceA, 'A');
+  let errA: Response | null;
+  try {
+    errA = await verifyNonce(env, sidA, nonceA, 'A');
+  } catch (e) {
+    console.error('pair/create nonce A D1 failed', String(e));
+    return d1Unavailable();
+  }
   if (errA) return errA;
-  const errB = await verifyNonce(env, sidB, nonceB, 'B');
+  let errB: Response | null;
+  try {
+    errB = await verifyNonce(env, sidB, nonceB, 'B');
+  } catch (e) {
+    console.error('pair/create nonce B D1 failed', String(e));
+    return d1Unavailable();
+  }
   if (errB) return errB;
 
-  // 成立させる**前に** nonce を条件付き DELETE で消費する（単回使用を並列でも保証する）。
+  // 通知に載せる鍵も台帳の権威データから transaction 前に読む。ここで D1 が壊れている
+  // 場合は pairs/nonce の状態を進めず 503 にして、push だけ先行する事態を防ぐ。
+  let keys: { pkA: string; pkB: string };
+  try {
+    keys = await loadSessionPublicKeys(env, sidA, sidB);
+  } catch (e) {
+    console.error('pair/create public key D1 failed', String(e));
+    return d1Unavailable();
+  }
+
+  // 成立させる**前に** nonce を条件付き DELETE で消費し、正式 pairs upsert と同じ
+  // D1 batch (単一 transaction) に含める。batch が成功してからだけ inbox へ push する。
   //
   // 旧実装は verifyNonce の SELECT で検証 → notifyPairEstablished → その後に `DELETE WHERE sid=?`
   // という順序だったため、検証と消費が原子的でなかった。同じ sid/nonce への並列 POST は両方とも
   // SELECT を通過でき、双方がペア成立を push できる（QR 撮影直後の二重送信や、nonce を握った
   // 攻撃者による同時リプレイ）。「サーバ権威で単回使用」というこの関数の契約が並列下で破れていた。
   //
-  // 対策は「検証してから消す」ではなく「消せた側だけが成立する」への反転。DELETE の WHERE に
-  // nonce 値を入れることで compare-and-swap になり、D1 batch は単一トランザクションなので
-  // 両 sid の消費は不可分に決まる。changes!==1 は他リクエストが先に消費した＝競合に負けた側で、
-  // notify せずに 409 を返す（負けた側が push を出さないことが単回使用の実体）。
+  // 対策は両 nonce を 1 本の UPDATE でランダムな claim 値へ同時に置換し、claim を取得できた
+  // batch だけが pairs を書ける形にする。DELETE 2 本を先に並べるだけでは、A-B と A-C の競合で
+  // A を先に失った負け側も C だけを消費し、さらに後続 INSERT が実行される余地がある。
+  // 1 statement の UPDATE は、両行が元 nonce のまま存在するときだけ 2 行とも claim するため、
+  // 同一ペアだけでなく相手違いの並行要求でも勝者は 1 本に決まる。
   //
   // verifyNonce（SELECT）は残す。エラーコード SESSION_NOT_FOUND / INVALID_NONCE_MATCH /
   // EXPIRED_SESSION の返し分けはクライアントとテストが依存する外部契約で、条件付き DELETE 一発に
   // 畳むとすべて 409 に潰れてしまうため。検証＝診断、DELETE＝認可、と役割を分ける。
-  const consumed = await env.DB.batch([
-    env.DB.prepare('DELETE FROM pairing_nonces WHERE sid=? AND nonce=?').bind(sidA, nonceA),
-    env.DB.prepare('DELETE FROM pairing_nonces WHERE sid=? AND nonce=?').bind(sidB, nonceB),
-  ]);
-  if (changesOf(consumed[0]) !== 1 || changesOf(consumed[1]) !== 1) {
+  const pairingId = derivePairId(sidA, sidB);
+  const orientedNames = orientPairNames(sidA, names.nameA, sidB, names.nameB);
+  const createdAt = Date.now();
+  const nonceClaim = crypto.randomUUID().replaceAll('-', '');
+  const nonceCutoff = createdAt - NONCE_TTL_MS;
+  let consumed: unknown[];
+  try {
+    consumed = await env.DB.batch([
+      env.DB.prepare(
+        `UPDATE pairing_nonces SET nonce=?
+         WHERE sid IN (?,?)
+           AND EXISTS (SELECT 1 FROM pairing_nonces WHERE sid=? AND nonce=? AND created_at>=?)
+           AND EXISTS (SELECT 1 FROM pairing_nonces WHERE sid=? AND nonce=? AND created_at>=?)`,
+      ).bind(nonceClaim, sidA, sidB, sidA, nonceA, nonceCutoff, sidB, nonceB, nonceCutoff),
+      // claim した 2 行が同じ batch 内にある場合だけ正式台帳を upsert する。競合に負けた
+      // batch は claim 行が 0 件なので、この INSERT も changes=0 のまま副作用を残さない。
+      env.DB.prepare(
+        `INSERT OR REPLACE INTO pairs (pair_id, name_a, name_b, created_at)
+         SELECT ?,?,?,?
+         WHERE (SELECT COUNT(*) FROM pairing_nonces WHERE sid IN (?,?) AND nonce=?)=2`,
+      ).bind(pairingId, orientedNames.nameA, orientedNames.nameB, createdAt, sidA, sidB, nonceClaim),
+      env.DB.prepare(
+        'DELETE FROM pairing_nonces WHERE sid IN (?,?) AND nonce=?',
+      ).bind(sidA, sidB, nonceClaim),
+    ]);
+  } catch (e) {
+    console.error('pair/create D1 transaction failed', String(e));
+    return d1Unavailable();
+  }
+  if (changesOf(consumed[0]) !== 2) {
     return jsonError(409, 'NONCE_ALREADY_CONSUMED', 'pairing nonce was already consumed');
   }
+  // claim 取得後の INSERT/DELETE は同一 transaction 内では必ず 1/2 行になる。不変条件が
+  // 崩れた場合は push せず fail closed にし、台帳無しの成立をクライアントへ返さない。
+  if (changesOf(consumed[1]) !== 1 || changesOf(consumed[2]) !== 2) return d1Unavailable();
 
-  // 公開鍵は body.pkA / body.pkB ではなく D1 の権威データを使う (#C-32)
-  const pairingId = await notifyPairEstablished(env, sidA, str(body.nameA), sidB, str(body.nameB));
+  // 公開鍵は body.pkA / body.pkB ではなく D1 の権威データを使う (#C-32)。正式台帳と
+  // nonce 消費の transaction が成功した後にだけ両 DeviceDO へ push する。
+  await notifyPairEstablished(env, sidA, names.nameA, sidB, names.nameB, keys);
 
   // （消費は上の条件付き DELETE で完了済み）単回使用がサーバ側で保証されることの背景:
   // 旧実装は verifyNonce が SELECT のみで、消費はクライアント側の revoke
@@ -223,8 +373,9 @@ async function notifyPairEstablished(
   nameA: string,
   sidB: string,
   nameB: string,
+  suppliedKeys?: { pkA: string; pkB: string },
 ): Promise<string> {
-  const keys = await loadSessionPublicKeys(env, sidA, sidB);
+  const keys = suppliedKeys ?? (await loadSessionPublicKeys(env, sidA, sidB));
   const pairingId = derivePairId(sidA, sidB);
   const event = {
     pairingId,
@@ -273,14 +424,45 @@ export async function handlePairLink(req: Request, env: Env): Promise<Response> 
   const sidB = str(body.sidB);
   if (!HEX32.test(sidB)) return jsonError(400, 'BAD_SID', 'sidB must be 32 hex');
   if (sidA === sidB) return jsonError(400, 'SAME_SID', 'sidB must differ from caller deviceId');
+  const names = readPairNames(body);
+  if ('error' in names) return names.error;
+  if (!env.DB) return d1Unavailable();
 
-  const sessionErr = await verifySessionActive(env, sidB, 'sidB');
+  let sessionErr: Response | null;
+  try {
+    sessionErr = await verifySessionActive(env, sidB, 'sidB');
+  } catch (e) {
+    console.error('pair/link session D1 failed', String(e));
+    return d1Unavailable();
+  }
   if (sessionErr) return sessionErr;
+
+  let keys: { pkA: string; pkB: string };
+  try {
+    keys = await loadSessionPublicKeys(env, sidA, sidB);
+  } catch (e) {
+    console.error('pair/link public key D1 failed', String(e));
+    return d1Unavailable();
+  }
 
   // 公開鍵は body.pkA / body.pkB ではなく D1 の権威データを使う (#C-32)。
   // /pair/link は sidA=claims.deviceId が保証される一方で pkA/pkB は呼び出し元申告だったため、
   // 相手側 (sidB) に渡る自分の公開鍵を任意値にできる状態だった。
-  const pairingId = await notifyPairEstablished(env, sidA, str(body.nameA), sidB, str(body.nameB));
+  const pairingId = derivePairId(sidA, sidB);
+  const orientedNames = orientPairNames(sidA, names.nameA, sidB, names.nameB);
+  try {
+    await env.DB.prepare(
+      'INSERT OR REPLACE INTO pairs (pair_id, name_a, name_b, created_at) VALUES (?,?,?,?)',
+    )
+      .bind(pairingId, orientedNames.nameA, orientedNames.nameB, Date.now())
+      .run();
+  } catch (e) {
+    console.error('pair/link pairs upsert D1 failed', String(e));
+    return d1Unavailable();
+  }
+
+  // 正式台帳への upsert 成功後にだけ、両 DeviceDO へ成立イベントを push する。
+  await notifyPairEstablished(env, sidA, names.nameA, sidB, names.nameB, keys);
   return jsonOk({ ok: true, pairingId });
 }
 
@@ -294,32 +476,85 @@ export async function handlePairs(req: Request, env: Env, url: URL): Promise<Res
   const claims = await authBearer(req, env);
   if (!claims) return jsonError(401, 'BAD_TOKEN', 'cfToken invalid or expired');
   const [a, b] = pairId.split('_');
+  if (a >= b) return jsonError(400, 'BAD_PAIR_ID', 'pairId must use canonical deviceId order');
   if (claims.deviceId !== a && claims.deviceId !== b) {
     return jsonError(403, 'NOT_PARTICIPANT', 'deviceId is not a participant of pairId');
   }
   const method = req.method;
 
   if (method === 'PUT') {
+    const mode = pairLedgerMode(env);
+    if (!mode) return ledgerMisconfigured();
+    // 旧クライアントの backfill を transition 中だけ受ける経路も、本人 deviceId
+    // で必ず低頻度レート制限を消費する。未認証/当事者外の入力には課金しない。
+    if (env.RATELIMIT_DEVICE) {
+      try {
+        const { success } = await env.RATELIMIT_DEVICE.limit({ key: claims.deviceId });
+        if (!success) return jsonError(429, 'DEVICE_RATE_LIMIT', 'deviceId rate limit exceeded');
+      } catch (e) {
+        console.error('pairs PUT rate limit failed', String(e));
+        return jsonError(503, 'RATE_LIMIT_UNAVAILABLE', 'rate limit unavailable');
+      }
+    }
     const parsed = await readJsonObject(req);
     if ('error' in parsed) return parsed.error;
-    const body = parsed.value;
-    const createdAt = typeof body.createdAt === 'number' ? body.createdAt : Date.now();
-    await env.DB.prepare(
-      'INSERT OR REPLACE INTO pairs (pair_id, name_a, name_b, created_at) VALUES (?,?,?,?)',
-    )
-      .bind(pairId, str(body.nameA), str(body.nameB), createdAt)
-      .run();
-    return jsonOk({ ok: true });
+    const names = readPairNames(parsed.value);
+    if ('error' in names) return names.error;
+    if (!env.DB) return d1Unavailable();
+    const createdAt = Date.now();
+
+    // required では、新しいペアリング経路が先に作った正式行だけを更新する。
+    // UPDATE の changes=0 は proof (正式ペア成立) が無いことを意味し、任意 pairId
+    // を bearer だけで注入できないよう 409 で止める。
+    try {
+      const updated = await env.DB.prepare(
+        'UPDATE pairs SET name_a=?, name_b=?, created_at=? WHERE pair_id=?',
+      )
+        .bind(names.nameA, names.nameB, createdAt, pairId)
+        .run();
+      if (changesOf(updated) !== 0) return jsonOk({ ok: true });
+
+      if (mode === 'required') {
+        return jsonError(409, 'PAIR_PROOF_REQUIRED', 'pair must be created by an authenticated pairing flow');
+      }
+
+      // transition は出荷済み legacy client の pairing 完了後 PUT を backfill として
+      // 受ける。INSERT は本人 + canonical pairId + device rate limit の三条件を通過した
+      // 後にだけ行い、createdAt はクライアント申告値を使わず server 時刻にする。
+      await env.DB.prepare(
+        'INSERT OR IGNORE INTO pairs (pair_id, name_a, name_b, created_at) VALUES (?,?,?,?)',
+      )
+        .bind(pairId, names.nameA, names.nameB, createdAt)
+        .run();
+      console.log('pairs PUT legacy backfill accepted', JSON.stringify({ mode: 'transition' }));
+      return jsonOk({ ok: true });
+    } catch (e) {
+      console.error('pairs PUT D1 failed', String(e));
+      return d1Unavailable();
+    }
   }
   if (method === 'GET') {
-    const row = await env.DB.prepare('SELECT pair_id, name_a, name_b, created_at FROM pairs WHERE pair_id=?')
-      .bind(pairId)
-      .first<{ pair_id: string; name_a: string; name_b: string; created_at: number }>();
+    if (!env.DB) return d1Unavailable();
+    let row: { pair_id: string; name_a: string; name_b: string; created_at: number } | null;
+    try {
+      row = await env.DB.prepare('SELECT pair_id, name_a, name_b, created_at FROM pairs WHERE pair_id=?')
+        .bind(pairId)
+        .first<{ pair_id: string; name_a: string; name_b: string; created_at: number }>();
+    } catch (e) {
+      console.error('pairs GET D1 failed', String(e));
+      return d1Unavailable();
+    }
     if (!row) return jsonError(404, 'NOT_FOUND', 'pair not present'); // PairSyncService の remote-unpair 検出
     return jsonOk({ pairId: row.pair_id, nameA: row.name_a, nameB: row.name_b, createdAt: row.created_at });
   }
   if (method === 'DELETE') {
-    await env.DB.prepare('DELETE FROM pairs WHERE pair_id=?').bind(pairId).run();
+    if (!env.DB) return d1Unavailable();
+    try {
+      await env.DB.prepare('DELETE FROM pairs WHERE pair_id=?').bind(pairId).run();
+    } catch (e) {
+      console.error('pairs DELETE D1 failed', String(e));
+      return d1Unavailable();
+    }
     // 相手へ unpair を push (D1 ポーリング線形増殖を避ける・realtime 批判 §0-5)。
     const peer = claims.deviceId === a ? b : a;
     await notifyInbox(env, peer, { type: 'unpair', pairingId: pairId, createdAt: Date.now() });
@@ -327,4 +562,3 @@ export async function handlePairs(req: Request, env: Env, url: URL): Promise<Res
   }
   return jsonError(405, 'METHOD_NOT_ALLOWED', method);
 }
-

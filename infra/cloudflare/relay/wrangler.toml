@@ -2,13 +2,19 @@ name = "ferry-relay"
 main = "src/index.ts"
 compatibility_date = "2026-05-26"
 
-# Workers Paid プラン必須 (Durable Objects 利用のため)。
-# Workers Paid $5/月は RealTimeTranslator と共有想定。Ferry のリレー DO 自体は無料枠で収まる試算。
+# Durable Objects の料金・含有枠は契約プランと実使用で変わるため、固定額や無料枠への
+# 収まりをこの設定では断言しない。RelayDO は WebSocket Hibernation API を使用する。
+# 公式: https://developers.cloudflare.com/durable-objects/best-practices/websockets/
 
 # workers.dev サブドメイン (ferry-relay.kagayoi.workers.dev) と Preview URL を明示的に無効化。
 # Custom Domain (watashiba.kagayoi.com) でのみ公開し、口を増やさない。
 workers_dev = false
 preview_urls = false
+
+# sessions / pairing_nonces は 1h の一時データ。日次でまとめて削除し、短周期の
+# scheduled invocation は増やさない（pairs は永続 SSoT のため削除しない）。
+[triggers]
+crons = ["17 3 * * *"]
 
 # === CF 単独完結移行 Step 4: Bridge QR ページを Workers Static Assets で配信 ===
 # public/ の index.html + bridge.js を Worker より先に配信し、API パス
@@ -35,6 +41,12 @@ class_name = "PairDO"
 name = "DEVICE"
 class_name = "DeviceDO"
 
+# Relay の admission / quota 予約を一元化する SQLite-backed DO。
+# global breaker と月次・セッション単位の quota を強整合で予約する。
+[[durable_objects.bindings]]
+name = "QUOTA"
+class_name = "RelayQuotaDO"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RelayDO"]
@@ -46,6 +58,33 @@ new_sqlite_classes = ["PairDO"]
 [[migrations]]
 tag = "v3"
 new_sqlite_classes = ["DeviceDO"]
+
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["RelayQuotaDO"]
+
+# === Relay admission / quota policy ===
+# 値は Worker 側で検証・数値化するが、Wrangler には全て文字列として渡す。
+[vars]
+RELAY_AUTH_MODE = "optional"
+PAIR_LEDGER_MODE = "transition"
+RELAY_CIRCUIT_OPEN = "0"
+RELAY_MAX_CONCURRENT_ROOMS = "16"
+RELAY_MONTHLY_BYTES = "536870912000"
+RELAY_MONTHLY_MESSAGES = "10000000"
+RELAY_MONTHLY_DURATION_SECONDS = "1800000"
+RELAY_AUTH_SESSION_BYTES = "10737418240"
+RELAY_AUTH_SESSION_MESSAGES = "200000"
+RELAY_AUTH_SESSION_SECONDS = "10800"
+RELAY_AUTH_IDLE_SECONDS = "300"
+RELAY_LEGACY_MONTHLY_BYTES = "10737418240"
+RELAY_LEGACY_MONTHLY_MESSAGES = "200000"
+RELAY_LEGACY_MONTHLY_DURATION_SECONDS = "36000"
+RELAY_LEGACY_SESSION_BYTES = "268435456"
+RELAY_LEGACY_SESSION_MESSAGES = "8192"
+RELAY_LEGACY_SESSION_SECONDS = "900"
+RELAY_LEGACY_IDLE_SECONDS = "120"
+RELAY_MAX_FRAME_BYTES = "1048576"
 
 # === カスタムドメイン ===
 # `watashiba.kagayoi.com` は Cloudflare Zone `kagayoi.com` (Yuro 所有) 配下。
@@ -101,9 +140,10 @@ type = "ratelimit"
 namespace_id = "1004"
 simple = { limit = 600, period = 60 }
 
-# `/ferry-relay` WebSocket 入室専用枠。入室は無認可（Bearer 検証は普及待ち）なので IP でしか
-# 絞れない。RATELIMIT_IP と共有すると、リレー乱打が /auth/token・/pair/create まで 429 で
-# 巻き添えにするため枠を分ける（RATELIMIT_SIG を分けたのと同じ理由）。
+# `/ferry-relay` WebSocket 入室の補助枠。RELAY_AUTH_MODE=optional の段階移行では有効な
+# Bearer + D1 participant 検証と RelayQuotaDO が主制御で、Rate Limit は IP 単位の乱打を
+# 抑える補助に留める。RATELIMIT_IP と共有すると、リレー乱打が /auth/token・/pair/create
+# まで 429 で巻き添えにするため枠を分ける（RATELIMIT_SIG を分けたのと同じ理由）。
 # 1 転送あたりの Upgrade は offer/answer 各 1 回。再接続・複数ピア・同一 NAT 配下の複数台を
 # 見込んでも 60/60s なら正規利用は触れない。
 [[unsafe.bindings]]

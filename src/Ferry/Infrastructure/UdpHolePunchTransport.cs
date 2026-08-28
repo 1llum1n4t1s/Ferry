@@ -141,7 +141,12 @@ public sealed class UdpHolePunchTransport : ITransport
     /// <param name="ct">キャンセルトークン（タイムアウト制御用）。</param>
     public async Task HolePunchAsync(string remoteIp, int remotePort, CancellationToken ct = default)
     {
-        _remoteEp = new IPEndPoint(IPAddress.Parse(remoteIp), remotePort);
+        if (!PeerEndpointPolicy.IsAllowedPort(remotePort))
+            throw new ArgumentOutOfRangeException(nameof(remotePort), "UDP 接続先ポートが許可範囲外です");
+        if (!IPAddress.TryParse(remoteIp, out var address) || !PeerEndpointPolicy.IsAllowedAddress(address))
+            throw new ArgumentException("不正または許可されていない UDP 接続先です", nameof(remoteIp));
+
+        _remoteEp = new IPEndPoint(address, remotePort);
         Util.Logger.Log($"UDP ホールパンチ開始: {Util.Logger.MaskIp(remoteIp)}:{remotePort}");
 
         // 受信ループを先に起動（PUNCH_ACK を受け取るため）

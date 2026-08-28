@@ -15,9 +15,54 @@ import type { Env } from './index';
 import { hashPairId } from './index';
 import { verifySessionToken } from './auth';
 import { notifyInbox } from './device-routes';
-import { jsonError } from './http';
+import { jsonError, readTextBody } from './http';
 
 const PAIR_ID_RE = /^[a-f0-9]{32}_[a-f0-9]{32}$/;
+type PairLedgerMode = 'transition' | 'required';
+type RuntimeEnv = Env & { PAIR_LEDGER_MODE?: unknown };
+
+function pairLedgerMode(env: Env): PairLedgerMode | null {
+  const configured = (env as RuntimeEnv).PAIR_LEDGER_MODE;
+  if (configured === undefined) return 'transition';
+  if (configured === 'transition' || configured === 'required') return configured;
+  return null;
+}
+
+function d1Unavailable(): Response {
+  return jsonError(503, 'D1_UNAVAILABLE', 'pair ledger unavailable');
+}
+
+function ledgerMisconfigured(): Response {
+  return jsonError(503, 'PAIR_LEDGER_MISCONFIGURED', 'PAIR_LEDGER_MODE must be transition or required');
+}
+
+/** `/sig` から PairDO を起こす前に正式 pairs の存在を確認する。 */
+async function ensurePairRegistered(env: Env, pairId: string): Promise<Response | null> {
+  const mode = pairLedgerMode(env);
+  if (!mode) return ledgerMisconfigured();
+  // transition の旧テスト/旧デプロイで binding がまだ無い場合だけ互換許可する。
+  // required は台帳無しで接続を許可すると PairDO 量産が再発するため fail closed。
+  if (!env.DB) {
+    if (mode === 'required') return d1Unavailable();
+    console.log('sig pair ledger unavailable; legacy transition allowed', JSON.stringify({ mode }));
+    return null;
+  }
+
+  try {
+    const row = await env.DB.prepare('SELECT pair_id FROM pairs WHERE pair_id=?')
+      .bind(pairId)
+      .first<{ pair_id: string }>();
+    if (row) return null;
+    if (mode === 'required') {
+      return jsonError(404, 'PAIR_NOT_FOUND', 'pair is not registered');
+    }
+    console.log('sig unregistered pair; legacy transition allowed', JSON.stringify({ mode }));
+    return null;
+  } catch (e) {
+    console.error('sig pair ledger D1 failed', String(e));
+    return d1Unavailable();
+  }
+}
 
 /** ctx.waitUntil だけを使うので最小形で受ける（テストからスタブを渡せる）。 */
 type WaitUntil = Pick<ExecutionContext, 'waitUntil'>;
@@ -41,9 +86,16 @@ export async function handleSignaling(req: Request, env: Env, url: URL, ctx?: Wa
   // 2. pairId 形式 + 当事者検証
   if (!PAIR_ID_RE.test(pairId)) return jsonError(400, 'BAD_PAIR_ID', 'pairId must be {32hex}_{32hex}');
   const [a, b] = pairId.split('_');
+  if (a >= b) return jsonError(400, 'BAD_PAIR_ID', 'pairId must use canonical deviceId order');
   if (claims.deviceId !== a && claims.deviceId !== b) {
     return jsonError(403, 'NOT_PARTICIPANT', 'deviceId is not a participant of pairId');
   }
+
+  // Bearer + participant 認可を通過した後、PairDO の idFromName より前に D1 台帳を
+  // 確認する。required では未登録 pair を 404 で止め、transition だけ旧 client の
+  // signaling を互換許可する。D1 例外は DO を起こさず 503 (fail closed) にする。
+  const ledgerError = await ensurePairRegistered(env, pairId);
+  if (ledgerError) return ledgerError;
 
   // 2.5. rere レビュー #C-31: device-scoped rate limit。
   // 当事者検証は「pairId の 2 要素の一方が自分」しか見ず D1 `pairs` の実在を確認しないため、
@@ -72,7 +124,9 @@ export async function handleSignaling(req: Request, env: Env, url: URL, ctx?: Wa
   fwdHeaders.set('X-Ferry-Device', claims.deviceId);
   let body: string | undefined;
   if (req.method === 'POST') {
-    body = await req.text();
+    const bounded = await readTextBody(req);
+    if ('error' in bounded) return bounded.error;
+    body = bounded.text;
     fwdHeaders.set('content-type', 'application/json');
   }
   const fwdUrl = `https://do/${rest}${url.search}`;

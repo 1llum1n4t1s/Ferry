@@ -55,9 +55,7 @@ public sealed class WebSocketRelayTransport : ITransport
     /// <param name="peerId">複数ペア同時接続対応 Stage 1: 受信元 peerId(SessionId) を DataReceivedEventArgs に付帯させるため。
     /// テスト互換のため既定値 ""（後段の逆引きフォールバック用）を許容する。</param>
     /// <param name="bearerTokenAsync">リレー接続に付与する cfToken の取得デリゲート。
-    /// サーバ側 `/ferry-relay` は現時点でこの Bearer を検証しないため、これは将来の
-    /// 「Bearer 必須 + pairId 当事者検証」への移行を先行させるための送出のみ
-    /// （出荷済みクライアントを壊さずに必須化へ進むための普及待ち）。null なら従来どおり付けない。</param>
+    /// null、空文字、空白、取得例外は接続前に拒否する（Bearer なしでリレーへ接続しない）。</param>
     public WebSocketRelayTransport(string relayUrl, string pairId, string role, string peerId = "",
         Func<Task<string>>? bearerTokenAsync = null)
     {
@@ -76,6 +74,33 @@ public sealed class WebSocketRelayTransport : ITransport
     {
         Util.Logger.Log($"WebSocket リレー接続開始: {_relayUrl}, pairId={Util.Logger.MaskPairId(_pairId)}, role={_role}");
 
+        // RelayDO は pairId を知る第三者にも入室を許していた期間があるため、認証情報が
+        // 取れない状態で実データ経路へフォールバックしてはいけない。トークン取得は
+        // ClientWebSocket の生成・接続より前に行い、失敗時はネットワークへ触れずに終了する。
+        ct.ThrowIfCancellationRequested();
+        if (_bearerTokenAsync == null)
+            throw new InvalidOperationException("リレー用 cfToken の取得デリゲートが未設定のため接続を中止しました");
+
+        string bearerToken;
+        try
+        {
+            bearerToken = await _bearerTokenAsync().ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException("リレー用 cfToken の取得に失敗したため接続を中止しました", ex);
+        }
+
+        if (string.IsNullOrWhiteSpace(bearerToken))
+            throw new InvalidOperationException("リレー用 cfToken が空のため接続を中止しました");
+
+        bearerToken = bearerToken.Trim();
+        ct.ThrowIfCancellationRequested();
+
         _ws = new ClientWebSocket();
         _ws.Options.KeepAliveInterval = TimeSpan.FromSeconds(15);
         // rere レビュー #C-23: KeepAliveInterval だけでは .NET は Ping を送るものの Pong 応答を
@@ -85,24 +110,8 @@ public sealed class WebSocketRelayTransport : ITransport
         // リレー受信中に経路が black-hole 化すると UI が InProgress のまま無期限に固まっていた。
         _ws.Options.KeepAliveTimeout = TimeSpan.FromSeconds(20);
 
-        // cfToken を Bearer で付与する（/inbox と同じく ClientWebSocket は任意ヘッダを載せられる）。
-        // サーバ側 /ferry-relay は現時点でこれを検証しない = 今日のセキュリティは変わらない。
-        // 目的は「Bearer を送るクライアント」を先に行き渡らせ、後日サーバ側で必須化しても
-        // 出荷済みクライアントのリレー転送を落とさずに済む状態を作ること。取得失敗は無視して
-        // 従来どおり接続する（トークンが無いことで転送そのものを止めない）。
-        if (_bearerTokenAsync != null)
-        {
-            try
-            {
-                var token = await _bearerTokenAsync();
-                if (!string.IsNullOrEmpty(token))
-                    _ws.Options.SetRequestHeader("Authorization", "Bearer " + token);
-            }
-            catch (Exception ex)
-            {
-                Util.Logger.Log($"リレー用 cfToken の取得に失敗（Bearer なしで続行）: {ex.Message}", Util.LogLevel.Debug);
-            }
-        }
+        // cfToken は URL クエリへ入れず、WebSocket の HTTP upgrade にだけ Bearer として付与する。
+        _ws.Options.SetRequestHeader("Authorization", "Bearer " + bearerToken);
 
         // リレーサーバーに接続（URL にルーム情報を含める）
         var uri = new Uri($"{_relayUrl}?pairId={Uri.EscapeDataString(_pairId)}&role={Uri.EscapeDataString(_role)}");

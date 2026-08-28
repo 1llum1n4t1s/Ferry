@@ -16,6 +16,18 @@ public class UdpHolePunchTransportTests
     // PUNCH_ACK の fire-and-forget 送出はここへ飛ぶが失敗は握りつぶされるので状態遷移に影響しない。
     private static IPEndPoint FakeEp() => new(IPAddress.Parse("203.0.113.5"), 50000);
 
+    [Theory]
+    [InlineData("127.0.0.1")]
+    [InlineData("169.254.169.254")]
+    [InlineData("::1")]
+    public async Task HolePunchAsyncは許可されない接続先を送信前に拒否する(string remoteIp)
+    {
+        using var transport = new UdpHolePunchTransport();
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            transport.HolePunchAsync(remoteIp, 50000, TestContext.Current.CancellationToken));
+    }
+
     [Fact]
     public void PUNCH受信だけでは確立しない_双方向確認待ち()
     {

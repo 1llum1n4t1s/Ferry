@@ -111,17 +111,26 @@ public sealed class TcpDirectTransport : ITransport
     /// <param name="ct">キャンセルトークン。</param>
     public async Task ConnectAsync(string[] ips, int port, CancellationToken ct = default)
     {
+        if (!PeerEndpointPolicy.IsAllowedPort(port))
+            throw new ArgumentOutOfRangeException(nameof(port), "TCP 接続先ポートが許可範囲外です");
+
         Util.Logger.Log($"TCP 接続試行: {string.Join(", ", ips)}:{port}");
 
         Exception? lastException = null;
 
         foreach (var ip in ips)
         {
+            if (!IPAddress.TryParse(ip, out var address) || !PeerEndpointPolicy.IsAllowedAddress(address))
+            {
+                Util.Logger.Log("TCP 接続先を拒否: 不正または許可されていない IP アドレス", Util.LogLevel.Warning);
+                lastException = new ArgumentException("不正または許可されていない TCP 接続先です", nameof(ips));
+                continue;
+            }
+
             try
             {
                 // IPv4/IPv6 混在リストに対応するため、アドレスファミリに合わせてソケットを作る
                 // （パラメータなしの new TcpClient() は IPv4 ソケット固定で IPv6 宛てに接続できない）
-                var address = IPAddress.Parse(ip);
                 var client = new TcpClient(address.AddressFamily);
                 try
                 {

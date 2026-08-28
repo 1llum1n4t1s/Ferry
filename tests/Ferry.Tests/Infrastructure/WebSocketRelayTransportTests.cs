@@ -83,6 +83,50 @@ public class WebSocketRelayTransportTests
     }
 
     [Fact]
+    public async Task Bearer取得デリゲート未設定ならWebSocket接続前に失敗する()
+    {
+        var transport = new WebSocketRelayTransport(
+            "ws://ferry-relay.invalid.example/ferry-relay", "pair_nx", "offer");
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            transport.ConnectAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("cfToken", ex.Message);
+        Assert.False(transport.IsConnected);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task Bearerが空ならWebSocket接続前に失敗する(string token)
+    {
+        var transport = new WebSocketRelayTransport(
+            "ws://ferry-relay.invalid.example/ferry-relay", "pair_nx", "offer",
+            bearerTokenAsync: () => Task.FromResult(token));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            transport.ConnectAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("cfToken", ex.Message);
+        Assert.False(transport.IsConnected);
+    }
+
+    [Fact]
+    public async Task Bearer取得例外ならWebSocket接続前に失敗する()
+    {
+        var transport = new WebSocketRelayTransport(
+            "ws://ferry-relay.invalid.example/ferry-relay", "pair_nx", "offer",
+            bearerTokenAsync: () => throw new HttpRequestException("auth failed"));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            transport.ConnectAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("cfToken", ex.Message);
+        Assert.IsType<HttpRequestException>(ex.InnerException);
+        Assert.False(transport.IsConnected);
+    }
+
+    [Fact]
     public void 受信フレームバッファは暗号封筒込みのチャンクメッセージ1個を単一フレームで収容できる()
     {
         // リレー受信のホットパス (単一フレーム完結) が実際に通ることを固定する。

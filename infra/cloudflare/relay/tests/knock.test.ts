@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleSignaling } from '../src/signaling-routes';
-import { DeviceDO } from '../src/devicedo';
+import { DeviceDO, INBOX_MAX_CONNECTIONS } from '../src/devicedo';
 import { mintSessionToken } from '../src/auth';
 import type { Env } from '../src/index';
 
@@ -126,19 +126,81 @@ describe('handleSignaling 接続ノック', () => {
 function makeFakeState() {
   const store = new Map<string, unknown>();
   const putSpy = vi.fn(async (k: string, v: unknown) => void store.set(k, v));
+  const deleteSpy = vi.fn(async (k: string) => {
+    store.delete(k);
+    return true;
+  });
+  const deleteAllSpy = vi.fn(async () => store.clear());
+  let alarm: number | null = null;
+  const getAlarmSpy = vi.fn(async () => alarm);
+  const setAlarmSpy = vi.fn(async (scheduledTime: number | Date) => {
+    alarm = typeof scheduledTime === 'number' ? scheduledTime : scheduledTime.getTime();
+  });
   const sent: string[] = [];
   const fakeWs = { readyState: 1, send: (m: string) => sent.push(m) };
   const state = {
     storage: {
       get: async (k: string) => store.get(k),
       put: putSpy,
-      delete: async (k: string) => void store.delete(k),
+      delete: deleteSpy,
+      deleteAll: deleteAllSpy,
+      getAlarm: getAlarmSpy,
+      setAlarm: setAlarmSpy,
     },
     getWebSockets: () => [fakeWs],
     acceptWebSocket: (_: unknown) => {},
   };
-  return { state, putSpy, sent, store };
+  return { state, putSpy, deleteSpy, deleteAllSpy, getAlarmSpy, setAlarmSpy, sent, store };
 }
+
+function installFakeWebSocketPair(flushed: string[]): () => void {
+  const globals = globalThis as unknown as Record<string, unknown>;
+  const previous = globals.WebSocketPair;
+  globals.WebSocketPair = class {
+    0 = {};
+    1 = { send: (message: string) => flushed.push(message) };
+  };
+  return () => {
+    if (previous === undefined) delete globals.WebSocketPair;
+    else globals.WebSocketPair = previous;
+  };
+}
+
+function installFakeResponse(): () => void {
+  const globals = globalThis as unknown as Record<string, unknown>;
+  const previous = globals.Response;
+  globals.Response = class {
+    readonly status: number;
+    readonly webSocket: unknown;
+
+    constructor(_body: unknown, init: { status?: number; webSocket?: unknown } = {}) {
+      this.status = init.status ?? 200;
+      this.webSocket = init.webSocket;
+    }
+  };
+  return () => {
+    globals.Response = previous;
+  };
+}
+
+describe('DeviceDO inbox connection 上限', () => {
+  it('同一 device の live inbox が4本なら5本目を accept 前に拒否する', async () => {
+    const { state } = makeFakeState();
+    state.getWebSockets = () => Array.from(
+      { length: INBOX_MAX_CONNECTIONS },
+      () => ({ readyState: 1, send: () => undefined }),
+    );
+    vi.stubGlobal('WebSocket', { OPEN: 1, CONNECTING: 0, CLOSED: 3 });
+    try {
+      const dev = new DeviceDO(state as never, {});
+      const response = await (dev as unknown as { openInbox: () => Promise<Response> }).openInbox();
+      expect(response.status).toBe(429);
+      await expect(response.json()).resolves.toMatchObject({ error: 'INBOX_CONNECTION_LIMIT' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
 
 describe('DeviceDO.notify の knock transient 化', () => {
   it('type=knock は storage に積まず WS にだけ送る', async () => {
@@ -208,5 +270,96 @@ describe('DeviceDO.notify の knock transient 化', () => {
     expect(inbox.filter((x) => x.pairingId === 'p2')).toHaveLength(1);
     expect(inbox.filter((x) => x.type === 'unpair')).toHaveLength(1);
     expect(inbox).toHaveLength(3);
+  });
+
+  it('openInbox は stale 行を storage から prune して fresh 行だけ flush する', async () => {
+    const now = 1_800_000_000_000;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const { state, putSpy, deleteSpy, store, setAlarmSpy } = makeFakeState();
+    const stale = { pairingId: 'stale', createdAt: now - 60 * 60 * 1000 };
+    const fresh = { pairingId: 'fresh', createdAt: now - 1_000 };
+    store.set('inbox', [stale, fresh]);
+    const flushed: string[] = [];
+    const restorePair = installFakeWebSocketPair(flushed);
+    const restoreResponse = installFakeResponse();
+    try {
+      const dev = new DeviceDO(state as never, {});
+      const response = await (dev as unknown as { openInbox: () => Promise<Response> }).openInbox();
+      expect(response.status).toBe(101);
+      expect(store.get('inbox')).toEqual([fresh]);
+      expect(putSpy).toHaveBeenCalledWith('inbox', [fresh]);
+      expect(deleteSpy).not.toHaveBeenCalledWith('inbox');
+      expect(flushed).toEqual([JSON.stringify(fresh)]);
+      expect(setAlarmSpy).toHaveBeenCalledWith(fresh.createdAt + 60 * 60 * 1000);
+    } finally {
+      restoreResponse();
+      restorePair();
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('alarm は stale 行を削除し、残りの最短期限へ再設定する', async () => {
+    const now = 1_800_000_000_000;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const { state, putSpy, setAlarmSpy, store } = makeFakeState();
+    const stale = { pairingId: 'stale', createdAt: now - 60 * 60 * 1000 - 1 };
+    const soon = { pairingId: 'soon', createdAt: now - 60 * 60 * 1000 + 1_000 };
+    const later = { pairingId: 'later', createdAt: now - 60 * 60 * 1000 + 5_000 };
+    const presence = { lastSeen: now, displayName: 'device', version: '1' };
+    store.set('inbox', [stale, soon, later]);
+    store.set('presence', presence);
+    try {
+      const dev = new DeviceDO(state as never, {});
+      await dev.alarm();
+      expect(store.get('inbox')).toEqual([soon, later]);
+      expect(putSpy).toHaveBeenCalledWith('inbox', [soon, later]);
+      expect(setAlarmSpy).toHaveBeenCalledWith(soon.createdAt + 60 * 60 * 1000);
+      expect(store.get('presence')).toEqual(presence);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('alarm は全件 stale なら inbox だけを削除し、presence は残す', async () => {
+    const now = 1_800_000_000_000;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const { state, deleteSpy, deleteAllSpy, store } = makeFakeState();
+    const stale = { pairingId: 'stale', createdAt: now - 60 * 60 * 1000 - 1 };
+    const presence = { lastSeen: now, displayName: 'device', version: '1' };
+    store.set('inbox', [stale]);
+    store.set('presence', presence);
+    try {
+      const dev = new DeviceDO(state as never, {});
+      await dev.alarm();
+      await dev.alarm(); // at-least-once 実行でも同じ結果になることを確認
+      expect(store.has('inbox')).toBe(false);
+      expect(deleteSpy).toHaveBeenCalledWith('inbox');
+      expect(deleteAllSpy).not.toHaveBeenCalled();
+      expect(store.get('presence')).toEqual(presence);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('非transient notify は保持イベントの最も遅い期限へ alarm を設定する', async () => {
+    const now = 1_800_000_000_000;
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const { state, setAlarmSpy } = makeFakeState();
+    const dev = new DeviceDO(state as never, {});
+    const post = (body: unknown) =>
+      dev.fetch(
+        new Request('https://do/notify', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        }),
+      );
+    try {
+      await post({ pairingId: 'old', createdAt: now - 1_000 });
+      await post({ pairingId: 'new', createdAt: now });
+      expect(setAlarmSpy).toHaveBeenLastCalledWith(now + 60 * 60 * 1000);
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });

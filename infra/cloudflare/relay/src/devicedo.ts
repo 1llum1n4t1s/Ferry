@@ -20,6 +20,8 @@ import { readJsonObject } from './http';
 
 const INBOX_TTL_MS = 60 * 60 * 1000; // 1h
 const INBOX_MAX = 50;
+/** 通常 listener 1本 + pairing画面の一時 listener を許容しつつ、push fan-outを固定する。 */
+export const INBOX_MAX_CONNECTIONS = 4;
 
 /** rere レビュー #A2-09: presence に格納する自己申告文字列の上限。
  *  /auth/token の pubKeySpki (256 文字) と同じ思想で、格納側で長さを有界にする。 */
@@ -35,6 +37,23 @@ interface Presence {
 /** inbox イベント。ペア成立 (FirebaseSignaling.PairingData 相当) と unpair 通知の両方を運ぶ。
  *  createdAt は TTL prune に必須。種別ごとの追加フィールド (sidA/nameA/... や type:'unpair') は任意。 */
 type InboxEvent = { createdAt: number; [key: string]: unknown };
+
+/** イベントの期限。壊れた保存値は TTL 対象外として扱い、無期限に残さない。 */
+function inboxExpiresAt(event: InboxEvent): number | null {
+  const createdAt = (event as { createdAt?: unknown } | null | undefined)?.createdAt;
+  return typeof createdAt === 'number' && Number.isFinite(createdAt)
+    ? createdAt + INBOX_TTL_MS
+    : null;
+}
+
+function pruneInbox(events: InboxEvent[], now: number): InboxEvent[] {
+  return events
+    .filter((event) => {
+      const expiresAt = inboxExpiresAt(event);
+      return expiresAt !== null && expiresAt > now;
+    })
+    .slice(-INBOX_MAX);
+}
 
 export class DeviceDO {
   private state: DurableObjectState;
@@ -123,6 +142,13 @@ export class DeviceDO {
   // ---- pairing inbox (WebSocket push) ----
 
   private async openInbox(): Promise<Response> {
+    const liveSockets = this.state.getWebSockets().filter(
+      (ws) => ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING,
+    );
+    if (liveSockets.length >= INBOX_MAX_CONNECTIONS) {
+      return json(429, { error: 'INBOX_CONNECTION_LIMIT' });
+    }
+
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
@@ -131,15 +157,26 @@ export class DeviceDO {
 
     // 接続時に未読 (TTL 内) を flush。重複は client 側 SeenPairingIds + start-time gate で dedupe する
     // (Firebase の subscribe-replay と同じ前提なので client 防御をそのまま使える)。
-    const events = (await this.state.storage.get<InboxEvent[]>('inbox')) ?? [];
+    const stored = await this.state.storage.get<InboxEvent[]>('inbox');
     const now = Date.now();
+    const events = Array.isArray(stored) ? pruneInbox(stored, now) : [];
+    // 接続時 flush は読むだけにせず、期限切れ・上限超過・壊れた保存値を実際に掃除する。
+    // 全件 stale の場合は空配列を残さずキーを消す（presence は別キーなので保持される）。
+    const needsPrune = !Array.isArray(stored)
+      ? stored !== undefined
+      : events.length !== stored.length;
+    if (needsPrune) {
+      if (events.length > 0) await this.state.storage.put('inbox', events);
+      else await this.state.storage.delete('inbox');
+    }
+    // 旧デプロイ時に alarm 無しで保存された行も、次回接続時に cleanup を予約する。
+    // 既存 alarm より早い期限があれば前倒しするが、通知時の「最も遅い期限」設定は崩さない。
+    if (events.length > 0) await this.ensureInboxAlarm(events, 'earliest');
     for (const e of events) {
-      if (now - e.createdAt < INBOX_TTL_MS) {
-        try {
-          server.send(JSON.stringify(e));
-        } catch {
-          /* 即切断は webSocketClose で処理 */
-        }
+      try {
+        server.send(JSON.stringify(e));
+      } catch {
+        /* 即切断は webSocketClose で処理 */
       }
     }
     return new Response(null, { status: 101, webSocket: client });
@@ -153,7 +190,8 @@ export class DeviceDO {
     const e = (await req.json()) as InboxEvent;
     const transient = e.type === 'knock';
     if (!transient) {
-      const events = (await this.state.storage.get<InboxEvent[]>('inbox')) ?? [];
+      const stored = await this.state.storage.get<InboxEvent[]>('inbox');
+      const events = Array.isArray(stored) ? stored : [];
       const now = Date.now();
       // 同じ (pairingId, type) のイベントは積み増さず最新 1 件に畳む。
       // /pair/link は相手セッションが 1h アクティブな間なら何度でも成立でき（設計どおり: 相手の
@@ -166,8 +204,10 @@ export class DeviceDO {
         ? events
         : events.filter((x) => !(x.pairingId === pairingId && x.type === e.type));
       kept.push(e);
-      const pruned = kept.filter((x) => now - x.createdAt < INBOX_TTL_MS).slice(-INBOX_MAX);
+      const pruned = pruneInbox(kept, now);
       await this.state.storage.put('inbox', pruned);
+      // 新しい通知で延命される範囲の最も遅い期限を、DO あたり 1 個の alarm に設定する。
+      await this.ensureInboxAlarm(pruned, 'latest');
     }
 
     let delivered = 0;
@@ -182,6 +222,47 @@ export class DeviceDO {
       }
     }
     return json(200, { ok: true, delivered });
+  }
+
+  /** inbox の cleanup 用 alarm を、既存 alarm を不必要に後ろ倒ししない範囲で予約する。 */
+  private async ensureInboxAlarm(events: InboxEvent[], order: 'earliest' | 'latest'): Promise<void> {
+    const expirations = events
+      .map((event) => inboxExpiresAt(event))
+      .filter((expiresAt): expiresAt is number => expiresAt !== null);
+    if (expirations.length === 0) return;
+
+    const target = order === 'earliest'
+      ? Math.min(...expirations)
+      : Math.max(...expirations);
+    const existing = await this.state.storage.getAlarm();
+    const shouldMove = existing === null
+      || (order === 'earliest' ? existing > target : existing < target);
+    if (shouldMove) await this.state.storage.setAlarm(target);
+  }
+
+  /** TTL を過ぎた inbox 行だけを削除し、残りがあれば最短期限へ alarm を進める。 */
+  async alarm(): Promise<void> {
+    const stored = await this.state.storage.get<InboxEvent[]>('inbox');
+    if (stored === undefined) return;
+
+    const events = Array.isArray(stored) ? pruneInbox(stored, Date.now()) : [];
+    if (events.length === 0) {
+      await this.state.storage.delete('inbox');
+      // deleteAll は使わない。presence は DeviceDO 内で固定 1 件として保持する。
+      return;
+    }
+
+    if (!Array.isArray(stored) || events.length !== stored.length) {
+      await this.state.storage.put('inbox', events);
+    }
+
+    const expirations = events
+      .map((event) => inboxExpiresAt(event))
+      .filter((expiresAt): expiresAt is number => expiresAt !== null);
+    if (expirations.length > 0) {
+      // alarm() 内では現在の alarm は消費済みなので、残りの最短期限を必ず設定する。
+      await this.state.storage.setAlarm(Math.min(...expirations));
+    }
   }
 
   // ---- Hibernation handlers (inbox は受信専用。client からのメッセージは握りつぶす) ----

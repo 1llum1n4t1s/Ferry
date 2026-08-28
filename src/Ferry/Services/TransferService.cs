@@ -27,6 +27,12 @@ public sealed class TransferService : ITransferService, IDisposable
     /// 細工 peer が多数の承認待ち transfer を並行生成して N×64MB を積めるため、全体でも頭打ちにする。</summary>
     private const long MaxTotalApprovalBufferBytes = 256L * 1024 * 1024;
 
+    /// <summary>1 peer が同時に積める受信承認待ち数。通常送信は最大10並列なので十分な余裕を残す。</summary>
+    internal const int MaxPendingApprovalsPerPeer = 32;
+
+    /// <summary>複数 peer 合算の受信承認待ち数。FileMeta だけを連投する UI/メモリ DoS を防ぐ。</summary>
+    internal const int MaxPendingApprovalsTotal = 128;
+
     /// <summary>v1.0.38 review fix #2: 送信側が FileApprove を待つ最大秒数。
     /// このタイムアウトを超えたら送信を Cancelled に遷移させる (永久停止を防ぐ)。</summary>
     private const int SendApprovalTimeoutSeconds = 60;
@@ -55,8 +61,14 @@ public sealed class TransferService : ITransferService, IDisposable
     /// 同一フォルダの全ファイルを同じ先に保存しつつ、別ピアの同名ルートが混ざらないようピアごとに分離する。</summary>
     private readonly ConcurrentDictionary<(string PeerId, string RootFolder), string> _folderMappings = new();
 
+    /// <summary>保存パスの重複判定からファイル予約までを直列化し、同時承認で同じパスを選ばない。</summary>
+    private readonly Lock _savePathGate = new();
+
     /// <summary>承認待ちの転送状態（TransferId → ReceiveState）。承認/拒否後に _receiveStates へ移動。</summary>
     private readonly ConcurrentDictionary<Guid, ReceiveState> _pendingApprovals = new();
+
+    /// <summary>承認待ち件数の確認と追加を原子的に行う。削除は上限を緩めるだけなのでロック不要。</summary>
+    private readonly Lock _pendingApprovalGate = new();
 
     /// <summary>送信側の承認待ち（TransferId → TaskCompletionSource）。
     /// v1.0.38: 送信側は FileMeta 送信後、FileApprove または FileReject を受信するまで
@@ -845,22 +857,13 @@ public sealed class TransferService : ITransferService, IDisposable
         var displayName = meta.RelativePath ?? meta.FileName;
         Util.Logger.Log($"ファイル受信開始: {displayName}, サイズ={meta.FileSize}, チャンク数={meta.TotalChunks}, TransferId={meta.TransferId}");
 
-        var saveDir = _settingsService.Settings.SaveDirectory;
-
-        // 複数ペア同時接続対応 Stage 2: TransferId→peerId 索引を記入。
-        // Stage 5 の SendFlowAckAsync / SendRejectFireAndForget / フロー制御 Route 判定がこの索引から
-        // 返送先 peer を引いて、受信中の FlowAck が他 peer に漏れる blocker を根治する。
-        if (!string.IsNullOrEmpty(receivePeerId))
-            _transferPeerId[transferIdGuid] = receivePeerId;
-
         // 送信元 OS のパス区切りに依存しないよう、受信した相対パスを '/' へ正規化してから分解・検証する
         // （Windows 送信 → mac/Linux 受信の混在を吸収。区切り/トラバーサル判定は Util.SafePath に集約）。
         var normalizedRelativePath = meta.RelativePath is null
             ? null
             : Util.SafePath.NormalizeSeparators(meta.RelativePath);
 
-        // RelativePath がある場合はフォルダ構造を再現
-        string savePath;
+        string safeFileName = string.Empty;
         if (!string.IsNullOrEmpty(normalizedRelativePath))
         {
             // パストラバーサル防止: ".." を「パス要素単位」で弾く
@@ -873,86 +876,20 @@ public sealed class TransferService : ITransferService, IDisposable
                 SendRejectFireAndForget(transferIdGuid, "不正なファイルパス (パストラバーサル)", receivePeerId);
                 return;
             }
-
-            // ルートフォルダ名を取得（例: "photos/sub/file.jpg" → "photos"）
-            var parts = normalizedRelativePath.Split('/');
-            var rootFolder = parts[0];
-
-            // 同名フォルダ/ファイルが存在する場合、ルートフォルダ名をリネーム
-            // フォルダ構造マッピングはピアごとに分離する。グローバル共有のままだと、別ピアから同名ルート
-            // （例: "photos"）を連続/同時受信したとき同じ実フォルダに解決され、ディスク上でファイルが
-            // 混ざる。キーを (peerId, rootFolder) のタプルにして分離し（区切り文字不要で衝突しない）、
-            // 値（実フォルダ名）は rootFolder から組み立てる。同一フォルダの全ファイルは同じ先にキャッシュされる。
-            var actualRoot = _folderMappings.GetOrAdd((receivePeerId, rootFolder), _ =>
-            {
-                var candidatePath = Path.Combine(saveDir, rootFolder);
-                if (!Directory.Exists(candidatePath) && !File.Exists(candidatePath))
-                    return rootFolder;
-
-                // "フォルダ名 (2)" のように連番リネーム
-                for (var i = 2; i < 10000; i++)
-                {
-                    var renamed = $"{rootFolder} ({i})";
-                    var renamedPath = Path.Combine(saveDir, renamed);
-                    if (!Directory.Exists(renamedPath) && !File.Exists(renamedPath))
-                        return renamed;
-                }
-                return $"{rootFolder}_{Guid.NewGuid():N}";
-            });
-
-            // ルートフォルダ名を置換して保存パスを組み立て
-            parts[0] = actualRoot;
-            savePath = Path.Combine(saveDir, Path.Combine(parts));
         }
         else
         {
             // パストラバーサル防止: ピア制御のファイル名はディレクトリ要素を除去し、空 / "." / ".." を弾く。
             // SafeFileName は区切り正規化込みなので、Windows 送信側の '\' 区切りでも mac/Linux で正しく剥がれる
             // （旧実装は単独ファイル経路だけ '\' を剥がさず非対称だった）。
-            var safeName = Util.SafePath.SafeFileName(meta.FileName);
-            if (safeName is null)
+            safeFileName = Util.SafePath.SafeFileName(meta.FileName) ?? string.Empty;
+            if (safeFileName.Length == 0)
             {
                 Util.Logger.Log($"不正なファイル名を拒否: {Util.Logger.MaskFilename(meta.FileName)}", Util.LogLevel.Warning);
                 SendRejectFireAndForget(transferIdGuid, "不正なファイル名", receivePeerId);
                 return;
             }
-            savePath = Path.Combine(saveDir, safeName);
-            // 単独ファイルの同名リネーム
-            savePath = GetUniquePath(savePath);
         }
-
-        // パストラバーサル最終防御: 組み立てた保存先が saveDir 配下に収まることを検証する
-        // （RelativePath 経路の絶対パス混入や Path.Combine の親破棄挙動を弾く）。
-        // 文字列 StartsWith はクロス OS で区切り・大小・正規化の差が出る（case-sensitive な Linux で
-        // OrdinalIgnoreCase が誤許可寄りに倒れる等）ため、Util.SafePath.IsWithinDirectory で
-        // Path.GetRelativePath ベースに判定し OS 既定の比較規則に委ねる。
-        if (!Util.SafePath.IsWithinDirectory(saveDir, savePath))
-        {
-            Util.Logger.Log($"保存パスが保存先ディレクトリ外を指しています: {savePath}", Util.LogLevel.Warning);
-            SendRejectFireAndForget(transferIdGuid, "保存パスが許可範囲外です", receivePeerId);
-            return;
-        }
-
-        // 保存先ディレクトリを作成
-        var saveFileDir = Path.GetDirectoryName(savePath) ?? saveDir;
-        if (!Directory.Exists(saveFileDir))
-        {
-            try { Directory.CreateDirectory(saveFileDir); }
-            catch (Exception ex)
-            {
-                // CodeRabbit 指摘: ex.Message に保存先絶対パス / ユーザー名等のローカル PII が含まれうるため、
-                // 詳細はローカルログだけに残し、ネットワーク越しの FileReject 理由は固定文言に絞る
-                Util.Logger.Log($"保存先ディレクトリ作成失敗: {ex.Message}", Util.LogLevel.Error);
-                SendRejectFireAndForget(transferIdGuid, "保存先ディレクトリ作成失敗", receivePeerId);
-                return;
-            }
-        }
-
-        // フォルダ内の個別ファイルも重複チェック
-        if (!string.IsNullOrEmpty(meta.RelativePath))
-            savePath = GetUniquePath(savePath);
-
-        // (transferIdGuid は冒頭でパース済み)
 
         var state = new ReceiveState
         {
@@ -962,7 +899,9 @@ public sealed class TransferService : ITransferService, IDisposable
             TotalChunks = meta.TotalChunks,
             // P-3: ハッシュはメタには含まれず、FileHash メッセージで後送りされる
             ExpectedSha256 = meta.Sha256, // 旧版互換のため受け取った値をそのまま保持（新版では空文字）
-            SavePath = savePath,
+            SaveDirectory = _settingsService.Settings.SaveDirectory,
+            NormalizedRelativePath = normalizedRelativePath,
+            SafeFileName = safeFileName,
             ReceivedChunks = 0,
             Item = new TransferItem
             {
@@ -979,10 +918,56 @@ public sealed class TransferService : ITransferService, IDisposable
             },
         };
 
-        // 承認待ちキューに追加し、UI に通知
-        _pendingApprovals[transferIdGuid] = state;
+        // 承認待ちキューへの追加と件数判定を原子的に行う。拒否された FileMeta は
+        // フォルダマッピングにもディスクにも一切副作用を残さない。
+        if (!TryAddPendingApproval(state, receivePeerId, out var rejectReason))
+        {
+            Util.Logger.Log($"FileMeta を承認待ちへ追加できません: {rejectReason}", Util.LogLevel.Warning);
+            SendRejectFireAndForget(transferIdGuid, rejectReason, receivePeerId);
+            return;
+        }
+
         Util.Logger.Log($"受信承認待ち: {displayName} ({Util.Formatting.FormatBytes(meta.FileSize)})");
         ApprovalRequested?.Invoke(this, state.Item);
+    }
+
+    private bool TryAddPendingApproval(ReceiveState state, string peerId, out string rejectReason)
+    {
+        lock (_pendingApprovalGate)
+        {
+            if (_pendingApprovals.ContainsKey(state.TransferId) || _receiveStates.ContainsKey(state.TransferId))
+            {
+                rejectReason = "重複した TransferId です";
+                return false;
+            }
+
+            if (_pendingApprovals.Count >= MaxPendingApprovalsTotal)
+            {
+                rejectReason = "受信承認待ちが上限に達しています";
+                return false;
+            }
+
+            var pendingForPeer = _pendingApprovals.Values.Count(
+                pending => string.Equals(pending.Item.PeerId, peerId, StringComparison.Ordinal));
+            if (pendingForPeer >= MaxPendingApprovalsPerPeer)
+            {
+                rejectReason = "この送信元の受信承認待ちが上限に達しています";
+                return false;
+            }
+
+            if (!_pendingApprovals.TryAdd(state.TransferId, state))
+            {
+                rejectReason = "重複した TransferId です";
+                return false;
+            }
+
+            // pending 登録が確定してから宛先索引を公開し、重複 ID で既存転送の宛先を上書きさせない。
+            if (!string.IsNullOrEmpty(peerId))
+                _transferPeerId[state.TransferId] = peerId;
+
+            rejectReason = string.Empty;
+            return true;
+        }
     }
 
     /// <summary>rere #C2-002: 全承認待ち transfer のバッファ済みバイト合計。承認前バッファの異常パスでのみ呼ぶ。</summary>
@@ -1498,15 +1483,25 @@ public sealed class TransferService : ITransferService, IDisposable
 
         Util.Logger.Log($"受信承認: {Util.Logger.MaskFilename(state.FileName)}");
 
-        // 受信用ファイルストリームを開く
+        // 承認されてから初めて保存先を確定し、ディレクトリとファイルを作成する。
+        // FileMeta 到着だけではディスクやフォルダマッピングに副作用を残さない。
         // rere #C2-001: バッファを 1MB に拡大 (デフォルト 4KB) + SetLength で全長を事前確保する。
         // 事前確保により sparse 拡張による断片化を防ぎ、HDD/暗号化ボリュームでの受信スループット低下と
         // 転送途中のディスク満杯エラー (途中まで書いて失敗) を承認時点で前倒し検出できる
         try
         {
-            state.FileStream = new FileStream(
-                state.SavePath, FileMode.Create, FileAccess.Write, FileShare.None,
-                bufferSize: 1 << 20, FileOptions.None);
+            lock (_savePathGate)
+            {
+                state.SavePath = ResolveApprovedSavePath(state);
+                var saveFileDir = Path.GetDirectoryName(state.SavePath) ?? state.SaveDirectory;
+                Directory.CreateDirectory(saveFileDir);
+
+                // ResolveApprovedSavePath は既存名を避ける。CreateNew も併用し、外部プロセスとの
+                // 競合でも既存ファイルを上書きしない。
+                state.FileStream = new FileStream(
+                    state.SavePath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                    bufferSize: 1 << 20, FileOptions.None);
+            }
             state.FileStream.SetLength(state.FileSize);
         }
         catch (Exception ex)
@@ -1514,6 +1509,12 @@ public sealed class TransferService : ITransferService, IDisposable
             // SetLength 失敗 (ディスク不足等) 時に開きかけのストリームを残さない
             state.FileStream?.Dispose();
             state.FileStream = null;
+            try
+            {
+                if (!string.IsNullOrEmpty(state.SavePath) && File.Exists(state.SavePath))
+                    File.Delete(state.SavePath);
+            }
+            catch { /* 部分ファイルの後始末失敗は元エラーを上書きしない */ }
             Util.Logger.Log($"受信ファイル作成エラー: {ex.GetType().Name}: {ex.Message}", Util.LogLevel.Error);
             state.Item.State = TransferState.Error;
             state.Item.ErrorMessage = Util.ErrorText.Describe(ex);
@@ -1525,6 +1526,7 @@ public sealed class TransferService : ITransferService, IDisposable
             // CodeRabbit 指摘: ex.Message に保存先絶対パス / ファイル名等のローカル PII が
             // 含まれうるため、ネットワーク越しの理由は固定文言に絞る
             SendRejectFireAndForget(tid, "受信ファイル作成エラー");
+            _transferPeerId.TryRemove(tid, out _);
             return;
         }
 
@@ -1549,6 +1551,47 @@ public sealed class TransferService : ITransferService, IDisposable
         // (送信側は FileMeta 送信後にこれを待っている)
         // Stage 5: 受信ロジックは sender の peerId (state.Item.PeerId) に per-peer 送信。
         SendFireAndForget(state.Item.PeerId ?? string.Empty, FileChunker.CreateApproveMessage(tid), "FileApprove");
+    }
+
+    private string ResolveApprovedSavePath(ReceiveState state)
+    {
+        string savePath;
+        if (!string.IsNullOrEmpty(state.NormalizedRelativePath))
+        {
+            var parts = state.NormalizedRelativePath.Split('/');
+            var rootFolder = parts[0];
+
+            // 同一フォルダの全ファイルは同じ実フォルダへ、別 peer の同名フォルダは別の実体へ送る。
+            var actualRoot = _folderMappings.GetOrAdd((state.Item.PeerId ?? string.Empty, rootFolder), _ =>
+            {
+                var candidatePath = Path.Combine(state.SaveDirectory, rootFolder);
+                if (!Directory.Exists(candidatePath) && !File.Exists(candidatePath))
+                    return rootFolder;
+
+                for (var i = 2; i < 10000; i++)
+                {
+                    var renamed = $"{rootFolder} ({i})";
+                    var renamedPath = Path.Combine(state.SaveDirectory, renamed);
+                    if (!Directory.Exists(renamedPath) && !File.Exists(renamedPath))
+                        return renamed;
+                }
+
+                return $"{rootFolder}_{Guid.NewGuid():N}";
+            });
+
+            parts[0] = actualRoot;
+            savePath = Path.Combine(state.SaveDirectory, Path.Combine(parts));
+        }
+        else
+        {
+            savePath = Path.Combine(state.SaveDirectory, state.SafeFileName);
+        }
+
+        // Path.Combine の親破棄や OS ごとの正規化差を最終的に save directory 境界で止める。
+        if (!Util.SafePath.IsWithinDirectory(state.SaveDirectory, savePath))
+            throw new IOException("保存パスが許可範囲外です");
+
+        return GetUniquePath(savePath);
     }
 
     /// <summary>受信承認待ちの転送を拒否する。送信側に FileReject を送信する。</summary>
@@ -1713,6 +1756,9 @@ public sealed class TransferService : ITransferService, IDisposable
         public long FileSize { get; set; }
         public int TotalChunks { get; set; }
         public string ExpectedSha256 { get; set; } = string.Empty;
+        public string SaveDirectory { get; set; } = string.Empty;
+        public string? NormalizedRelativePath { get; set; }
+        public string SafeFileName { get; set; } = string.Empty;
         public string SavePath { get; set; } = string.Empty;
         public int ReceivedChunks { get; set; }
         /// <summary>書き込み中の受信ファイルストリーム。rere #C2-001 review: 受信ループ(CompleteReceive)と

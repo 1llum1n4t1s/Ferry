@@ -25,12 +25,13 @@
 |---|---|---|
 | **PairDO**（pairId-keyed, SQLite-backed DO） | signaling: offers/answers/endpoints/probes/createdAt。alarm で TTL cleanup | `idFromName(SHA256(pairId + SALT))`（relay と同手法で生 pairId 横入り防止） |
 | **DeviceDO**（deviceId-keyed, SQLite-backed DO） | presence(lastSeen/displayName/version) + pairing inbox(WS push + 未読キュー) | `idFromName(SHA256(deviceId + SALT))` |
-| **RelayDO**（既存） | WebSocket リレー本体（変更なし） | 既存どおり |
+| **RelayDO**（既存） | WebSocket リレー本体（Hibernation WebSocket） | pairId ごと 1 インスタンス |
+| **RelayQuotaDO**（v4 追加、SQLite-backed） | relay admission / quota の強整合予約。global breaker、同時 room 数、月次・セッション bytes/messages/duration、idle を管理 | 固定名の global coordinator。`wrangler.toml` の `QUOTA` binding |
 | **D1**（`ferry_ledger`） | sessions / pairing_nonces / pairs（永続 SSoT は pairs のみ） | テーブル PK |
 | **KV**（`DEVICE_KEY_BINDING`, 既存） | deviceId↔pubKeySpki first-write-wins binding（流用） | `device-pubkey:{deviceId}` |
 | **Workers Static Assets** | Bridge QR ページ（`src/Ferry.Bridge/`）。Firebase Hosting 置換 | — |
 
-> SQLite-backed DO は Workers **Free** でも動く（KV-backed のみ Paid 必須）。Ferry 規模は日次無料枠に収まる。$5 Workers Paid は RealTimeTranslator 相乗りの sunk cost。
+> SQLite-backed DO の利用可能枠と課金は契約プラン・実使用・Cloudflare の現行仕様に依存するため、ここでは固定額や無料枠への適合を断言しない。Hibernation と WebSocket billing の扱いは §2.4 の公式資料リンクを参照する。Workers Paid の共有は運用上の前提であり、Ferry の quota 消費や料金を保証するものではない。
 
 ---
 
@@ -53,11 +54,37 @@ POST /auth/token  { deviceId, pubKeySpki, ts, sig }
 
 - **signaling/pairs**: `pairId = {a}_{b}` の当事者（`deviceId == a || deviceId == b`）のみ R/W。
 - **sender キー強制**: offer/answer/endpoint の書込は「自分の deviceId キー」のみ（`offers/{deviceId}` に書く。他人キーへの書込は 403）。読みは相手キー。→ #D-003 per-sender なりすまし防止を rules でなくコードで担保。
-- **presence**: `POST /presence/{deviceId}` は `deviceId == token.sub` のみ。`GET /presence/{peerId}/lastSeen` は任意の認証済みが可（オンライン検知の正当用途、現行 rules の受容リスクと同じ）。
-- **inbox WS**: upgrade 時に Bearer 検証、`deviceId == token.sub` の DeviceDO に接続。
+- **presence**: `POST /presence/{deviceId}` は `deviceId == token.sub` のみ。peer GET は D1 `pairs` の正式ペアに限定し、transition 中だけ旧台帳未登録を互換許可する。
+- **inbox WS**: upgrade 時に Bearer 検証、`deviceId == token.sub` の DeviceDO に接続。device 別 rate limit と 1 DeviceDO 最大 4 接続で push fan-out を固定する。
 
 ### 2.3 ペアリングの認可（nonce 所有）
-Bridge は PC のような長期鍵を持たない。**nonce 所有が認可の源**（現 `/pair/token` と同思想）。Bridge は `/pair/create` を 4 nonce 付きで叩き、Worker が D1 の `pairing_nonces` で両 sid の nonce 値一致を server 検証してから pairing push する。Bridge にトークンは発行しない（1 リクエスト完結）。
+Bridge は PC のような長期鍵を持たない。**nonce 所有が認可の源**（現 `/pair/token` と同思想）。Bridge は `/pair/create` を 4 nonce 付きで叩き、Worker が D1 の `pairing_nonces` で両 sid の nonce 値一致を server 検証する。両 nonce は 1 本の条件付き UPDATE で同じランダム claim へ原子的に置換し、その claim を取得できた batch だけが正式 `pairs` 行を作成・nonce を削除してから pairing push する。Bridge にトークンは発行しない（1 リクエスト完結）。
+
+### 2.4 リレー入室認可（optional 段階移行）
+
+`/ferry-relay` の入室には常に quota policy を適用する。現行設定は
+`RELAY_AUTH_MODE=optional` / `PAIR_LEDGER_MODE=transition` であり、Worker は WebSocket upgrade 前に
+Bearer と D1 台帳を判定する。
+
+- **有効な Bearer + D1 participant**: `cfToken.sub` が pairId の当事者であることと D1 `pairs` の participant を確認し、auth quota 枠を適用する。
+- **Bearer なし、または台帳未移行で participant を確認できない**: 旧版互換のため legacy 小枠を適用する。未認証経路を無制限にはしない。
+- **Bearer が存在するが署名・期限・participant 検証に失敗**: 拒否する。invalid bearer を legacy に降格しない。
+
+現行クライアントは `cfToken` の取得・送出を fail-closed で行い、取得失敗・空値・期限切れならリレーへ接続しない。legacy 小枠を使えるのは Bearer をまだ送らない出荷済み旧版だけである。普及後に `RELAY_AUTH_MODE=required` / `PAIR_LEDGER_MODE=required` へ反転し、legacy 経路を廃止する。
+
+`RelayQuotaDO` は SQLite-backed DO の単一実行順序を利用して、予約を強整合に直列化する。global breaker、最大同時 room 数、月次・セッションの bytes / messages / duration、idle timeout、frame 上限を入室前に予約し、セッション中のフレーム処理は lease の上限で制御する。auth/legacy の新旧クライアントが同じ room に混在した場合は共有 lease を legacy 小枠へ原子的に降格し、legacy 月次小枠にも予約する。同じ lease の `offer` / `answer` は各1回だけ消費し、settle/応答障害後の同一 role 再入室は期限切れまで拒否する。quota 状態と次回 alarm は同じ storage transaction で確定し、RelayDO 側も reserve 待機をまたぐ入室判定を直列化する。待機中に旧 room の close/settle 世代が変わった stale lease は、実測 settle の完了後に拒否する。room 合算 counter は両 attachment に複製し、切断済み peer が socket 一覧から先に消えても残存側だけで全量を settle する。breaker / quota 設定不備は認証・D1 より前に遮断する。クラッシュ・強制終了・異常切断時は reservation を返却せず、予約分を全消費扱いにする（安全側の過剰使用防止）。`RATELIMIT_*` は入口の乱打と DO 起動を抑える補助であり、quota の正本ではない。
+
+| 枠 | bytes | messages | duration | idle / concurrency |
+|---|---:|---:|---:|---:|
+| global 月次 (`RELAY_MONTHLY_*`, auth + legacy 合算) | 500 GiB (`536870912000`) | 10,000,000 | 500 h (`1800000` s) | — |
+| auth セッション (`RELAY_AUTH_SESSION_*`, `RELAY_AUTH_IDLE_SECONDS`) | 10 GiB (`10737418240`) | 200,000 | 3 h (`10800` s) | 5 min (`300` s) |
+| legacy 月次 (`RELAY_LEGACY_MONTHLY_*`) | 10 GiB (`10737418240`) | 200,000 | 10 h (`36000` s) | — |
+| legacy セッション (`RELAY_LEGACY_SESSION_*`, `RELAY_LEGACY_IDLE_SECONDS`) | 256 MiB (`268435456`) | 8,192 | 15 min (`900` s) | 2 min (`120` s) |
+| global | — | — | — | `RELAY_MAX_CONCURRENT_ROOMS=16` / `RELAY_CIRCUIT_OPEN` |
+
+`RELAY_MAX_FRAME_BYTES=1048576`（1 MiB）もアプリケーション境界として適用する。料金・無料枠・月額への適合は契約プランと実使用に依存するため、本設計で断言しない。Cloudflare 公式の [WebSocket Hibernation](https://developers.cloudflare.com/durable-objects/best-practices/websockets/) では Hibernation 可能なアイドル中 DO は duration 課金が発生せず、[料金仕様](https://developers.cloudflare.com/durable-objects/platform/pricing/) では compute request billing に限り incoming WebSocket message を 20:1 で換算する（メトリクスの実数は変わらない）。リレーのデータ経路として R2 ペイロード保管・TURN・BYO relay は今回採用せず、後段候補とする（更新配信の R2 は別用途）。
+
+D1 の `sessions` / `pairing_nonces` は 1 時間で失効し、日次 scheduled handler が期限切れ行を同一 batch で削除する。永続 SSoT の `pairs` は削除しない。公開 `/health` は設定・binding readiness のみを確認し、リクエストごとの D1/KV subrequest は発行しない。
 
 ---
 
@@ -109,6 +136,14 @@ PairDO storage キー: `offer:{sender}`→`{data,createdAt}` / `answer:{sender}`
 | `GetPairAsync` / `GetPairWithStatusAsync` | `GET /pairs/{pairId}` | 200 `{...}` / 404。PairSyncService の 404/401/5xx 区別をそのまま HTTP ステータスで |
 | `DeletePairAsync` | `DELETE /pairs/{pairId}` | unpair。相手へは inbox WS で unpair push も送る（D1 ポーリング線形増殖の回避・§0-5） |
 
+### 3.5 relay（RelayDO + RelayQuotaDO・WebSocket）
+
+| クライアント | CF | 備考 |
+|---|---|---|
+| `WebSocketRelayTransport.ConnectAsync` | `GET /ferry-relay?pairId=&role=`（Upgrade） | 現行クライアントは有効 Bearer が無ければ fail-closed。旧版のみ legacy 小枠 |
+| binary frame | RelayDO → 相手 peer | 1 MiB (`RELAY_MAX_FRAME_BYTES`) まで。Rate Limit は補助、quota 予約が正本 |
+| room admission | RelayQuotaDO (`QUOTA`) | global breaker、同時 16 room、monthly/session bytes/messages/duration/idle を強整合に予約 |
+
 ---
 
 ## 4. クライアント書き換え（C#）
@@ -144,5 +179,6 @@ PairDO storage キー: `offer:{sender}`→`{data,createdAt}` / `answer:{sender}`
 ## 6. テスト
 
 - **vitest（relay）**: session token mint/verify、signaling authz（当事者外 403・sender キー強制）、PairDO storage ラウンドトリップ、nonce server 検証、alarm cleanup。
+- **quota（relay）**: `RelayQuotaDO` の強整合 reservation、auth/legacy の monthly・session bytes/messages/duration/idle、同時 room 数、global breaker、frame 上限、クラッシュ時 reservation 全消費、invalid bearer の拒否と legacy 降格禁止。
 - **C#（xUnit）**: CloudflareSignaling のポーリング/backoff/From 検証、InboxClient の再接続/replay gate、CfTokenProvider の refresh、`SafePath` 等の既存回帰維持。
 - **2 台実機（別 NAT）**: dual-path で「接続完了 経路:」「暗号セッション確立」ログ、QR ペア成立、unpair 伝播、1h+ 継続。

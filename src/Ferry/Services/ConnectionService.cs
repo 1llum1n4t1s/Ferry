@@ -2151,6 +2151,12 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         WebSocketRelayTransport? relayTransport = null;
         try
         {
+            // リレーは実データを Cloudflare 経由で流す最終手段なので、接続直前に
+            // cfToken の期限を確認・更新する。直前までの TCP/UDP 試行中に token が
+            // 期限切れになっていても、古い Bearer を RelayDO へ送らない。
+            if (_ensureAuthAsync != null)
+                await _ensureAuthAsync(ct);
+
             Util.Logger.Log($"WebSocket リレー接続試行: role={role}");
             // 複数ペア同時接続対応 Stage 1: peerId を transport へ伝播。
             relayTransport = new WebSocketRelayTransport(RelayUrl, pairId, role, peerId, _bearerTokenAsync);
