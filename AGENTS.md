@@ -42,7 +42,7 @@ cd infra/cloudflare/relay && pnpm dlx wrangler deploy
 
 ## アーキテクチャ
 
-詳細は [references/architecture.md](references/architecture.md)。**下の領域を触る前に必ず該当節を読む**。
+システム全体の責務・境界・不変条件・設計判断は [DESIGN.md](DESIGN.md)、実装の詳細は [references/architecture.md](references/architecture.md) を正本とする。**下の領域を触る前に必ず該当節を読む**。
 
 | 触る対象 | 読む節 |
 | --- | --- |

@@ -59,8 +59,9 @@ Cloudflare R2 (`https://ferry.kagayoi.com`) から配信。**Setup インスト�
 | 知りたいこと | ドキュメント |
 |---|---|
 | ビルド・テスト・CI・リリース手順 | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
-| 技術スタック・構成・接続フロー・転送プロトコル | [`docs/architecture.md`](docs/architecture.md) |
-| 実装の正本（非対称な接続手順・Native AOT 制約・既知の落とし穴） | [`CLAUDE.md`](CLAUDE.md) |
+| システムの目的・責務境界・不変条件・設計判断 | [`DESIGN.md`](DESIGN.md) |
+| 接続フロー・Cloudflare 構成・転送プロトコルの実装詳細 | [`references/architecture.md`](references/architecture.md) |
+| コーディングエージェントの作業規約・必須検証 | [`AGENTS.md`](AGENTS.md) |
 | 障害切り分け | [`docs/operations/runbook.md`](docs/operations/runbook.md) |
 
 ## ライセンス
