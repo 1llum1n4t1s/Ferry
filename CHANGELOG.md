@@ -193,3 +193,327 @@ Ferry の利用者から見える変更点をまとめます。書式は [Keep a
 | 1.0.43 | 2026-05-31 | バックエンドを Cloudflare Workers へ移行 |
 | 1.0.38 | 2026-05-29 | ファイル受信の承認プロトコルを導入 |
 | 1.0.0 | 2026-03-14 | 初回リリース |
+
+## [1.0.63] — Git 記録日: 2026-06-23
+
+- Cloudflare を使うペアリング・在席確認・接続情報の交換を追加し、クライアントから従来経路と切り替えられるよう対応。
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/32c66d4092574ca80ceab62770eefb22e4638bc2) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/545951b1a5f7e2ab7c6012b7752c0f046b1ed8fe...32c66d4092574ca80ceab62770eefb22e4638bc2)。
+
+## [1.0.62] — Git 記録日: 2026-06-20
+
+- Firebase のカスタムトークン認証を導入し、ペアリング情報の管理を統一。
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/545951b1a5f7e2ab7c6012b7752c0f046b1ed8fe) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/2922de8f24a4ae257ecd7c277ceadc589443a370...545951b1a5f7e2ab7c6012b7752c0f046b1ed8fe)。
+
+## [1.0.61] — Git 記録日: 2026-06-19
+
+- UDP 接続を双方向の疎通確認後に確立し、一方向しか通信できない状態を接続済みとする問題を修正。
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/2922de8f24a4ae257ecd7c277ceadc589443a370) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/2b1b955b7406ba0634dc44a511f52b1cf960d3d2...2922de8f24a4ae257ecd7c277ceadc589443a370)。
+
+## [1.0.60] — Git 記録日: 2026-06-18
+
+- 任意に有効化できるエンドツーエンド暗号化を追加。既定では無効。
+- 転送再開・キャンセルの競合と受信バッファの容量制限を改善。
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/2b1b955b7406ba0634dc44a511f52b1cf960d3d2) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/06aa2b1d97182d107c9fa5f4d364c902eae0cc15...2b1b955b7406ba0634dc44a511f52b1cf960d3d2)。
+
+## [1.0.59] — Git 記録日: 2026-06-17
+
+- 転送速度の平均表示・転送行UI統一・オフライン無応答時のリトライ抑止
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/06aa2b1d97182d107c9fa5f4d364c902eae0cc15) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/27f863d11976276034a75d11ac1bce646b7d1d2f...06aa2b1d97182d107c9fa5f4d364c902eae0cc15)。
+
+## [1.0.58] — Git 記録日: 2026-06-17
+
+- キャプションボタンへのピンク波及修正とトレイ復帰時の最前面化
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/27f863d11976276034a75d11ac1bce646b7d1d2f) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/39fa9ba8654e61032ad162da99f634f61970d9a7...27f863d11976276034a75d11ac1bce646b7d1d2f)。
+
+## [1.0.57] — Git 記録日: 2026-06-17
+
+- 接続の無応答ハング修正とリレー待ち短縮
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/39fa9ba8654e61032ad162da99f634f61970d9a7) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/ea8fd50050df28cc5f7c4a108315d63ebdcacc1a...39fa9ba8654e61032ad162da99f634f61970d9a7)。
+
+## [1.0.56] — Git 記録日: 2026-06-17
+
+- VelopackUpdateDialog.Avalonia を 1.0.10 へ更新
+- mac/ライトテーマ UI 修正 + rere/PR レビュー指摘の是正 (#8)
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/ea8fd50050df28cc5f7c4a108315d63ebdcacc1a) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/c4b5bafe6c2ef886424b9fcef045c47e7b499b23...ea8fd50050df28cc5f7c4a108315d63ebdcacc1a)。
+
+## [1.0.55] — Git 記録日: 2026-06-14
+
+- 配布用のバージョン情報と対応する README の表記を更新。
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/c4b5bafe6c2ef886424b9fcef045c47e7b499b23) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/d1b068838b34b172d51632f582877fa88c167c9b...c4b5bafe6c2ef886424b9fcef045c47e7b499b23)。
+
+## [1.0.54] — Git 記録日: 2026-06-14
+
+- マルチプラットフォーム対応の強化と接続/受信まわりの不具合修正 (#7)
+- csproj の Version 重複を削除し Directory.Build.props 単一管理に
+- macOS 公証を app-specific password 方式に変更
+- macOS notarytool 失敗の診断ログ追加 + matrix fail-fast: false
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/d1b068838b34b172d51632f582877fa88c167c9b) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/fb599fed74a1d6fc5150787e6338ed7680f4f24c...d1b068838b34b172d51632f582877fa88c167c9b)。
+
+## [1.0.53] — Git 記録日: 2026-06-13
+
+- ランディングページの macOS/Linux DLリンクを実ファイル名に修正
+- vpk pack に --icon を追加 (Setup.exe にアイコンが入っていなかった)
+- R2 レスポンスが byte[] になるケースに対応 (UTF-8 デコード + keep set 形式検証 + CDN キャッシュバイパス)
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/fb599fed74a1d6fc5150787e6338ed7680f4f24c) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/152cd165ff2685188182620f76486c597fcfdb58...fb599fed74a1d6fc5150787e6338ed7680f4f24c)。
+
+## [1.0.52] — Git 記録日: 2026-06-12
+
+- Windows 配布物のコード署名とローカルリリース方式を導入し、自動更新ダイアログと配布ツールを更新。
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/152cd165ff2685188182620f76486c597fcfdb58) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/75af72bed98181d19019cce756d000436851b848...152cd165ff2685188182620f76486c597fcfdb58)。
+
+## [1.0.51] — Git 記録日: 2026-06-11
+
+- 接続情報の取得回数と転送時の不要な割り当てを減らし、受信ファイルのハッシュ判定と状態通知を改善。
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/75af72bed98181d19019cce756d000436851b848) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/d183b6424aaf4efbbf186441c37cdaae46b9ae51...75af72bed98181d19019cce756d000436851b848)。
+
+## [1.0.50] — Git 記録日: 2026-06-11
+
+- review: ロケール 7 ファイルの新キーを各言語に翻訳 + Answer 側 UDP のキャンセル伝播を対称化
+- キャンセル時の偽 State=Connected 残留と transport リークを修正
+- Lhamiel 互換のランディングページを追加（ferry.nephilim.jp）
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/d183b6424aaf4efbbf186441c37cdaae46b9ae51) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/12a30136f94f3460d5dd71b3bf1231d58d25b4b9...d183b6424aaf4efbbf186441c37cdaae46b9ae51)。
+
+## [1.0.49] — Git 記録日: 2026-06-08
+
+- 保存先 UI を設定画面に戻し、テーマ ComboBox / X ボタン挙動を修正
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/12a30136f94f3460d5dd71b3bf1231d58d25b4b9) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/7b8ff70095bcdae0e2e7f16a4097bc7f4b9dbf19...12a30136f94f3460d5dd71b3bf1231d58d25b4b9)。
+
+## [1.0.48] — Git 記録日: 2026-06-07
+
+- 帯域制限 / 並列転送 / 保存先バー下部移設 / ピンク統一ボタン
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/7b8ff70095bcdae0e2e7f16a4097bc7f4b9dbf19) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/7adf1e2d0957af57b01c12f2fbad6a5f42fd2a95...7b8ff70095bcdae0e2e7f16a4097bc7f4b9dbf19)。
+
+## [1.0.47] — Git 記録日: 2026-06-07
+
+- 承認待ち・一時停止・接続断からの再試行と、キャンセル時の状態管理を修正。受信フォルダーを開く操作を保存先バーへ統一。
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/7adf1e2d0957af57b01c12f2fbad6a5f42fd2a95) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/703092553516ffee2462998b38739683a665691d...7adf1e2d0957af57b01c12f2fbad6a5f42fd2a95)。
+
+## [1.0.46] — Git 記録日: 2026-06-06
+
+- リレー経路のフロー制御追加 + UI テーマ刷新
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/703092553516ffee2462998b38739683a665691d) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/a0694958cb822519cd2aad972d9ec0bd8cdf95a9...703092553516ffee2462998b38739683a665691d)。
+
+## [1.0.45] — Git 記録日: 2026-06-06
+
+- ウィンドウ終了挙動と接続/転送の不具合修正
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/a0694958cb822519cd2aad972d9ec0bd8cdf95a9) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/05fe28e91e1a016f7d145c01b5fed0f7dbd9b39e...a0694958cb822519cd2aad972d9ec0bd8cdf95a9)。
+
+## [1.0.44] — Git 記録日: 2026-06-01
+
+- VelopackUpdateDialog.Avalonia を 1.0.5 に更新
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/05fe28e91e1a016f7d145c01b5fed0f7dbd9b39e) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/678f54a2a433f531c276ecb834dd7e0f6a7b9072...05fe28e91e1a016f7d145c01b5fed0f7dbd9b39e)。
+
+## [1.0.43] — Git 記録日: 2026-05-31
+
+- pairing watch を成立確定まで維持 + 削除ピアの着信監視停止
+- 起動時自動ペアリングの多重実行防止 + サイドバー幅復元のクランプ
+- タブ切替時に直前ピアの着信監視を維持する
+- サイドバーをタブグループ化しペアリング追加を右ペインへ統合
+- generate_icon.ps1 を UTF-8 BOM 付きで保存
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/678f54a2a433f531c276ecb834dd7e0f6a7b9072) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/ee853d85dceea95fa0d7cb4a900af872fe66fc80...678f54a2a433f531c276ecb834dd7e0f6a7b9072)。
+
+## [1.0.42] — Git 記録日: 2026-05-30
+
+- アプリアイコン差し替え
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/ee853d85dceea95fa0d7cb4a900af872fe66fc80) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/7fafc3a4247a8a9db0b65cba5c353897848b43c6...ee853d85dceea95fa0d7cb4a900af872fe66fc80)。
+
+## [1.0.41] — Git 記録日: 2026-05-29
+
+- 設定画面のスクロール見切れ修正
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/7fafc3a4247a8a9db0b65cba5c353897848b43c6) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/a6a262543c6fb232b9291de2586fa34d5acf90b7...7fafc3a4247a8a9db0b65cba5c353897848b43c6)。
+
+## [1.0.40] — Git 記録日: 2026-05-29
+
+- VM ライフサイクル一括整理 + 設定 UI クリーンアップ
+- Lhamiel 風バージョン UI に拡張 (チェック中ボタン無効化 + スキップ取消)
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/a6a262543c6fb232b9291de2586fa34d5acf90b7) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/87f57f3aadadfa1d1af4246652891ddf681bafdf...a6a262543c6fb232b9291de2586fa34d5acf90b7)。
+
+## [1.0.39] — Git 記録日: 2026-05-29
+
+- ドキュメント更新
+- VelopackUpdateDialog.Avalonia 1.0.4 + 依存更新でビルドエラー解消
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/87f57f3aadadfa1d1af4246652891ddf681bafdf) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/06a06b488599821accd5a09bf62ddbcca64ab160...87f57f3aadadfa1d1af4246652891ddf681bafdf)。
+
+## [1.0.38] — Git 記録日: 2026-05-29
+
+- 転送前の承認手順を導入し、接続・転送の操作性を改善。
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/06a06b488599821accd5a09bf62ddbcca64ab160) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/f99df65e9b54fb4a75c798b76a37a552011a2abf...06a06b488599821accd5a09bf62ddbcca64ab160)。
+
+## [1.0.37] — Git 記録日: 2026-05-27
+
+- 依存ライブラリ更新
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/f99df65e9b54fb4a75c798b76a37a552011a2abf) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/d876896fbe2f92f61104ae6b51b4c5254b34d845...f99df65e9b54fb4a75c798b76a37a552011a2abf)。
+
+## [1.0.36] — Git 記録日: 2026-05-27
+
+- ペアリング検知漏れ修正 + UI 不具合 3 件修正
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/d876896fbe2f92f61104ae6b51b4c5254b34d845) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/4417c13547132e4a44224c8c7736472f953ac3d8...d876896fbe2f92f61104ae6b51b4c5254b34d845)。
+
+## [1.0.35] — Git 記録日: 2026-05-27
+
+- WebSocket リレーを Cloudflare Workers + Durable Objects に移行
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/4417c13547132e4a44224c8c7736472f953ac3d8) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/9f821f008c12f851d5b252809820a6ee9bb9c7d7...4417c13547132e4a44224c8c7736472f953ac3d8)。
+
+## [1.0.34] — Git 記録日: 2026-05-25
+
+- カメラなし PC ペアリング対応 + Firebase deploy 自動化 + フロー整理
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/9f821f008c12f851d5b252809820a6ee9bb9c7d7) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/d28f94dd7af2995ce3c35172df41d795e806b943...9f821f008c12f851d5b252809820a6ee9bb9c7d7)。
+
+## [1.0.33] — Git 記録日: 2026-05-25
+
+- 接続経路バッジ表示 + Bridge URL 貼り付け経路追加
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/d28f94dd7af2995ce3c35172df41d795e806b943) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/3395271c111813acc18c9fe13dd7a492316bfafc...d28f94dd7af2995ce3c35172df41d795e806b943)。
+
+## [1.0.32] — Git 記録日: 2026-05-24
+
+- 自動更新ダイアログを導入し、接続・転送処理の安全性とメモリ管理を改善。
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/3395271c111813acc18c9fe13dd7a492316bfafc) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/2318601039f087eb3eeb9bfeb9c7c07bd520f882...3395271c111813acc18c9fe13dd7a492316bfafc)。
+
+## [1.0.31] — Git 記録日: 2026-05-21
+
+- 受信先のパス検証、転送チャンクの識別と位置指定書き込み、キャンセル・再開処理を強化。
+- 設定の保存を保護し、版情報を一元化。
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/2318601039f087eb3eeb9bfeb9c7c07bd520f882) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/72826732769740491c80b35256e9d5f741fde0ec...2318601039f087eb3eeb9bfeb9c7c07bd520f882)。
+
+## [1.0.30] — Git 記録日: 2026-03-20
+
+- 画面を Avalonia のネイティブ UI へ移行し、外観・アクセント色を調整。WebView の残留参照とプラットフォーム別のビルドを修正。
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/72826732769740491c80b35256e9d5f741fde0ec) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/ab3cfe9057e191fadc22fcd11d1ee440197c88ae...72826732769740491c80b35256e9d5f741fde0ec)。
+
+## [1.0.28] — Git 記録日: 2026-03-19
+
+- チャット・ファイル転送・UI の大幅改善
+- 🚀 チャット機能大幅強化: 33機能を一括実装
+- 🐛 メッセージ送信エラーログを詳細化（接続失敗時に原因を記録）
+- チャットUI・暗号化履歴・設定改善（WebView移行準備）
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/ab3cfe9057e191fadc22fcd11d1ee440197c88ae) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/36872072a1df63867a634ece4e28d30dec7ef96c...ab3cfe9057e191fadc22fcd11d1ee440197c88ae)。
+
+## [1.0.26] — Git 記録日: 2026-03-18
+
+- UI大幅改善（転送履歴・受信通知・設定保存・ステータス表示）
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/36872072a1df63867a634ece4e28d30dec7ef96c) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/68f629bf8ed750ee3f487f648d2b78a81e13a126...36872072a1df63867a634ece4e28d30dec7ef96c)。
+
+## [1.0.24] — Git 記録日: 2026-03-18
+
+- UX 大幅改善（接続ステータス詳細化・転送通知・トレイメニュー・名前同期）
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/68f629bf8ed750ee3f487f648d2b78a81e13a126) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/422c48533387015c5fb847aac832a3f9d4fbba4f...68f629bf8ed750ee3f487f648d2b78a81e13a126)。
+
+## [1.0.22] — Git 記録日: 2026-03-17
+
+- 暗い背景レイヤーを復元（IsHitTestVisible=False付き）
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/422c48533387015c5fb847aac832a3f9d4fbba4f) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/965409a80206f71aa3878cc64410032f3819ed13...422c48533387015c5fb847aac832a3f9d4fbba4f)。
+
+## [1.0.20] — Git 記録日: 2026-03-17
+
+- 不要な背景レイヤーを削除
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/965409a80206f71aa3878cc64410032f3819ed13) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/3ee6e9cd14208a5ed5935616687bf08e1045a551...965409a80206f71aa3878cc64410032f3819ed13)。
+
+## [1.0.18] — Git 記録日: 2026-03-17
+
+- ウィンドウドラッグ移動できない問題を修正
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/3ee6e9cd14208a5ed5935616687bf08e1045a551) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/c2e0b32a1c90f458e34ff17bb7812ae0e45d112b...3ee6e9cd14208a5ed5935616687bf08e1045a551)。
+
+## [1.0.16] — Git 記録日: 2026-03-17
+
+- リリースビルドの白画面問題を修正
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/c2e0b32a1c90f458e34ff17bb7812ae0e45d112b) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/b16b13e3b03f2d7378f05f2e7b12cf54d95d0061...c2e0b32a1c90f458e34ff17bb7812ae0e45d112b)。
+
+## [1.0.14] — Git 記録日: 2026-03-17
+
+- v1.0.14 にバージョン更新
+- Ferry-releases のリリースをインストーラーと自動更新用に分離
+- プライベートリポへのリリース作成を廃止
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/b16b13e3b03f2d7378f05f2e7b12cf54d95d0061) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/371b16efdab8c673a3f8898987e7db2c73e6b471...b16b13e3b03f2d7378f05f2e7b12cf54d95d0061)。
+
+## [1.0.12] — Git 記録日: 2026-03-17
+
+- Ferry-releases にインストーラーも配布
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/371b16efdab8c673a3f8898987e7db2c73e6b471) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/59b86c2fe66931dc229136846bdc1d8db406e71a...371b16efdab8c673a3f8898987e7db2c73e6b471)。
+
+## [1.0.10] — Git 記録日: 2026-03-17
+
+- v1.0.10 にバージョン更新
+- Ferry リポジトリから Velopack リリースを廃止、Ferry-releases に一本化
+- 更新チェックを public リポジトリ Ferry-releases 経由に変更
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/59b86c2fe66931dc229136846bdc1d8db406e71a) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/7449f3803ea8d0ff4f125fa0ea63e8ab91b4cdcc...59b86c2fe66931dc229136846bdc1d8db406e71a)。
+
+## [1.0.8] — Git 記録日: 2026-03-17
+
+- 自動更新画面を閉じたときの資源解放を修正し、更新失敗の情報保持とファイル選択処理を整理。
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/7449f3803ea8d0ff4f125fa0ea63e8ab91b4cdcc) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/7154d457dec743b01cfce034366dd1c15cb819e6...7449f3803ea8d0ff4f125fa0ea63e8ab91b4cdcc)。
+
+## [1.0.6] — Git 記録日: 2026-03-17
+
+- 多言語対応・Tahoe UI・サイドバーメニュー・トレイ最小化改善
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/7154d457dec743b01cfce034366dd1c15cb819e6) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/163e9d282bcf9bd0deaba2d4960740c1beb053a1...7154d457dec743b01cfce034366dd1c15cb819e6)。
+
+## [1.0.4] — Git 記録日: 2026-03-17
+
+- フォルダー転送に対応し、トレイアイコンと最小化時の動作を修正。
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/163e9d282bcf9bd0deaba2d4960740c1beb053a1) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/493342f1692bb7e65d1e15ec2efcca5bd0fcc68d...163e9d282bcf9bd0deaba2d4960740c1beb053a1)。
+
+## [1.0.2] — Git 記録日: 2026-03-17
+
+- 接続を TCP 直接通信と WebSocket リレーへ変更し、リレー URL の設定・転送画面・ペアリングリンク共有を追加。
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/493342f1692bb7e65d1e15ec2efcca5bd0fcc68d) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/f2a579756ca68947fefae7cd2d57027ec90f041a...493342f1692bb7e65d1e15ec2efcca5bd0fcc68d)。
+
+## [1.0.0] — Git 記録日: 2026-03-14
+
+- UI/UX 改善・バグ修正・Bridge ページ刷新
+- Firebase 本実装・Bridge ページ刷新・接続経路表示・ゴミセッション自動削除
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/f2a579756ca68947fefae7cd2d57027ec90f041a) / [変更差分](https://github.com/1llum1n4t1s/Ferry/compare/accd25a54c467c05b46a7416c5a4334641e2b4e8...f2a579756ca68947fefae7cd2d57027ec90f041a)。
+
+## [0.1.0] — Git 記録日: 2026-03-14
+
+- オンデマンド接続・転送レジューム機能を実装
+
+出典: [版の記録](https://github.com/1llum1n4t1s/Ferry/commit/accd25a54c467c05b46a7416c5a4334641e2b4e8)。
