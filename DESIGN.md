@@ -99,4 +99,10 @@ UI は AXAML + MVVM で構成し、`App.axaml.cs` がサービスを手動で組
 - `infra/cloudflare/relay/**` の `main` push は `deploy-relay.yml` が型チェックと vitest 後に Worker を配信する。D1 `schema.sql` の変更は Worker deploy と別に適用する。
 - `release/**` push は macOS / Linux を build・署名・公証し、R2 へ配信する。Windows x64 / ARM64 は `scripts/release-local.ps1` が SimplySign で署名して配信する。
 - R2 の固定 URL は更新時だけ exact URL purge の対象にし、version 付き package は purge しない。
-- Bridge ページは relay Worker の Static Assets であり、ダウンロードランディングページ `web/` とは別系統である。
+- Bridge ページは relay Worker の Static Assets であり、ダウンロードランディングページ `../vps-web/lp/ferry/` とは別系統である。
+
+## 製品ページの配信先
+
+製品ページの配信HTMLは `../vps-web/lp/ferry/`（編集元は `../vps-web/tools/lp/templates/`）、公開実体はVPSの `/srv/www/lp/ferry/`。
+Cloudflare側の中継設定は `../vps-web/deploy/lp-gateways/ferry/` に置く。
+公開URLと既存のR2・ライセンス通信を維持し、配信は `vps-web/deploy/deploy-lp.ps1` へ統一する。

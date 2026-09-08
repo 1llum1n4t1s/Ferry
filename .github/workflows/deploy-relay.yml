@@ -7,7 +7,7 @@ name: Deploy Relay
 # 誰も再デプロイせず数日放置された結果、本番 relay が旧コードのまま /auth/token を 426 で
 # 弾き続けた (24h で 433 回)。リリースに紐づかない手動運用が構造的原因だったため CI 化する。
 #
-# Velopack 配信 (release/**) や landing (web/) のパイプラインとは完全に独立。
+# Velopack 配信 (release/**) や landing (vps-web/lp/ferry/) のパイプラインとは完全に独立。
 # secret (SALT / SESSION_HMAC_SECRET) は Worker に永続するので、
 # コードデプロイ (`wrangler deploy`) では再設定不要。
 #
@@ -71,7 +71,7 @@ jobs:
         run: pnpm test
 
       # CLOUDFLARE_API_TOKEN は Workers Scripts:Edit 権限が必要
-      # (deploy-landing.yml と同じトークン。R2 Storage:Edit だけでは Worker デプロイ不可)。
+      # (既存の Cloudflare 管理トークン。R2 Storage:Edit だけでは Worker デプロイ不可)。
       # wrangler deploy は wrangler.toml の [[migrations]] (= Durable Object クラスの
       # migration。D1 スキーマではない) を適用し、public/ (Static Assets = CF 版 Bridge)
       # も同時配信する。

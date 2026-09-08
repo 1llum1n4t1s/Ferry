@@ -31,7 +31,7 @@ cd infra/cloudflare/relay && pnpm vitest run tests/signaling-ratelimit.test.ts
 cd infra/cloudflare/relay && pnpm vitest run -t "rate limit"
 
 # relay Worker の手動デプロイ（通常は main push で deploy-relay.yml が自動配信するので不要）
-cd infra/cloudflare/relay && pnpm dlx wrangler deploy
+- 製品ページの配信は `vps-web/deploy/deploy-lp.ps1` を使う。公開ホスト・更新ファイルの既存経路を維持する。
 ```
 
 > Windows 向けリリースは `pwsh scripts/release-local.ps1` でローカル実行する（コード署名のため）。macOS / Linux は `release/**` ブランチへの push で CI が配信する（後述「自動更新と配信」）。Bridge ページ（QR ペアリング）は relay Worker の Static Assets（`infra/cloudflare/relay/public/`）なので relay と一緒に配信される。
