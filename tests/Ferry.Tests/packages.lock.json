@@ -417,12 +417,11 @@
       },
       "VelopackUpdateDialog.Avalonia": {
         "type": "Transitive",
-        "resolved": "1.0.18",
-        "contentHash": "bZC5NhFIloGzTFZ0y5q8CWYgIV7jMdEkGaH9i1NreXsKKdcYZsSrqtp39amuORiBKuk8NCZbcxWQ0r76R/dNRQ==",
+        "resolved": "1.0.19",
+        "contentHash": "7XakW+QFLDoAtTjdvN7foEfZ3INqGc/jPgs04o6Z7/lAR4p1GB7oB77fdKCTC+RZ9KUgYMy+f0eRIS+Q/YCbvg==",
         "dependencies": {
           "Avalonia": "12.1.2",
           "CommunityToolkit.Mvvm": "8.4.2",
-          "SuperLightLogger": "1.0.17",
           "Velopack": "1.2.0"
         }
       },
@@ -506,7 +505,7 @@
           "QRCoder": "[1.8.0, )",
           "SuperLightLogger": "[1.0.17, )",
           "Tmds.DBus.Protocol": "[0.95.1, )",
-          "VelopackUpdateDialog.Avalonia": "[1.0.18, )"
+          "VelopackUpdateDialog.Avalonia": "[1.0.19, )"
         }
       }
     }
