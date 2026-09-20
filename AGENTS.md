@@ -31,10 +31,12 @@ cd infra/cloudflare/relay && pnpm vitest run tests/signaling-ratelimit.test.ts
 cd infra/cloudflare/relay && pnpm vitest run -t "rate limit"
 
 # relay Worker の手動デプロイ（通常は main push で deploy-relay.yml が自動配信するので不要）
-- 製品ページの配信は `vps-web/deploy/deploy-lp.ps1` を使う。公開ホスト・更新ファイルの既存経路を維持する。
+cd infra/cloudflare/relay && pnpm exec wrangler deploy
 ```
 
 > Windows 向けリリースは `pwsh scripts/release-local.ps1` でローカル実行する（コード署名のため）。macOS / Linux は `release/**` ブランチへの push で CI が配信する（後述「自動更新と配信」）。Bridge ページ（QR ペアリング）は relay Worker の Static Assets（`infra/cloudflare/relay/public/`）なので relay と一緒に配信される。
+>
+> 製品ページの配信は `../vps-web/deploy/deploy-lp.ps1` を使う。公開ホスト・更新ファイルの既存経路を維持する。
 >
 > PR（→ main）は `.github/workflows/dotnet-build.yml`（".NET Build"）が build + test で検証する。`release/**` トリガーの配信 CI（後述）とは別ワークフローなので、コード変更の正否はこの PR CI で確認する。
 >
@@ -63,9 +65,7 @@ cd infra/cloudflare/relay && pnpm vitest run -t "rate limit"
 
 - **relay Worker（シグナリング / プレゼンス / ペアリング / リレー / Bridge ページ）**: Cloudflare Workers + Durable Objects + D1（`https://watashiba.kagayoi.com`）。実装・デプロイ手順は [`infra/cloudflare/relay/README.md`](infra/cloudflare/relay/README.md) を参照。使用量は Cloudflare GraphQL Analytics（`workersInvocationsAdaptive` / zone の `httpRequestsAdaptiveGroups`）で確認できる
 - **STUN**: Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google STUN (`stun.l.google.com:19302`) を従。自前運用は無し
-- **Firebase**: **完全撤去済み（2026-07）**。RTDB は deny-all・Hosting は無効化・GitHub/CF Worker の Firebase 系 Secrets も削除済みで、プロジェクト `ferry-edf09` はシャットダウン済み（2026-08-01 完全削除予定）。移行設計は [`docs/design/cf-only-migration.md`](docs/design/cf-only-migration.md)
-
-旧 VPS (`C:\Users\IMT\dev\1llum1n4t1.net` リポジトリ管理) の `ferry-relay` (Node.js) と `coturn` コンテナは 2026-05 の Cloudflare 移行で役目を終えた（撤去手順は [`docs/Cloudflare移行_作業依頼書_2026-05.md`](docs/Cloudflare移行_作業依頼書_2026-05.md)）。
+- **廃止済み基盤**: Firebase と旧 VPS の `ferry-relay` / `coturn` は実行・配信経路に含めない。Cloudflare 単独構成への移行設計は [`docs/design/cf-only-migration.md`](docs/design/cf-only-migration.md)、旧基盤の撤去記録は [`docs/Cloudflare移行_作業依頼書_2026-05.md`](docs/Cloudflare移行_作業依頼書_2026-05.md) を参照
 
 ## 既知の制限と注意事項
 

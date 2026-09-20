@@ -44,7 +44,7 @@ Cloudflare R2 (`https://ferry.kagayoi.com`) から配信。**Setup インスト�
 | linux-x64 | <https://ferry.kagayoi.com/releases.linux-x64.json> |
 | linux-arm64 | <https://ferry.kagayoi.com/releases.linux-arm64.json> |
 
-クライアントは起動時と 24 時間ごとに manifest を取得し、新バージョンを検出するとダイアログ通知 → ワンクリックで適用されます。
+クライアントは起動時に manifest を取得し、新バージョンを検出するとダイアログ通知 → ワンクリックで適用されます。設定画面またはトレイメニューから手動確認もできます。
 
 ## 使い方
 
