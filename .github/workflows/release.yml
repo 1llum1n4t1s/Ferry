@@ -86,7 +86,7 @@ jobs:
           node-version: '22'
       - name: wrangler CLI をインストール
         # サプライチェーン攻撃防止のため明示的にバージョン固定
-        run: npm install -g wrangler@4.93.0
+        run: npm install -g wrangler@4.135.0
       - name: Velopack 自動更新フィードを R2 (ferry-updates) にアップロード
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
