@@ -25,10 +25,14 @@ public sealed class StubConnectionService : IConnectionService
     public event EventHandler<DataReceivedEventArgs>? DataReceived;
     public event EventHandler<Ferry.Infrastructure.ConnectionLostEventArgs>? ConnectionLost;
     public event EventHandler<string>? StatusMessageChanged;
+    public event EventHandler<string>? RemoteUnpairDetected;
+
+    public string LastPairingNonce { get; private set; } = string.Empty;
 
     public Task<string> StartPairingSessionAsync(CancellationToken ct = default)
     {
-        var sessionId = Guid.NewGuid().ToString("N")[..8];
+        var sessionId = Guid.NewGuid().ToString("N");
+        LastPairingNonce = Guid.NewGuid().ToString("N");
         State = PeerState.WaitingForPairing;
         StateChanged?.Invoke(this, State);
 

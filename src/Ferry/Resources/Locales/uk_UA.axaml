@@ -165,7 +165,7 @@
   <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">Помилка: {0}</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 Вставте код співрозмовника для зв'язування</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">Вставте код, показаний на іншому ПК.</x:String>
-  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">32-символьний код зв'язування</x:String>
+<x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">Код зв'язування</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">Обробка…</x:String>
   <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">Код зв'язування</x:String>
   <x:String x:Key="Text.Member.Delete" xml:space="preserve">Видалити</x:String>

@@ -165,7 +165,7 @@
   <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">Error: {0}</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 I-paste ang code ng kapareha para magpares</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">I-paste ang code na nakikita sa kabilang PC.</x:String>
-  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">32-karakter na pairing code</x:String>
+<x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">Pairing code</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">Pinoproseso…</x:String>
   <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">Pairing code</x:String>
   <x:String x:Key="Text.Member.Delete" xml:space="preserve">Tanggalin</x:String>

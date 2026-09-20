@@ -83,6 +83,9 @@ public interface IConnectionService
     /// <summary>接続フェーズの詳細ステータスメッセージが更新されたときに発火するイベント。</summary>
     event EventHandler<string>? StatusMessageChanged;
 
+    /// <summary>相手による正式ペア削除の push を受信したときに発火する。引数は canonical pairId。</summary>
+    event EventHandler<string>? RemoteUnpairDetected;
+
     // === ペアリング（QR スキャン → Bridge ページ経由） ===
 
     /// <summary>
@@ -93,8 +96,7 @@ public interface IConnectionService
     Task<string> StartPairingSessionAsync(CancellationToken ct = default);
 
     /// <summary>
-    /// v1.0.38: アプリ内ペアリングコード貼り付け。URL ではなく 32 文字 hex (相手の sessionId) を受け取る。
-    /// ブラウザでうっかり開かれる事故を防ぐため URL から GUID 風文字列に変更。
+    /// アプリ内ペアリングコード貼り付け。相手の deviceId と短命 nonce を組み合わせたコードを受け取る。
     /// </summary>
     Task<(bool Success, string Message)> PairFromCodeAsync(string code, CancellationToken ct = default)
         => Task.FromResult((false, "未実装"));

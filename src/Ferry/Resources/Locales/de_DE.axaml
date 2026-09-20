@@ -164,7 +164,7 @@
   <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">Fehler: {0}</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 Code des Partners zum Koppeln einfügen</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">Füge den Code ein, der auf dem anderen PC angezeigt wird.</x:String>
-  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">32-stelliger Kopplungscode</x:String>
+<x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">Kopplungscode</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">Wird verarbeitet …</x:String>
   <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">Kopplungscode</x:String>
   <x:String x:Key="Text.Member.Delete" xml:space="preserve">Löschen</x:String>

@@ -165,7 +165,7 @@
   <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">Kesalahan: {0}</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 Tempel kode rekan untuk menyandingkan</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">Tempel kode yang ditampilkan di PC lain.</x:String>
-  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">Kode penyandingan 32 karakter</x:String>
+<x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">Kode penyandingan</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">Memproses…</x:String>
   <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">Kode penyandingan</x:String>
   <x:String x:Key="Text.Member.Delete" xml:space="preserve">Hapus</x:String>

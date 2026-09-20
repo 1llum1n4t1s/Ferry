@@ -165,7 +165,7 @@
   <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">பிழை: {0}</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 இணைக்க மற்றவரின் குறியீட்டை ஒட்டவும்</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">மற்ற கணினியில் காட்டப்படும் குறியீட்டை ஒட்டவும்.</x:String>
-  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">32 எழுத்து இணைப்புக் குறியீடு</x:String>
+<x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">இணைப்புக் குறியீடு</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">செயலாக்கப்படுகிறது…</x:String>
   <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">இணைப்புக் குறியீடு</x:String>
   <x:String x:Key="Text.Member.Delete" xml:space="preserve">நீக்கு</x:String>

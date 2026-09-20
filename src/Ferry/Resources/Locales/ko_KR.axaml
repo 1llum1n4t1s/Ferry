@@ -165,7 +165,7 @@
   <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">오류: {0}</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 상대방 코드를 붙여넣어 페어링</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">다른 PC에 표시된 코드를 붙여넣으세요.</x:String>
-  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">32자리 페어링 코드</x:String>
+<x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">페어링 코드</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">처리 중…</x:String>
   <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">페어링 코드</x:String>
   <x:String x:Key="Text.Member.Delete" xml:space="preserve">삭제</x:String>

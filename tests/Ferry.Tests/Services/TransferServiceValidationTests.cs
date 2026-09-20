@@ -19,6 +19,50 @@ public class TransferServiceValidationTests
     }
 
     [Theory]
+    [InlineData("", true)]
+    [InlineData("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", true)]
+    [InlineData("A123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF", true)]
+    [InlineData("a", false)]
+    [InlineData("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeg", false)]
+    public void FileMetaのSHA256は空または64桁hexだけを受理する(string value, bool expected)
+    {
+        Assert.Equal(expected, TransferService.IsValidExpectedSha256(value));
+    }
+
+    [Fact]
+    public async Task 短いSHA256を含むFileMetaは承認前にRejectする()
+    {
+        const string peerId = "peer-B";
+        var transferId = Guid.NewGuid();
+        var connectionService = Substitute.For<IConnectionService>();
+        var settingsService = Substitute.For<ISettingsService>();
+        settingsService.Settings.Returns(new AppSettings());
+        var rejected = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        connectionService.SendAsync(peerId, Arg.Any<byte[]>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                rejected.TrySetResult(callInfo.ArgAt<byte[]>(1));
+                return Task.CompletedTask;
+            });
+
+        using var service = new TransferService(connectionService, settingsService);
+        var approvalCount = 0;
+        service.ApprovalRequested += (_, _) => Interlocked.Increment(ref approvalCount);
+        service.HandleReceivedData(
+            FileChunker.CreateFileMetaMessage("invalid.bin", 0, 0, "a", transferId),
+            peerId);
+
+        var reject = FileChunker.ParseReject(await rejected.Task.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken));
+
+        Assert.NotNull(reject);
+        Assert.Equal(transferId, reject.Value.TransferId);
+        Assert.Equal("不正な SHA-256", reject.Value.Reason);
+        Assert.Equal(0, approvalCount);
+    }
+
+    [Theory]
     [InlineData(-1L, 0)]
     [InlineData(1024L, 0)]
     public async Task 不正なFileMetaは受信元ピアへ即時Rejectする(long fileSize, int totalChunks)

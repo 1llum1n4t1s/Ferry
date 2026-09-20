@@ -843,6 +843,15 @@ public sealed class TransferService : ITransferService, IDisposable
             return;
         }
 
+        // 旧版互換の FileMeta.Sha256 は空、または SHA-256 の 64 桁 hex だけを受理する。
+        // 短い非空値を状態へ入れると、完了ログの prefix 参照で例外化して不一致ファイルが残り得る。
+        if (!IsValidExpectedSha256(meta.Sha256))
+        {
+            Util.Logger.Log("不正な SHA-256 を含む FileMeta を拒否", Util.LogLevel.Warning);
+            SendRejectFireAndForget(transferIdGuid, "不正な SHA-256", receivePeerId);
+            return;
+        }
+
         // 制御文字（特に NUL '\0'）を含むファイル名/相対パスを早期に弾く。これらは後段の Path.* で
         // ArgumentException("Null character in path") を誘発し、未捕捉だと受信ループ→ChannelClosed で
         // 接続が切れる（細工 FileMeta 1 通で進行中転送を切断できるリモート DoS）。SafePath 側でも
@@ -1182,7 +1191,9 @@ public sealed class TransferService : ITransferService, IDisposable
             var actualHash = Convert.ToHexStringLower(sha256Bytes);
             hashMatch = string.Equals(actualHash, state.ExpectedSha256, StringComparison.OrdinalIgnoreCase);
             if (!hashMatch)
-                Util.Logger.Log($"SHA-256 検証失敗: 期待={state.ExpectedSha256[..16]}…, 実際={actualHash[..16]}…", Util.LogLevel.Error);
+                Util.Logger.Log(
+                    $"SHA-256 検証失敗: 期待={HashPrefix(state.ExpectedSha256)}…, 実際={HashPrefix(actualHash)}…",
+                    Util.LogLevel.Error);
         }
         catch (Exception ex)
         {
@@ -1442,6 +1453,21 @@ public sealed class TransferService : ITransferService, IDisposable
 
     internal static bool IsValidFlowAckCount(int ackedChunks, int totalChunks)
         => ackedChunks >= 0 && ackedChunks <= totalChunks;
+
+    internal static bool IsValidExpectedSha256(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return true;
+        if (value.Length != 64) return false;
+        foreach (var c in value)
+        {
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+                return false;
+        }
+        return true;
+    }
+
+    private static string HashPrefix(string value)
+        => value[..Math.Min(16, value.Length)];
 
     private void HandlePing(string peerId)
     {

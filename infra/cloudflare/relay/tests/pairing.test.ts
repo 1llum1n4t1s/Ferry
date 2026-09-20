@@ -3,7 +3,7 @@
  *
  * - derivePairId: C# ConnectionService.GeneratePairId (string.Compare Ordinal 昇順 + "_" 連結) と一致することを固定する。
  *   不一致だと A 側と B 側で別の pairId を導出し、signaling DO が別インスタンスに分裂して接続不能になる。
- * - handlePairLink: PC コード貼付ペアリング (bearer 必須 + 相手セッション存在のみ要求) の認可ロジックを固定する。
+ * - handlePairLink: PC コード貼付ペアリング (bearer 必須 + 相手 nonce 所有・単回消費) の認可ロジックを固定する。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { derivePairId, handlePairCreate, handlePairLink, handlePairSession, handlePairs } from '../src/pairing-routes';
@@ -17,6 +17,7 @@ vi.mock('../src/device-routes', () => ({
 
 const A = 'a'.repeat(32);
 const B = 'b'.repeat(32);
+const LINK_NONCE = 'b1'.repeat(16);
 const PAIR_ID_RE = /^[a-f0-9]{32}_[a-f0-9]{32}$/;
 
 describe('derivePairId', () => {
@@ -116,6 +117,15 @@ class FakeD1 {
           }
           if (isNonceClaim) {
             const claim = args[0] as string;
+            if (!sql.includes('sid IN')) {
+              const sid = args[1] as string;
+              const nonce = args[2] as string;
+              const cutoff = args[3] as number;
+              const row = nonces.get(sid);
+              if (!row || row.nonce !== nonce || row.createdAt < cutoff) return 0;
+              row.nonce = claim;
+              return 1;
+            }
             const sidA = args[3] as string;
             const nonceA = args[4] as string;
             const cutoffA = args[5] as number;
@@ -137,9 +147,14 @@ class FakeD1 {
             const createdAt = args[3] as number;
             // /pair/create の INSERT ... SELECT は、両 nonce が同じ claim 値かを条件にする。
             if (sql.includes('SELECT')) {
-              const rowA = nonces.get(args[4] as string);
-              const rowB = nonces.get(args[5] as string);
-              if (!rowA || !rowB || rowA.nonce !== args[6] || rowB.nonce !== args[6]) return 0;
+              if (sql.includes('COUNT(*)')) {
+                const rowA = nonces.get(args[4] as string);
+                const rowB = nonces.get(args[5] as string);
+                if (!rowA || !rowB || rowA.nonce !== args[6] || rowB.nonce !== args[6]) return 0;
+              } else {
+                const row = nonces.get(args[4] as string);
+                if (!row || row.nonce !== args[5]) return 0;
+              }
             }
             pairs.set(pairId, { nameA, nameB, createdAt });
             return 1;
@@ -233,16 +248,17 @@ describe('handlePairLink', () => {
 
   it('正常系: 相手セッションがアクティブなら 200 + pairingId + 両者へ notifyInbox', async () => {
     const db = new FakeD1();
-    db.setSessionActive(B, Date.now());
+    db.setSessionActive(B, Date.now(), LINK_NONCE);
     const env = makeEnv(db);
     const token = await bearerFor(A, env);
 
-    const res = await handlePairLink(mkRequest({ sidB: B, nameA: 'PC-A', nameB: 'PC-B' }, token), env);
+    const res = await handlePairLink(mkRequest({ sidB: B, nonceB: LINK_NONCE, nameA: 'PC-A', nameB: 'PC-B' }, token), env);
     expect(res.status).toBe(200);
     const j = (await res.json()) as { ok: boolean; pairingId: string };
     expect(j.ok).toBe(true);
     expect(j.pairingId).toBe(derivePairId(A, B));
     expect(db.hasPair(derivePairId(A, B))).toBe(true);
+    expect(db.hasNonce(B)).toBe(false);
     expect(notifyInboxMock).toHaveBeenCalledTimes(2);
     const calledWith = notifyInboxMock.mock.calls.map((c) => c[1]);
     expect(calledWith).toEqual(expect.arrayContaining([A, B]));
@@ -278,7 +294,7 @@ describe('handlePairLink', () => {
     const db = new FakeD1(); // B のセッション未登録
     const env = makeEnv(db);
     const token = await bearerFor(A, env);
-    const res = await handlePairLink(mkRequest({ sidB: B }, token), env);
+    const res = await handlePairLink(mkRequest({ sidB: B, nonceB: LINK_NONCE }, token), env);
     expect(res.status).toBe(404);
     expect(((await res.json()) as { error: string }).error).toBe('SESSION_NOT_FOUND');
     expect(notifyInboxMock).not.toHaveBeenCalled();
@@ -286,10 +302,10 @@ describe('handlePairLink', () => {
 
   it('相手セッションが 1h 超過なら 401 EXPIRED_SESSION', async () => {
     const db = new FakeD1();
-    db.setSessionActive(B, Date.now() - HOUR_MS - 1000);
+    db.setSessionActive(B, Date.now() - HOUR_MS - 1000, LINK_NONCE);
     const env = makeEnv(db);
     const token = await bearerFor(A, env);
-    const res = await handlePairLink(mkRequest({ sidB: B }, token), env);
+    const res = await handlePairLink(mkRequest({ sidB: B, nonceB: LINK_NONCE }, token), env);
     expect(res.status).toBe(401);
     expect(((await res.json()) as { error: string }).error).toBe('EXPIRED_SESSION');
   });
@@ -301,11 +317,11 @@ describe('handlePairLink', () => {
     const attacker = 'c'.repeat(32);
     const victim = B;
     const db = new FakeD1();
-    db.setSessionActive(victim, Date.now());
+    db.setSessionActive(victim, Date.now(), LINK_NONCE);
     const env = makeEnv(db);
     const token = await bearerFor(attacker, env);
 
-    const res = await handlePairLink(mkRequest({ sidB: victim }, token), env);
+    const res = await handlePairLink(mkRequest({ sidB: victim, nonceB: LINK_NONCE }, token), env);
     expect(res.status).toBe(200);
     const j = (await res.json()) as { pairingId: string };
     expect(j.pairingId).toBe(derivePairId(attacker, victim));
@@ -319,14 +335,14 @@ describe('handlePairLink', () => {
   // 必ず D1 sessions.public_key (bearer 本人が /pair/session で登録した権威データ) を使う。
   it('#C-32: body の pkA/pkB を無視し、D1 sessions.public_key を両者へ配る', async () => {
     const db = new FakeD1();
-    db.setSessionActive(B, Date.now());
+    db.setSessionActive(B, Date.now(), LINK_NONCE);
     db.setSessionPublicKey(A, 'AUTHORITATIVE_PK_A');
     db.setSessionPublicKey(B, 'AUTHORITATIVE_PK_B');
     const env = makeEnv(db);
     const token = await bearerFor(A, env);
 
     const res = await handlePairLink(
-      mkRequest({ sidB: B, pkA: 'ATTACKER_PK_A', pkB: 'ATTACKER_PK_B' }, token),
+      mkRequest({ sidB: B, nonceB: LINK_NONCE, pkA: 'ATTACKER_PK_A', pkB: 'ATTACKER_PK_B' }, token),
       env,
     );
     expect(res.status).toBe(200);
@@ -341,11 +357,11 @@ describe('handlePairLink', () => {
 
   it('#C-32: sessions 行が無くても申告値は使わず空の公開鍵で成立させる (可用性優先・平文フォールバック)', async () => {
     const db = new FakeD1();
-    db.setSessionActive(B, Date.now()); // public_key は未登録
+    db.setSessionActive(B, Date.now(), LINK_NONCE); // public_key は未登録
     const env = makeEnv(db);
     const token = await bearerFor(A, env);
 
-    const res = await handlePairLink(mkRequest({ sidB: B, pkA: 'ATTACKER_PK_A', pkB: 'ATTACKER_PK_B' }, token), env);
+    const res = await handlePairLink(mkRequest({ sidB: B, nonceB: LINK_NONCE, pkA: 'ATTACKER_PK_A', pkB: 'ATTACKER_PK_B' }, token), env);
     expect(res.status).toBe(200);
 
     const event = notifyInboxMock.mock.calls[0][2] as { pkA: string; pkB: string };
@@ -365,6 +381,50 @@ describe('handlePairLink', () => {
     expect(res.status).toBe(429);
     expect(((await res.json()) as { error: string }).error).toBe('DEVICE_RATE_LIMIT');
     expect(limitSpy).toHaveBeenCalledWith({ key: A });
+    expect(notifyInboxMock).not.toHaveBeenCalled();
+  });
+
+  it('nonce が無い、または形式不正なら 400 BAD_NONCE', async () => {
+    const db = new FakeD1();
+    db.setSessionActive(B, Date.now(), LINK_NONCE);
+    const env = makeEnv(db);
+    const token = await bearerFor(A, env);
+
+    for (const nonceB of [undefined, 'not-hex']) {
+      const res = await handlePairLink(mkRequest({ sidB: B, nonceB }, token), env);
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toBe('BAD_NONCE');
+    }
+    expect(db.hasPair(derivePairId(A, B))).toBe(false);
+  });
+
+  it('永続 deviceId を知っていても相手 nonce が一致しなければ成立しない', async () => {
+    const db = new FakeD1();
+    db.setSessionActive(B, Date.now(), LINK_NONCE);
+    const env = makeEnv(db);
+    const token = await bearerFor(A, env);
+
+    const res = await handlePairLink(mkRequest({ sidB: B, nonceB: 'c2'.repeat(16) }, token), env);
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: string }).error).toBe('INVALID_NONCE_MATCH');
+    expect(db.hasPair(derivePairId(A, B))).toBe(false);
+    expect(db.hasNonce(B)).toBe(true);
+    expect(notifyInboxMock).not.toHaveBeenCalled();
+  });
+
+  it('同じコードの再送は成立せず、通知も再送しない', async () => {
+    const db = new FakeD1();
+    db.setSessionActive(B, Date.now(), LINK_NONCE);
+    const env = makeEnv(db);
+    const token = await bearerFor(A, env);
+    const body = { sidB: B, nonceB: LINK_NONCE };
+
+    expect((await handlePairLink(mkRequest(body, token), env)).status).toBe(200);
+    notifyInboxMock.mockClear();
+
+    const replay = await handlePairLink(mkRequest(body, token), env);
+    expect(replay.status).toBe(404);
+    expect(((await replay.json()) as { error: string }).error).toBe('SESSION_NOT_FOUND');
     expect(notifyInboxMock).not.toHaveBeenCalled();
   });
 });

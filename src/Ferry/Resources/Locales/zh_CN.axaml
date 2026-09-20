@@ -163,7 +163,7 @@
   <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">错误：{0}</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 粘贴对方的代码进行配对</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">请粘贴另一台电脑上显示的代码。</x:String>
-  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">32 位配对代码</x:String>
+<x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">配对代码</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">处理中…</x:String>
   <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">配对代码</x:String>
   <x:String x:Key="Text.Member.Delete" xml:space="preserve">删除</x:String>

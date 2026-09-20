@@ -165,7 +165,7 @@
   <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">Error: {0}</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 Codicem socii insere ad coniungendum</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">Codicem in altero computatro monstratum insere.</x:String>
-  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">Codex coniunctionis 32 litterarum</x:String>
+<x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">Codex coniunctionis</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">Tractatur…</x:String>
   <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">Codex coniunctionis</x:String>
   <x:String x:Key="Text.Member.Delete" xml:space="preserve">Dele</x:String>

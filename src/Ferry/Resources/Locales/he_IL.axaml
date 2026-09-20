@@ -156,7 +156,7 @@
   <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">שגיאה: {0}</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 הדבק את הקוד של הצד השני כדי להתאים</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">הדבק את הקוד המוצג במחשב השני.</x:String>
-  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">קוד התאמה בן 32 תווים</x:String>
+<x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">קוד התאמה</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">מעבד…</x:String>
   <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">קוד התאמה</x:String>
   <x:String x:Key="Text.Member.Delete" xml:space="preserve">מחק</x:String>

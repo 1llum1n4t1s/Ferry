@@ -180,7 +180,7 @@
   <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">Erro: {0}</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 Cole o código do parceiro para parear</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">Cole o código exibido no outro PC.</x:String>
-  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">Código de pareamento de 32 caracteres</x:String>
+<x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">Código de pareamento</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">Processando…</x:String>
   <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">Código de pareamento</x:String>
   <x:String x:Key="Text.Member.Delete" xml:space="preserve">Excluir</x:String>

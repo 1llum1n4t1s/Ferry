@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
+using Ferry.Infrastructure;
 using Ferry.Models;
 using Ferry.Services;
 using NSubstitute;
@@ -285,6 +286,72 @@ public sealed class PairSyncServiceTests
         Assert.True(peer.PairsSsotObserved);
         await registry.Received(1).UpdatePeerIfPresentAsync(peer);
         await registry.DidNotReceive().AddOrUpdatePeerAsync(Arg.Any<PairedPeer>());
+    }
+
+    [Fact]
+    public async Task UnpairPush_D1不在を再確認したら前面状態に関係なく即時削除する()
+    {
+        var registry = SubstituteRegistry();
+        var signaling = Substitute.For<ISignalingService>();
+        signaling.GetPairWithStatusAsync(ExpectedPairId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult((HttpStatusCode.NotFound, "null")));
+        var source = Substitute.For<IConnectionService>();
+        var removed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        registry.RemovePeerAsync(PeerId).Returns(_ =>
+        {
+            removed.TrySetResult();
+            return Task.CompletedTask;
+        });
+
+        using var svc = new PairSyncService(signaling, registry, DeviceId, remoteUnpairSource: source);
+        svc.SetActive(false);
+
+        source.RemoteUnpairDetected += Raise.Event<EventHandler<string>>(source, ExpectedPairId);
+        await removed.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        await registry.Received(1).RemovePeerAsync(PeerId);
+    }
+
+    [Fact]
+    public async Task UnpairPush_D1にペアが残っていれば削除しない()
+    {
+        var registry = SubstituteRegistry();
+        using var svc = new PairSyncService(
+            (_, _) => Task.FromResult((HttpStatusCode.OK, "{\"pairId\":\"alice_bob\"}")),
+            registry,
+            DeviceId);
+
+        await svc.HandleRemoteUnpairAsync(ExpectedPairId, TestContext.Current.CancellationToken);
+
+        await registry.DidNotReceive().RemovePeerAsync(Arg.Any<string>());
+    }
+
+    [Fact]
+    public async Task SetActive_前面復帰時に15分周期を待たず即時同期する()
+    {
+        var registry = SubstituteRegistry();
+        var firstFetch = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondFetch = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var fetchCount = 0;
+        using var svc = new PairSyncService(
+            (_, _) =>
+            {
+                var count = Interlocked.Increment(ref fetchCount);
+                if (count == 1) firstFetch.TrySetResult();
+                if (count == 2) secondFetch.TrySetResult();
+                return Task.FromResult((HttpStatusCode.OK, "{\"pairId\":\"alice_bob\"}"));
+            },
+            registry,
+            DeviceId);
+
+        svc.SetActive(false);
+        svc.Start();
+        await firstFetch.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        svc.SetActive(true);
+        await secondFetch.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, Volatile.Read(ref fetchCount));
     }
 
     // === ヘルパ ===

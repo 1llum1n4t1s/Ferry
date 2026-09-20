@@ -275,6 +275,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     public event EventHandler<Infrastructure.DataReceivedEventArgs>? DataReceived;
     public event EventHandler<Infrastructure.ConnectionLostEventArgs>? ConnectionLost;
     public event EventHandler<string>? StatusMessageChanged;
+    public event EventHandler<string>? RemoteUnpairDetected;
 
     // === rere #D-001(b) / 複数ペア同時接続対応 Stage 3c: per-peer セッション暗号 ===
 
@@ -294,13 +295,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     /// <summary>リレー WebSocket に付与する cfToken の取得デリゲート（CF=CfTokenProvider.GetCfTokenAsync）。
     ///
-    /// ⚠️ **現時点でサーバ側 `/ferry-relay` はこの Bearer を検証していない**（`index.ts` は pairId と role
-    /// だけで RelayDO に入室させる）。pairId は deviceId の Ordinal 連結で決定的に導出できるため、
-    /// 相手の deviceId を知る第三者は同じルームに入って 2 スロットを埋め、正当な合流を 409 で
-    /// 遮断できる（PairSecret を持たない旧ペアでは中継データの盗聴・改竄も成立する）。
-    /// 恒久対策はシグナリングと同じ「Bearer 必須 + pairId 当事者検証」だが、必須化した瞬間に
-    /// **Bearer を送らない出荷済みクライアントのリレー転送が全滅する**ため、まずクライアント側の
-    /// 付与だけを先行させて普及を待つ（サーバ側での必須化は普及後の別作業）。null 許容はテスト用。</summary>
+    /// サーバーは Bearer があれば署名・pairId 当事者・D1 台帳を検証し、invalid bearer を legacy へ
+    /// 降格しない。現在は出荷済み旧版のため `optional/transition` で、Bearer 無しだけを IP rate limit と
+    /// legacy 小 quota の互換枠へ通す。`required` への反転は旧版の普及確認後に行う。null 許容はテスト用。</summary>
     private readonly Func<Task<string>>? _bearerTokenAsync;
 
     /// <summary>signaling 実装を生成する。</summary>
@@ -398,7 +395,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     }
 
     /// <summary>
-    /// v1.0.38: ペアリングコード (32 文字 hex = sessionId) を直接受け取ってペアリングする。
+    /// ペアリングコード (deviceId + 短命 nonce) を直接受け取ってペアリングする。
     /// URL 貼り付け方式 (旧 PairFromUrlAsync、Bridge の URL ペアリング撤去に伴い削除) と違って
     /// ブラウザで開かれる事故が起きない。
     /// </summary>
@@ -412,10 +409,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         if (string.IsNullOrWhiteSpace(code))
             return (false, App.Text("Connection.PairFromCode.EmptyCode"));
 
-        var sidB = code.Trim();
-
-        // 32 文字 hex (Guid "N" 形式) の検証
-        if (!Guid.TryParseExact(sidB, "N", out _))
+        if (!Util.PairingCode.TryParse(code, out var sidB, out var nonceB))
             return (false, App.Text("Connection.PairFromCode.InvalidCode"));
 
         if (sidB == _deviceId)
@@ -427,7 +421,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             return (false, App.Text("Connection.PairFromCode.SessionNotFound"));
 
         var resolvedNameB = displayName ?? "PC-B";
-        await _signaling.SubmitPairingAsync(_deviceId, _displayName, sidB, resolvedNameB, PublicKeyForQr, peerPublicKey ?? "", ct);
+        await _signaling.SubmitPairingAsync(_deviceId, _displayName, sidB, resolvedNameB, nonceB, PublicKeyForQr, peerPublicKey ?? "", ct);
         return (true, App.Text("Connection.PairFromCode.Success", _displayName, resolvedNameB));
     }
 
@@ -646,6 +640,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             {
                 var watcher = NewSignaling();
                 watcher.ConnectKnockReceived += OnConnectKnock;
+                watcher.RemoteUnpairDetected += OnRemoteUnpairDetected;
                 // StartWatchingPairing = inbox WS 購読の開始。PairingDetected はこの watcher では未購読
                 // なので、flush されるペア成立イベントは無害に捨てられる（本来のペアリング watcher は別インスタンス）。
                 watcher.StartWatchingPairing();
@@ -657,6 +652,12 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 Util.Logger.Log($"接続ノック監視の開始に失敗（安全網ポーリングのみで運用）: {ex.Message}", Util.LogLevel.Warning);
             }
         }
+    }
+
+    private void OnRemoteUnpairDetected(object? sender, string pairId)
+    {
+        if (!string.IsNullOrEmpty(pairId))
+            RemoteUnpairDetected?.Invoke(this, pairId);
     }
 
     /// <summary>接続ノック受信: pairId からペア相手を割り出し、該当 Session の listener を即時に起こす。</summary>
@@ -2786,6 +2787,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             if (_knockWatcher != null)
             {
                 _knockWatcher.ConnectKnockReceived -= OnConnectKnock;
+                _knockWatcher.RemoteUnpairDetected -= OnRemoteUnpairDetected;
                 try { _knockWatcher.Dispose(); } catch { /* ignore */ }
                 _knockWatcher = null;
             }

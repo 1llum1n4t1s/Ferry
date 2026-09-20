@@ -34,8 +34,7 @@
                        RenderOptions.BitmapInterpolationMode="HighQuality" />
             </Border>
 
-            <!-- v1.0.38: ペアリングコード共有 (URL ではなく 32 文字 hex)。
-                 ブラウザに URL を開かれる事故を防ぐ目的でただの文字列に変更 -->
+            <!-- deviceId と短命 nonce を組み合わせたワンタイムコードを共有する。 -->
             <StackPanel Spacing="8"
                         IsVisible="{Binding PairingCode, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                 <TextBlock Text="{DynamicResource Text.Connection.PairingCode}"
@@ -77,7 +76,7 @@
                     Margin="0,4,0,4"
                     IsVisible="{Binding PairingCode, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-            <!-- v1.0.38: 相手のペアリングコードを貼り付け (URL ではなく 32 文字 hex)。
+            <!-- 相手の短命ペアリングコードを貼り付け。
                  コピー欄と同じ PairingCode 依存にし、自分のコードがある時だけ一緒に出す -->
             <StackPanel Spacing="6"
                         IsVisible="{Binding PairingCode, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">

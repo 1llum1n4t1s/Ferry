@@ -162,7 +162,7 @@
   <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">Erreur : {0}</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 Collez le code du correspondant pour associer</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">Collez le code affiché sur l'autre PC.</x:String>
-  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">Code d'association de 32 caractères</x:String>
+<x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">Code d'association</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">Traitement en cours…</x:String>
   <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">Code d'association</x:String>
   <x:String x:Key="Text.Member.Delete" xml:space="preserve">Supprimer</x:String>

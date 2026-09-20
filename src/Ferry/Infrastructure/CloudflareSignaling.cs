@@ -55,6 +55,8 @@ public sealed class CloudflareSignaling : ISignalingService
 
     public event EventHandler<string>? ConnectKnockReceived;
 
+    public event EventHandler<string>? RemoteUnpairDetected;
+
     public bool InboxConnected => Volatile.Read(ref _inboxConnected) != 0;
 
     public string LastPairingNonce => _lastPairingNonce;
@@ -122,16 +124,14 @@ public sealed class CloudflareSignaling : ISignalingService
     /// <summary>
     /// PC コード貼付ペアリング（QR/Bridge を介さずアプリ内でコードを貼り付けて直接ペア成立させる経路）。
     /// CF 単独完結 Step 7: relay Worker の POST /pair/link を叩く。認可は「自分の bearer (cfToken) で
-    /// sidA=本人をサーバーが保証 + 相手 (sidB) はセッションが現在アクティブであることだけを要求」
-    /// （相手の nonce 値の所有は不要）。旧 Firebase rules の `pairing_nonces/{sidB}.exists()` 条件と
-    /// 同じセキュリティレベルで、QR/Bridge 専用の /pair/create（両 nonce 値所有）とは別の認可経路。
+    /// sidA=本人をサーバーが保証 + 相手 (sidB) の短命 nonce を所有」で、nonce は成立時に単回消費する。
     /// sidA 引数はサーバーに送らない（claims.deviceId のみを信頼の源にするため。呼び出し元
     /// ConnectionService は常に自分の _deviceId を渡す契約）。
     /// </summary>
-    public async Task SubmitPairingAsync(string sidA, string nameA, string sidB, string nameB, string pkA = "", string pkB = "", CancellationToken ct = default)
+    public async Task SubmitPairingAsync(string sidA, string nameA, string sidB, string nameB, string pairingNonceB, string pkA = "", string pkB = "", CancellationToken ct = default)
     {
         var body = JsonSerializer.Serialize(
-            new PairLinkPostDto { SidB = sidB, NameA = nameA, NameB = nameB, PkA = pkA, PkB = pkB },
+            new PairLinkPostDto { SidB = sidB, NonceB = pairingNonceB, NameA = nameA, NameB = nameB, PkA = pkA, PkB = pkB },
             CfJsonContext.Default.PairLinkPostDto);
         using var resp = await SendAsync(HttpMethod.Post, Url("/pair/link"), body, ct);
         if (resp.IsSuccessStatusCode) return;
@@ -139,7 +139,7 @@ public sealed class CloudflareSignaling : ISignalingService
         var errorCode = await TryReadErrorCodeAsync(resp, ct);
         throw new HttpRequestException(errorCode switch
         {
-            "SESSION_NOT_FOUND" or "EXPIRED_SESSION" =>
+            "SESSION_NOT_FOUND" or "EXPIRED_SESSION" or "INVALID_NONCE_MATCH" or "NONCE_ALREADY_CONSUMED" =>
                 "ペアリング先のセッションが見つかりません。相手の PC でアプリが起動していることを確認してください。",
             "SAME_SID" => "これは自分の PC のコードです。もう片方の PC のコードを貼り付けてください。",
             "BAD_TOKEN" => "認証に失敗しました。アプリを再起動して再試行してください。",
@@ -313,8 +313,14 @@ public sealed class CloudflareSignaling : ISignalingService
             return;
         }
 
-        // unpair 通知は将来クライアント側 peer 削除に配線する（現状は PairSyncService の GET ポーリングが拾う）。
-        if (string.Equals(e.Type, "unpair", StringComparison.Ordinal)) return;
+        // DELETE /pairs/{pairId} の push。PairSyncService が D1 の不在を再確認してから
+        // ローカル peer 削除へ反映するため、ここでは pairId をそのまま通知する。
+        if (string.Equals(e.Type, "unpair", StringComparison.Ordinal))
+        {
+            if (!string.IsNullOrEmpty(e.PairingId))
+                RemoteUnpairDetected?.Invoke(this, e.PairingId);
+            return;
+        }
 
         // 自分が当事者で、subscribe 開始 -60s tolerance より新しいものだけ採用（Firebase の replay gate と同じ）。
         if (e.SidA != _sessionId && e.SidB != _sessionId) return;
@@ -741,6 +747,7 @@ internal sealed class SessionGetDto
 internal sealed class PairLinkPostDto
 {
     [JsonPropertyName("sidB")] public string SidB { get; set; } = string.Empty;
+    [JsonPropertyName("nonceB")] public string NonceB { get; set; } = string.Empty;
     [JsonPropertyName("nameA")] public string NameA { get; set; } = string.Empty;
     [JsonPropertyName("nameB")] public string NameB { get; set; } = string.Empty;
     [JsonPropertyName("pkA")] public string PkA { get; set; } = string.Empty;

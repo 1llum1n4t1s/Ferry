@@ -28,8 +28,8 @@ public interface ISignalingService : IPresenceService
     /// <summary>セッションを登録し、ペアリング監視を開始できる状態にする。戻り値は sessionId(=deviceId)。</summary>
     Task<string> RegisterSessionAsync(string deviceId, string displayName, string publicKey = "", CancellationToken ct = default);
 
-    /// <summary>アプリ内 URL 交換ペアリング（Bridge 非経由）。両 PC が <see cref="StartWatchingPairing"/> で検知する。</summary>
-    Task SubmitPairingAsync(string sidA, string nameA, string sidB, string nameB, string pkA = "", string pkB = "", CancellationToken ct = default);
+    /// <summary>アプリ内コード交換ペアリング（Bridge 非経由）。相手の短命 nonce をサーバーで単回消費する。</summary>
+    Task SubmitPairingAsync(string sidA, string nameA, string sidB, string nameB, string pairingNonceB, string pkA = "", string pkB = "", CancellationToken ct = default);
 
     /// <summary>指定 sessionId の存在と表示名 / 公開鍵を取得する（URL ペアリング前の事前チェック）。</summary>
     Task<(bool Exists, string? DisplayName, string? PublicKey)> CheckSessionAsync(string sessionId, CancellationToken ct = default);
@@ -44,6 +44,9 @@ public interface ISignalingService : IPresenceService
     /// <summary>接続ノック（ペア相手が offer / probe-offer を書いた合図。relay Worker が inbox WS へ push する）。
     /// 引数は pairId。listener はこれを主検知経路にして安全網ポーリングを低頻度化する（CF 使用量削減）。</summary>
     event EventHandler<string>? ConnectKnockReceived;
+
+    /// <summary>相手が D1 の正式ペア台帳を削除した通知。引数は canonical pairId。</summary>
+    event EventHandler<string>? RemoteUnpairDetected;
 
     /// <summary>inbox WebSocket が現在接続中か（ノック即時性の目安）。切断中は listener 側が
     /// ポーリング間隔を詰めてノック欠落を補う。</summary>

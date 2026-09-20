@@ -13,14 +13,14 @@ namespace Ferry.Services;
 /// <summary>
 /// rere #D-001(a) Phase B §6.2: pairs/{pairId} SSoT のローカル同期サービス。
 ///
-/// 起動時即 + 5min + 1h のハイブリッドポーリングで D1 台帳の pairs/{pairId} を GET し、
-/// 404 を検出したら相手が削除したと判定してローカル peers.json から該当ペアを削除する。
+/// inbox の unpair push と、起動時即 + 5min + 15min 周期の照合で D1 台帳の pairs/{pairId} を GET し、
+/// 404 を確証したら相手が削除したと判定してローカル peers.json から該当ペアを削除する。
 ///
 /// Robustness（peers.json 全消失の不可逆破壊を防ぐ）:
 ///   - 404/null のときだけ削除候補（401/403/5xx/timeout/network error は『不明』として未操作）
 ///   - N=3 回連続 404 で初めて削除（一時的な伝播遅延の誤検出を防ぐ）
 ///   - 起動直後 5min の grace period（初回 fetch のみ例外で許可。bootstrap race を避ける）
-///   - Visibility gate: <see cref="SetActive"/> false の間はループ停止（presence と同方針・帯域節約）
+///   - Visibility gate: <see cref="SetActive"/> false の間は定期ループ停止。unpair push は処理し、前面復帰時は即時照合
 /// </summary>
 public sealed class PairSyncService : IDisposable
 {
@@ -38,6 +38,8 @@ public sealed class PairSyncService : IDisposable
     /// テスト用 ctor (HTTP delegate 差し替え) では null のまま (auth 待ちなしで delegate を呼ぶ)。
     /// </summary>
     private readonly Func<CancellationToken, Task>? _ensureAuthAsync;
+    private readonly IConnectionService? _remoteUnpairSource;
+    private readonly SemaphoreSlim _checkGate = new(1, 1);
     private readonly ConcurrentDictionary<string, int> _consecutive404 = new();
     /// <summary>Codex P1 fix: 旧 peers.json 由来の既存ペアは pairs/{pairId} が未作成なので、責任者側が初回 backfill を試みる。Codex P2 fix (第4弾): 成功時のみ marker を set する (失敗時はマーカーを残さず次サイクルで再試行)。</summary>
     private readonly ConcurrentDictionary<string, byte> _backfillAttempted = new();
@@ -47,13 +49,19 @@ public sealed class PairSyncService : IDisposable
     private CancellationTokenSource? _cts;
     private volatile bool _isActive = true;
 
-    public PairSyncService(ISignalingService signaling, IPeerRegistryService peerRegistry, string deviceId, Func<CancellationToken, Task>? ensureAuthAsync = null)
+    public PairSyncService(
+        ISignalingService signaling,
+        IPeerRegistryService peerRegistry,
+        string deviceId,
+        Func<CancellationToken, Task>? ensureAuthAsync = null,
+        IConnectionService? remoteUnpairSource = null)
         : this(
             (pairId, ct) => signaling.GetPairWithStatusAsync(pairId, ct),
             (pairId, record, ct) => signaling.PutPairAsync(pairId, record),
             peerRegistry,
             deviceId,
-            ensureAuthAsync)
+            ensureAuthAsync,
+            remoteUnpairSource)
     {
     }
 
@@ -66,7 +74,7 @@ public sealed class PairSyncService : IDisposable
         Func<string, CancellationToken, Task<(HttpStatusCode Status, string Body)>> fetchPair,
         IPeerRegistryService peerRegistry,
         string deviceId)
-        : this(fetchPair, null, peerRegistry, deviceId, null)
+        : this(fetchPair, null, peerRegistry, deviceId, null, null)
     {
     }
 
@@ -75,13 +83,17 @@ public sealed class PairSyncService : IDisposable
         Func<string, PairRecord, CancellationToken, Task>? putPair,
         IPeerRegistryService peerRegistry,
         string deviceId,
-        Func<CancellationToken, Task>? ensureAuthAsync)
+        Func<CancellationToken, Task>? ensureAuthAsync,
+        IConnectionService? remoteUnpairSource)
     {
         _fetchPair = fetchPair;
         _putPair = putPair;
         _peerRegistry = peerRegistry;
         _deviceId = deviceId;
         _ensureAuthAsync = ensureAuthAsync;
+        _remoteUnpairSource = remoteUnpairSource;
+        if (_remoteUnpairSource != null)
+            _remoteUnpairSource.RemoteUnpairDetected += OnRemoteUnpairDetected;
     }
 
     /// <summary>同期ループを開始する。起動時に 1 回呼ぶ。</summary>
@@ -98,7 +110,20 @@ public sealed class PairSyncService : IDisposable
     /// <summary>Visibility gate。MainWindow の前面 / 最小化に応じてオン/オフする。</summary>
     public void SetActive(bool active)
     {
+        var wasActive = _isActive;
         _isActive = active;
+        if (active && !wasActive && _cts is { IsCancellationRequested: false } cts)
+            _ = RefreshAfterReactivationAsync(cts.Token);
+    }
+
+    private async Task RefreshAfterReactivationAsync(CancellationToken ct)
+    {
+        try { await CheckOnceAsync(applyGracePeriod: false, ct); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"PairSyncService: 前面復帰時の即時同期に失敗: {ex.Message}", Util.LogLevel.Debug);
+        }
     }
 
     private async Task LoopAsync(CancellationToken ct)
@@ -171,6 +196,13 @@ public sealed class PairSyncService : IDisposable
     }
 
     internal async Task CheckOnceAsync(bool applyGracePeriod, CancellationToken ct)
+    {
+        await _checkGate.WaitAsync(ct);
+        try { await CheckOnceCoreAsync(applyGracePeriod, ct); }
+        finally { _checkGate.Release(); }
+    }
+
+    private async Task CheckOnceCoreAsync(bool applyGracePeriod, CancellationToken ct)
     {
         var inGrace = applyGracePeriod && DateTime.UtcNow - _startedAtUtc < _gracePeriod;
         // 404 連続閾値到達時に RemovePeerAsync で peerRegistry を変更するため、列挙中の collection 改変を
@@ -335,11 +367,78 @@ public sealed class PairSyncService : IDisposable
         }
     }
 
+    private async void OnRemoteUnpairDetected(object? sender, string pairId)
+    {
+        try
+        {
+            await HandleRemoteUnpairAsync(pairId, _cts?.Token ?? CancellationToken.None);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            Util.Logger.Log($"PairSyncService: unpair push の反映に失敗: {ex.Message}", Util.LogLevel.Warning);
+        }
+    }
+
+    /// <summary>unpair push を受けたら D1 の不在を再確認し、確証できた場合だけ即時削除する。</summary>
+    internal async Task HandleRemoteUnpairAsync(string pairId, CancellationToken ct)
+    {
+        await _checkGate.WaitAsync(ct);
+        try
+        {
+            PairedPeer? peer;
+            try
+            {
+                peer = _peerRegistry.GetPairedPeers()
+                    .FirstOrDefault(candidate => string.Equals(
+                        GeneratePairId(_deviceId, candidate.PeerId), pairId, StringComparison.Ordinal));
+            }
+            catch (Exception ex)
+            {
+                Util.Logger.Log($"PairSyncService: unpair push の peer 解決に失敗: {ex.Message}", Util.LogLevel.Warning);
+                return;
+            }
+
+            if (peer == null || _peerRegistry.IsPendingRemoval(peer.PeerId)) return;
+
+            // 定期 backfill と PairingCompleted 後の遅延 PUT が、push 直後の 404 を見て削除済み行を
+            // 再作成しないよう、D1 再確認からローカル削除まで pending marker を維持する。
+            _peerRegistry.MarkPendingRemoval(peer.PeerId);
+            try
+            {
+                var (status, body) = await _fetchPair(pairId, ct);
+                var confirmedAbsent = status == HttpStatusCode.NotFound
+                    || (status == HttpStatusCode.OK && body == "null");
+                if (!confirmedAbsent)
+                {
+                    Util.Logger.Log($"pairs/{pairId} unpair push 後の再確認が HTTP {(int)status} → 即時削除しない", Util.LogLevel.Debug);
+                    return;
+                }
+
+                if (_peerRegistry.FindPeer(peer.PeerId) == null) return;
+
+                Util.Logger.Log($"pairs/{pairId} unpair push と D1 不在を確認 → ローカル削除");
+                await _peerRegistry.RemovePeerAsync(peer.PeerId);
+                _consecutive404.TryRemove(peer.PeerId, out _);
+            }
+            finally
+            {
+                _peerRegistry.ClearPendingRemoval(peer.PeerId);
+            }
+        }
+        finally
+        {
+            _checkGate.Release();
+        }
+    }
+
     // pairId 導出規約は Util.PairId.Generate に集約済（ConnectionService と共通の単一定義点）。
     private static string GeneratePairId(string a, string b) => Util.PairId.Generate(a, b);
 
     public void Dispose()
     {
+        if (_remoteUnpairSource != null)
+            _remoteUnpairSource.RemoteUnpairDetected -= OnRemoteUnpairDetected;
         _cts?.Cancel();
         _cts?.Dispose();
         _cts = null;

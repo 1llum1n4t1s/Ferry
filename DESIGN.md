@@ -35,6 +35,8 @@ UI は AXAML + MVVM で構成し、`App.axaml.cs` がサービスを手動で組
 3. Worker が nonce を不可分に claim し、D1 `pairs` を作成して両 device の inbox へ結果を push する。
 4. 各 PC は公開鍵から PairSecret を導出し、ペア情報を `peers.json` へアトミックに保存する。
 
+PC 間のコード貼付経路は、永続 deviceId と短命 nonce を組み合わせたワンタイムコードを使う。呼び出し元の cfToken と相手 nonce の所有を検証し、成立時に nonce を単回消費する。
+
 ### 着信検知と接続確立
 
 1. 各アプリは共有の inbox WebSocket を 1 本保持し、offer 書き込み時の接続ノックで該当 listener を起こす。低頻度 HTTP poll は WebSocket 障害時の安全網である。
@@ -51,7 +53,7 @@ UI は AXAML + MVVM で構成し、`App.axaml.cs` がサービスを手動で組
 
 ### プレゼンスとペア同期
 
-クライアントは自分の presence を定期更新し、前面表示中だけ peer の `lastSeen` を ETag 付きで取得する。peer presence の参照は D1 の正式ペアに限定する。`PairSyncService` は D1 `pairs` とローカル台帳を定期照合し、remote unpair を反映する。
+クライアントは自分の presence を定期更新し、前面表示中だけ peer の `lastSeen` を ETag 付きで取得する。peer presence の参照は D1 の正式ペアに限定する。remote unpair は inbox push を受けて D1 の不在を再確認後に即時反映し、`PairSyncService` の定期照合と前面復帰時の即時照合を安全網にする。
 
 ## データの所有と寿命
 

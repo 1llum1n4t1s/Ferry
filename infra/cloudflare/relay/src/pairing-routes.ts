@@ -6,11 +6,8 @@
  *   DELETE /pair/session/{sid}      — セッション+nonce を revoke (bearer self)
  *   POST   /pair/create             — **両 sid の nonce 値所有が認可** (bearer なし)。D1 で server 検証し
  *                                     両 DeviceDO inbox へペア成立を push。Bridge(browser) から同一オリジンで呼ぶ
- *   POST   /pair/link               — **自分の bearer + 相手セッションの存在**が認可 (PC コード貼付ペアリング用)。
- *                                     sidA は cfToken の claims から (=本人性は HMAC 署名が担保)、相手 sidB は
- *                                     「pairing_nonces に行がありセッションが 1h 以内」であることだけを要求する
- *                                     (相手の nonce 値の所有は不要)。旧 Firebase rules の
- *                                     `pairing_nonces/{sidB}.exists()` 条件と同じセキュリティレベル。
+ *   POST   /pair/link               — **自分の bearer + 相手の短命 nonce 所有**が認可 (PC コード貼付ペアリング用)。
+ *                                     sidA は cfToken の claims から固定し、sidB の nonce は D1 で照合・単回消費する。
  *   PUT    /pairs/{pairId}          — pairs SSoT 書込 (bearer 当事者)
  *   GET    /pairs/{pairId}          — pairs SSoT 取得 (bearer 当事者)。404 で remote-unpair 検出
  *   DELETE /pairs/{pairId}          — unpair (bearer 当事者)。相手 inbox へ unpair push も送る
@@ -328,17 +325,6 @@ async function verifyNonce(env: Env, sid: string, nonce: string, label: string):
   return null;
 }
 
-/** sid のセッションが現在アクティブ（pairing_nonces に行があり 1h 以内）か、nonce 値を問わずに確認する。
- *  verifyNonce との違いは「値の一致」を見ない点のみ (handlePairLink の「相手の nonce 値所有は不要」要件用)。 */
-async function verifySessionActive(env: Env, sid: string, label: string): Promise<Response | null> {
-  const row = await env.DB.prepare('SELECT created_at FROM pairing_nonces WHERE sid=?')
-    .bind(sid)
-    .first<{ created_at: number }>();
-  if (!row) return jsonError(404, 'SESSION_NOT_FOUND', `${label}: pairing_nonces not present`);
-  if (Date.now() - row.created_at > NONCE_TTL_MS) return jsonError(401, 'EXPIRED_SESSION', `${label}: session expired`);
-  return null;
-}
-
 /**
  * rere レビュー #C-32: ペア成立イベントに載せる公開鍵を D1 `sessions.public_key`
  * （= /pair/session で bearer 本人が登録した権威データ）から引き直す。
@@ -394,17 +380,9 @@ async function notifyPairEstablished(
 // ---------- /pair/link (bearer 必須・PC コード貼付ペアリング用) ----------
 
 /**
- * 自分の bearer (cfToken) で sidA=本人を保証し、相手 (sidB) は「セッションが現在アクティブ
- * (pairing_nonces に行があり 1h 以内)」であることだけを要求する。相手の nonce 値の所有は不要。
- *
- * 攻撃者が被害者 C の sidC（コード）を知っているだけで C の inbox にペアリングを注入できないか:
- * - claims.deviceId は cfToken の HMAC 署名で保証されるため、攻撃者は「自分自身」としてしか
- *   sidA を名乗れない (sidA == claims.deviceId を強制)。
- * - 攻撃者は自分 (sidA=攻撃者) と sidB=C の組で /pair/link を呼べるが、これは
- *   「攻撃者が C とペアリングしようとした」というだけの事象で、C 側ユーザーが PairingDetected を
- *   受けて新規ピアとして表示される (rere #D-001(b) の通常のペアリング成立と同じ)。第三者 X の
- *   inbox に「sidA=攻撃者, sidB=X」以外の組（例えば被害者 Y と Z を勝手にペアリングする等）を
- *   注入することはできない（sidA は常に claims.deviceId 固定）。
+ * 自分の bearer (cfToken) で sidA=本人を保証し、相手 (sidB) は画面に表示された短命 nonce の
+ * 所有を要求する。永続 deviceId だけを知る第三者が、相手の宛先追加画面が開いている時間へ
+ * /pair/link を割り込ませて自動的に信頼ピアへ入る経路を作らない。
  */
 export async function handlePairLink(req: Request, env: Env): Promise<Response> {
   const claims = await authBearer(req, env);
@@ -422,15 +400,17 @@ export async function handlePairLink(req: Request, env: Env): Promise<Response> 
   const body = parsed.value;
   const sidA = claims.deviceId;
   const sidB = str(body.sidB);
+  const nonceB = str(body.nonceB);
   if (!HEX32.test(sidB)) return jsonError(400, 'BAD_SID', 'sidB must be 32 hex');
   if (sidA === sidB) return jsonError(400, 'SAME_SID', 'sidB must differ from caller deviceId');
+  if (!HEX32.test(nonceB)) return jsonError(400, 'BAD_NONCE', 'nonceB must be 32 hex');
   const names = readPairNames(body);
   if ('error' in names) return names.error;
   if (!env.DB) return d1Unavailable();
 
   let sessionErr: Response | null;
   try {
-    sessionErr = await verifySessionActive(env, sidB, 'sidB');
+    sessionErr = await verifyNonce(env, sidB, nonceB, 'B');
   } catch (e) {
     console.error('pair/link session D1 failed', String(e));
     return d1Unavailable();
@@ -450,16 +430,32 @@ export async function handlePairLink(req: Request, env: Env): Promise<Response> 
   // 相手側 (sidB) に渡る自分の公開鍵を任意値にできる状態だった。
   const pairingId = derivePairId(sidA, sidB);
   const orientedNames = orientPairNames(sidA, names.nameA, sidB, names.nameB);
+  const createdAt = Date.now();
+  const nonceClaim = crypto.randomUUID().replaceAll('-', '');
+  const nonceCutoff = createdAt - NONCE_TTL_MS;
+  let consumed: unknown[];
   try {
-    await env.DB.prepare(
-      'INSERT OR REPLACE INTO pairs (pair_id, name_a, name_b, created_at) VALUES (?,?,?,?)',
-    )
-      .bind(pairingId, orientedNames.nameA, orientedNames.nameB, Date.now())
-      .run();
+    consumed = await env.DB.batch([
+      env.DB.prepare(
+        'UPDATE pairing_nonces SET nonce=? WHERE sid=? AND nonce=? AND created_at>=?',
+      ).bind(nonceClaim, sidB, nonceB, nonceCutoff),
+      env.DB.prepare(
+        `INSERT OR REPLACE INTO pairs (pair_id, name_a, name_b, created_at)
+         SELECT ?,?,?,?
+         WHERE EXISTS (SELECT 1 FROM pairing_nonces WHERE sid=? AND nonce=?)`,
+      ).bind(pairingId, orientedNames.nameA, orientedNames.nameB, createdAt, sidB, nonceClaim),
+      env.DB.prepare(
+        'DELETE FROM pairing_nonces WHERE sid=? AND nonce=?',
+      ).bind(sidB, nonceClaim),
+    ]);
   } catch (e) {
-    console.error('pair/link pairs upsert D1 failed', String(e));
+    console.error('pair/link D1 transaction failed', String(e));
     return d1Unavailable();
   }
+  if (changesOf(consumed[0]) !== 1) {
+    return jsonError(409, 'NONCE_ALREADY_CONSUMED', 'pairing nonce was already consumed');
+  }
+  if (changesOf(consumed[1]) !== 1 || changesOf(consumed[2]) !== 1) return d1Unavailable();
 
   // 正式台帳への upsert 成功後にだけ、両 DeviceDO へ成立イベントを push する。
   await notifyPairEstablished(env, sidA, names.nameA, sidB, names.nameB, keys);

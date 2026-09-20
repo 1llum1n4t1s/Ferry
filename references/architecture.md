@@ -75,7 +75,7 @@ STUN は **Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google S
 4. Bridge が `POST /pair/create`（**両 sid の nonce 値所有を D1 で server 検証** = ghost peer 注入防止・bearer 不要・IP rate limit）→ 両 PC の DeviceDO inbox（WebSocket）へペア成立を即 push
 5. ペア情報 + PairSecret（交換した公開鍵から ECDH 導出）を `peers.json` にローカル保存
 
-**PC コード貼付ペアリング（スマホ無しの直接ペア）**: 相手の 32hex コードを貼ると `SubmitPairingAsync` → `POST /pair/link`。認可は「自分の bearer（sidA は cfToken の claims 固定＝詐称不能）+ 相手セッションがアクティブ（相手の nonce **値**の所有は不要）」で、QR 経路（`/pair/create`）とは別の認可モデルとして明確に分離（v1.0.67 で CF 対応）。device rate limit 付き。
+**PC コード貼付ペアリング（スマホ無しの直接ペア）**: 相手画面の `deviceId.nonce` ワンタイムコードを貼ると `SubmitPairingAsync` → `POST /pair/link`。認可は「自分の bearer（sidA は cfToken の claims 固定＝詐称不能）+ 相手の短命 nonce 所有」で、成立時に相手 nonce を D1 transaction 内で単回消費する。過去に知った永続 deviceId だけでは成立しない。device rate limit 付き。
 
 ### Cloudflare バックエンド構造（relay Worker）
 
@@ -86,7 +86,7 @@ STUN は **Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google S
 | `/sig/{pairId}/offer・answer・endpoint`（per-sender）、`probe-offer/{nonce}`・`probe-offers`・`probe-answer/{nonce}`（per-nonce） | **PairDO**（pairId ごと 1 DO） | storage キー `offer:{sender}` / `answer:{sender}` / `endpoint:{sender}` / `probeOffer:{nonce}` / `probeAnswer:{nonce}`。当事者検証 + sender キー強制（`X-Ferry-Device`）は Worker 側（`signaling-routes.ts`）で完結し、旧 Firebase rules の per-sender なりすまし防止（#D-003）をコードで担保 |
 | `/presence/{deviceId}`（POST/DELETE=本人のみ、peer GET・`/last-seen`=D1正式ペア） | **DeviceDO**（deviceId ごと 1 DO） | presence（`lastSeen` は server now）。`/last-seen` は ETag/304 対応（帯域節約）。transition 中だけ旧ペアの未登録台帳を許容 |
 | `/inbox`（WebSocket） | DeviceDO | ペア成立通知の真 push + **接続ノック**（§着信検知）。未読はキュー（TTL 1h・最大 50 件）に積んで接続時 flush。knock は transient で積まない。device 別接続 rate limit + 1 DeviceDO 最大 4 接続 |
-| `/pair/session`・`/pair/create`・`/pair/link` | **D1** `ferry_ledger`（`sessions` / `pairing_nonces` / `pairs`） | セッション登録・QR ペア成立・コード貼付ペア成立（認可モデルは上記） |
+| `/pair/session`・`/pair/create`・`/pair/link` | **D1** `ferry_ledger`（`sessions` / `pairing_nonces` / `pairs`） | セッション登録・QR ペア成立・ワンタイムコード貼付ペア成立（認可モデルは上記） |
 | `/pairs/{pairId}`（PUT/GET/DELETE、bearer 当事者のみ） | D1 `pairs` | ペア台帳 SSoT。GET 404 で remote-unpair 検出（`PairSyncService`）。DELETE は相手 inbox へ unpair push |
 | `/ferry-relay`（WebSocket） | **RelayDO + RelayQuotaDO** | 転送リレー本体（Hibernation 対応）と quota 予約。`wrangler.toml` の `QUOTA` / migration v4（v1〜v3 は不変）。pairId は `SALT` 付き SHA-256 で DO 名化（生 pairId 漏洩による横入り防止）。入室認可は optional 段階移行（下記） |
 
@@ -191,7 +191,7 @@ TCP / WebSocket 上の長さプレフィクス付きバイナリプロトコル�
 | Ping / Pong | 0x10 / 0x11 | キープアライブ |
 | ResumeRequest / ResumeResponse | 0x20 / 0x21 | レジューム関連 (現状応答は false 固定) |
 
-受信側（`TransferService.HandleFileChunk`）は **TransferId で受信状態を引き、`chunkIndex × ChunkSize` のオフセットへ `Seek` して書き込む**ため、UDP の順不同到着でも正しく再構成できる。受信完了は全 chunkIndex 受信（ビットマップ `ReceivedChunkSet`）で判定し、最後に SHA-256 でファイル整合性を検証する。受信ファイル名・相対パスはパストラバーサル防止のため保存先ディレクトリ配下に収まることを検証する。検証ロジックは純関数 `Util.SafePath`（`NormalizeSeparators` / `HasParentTraversal` / `HasUnsafeRoot` / `SafeFileName` / `IsWithinDirectory`）に集約。**送信元 OS のパス区切りに依存しない**よう受信した `FileName`/`RelativePath` を `\`→`/` 正規化してから basename 抽出・`..` パス要素判定し（Windows 送信 → mac/Linux 受信の混在を吸収。単独ファイル経路も正規化して非対称を解消）、最終防御は `StartsWith` ではなく `Path.GetRelativePath` ベースで saveDir 配下を強制する（区切り・大小・正規化のクロス OS 差を OS 既定の比較規則に委ねる）。加えて **NUL 等の制御文字を含む `FileName`/`RelativePath` は `HandleFileMeta` 冒頭で早期 `FileReject`**（`SafePath.ContainsControlChar`）し、`SafePath.IsWithinDirectory` も例外安全化（throw せず false に倒す）する。これが無いと細工 `FileMeta` の NUL で `Path.*` が `ArgumentException`→受信ループ→`ChannelClosed` で進行中転送を切断できる**リモート DoS**（ペア済み peer から 1 通で発火、early-return しないので `FileReject` も飛ばない）になる。保存パスの重複回避・フォルダマッピング・ディレクトリ/ファイル作成は **ユーザー承認後の `ApproveTransfer` で初めて実行**し、`FileMeta` だけではディスクへ副作用を出さない。承認待ちは同一 peer 32 件・全 peer 合算 128 件で打ち切り、超過分へ即 `FileReject` を返す。シンボリックリンク追跡は文字列防御の対象外（攻撃には saveDir への事前書込権限が必要で、信頼モデル§の設計途上事項）。回帰は `SafePathTests` / `TransferServiceValidationTests`。
+受信側（`TransferService.HandleFileChunk`）は **TransferId で受信状態を引き、`chunkIndex × ChunkSize` のオフセットへ `Seek` して書き込む**ため、UDP の順不同到着でも正しく再構成できる。受信完了は全 chunkIndex 受信（ビットマップ `ReceivedChunkSet`）で判定し、最後に SHA-256 でファイル整合性を検証する。旧形式 `FileMeta.Sha256` は空または64桁hexだけを受理し、不正値は承認・ファイル作成前に `FileReject` する。受信ファイル名・相対パスはパストラバーサル防止のため保存先ディレクトリ配下に収まることを検証する。検証ロジックは純関数 `Util.SafePath`（`NormalizeSeparators` / `HasParentTraversal` / `HasUnsafeRoot` / `SafeFileName` / `IsWithinDirectory`）に集約。**送信元 OS のパス区切りに依存しない**よう受信した `FileName`/`RelativePath` を `\`→`/` 正規化してから basename 抽出・`..` パス要素判定し（Windows 送信 → mac/Linux 受信の混在を吸収。単独ファイル経路も正規化して非対称を解消）、最終防御は `StartsWith` ではなく `Path.GetRelativePath` ベースで saveDir 配下を強制する（区切り・大小・正規化のクロス OS 差を OS 既定の比較規則に委ねる）。加えて **NUL 等の制御文字を含む `FileName`/`RelativePath` は `HandleFileMeta` 冒頭で早期 `FileReject`**（`SafePath.ContainsControlChar`）し、`SafePath.IsWithinDirectory` も例外安全化（throw せず false に倒す）する。これが無いと細工 `FileMeta` の NUL で `Path.*` が `ArgumentException`→受信ループ→`ChannelClosed` で進行中転送を切断できる**リモート DoS**（ペア済み peer から 1 通で発火、early-return しないので `FileReject` も飛ばない）になる。保存パスの重複回避・フォルダマッピング・ディレクトリ/ファイル作成は **ユーザー承認後の `ApproveTransfer` で初めて実行**し、`FileMeta` だけではディスクへ副作用を出さない。承認待ちは同一 peer 32 件・全 peer 合算 128 件で打ち切り、超過分へ即 `FileReject` を返す。シンボリックリンク追跡は文字列防御の対象外（攻撃には saveDir への事前書込権限が必要で、信頼モデル§の設計途上事項）。回帰は `SafePathTests` / `TransferServiceValidationTests`。
 
 UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レイヤー（選択的 ACK・フラグメンテーション 1187 bytes・スライディングウィンドウ 128）を提供する。順序保証はトランスポート層ではなく上記の chunkIndex ベース書き込みで担保している。
 
@@ -245,7 +245,7 @@ UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レ
 
 ### プレゼンス監視（オンライン検出）
 
-ConnectionViewModel が定期的に relay Worker（DeviceDO）へハートビート送信・ピアの lastSeen をポーリング。
+ConnectionViewModel が定期的に relay Worker（DeviceDO）へハートビート送信・ピアの lastSeen をポーリング。相手の unpair は共有 inbox WebSocket で push され、`PairSyncService` が D1 の 404/null を再確認してローカル peer を即時削除する。トレイ格納中も push は処理し、前面復帰時は定期周期を待たず pairs を即時照合する。
 
 ```text
 HeartbeatLoop (30秒):

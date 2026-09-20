@@ -179,7 +179,7 @@
   <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">Ошибка: {0}</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 Вставьте код собеседника для связывания</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">Вставьте код, показанный на другом ПК.</x:String>
-  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">32-символьный код связывания</x:String>
+<x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">Код связывания</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">Обработка…</x:String>
   <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">Код связывания</x:String>
   <x:String x:Key="Text.Member.Delete" xml:space="preserve">Удалить</x:String>

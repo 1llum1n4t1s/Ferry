@@ -162,7 +162,7 @@
   <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">錯誤：{0}</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 貼上對方的代碼進行配對</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">請貼上另一台電腦上顯示的代碼。</x:String>
-  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">32 位配對代碼</x:String>
+<x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">配對代碼</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">處理中…</x:String>
   <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">配對代碼</x:String>
   <x:String x:Key="Text.Member.Delete" xml:space="preserve">刪除</x:String>

@@ -137,6 +137,46 @@ public class ConnectionViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task StartSessionAsync_コピー用コードに短命nonceを含めること()
+    {
+        const string deviceId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        const string nonce = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        _connectionService.StartPairingSessionAsync(Arg.Any<CancellationToken>()).Returns(deviceId);
+        _connectionService.LastPairingNonce.Returns(nonce);
+        _qrCodeService.GenerateQrBitmap(Arg.Any<string>()).Returns((Bitmap?)null);
+
+        using var vm = CreateViewModel();
+        await vm.StartSessionCommand.ExecuteAsync(null);
+
+        Assert.Equal($"{deviceId}.{nonce}", vm.PairingCode);
+    }
+
+    [Fact]
+    public async Task StartSessionAsync_同じdeviceIdで再入してもPairingCode変更を通知すること()
+    {
+        const string deviceId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        const string firstNonce = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        const string secondNonce = "cccccccccccccccccccccccccccccccc";
+        _connectionService.StartPairingSessionAsync(Arg.Any<CancellationToken>()).Returns(deviceId);
+        _connectionService.LastPairingNonce.Returns(firstNonce, secondNonce);
+        _qrCodeService.GenerateQrBitmap(Arg.Any<string>()).Returns((Bitmap?)null);
+
+        using var vm = CreateViewModel();
+        await vm.StartSessionCommand.ExecuteAsync(null);
+        var notifications = 0;
+        vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ConnectionViewModel.PairingCode))
+                notifications++;
+        };
+
+        await vm.StartSessionCommand.ExecuteAsync(null);
+
+        Assert.Equal($"{deviceId}.{secondNonce}", vm.PairingCode);
+        Assert.True(notifications >= 1);
+    }
+
+    [Fact]
     public async Task StartSessionAsync_QRコードURL生成に正しいパラメータが渡されること()
     {
         _connectionService.StartPairingSessionAsync(Arg.Any<CancellationToken>())

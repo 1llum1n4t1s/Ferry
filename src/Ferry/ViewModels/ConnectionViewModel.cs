@@ -74,13 +74,13 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     public partial string SessionId { get; set; } = string.Empty;
 
     /// <summary>ペアリング用 URL (Bridge ページ + sid/name クエリ)。QR コード生成にのみ使用、UI のテキスト表示は廃止。
-    /// v1.0.38: いたずらでブラウザに開かれないよう、UI からの「コピー」対象は <see cref="PairingCode"/> (32 文字 hex) に変更</summary>
+    /// ブラウザに開かれないよう、UI からの「コピー」対象は短命の <see cref="PairingCode"/> にする。</summary>
     [ObservableProperty]
     public partial string PairingUrl { get; set; } = string.Empty;
 
-    /// <summary>UI 表示・コピー・貼り付け用のペアリングコード (= SessionId, 32 文字 hex)。
-    /// v1.0.38 追加: URL を渡すとブラウザでうっかり開かれる事故が起きるため、ただの文字列に変更</summary>
-    public string PairingCode => SessionId;
+    /// <summary>UI 表示・コピー・貼り付け用の短命ペアリングコード。
+    /// 永続 deviceId 単体を共有せず、現在の単回使用 nonce と組み合わせる。</summary>
+    public string PairingCode => Util.PairingCode.Create(SessionId, _connectionService.LastPairingNonce);
 
     [ObservableProperty]
     public partial string PeerName { get; set; } = string.Empty;
@@ -120,7 +120,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     public partial bool IsLinkCopied { get; set; }
 
     /// <summary>「相手のペアリングコードを貼り付け」入力欄のテキスト (AddMemberView)。
-    /// v1.0.38: PairFromUrlText から rename。コードは 32 文字 hex (sessionId)。</summary>
+    /// deviceId と短命 nonce を組み合わせたコードを受け取る。</summary>
     [ObservableProperty]
     public partial string PairFromCodeText { get; set; } = string.Empty;
 
@@ -207,6 +207,9 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         {
             var settings = _settingsService.Settings;
             SessionId = await _connectionService.StartPairingSessionAsync();
+            // deviceId はセッション間で同じため、nonce だけ更新された再入では SessionId setter が
+            // PropertyChanged を出さない。短命コードを必ず最新 nonce で再描画する。
+            OnPropertyChanged(nameof(PairingCode));
 
             // Bridge ページ URL に sessionId / PC 名 / 公開鍵(rere #D-001(b)) / 認証 nonce(#D-001a Phase B) を付与して QR コード生成。
             // pk は base64url・nonce は 32hex なので URL 安全。空のときは &pk= となり Bridge 側は単に無視する。
@@ -380,7 +383,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>ペアリングコードのクリップボード書き込み要求イベント (View 側で TopLevel.Clipboard 経由処理)。
-    /// v1.0.38: 旧 CopyPairingLinkRequested から rename。値は PairingCode (= SessionId)。</summary>
+    /// 値は deviceId と短命 nonce を組み合わせた <see cref="PairingCode"/>。</summary>
     public event EventHandler<string>? CopyPairingCodeRequested;
 
     /// <summary>
@@ -404,7 +407,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
 
     /// <summary>
     /// 「相手のペアリングコードを貼り付け」入力欄からコードを取得し、アプリ内でペアリングを実行する。
-    /// v1.0.38: 旧 PairFromUrlAsync から rename。Bridge ページ URL ではなく 32 文字 hex (sessionId) を受け取る形に変更。
+    /// Bridge ページ URL ではなく、相手画面に表示された短命コードを受け取る。
     /// </summary>
     [RelayCommand]
     private async Task PairFromCodeAsync()

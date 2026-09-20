@@ -165,7 +165,7 @@
   <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">दोषः: {0}</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 योजनार्थं परस्य सङ्केतं स्थापयतु</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">अपरे सङ्गणके दृश्यमानं सङ्केतं स्थापयतु।</x:String>
-  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">द्वात्रिंशदक्षरः योजनसङ्केतः</x:String>
+<x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">योजनसङ्केतः</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">प्रक्रिया चलति…</x:String>
   <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">योजनसङ्केतः</x:String>
   <x:String x:Key="Text.Member.Delete" xml:space="preserve">अपनयतु</x:String>

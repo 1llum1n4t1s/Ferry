@@ -22,7 +22,8 @@ public sealed class StubConnectionServiceTests
         var sessionId = await svc.StartPairingSessionAsync(TestContext.Current.CancellationToken);
 
         Assert.NotNull(sessionId);
-        Assert.Equal(8, sessionId.Length); // GUID先頭8文字
+        Assert.Equal(32, sessionId.Length);
+        Assert.Equal(32, svc.LastPairingNonce.Length);
     }
 
     [Fact]

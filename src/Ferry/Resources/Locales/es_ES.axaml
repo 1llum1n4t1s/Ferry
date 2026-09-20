@@ -162,7 +162,7 @@
   <x:String x:Key="Text.Connection.PairFromCode.Failed" xml:space="preserve">Error: {0}</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Header" xml:space="preserve">📋 Pega el código del otro equipo para emparejar</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Hint" xml:space="preserve">Pega el código que se muestra en el otro PC.</x:String>
-  <x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">Código de emparejamiento de 32 caracteres</x:String>
+<x:String x:Key="Text.Connection.PairFromCode.Placeholder" xml:space="preserve">Código de emparejamiento</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Working" xml:space="preserve">Procesando…</x:String>
   <x:String x:Key="Text.Connection.PairingCode" xml:space="preserve">Código de emparejamiento</x:String>
   <x:String x:Key="Text.Member.Delete" xml:space="preserve">Eliminar</x:String>
