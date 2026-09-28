@@ -69,10 +69,10 @@
   </Target>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="12.1.2" />
-    <PackageReference Include="Avalonia.Desktop" Version="12.1.2" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.2" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.2" />
+    <PackageReference Include="Avalonia" Version="12.1.3" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.3" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.3" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.3" />
     <!-- デベロッパーツール。旧 Avalonia.Diagnostics は非推奨 (かつ 11 系止まりで本体 12 系と不揃い)
          だったため AvaloniaUI.DiagnosticsSupport へ移行した。UI は別プロセスの
          グローバルツール AvaloniaUI.DeveloperTools が提供する
