@@ -13,7 +13,9 @@ updates:
         update-types: ["minor", "patch"]
 
   - package-ecosystem: "nuget"
-    directory: "/"
+    directories:
+      - "/src/Ferry"
+      - "/tests/Ferry.Tests"
     schedule:
       interval: "weekly"
       day: "monday"
