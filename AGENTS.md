@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance to Codex and other coding agents working in this repository.
+この文書は Ferry の作業規約と必須検証を定める。利用者向けの説明は [README.md](README.md)、設計の正本は [DESIGN.md](DESIGN.md) を参照する。
 
 ## ビルド・テストコマンド
 
@@ -34,13 +34,19 @@ cd infra/cloudflare/relay && pnpm vitest run -t "rate limit"
 cd infra/cloudflare/relay && pnpm exec wrangler deploy
 ```
 
-> Windows 向けリリースは `pwsh scripts/release-local.ps1` でローカル実行する（コード署名のため）。macOS / Linux は `release/**` ブランチへの push で CI が配信する（後述「自動更新と配信」）。Bridge ページ（QR ペアリング）は relay Worker の Static Assets（`infra/cloudflare/relay/public/`）なので relay と一緒に配信される。
+> Windows 向けリリースは `pwsh scripts/release-local.ps1` でローカル実行する（コード署名のため）。macOS / Linux は `release/**` ブランチへの push で CI が配信する。配信境界は [DESIGN.md](DESIGN.md#配布と運用の境界)、詳細手順は [references/architecture.md](references/architecture.md) の「自動更新と配信（CI/CD）」を参照する。
 >
 > 製品ページの配信は `../vps-web/deploy/deploy-lp.ps1` を使う。公開ホスト・更新ファイルの既存経路を維持する。
 >
-> PR（→ main）は `.github/workflows/dotnet-build.yml`（".NET Build"）が build + test で検証する。`release/**` トリガーの配信 CI（後述）とは別ワークフローなので、コード変更の正否はこの PR CI で確認する。
+> PR（→ main）は `.github/workflows/dotnet-build.yml`（".NET Build"）が build + test で検証する。Markdown と `docs/**` だけの変更は対象外。配信 CI とは別ワークフローなので、コード変更の正否はこの PR CI で確認する。
 >
-> **relay（`infra/cloudflare/relay/**`）の PR は別ワークフロー `relay-check.yml`（"Relay Check"）**が上記の `tsc --noEmit` + `pnpm test` をそのままゲートにする。`dotnet-build.yml` は .NET しか見ず relay を素通りするので、relay 変更の正否はこちらで確認する。⚠️ 旧構成では relay の TypeScript を検証する経路がどの workflow にも無く、**vitest スイートが一度も走らないまま main にマージされて本番へ配信されうる**状態だった（rere #C-05）。同じステップは `deploy-relay.yml`（main push）にも置いてあるので、PR を経由しない直 push でも検証は外れない。
+> **relay（`infra/cloudflare/relay/**`）の PR は `relay-check.yml`（"Relay Check"）**の `tsc --noEmit` + `pnpm test` で検証する。.NET の CI では relay を検証しない。同じ検証は `deploy-relay.yml`（main push）でも配信前に実行する。
+
+## 依存関係の保守
+
+- NuGet の直接依存は `src/Ferry/Ferry.csproj` と `tests/Ferry.Tests/Ferry.Tests.csproj`、解決結果は各ディレクトリの `packages.lock.json` で管理する。参照変更時は対応する lockfile も更新し、Avalonia 本体・Desktop・Fluent・Fonts.Inter の版を揃える。
+- relay は `infra/cloudflare/relay/package.json`、`pnpm-lock.yaml`、`pnpm-workspace.yaml` を照合する。インストールは同ディレクトリで `pnpm install --frozen-lockfile`。依存更新時は `allowBuilds`、リリース待機の例外、`undici` override の必要性も確認し、型チェックとテストを実行する。
+- Dependabot は `.github/dependabot.yml` で GitHub Actions、上記 2 つの NuGet プロジェクト、relay の npm 依存を監視する。プロジェクト追加・移動時は更新対象も照合する。
 
 ## アーキテクチャ
 
@@ -61,20 +67,14 @@ cd infra/cloudflare/relay && pnpm exec wrangler deploy
 | 自動更新、CI/CD | 自動更新と配信（CI/CD） |
 | テスト、ログ出力 | テスト / ログとデバッグ |
 
-## サーバー接続情報
+## 実装・検証上の制約
 
-- **relay Worker（シグナリング / プレゼンス / ペアリング / リレー / Bridge ページ）**: Cloudflare Workers + Durable Objects + D1（`https://watashiba.kagayoi.com`）。実装・デプロイ手順は [`infra/cloudflare/relay/README.md`](infra/cloudflare/relay/README.md) を参照。使用量は Cloudflare GraphQL Analytics（`workersInvocationsAdaptive` / zone の `httpRequestsAdaptiveGroups`）で確認できる
-- **STUN**: Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google STUN (`stun.l.google.com:19302`) を従。自前運用は無し
-- **廃止済み基盤**: Firebase と旧 VPS の `ferry-relay` / `coturn` は実行・配信経路に含めない。Cloudflare 単独構成への移行設計は [`docs/design/cf-only-migration.md`](docs/design/cf-only-migration.md)、旧基盤の撤去記録は [`docs/Cloudflare移行_作業依頼書_2026-05.md`](docs/Cloudflare移行_作業依頼書_2026-05.md) を参照
-
-## 既知の制限と注意事項
-
-0. **確立途中の接続は送信操作で奪わない**: `ConnectToPeerAsync` は同じ peer が `PeerState.Connecting` なら、まず完走を待って**相乗り**する（`InFlightConnectJoinMs`=30s）。待たずに `ConnectCts.Cancel()` すると、着信(answer)側がリレー合流待ちまで進んだ接続をユーザーの「送信」が破棄し、続く offerer 経路の**シグナリング削除で相手の offer まで消える**。相手は既にリレーで待機しているので誰も answer を返さず、20s 後に `PeerUnreachableException`（相手から応答がありません）で必ず失敗する（2026-07-28 実測。相手はオンラインで到達可能だった）。中断した場合も `Connecting` を抜けるまで待つ（`ConnectSettleWaitMs`=3s）— 待たないと `WaitForListenerConnectedAsync` が**死にかけの旧接続の Connecting** を委譲先 listener の進捗と誤認し、直後の `Disconnected` 遷移で 15s 待たず 200ms でフォールバックする。回帰は `ConnectionServiceInFlightJoinTests`。
-1. **同時接続の競合**: rere #D-003 で offer を per-sender キー（PairDO `offer:{senderDeviceId}`）化したため、2台が同時に接続を試みても **offer の相互上書きは構造的に起きない**。さらに deviceId 序列の **deferral（`CompareOrdinal` で大きい側が answerer に委譲）** で「双方が offerer になり相互の answer を待ち続けるデッドロック」を収束させる。ただし deferral 判定の瞬間に相手がまだ offer を書いていない**同時ウィンドウ**は残る（完全収束は今後の課題）。基本は接続確立後にファイル送信するのが安全。
-2. **Native AOT 制約**: JSON の動的シリアライズは使えないため、モデル追加時は `*JsonContext` も追加する。
-3. **信頼モデル**: シグナリング認可は CF 単独完結の cfToken（自前 HMAC bearer + ECDSA デバイス署名チャレンジ + KV first-write-wins 鍵束縛。§Cloudflare バックエンド構造）。E2E 暗号は `ConnectionService.CreateSecureChannel` / `StartSecureHandshake` / `ApplySecureStep` に配線済みで **常時 ON**（v1.0.48 で旧トグル撤去）。QR ペアリング時に長期 ECDH 公開鍵を交換して PairSecret を導出し、HMAC 相互認証 + AES-GCM 封筒化する。**v1.0.65 で 2 台実機検証済み**（別回線 2 台でログ「暗号セッション確立（HMAC 相互認証成功）」+ 数百 MB 転送の SHA-256 検証を確認）。PairSecret を持たない旧ペア（公開鍵交換前の peers.json）は**平文フォールバック**のまま — 再ペアリングすると暗号化される。
-
-> 設定（`settings.json` / `peers.json`）は一時ファイル→リネームでアトミックに保存し、読み込み失敗時は `.corrupt-<時刻>` に退避する。`DeviceId` は pairId / presence の基盤なので、破損で再生成されるとペアが消える点に注意。
+- 接続確立中の送信は既存接続に相乗りし、中断後も Connecting を抜けるまで待つ。InFlightConnectJoinMs（30 秒）と ConnectSettleWaitMs（3 秒）の経路を変更する場合は、ConnectionServiceInFlightJoinTests と実際の接続・送信経路を確認する。役割調停と同時接続の制限は [DESIGN.md](DESIGN.md#着信検知と接続確立) を参照する。
+- Native AOT 向けに、JSON モデル追加時は対応する JsonSerializerContext も更新する。Debug の開発ツールのアタッチは Program.cs の WithDeveloperTools() に集約し、画面側で二重にアタッチしない。起動に関わる変更はビルドだけで終えず、上記のローカル起動で確認する。
+- 暗号ハンドシェイクを変更する場合は、PairSecret を持つペアと旧ペアの互換経路を区別して確認する。認証と転送の不変条件は [DESIGN.md](DESIGN.md#重要な不変条件) を参照する。
+- settings.json / peers.json の保存は一時ファイルからのリネームと破損 JSON の .corrupt-* 退避を維持する。DeviceId の再生成はペア関係に影響するため、保存・読み込みの変更時は既存 ID の保持を確認する。
+- relay の実装・デプロイ手順は [infra/cloudflare/relay/README.md](infra/cloudflare/relay/README.md)、障害切り分けは [docs/operations/runbook.md](docs/operations/runbook.md) を参照する。使用量の確認は Cloudflare GraphQL Analytics の workersInvocationsAdaptive / httpRequestsAdaptiveGroups を使う。
+- Firebase と旧 VPS の ferry-relay / coturn を実行・配信経路に戻さない。現在のバックエンド構成は [DESIGN.md](DESIGN.md#主要コンポーネント)、移行理由は [docs/design/cf-only-migration.md](docs/design/cf-only-migration.md) を参照する。
 
 ## 言語
 

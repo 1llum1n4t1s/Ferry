@@ -4,7 +4,7 @@ QR コードまたはワンタイムコードでペアリングし、TCP 直接�
 
 ## ダウンロード
 
-Cloudflare R2 (`https://ferry.kagayoi.com`) から配信。**Setup インストーラと AppImage は常に最新版** を指す固定 URL で、起動後は Velopack による自動更新が走るので、最初に 1 度落とせば以降は手動更新不要です。
+**Setup インストーラと AppImage は最新版**を指す固定 URL からダウンロードできます。起動後の更新通知と手動確認については、下の「更新」を参照してください。
 
 ### Windows
 
@@ -34,17 +34,9 @@ Cloudflare R2 (`https://ferry.kagayoi.com`) から配信。**Setup インスト�
 
 > 💡 .deb / .rpm は **バージョン入りファイル名** で配信されます。最新バージョン番号は [`releases.linux-x64.json`](https://ferry.kagayoi.com/releases.linux-x64.json) などの manifest を参照してください。
 
-### Velopack 自動更新フィード
+### 更新
 
-| チャンネル | manifest URL |
-|---|---|
-| win-x64 | <https://ferry.kagayoi.com/releases.win-x64.json> |
-| win-arm64 | <https://ferry.kagayoi.com/releases.win-arm64.json> |
-| osx-arm64 | <https://ferry.kagayoi.com/releases.osx-arm64.json> |
-| linux-x64 | <https://ferry.kagayoi.com/releases.linux-x64.json> |
-| linux-arm64 | <https://ferry.kagayoi.com/releases.linux-arm64.json> |
-
-クライアントは起動時に manifest を取得し、新バージョンを検出するとダイアログ通知 → ワンクリックで適用されます。設定画面またはトレイメニューから手動確認もできます。
+起動時に更新を確認し、新しいバージョンがあればダイアログで通知します。更新はダイアログから適用できます。転送中は自動確認をスキップします。設定画面またはトレイメニューから手動確認もできます。更新フィードと配信方式の詳細は [`references/architecture.md`](references/architecture.md) の「自動更新と配信（CI/CD）」を参照してください。
 
 ## 使い方
 

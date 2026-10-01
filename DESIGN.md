@@ -44,6 +44,10 @@ PC 間のコード貼付経路は、永続 deviceId と短命 nonce を組み合
 3. TCP 失敗後だけ両側が STUN を実行し、offer-v2 と answer 側 endpoint を交換して UDP ホールパンチを行う。
 4. UDP も失敗した場合だけ、両 peer が同じ RelayDO room へ入室する。現行クライアントは fresh な cfToken が無ければ relay に接続しない。
 
+STUN は Cloudflare (`stun.cloudflare.com:3478`) を主、Google (`stun.l.google.com:19302`) を従とし、自前の STUN / TURN は運用しない。
+
+同時接続では deviceId の辞書順で大きい側が相手の新しい offer を確認できた場合、answerer の listener に委譲する。委譲先の接続完了を待ち、未成立なら listener の停止完了と最終状態を確認してから offerer として再試行する。sender ごとの key は offer の相互上書きを防ぐが、確認時点で相手の offer がまだ無い同時ウィンドウまでは解消しない。
+
 ### ファイル転送
 
 1. 送信側が `FileMeta` を送り、受信側の `FileApprove` を待つ。未承認の状態では保存先のフォルダもファイルも作らない。
@@ -101,10 +105,5 @@ PC 間のコード貼付経路は、永続 deviceId と短命 nonce を組み合
 - `infra/cloudflare/relay/**` の `main` push は `deploy-relay.yml` が型チェックと vitest 後に Worker を配信する。D1 `schema.sql` の変更は Worker deploy と別に適用する。
 - `release/**` push は macOS / Linux を build・署名・公証し、R2 へ配信する。Windows x64 / ARM64 は `scripts/release-local.ps1` が SimplySign で署名して配信する。
 - R2 の固定 URL は更新時だけ exact URL purge の対象にし、version 付き package は purge しない。
-- Bridge ページは relay Worker の Static Assets であり、ダウンロードランディングページ `../vps-web/lp/ferry/` とは別系統である。
-
-## 製品ページの配信先
-
-製品ページの配信HTMLは `../vps-web/lp/ferry/`（編集元は `../vps-web/tools/lp/templates/`）、公開実体はVPSの `/srv/www/lp/ferry/`。
-Cloudflare側の中継設定は `../vps-web/deploy/lp-gateways/ferry/` に置く。
-公開URLと既存のR2・ライセンス通信を維持し、配信は `vps-web/deploy/deploy-lp.ps1` へ統一する。
+- Bridge ページは relay Worker の Static Assets（`infra/cloudflare/relay/public/`）であり、製品ページとは別系統である。
+- 製品ページの配信 HTML は `../vps-web/lp/ferry/`（編集元は `../vps-web/tools/lp/templates/`）、公開実体は VPS の `/srv/www/lp/ferry/`。Cloudflare の中継設定は `../vps-web/deploy/lp-gateways/ferry/` に置き、公開 URL と既存の R2・ライセンス通信を維持する。配信経路は `../vps-web/deploy/deploy-lp.ps1` に統一する。
