@@ -582,7 +582,7 @@ public partial class App : Application
         // UI スレッドである SetLocale 内で文言をキャッシュへ反映する
         Util.ErrorText.RefreshCache();
 
-        // #C-36: 書字方向をウィンドウへ適用する（子コントロールは FlowDirection を継承する）
+        // 共通ウィンドウスタイルのリソースを更新する（子コントロールは書字方向を継承する）。
         ApplyFlowDirection(localeKey);
 
         LocaleChanged?.Invoke(null, EventArgs.Empty);
@@ -599,9 +599,8 @@ public partial class App : Application
             ? Avalonia.Media.FlowDirection.RightToLeft
             : Avalonia.Media.FlowDirection.LeftToRight;
 
-        if (Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop) return;
-        foreach (var window in desktop.Windows)
-            window.FlowDirection = direction;
+        if (Current is App app)
+            app.Resources["App.FlowDirection"] = direction;
     }
 
     /// <summary>

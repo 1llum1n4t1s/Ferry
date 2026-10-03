@@ -20,7 +20,7 @@
             <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="8" Padding="16,12" Margin="0,0,0,4">
                 <StackPanel Spacing="8">
                     <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.DisplayName}" />
-                    <TextBox Text="{Binding DisplayName, Mode=TwoWay}"
+                    <TextBox AutomationProperties.Name="{DynamicResource Text.Settings.DisplayName}" Text="{Binding DisplayName, Mode=TwoWay}"
                              PlaceholderText="{DynamicResource Text.Settings.DisplayName.Placeholder}"
                              Classes="search" />
                 </StackPanel>
@@ -36,7 +36,7 @@
                          Replace でも Avalonia ComboBox 内部の SelectedItem 状態が外れていた)。 -->
                     <Grid ColumnDefinitions="*,Auto">
                         <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.Theme}" />
-                        <ComboBox Grid.Column="1"
+                        <ComboBox AutomationProperties.Name="{DynamicResource Text.Settings.Theme}" Grid.Column="1"
                                   SelectedIndex="{Binding SelectedThemeIndex, Mode=TwoWay}"
                                   MinWidth="120">
                             <ComboBoxItem Content="{DynamicResource Text.Settings.Theme.System}" />
@@ -52,7 +52,7 @@
                          置き換えてコンパイル済みバインディングに寄せ、選択状態も VM に持たせた。 -->
                     <Grid ColumnDefinitions="*,Auto">
                         <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.Language}" />
-                        <ComboBox Grid.Column="1"
+                        <ComboBox AutomationProperties.Name="{DynamicResource Text.Settings.Language}" Grid.Column="1"
                                   MinWidth="160"
                                   ItemsSource="{Binding LocaleOptions}"
                                   SelectedItem="{Binding SelectedLocaleItem, Mode=TwoWay}">
@@ -77,7 +77,7 @@
                     <StackPanel Spacing="6">
                         <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.SaveDirectory}" />
                         <Grid ColumnDefinitions="*,Auto">
-                            <TextBox Grid.Column="0" Classes="search" IsReadOnly="True"
+                            <TextBox AutomationProperties.Name="{DynamicResource Text.Settings.SaveDirectory}" Grid.Column="0" Classes="search" IsReadOnly="True"
                                      VerticalAlignment="Center"
                                      Text="{Binding SaveDirectory}"
                                      ToolTip.Tip="{Binding SaveDirectory}" />
@@ -93,7 +93,7 @@
                             <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.AutoAcceptFile}" />
                             <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.AutoAcceptFile.Desc}" />
                         </StackPanel>
-                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding AutoAcceptFileTransfer, Mode=TwoWay}" />
+                        <ToggleSwitch AutomationProperties.Name="{DynamicResource Text.Settings.AutoAcceptFile}" Grid.Column="1" IsChecked="{Binding AutoAcceptFileTransfer, Mode=TwoWay}" />
                     </Grid>
 
                     <!-- アップロード帯域制限 (KB/s)。0 で無制限。 -->
@@ -102,7 +102,7 @@
                             <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.UploadKBps}" />
                             <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.UploadKBps.Desc}" />
                         </StackPanel>
-                        <NumericUpDown Grid.Column="1"
+                        <NumericUpDown AutomationProperties.Name="{DynamicResource Text.Settings.UploadKBps}" Grid.Column="1"
                                        Value="{Binding UploadKBps, Mode=TwoWay}"
                                        Minimum="0" Maximum="1048576" Increment="128"
                                        FormatString="0"
@@ -115,7 +115,7 @@
                             <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.DownloadKBps}" />
                             <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.DownloadKBps.Desc}" />
                         </StackPanel>
-                        <NumericUpDown Grid.Column="1"
+                        <NumericUpDown AutomationProperties.Name="{DynamicResource Text.Settings.DownloadKBps}" Grid.Column="1"
                                        Value="{Binding DownloadKBps, Mode=TwoWay}"
                                        Minimum="0" Maximum="1048576" Increment="128"
                                        FormatString="0"
@@ -147,7 +147,7 @@
                             <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.AutoStartWithWindows}" />
                             <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.AutoStartWithWindows.Desc}" />
                         </StackPanel>
-                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding AutoStartWithWindows, Mode=TwoWay}" />
+                        <ToggleSwitch AutomationProperties.Name="{DynamicResource Text.Settings.AutoStartWithWindows}" Grid.Column="1" IsChecked="{Binding AutoStartWithWindows, Mode=TwoWay}" />
                     </Grid>
 
                     <!-- N-2: 旧スタートアップ起動は AutoStartWithWindows と意味が重複していたため削除 -->
@@ -158,7 +158,7 @@
                             <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.StartMinimized}" />
                             <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.StartMinimized.Desc}" />
                         </StackPanel>
-                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding StartMinimized, Mode=TwoWay}" />
+                        <ToggleSwitch AutomationProperties.Name="{DynamicResource Text.Settings.StartMinimized}" Grid.Column="1" IsChecked="{Binding StartMinimized, Mode=TwoWay}" />
                     </Grid>
 
                     <!-- トレイ最小化 (macOS は最小化=Dock 格納が OS 慣習で no-op のため行ごと非表示。
@@ -168,7 +168,7 @@
                             <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.MinimizeToTray}" />
                             <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.MinimizeToTray.Desc}" />
                         </StackPanel>
-                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding MinimizeToTray, Mode=TwoWay}" />
+                        <ToggleSwitch AutomationProperties.Name="{DynamicResource Text.Settings.MinimizeToTray}" Grid.Column="1" IsChecked="{Binding MinimizeToTray, Mode=TwoWay}" />
                     </Grid>
                 </StackPanel>
             </Border>
@@ -181,7 +181,7 @@
                         <TextBlock Classes="settingLabel" Text="{DynamicResource Text.Settings.NotificationSound}" />
                         <TextBlock Classes="settingDescription" Text="{DynamicResource Text.Settings.NotificationSound.Desc}" />
                     </StackPanel>
-                    <ToggleSwitch Grid.Column="1" IsChecked="{Binding EnableNotificationSound, Mode=TwoWay}" />
+                    <ToggleSwitch AutomationProperties.Name="{DynamicResource Text.Settings.NotificationSound}" Grid.Column="1" IsChecked="{Binding EnableNotificationSound, Mode=TwoWay}" />
                 </Grid>
             </Border>
 

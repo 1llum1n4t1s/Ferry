@@ -41,6 +41,9 @@ public partial class MainWindow : Window
     /// <summary>OnClosing 後の遅延 Bounds 変更で SaveWindowPosition が走らないよう、Closing 入った時点で立てるフラグ。</summary>
     private bool _closed;
 
+    /// <summary>初回表示だけ起動時最小化を適用し、再表示では繰り返さない。</summary>
+    private bool _startupHandled;
+
     private MainWindowViewModel? _mainVm;
     private ConnectionViewModel? ConnectionVm => _mainVm?.Connection;
     private TransferViewModel? TransferVm => _mainVm?.Transfer;
@@ -92,21 +95,6 @@ public partial class MainWindow : Window
 
         // ① トレイ格納(Hide)/復帰(Show) は IsVisible 変化として届くのでこちらも監視
         this.GetObservable(IsVisibleProperty).Subscribe(new AnonymousObserver<bool>(_ => UpdatePresenceForeground()));
-
-        // 初期最小化起動
-        Loaded += (_, _) =>
-        {
-            if (_mainVm?.Settings?.StartMinimized == true)
-            {
-                WindowState = WindowState.Minimized;
-                if (_mainVm.Settings.MinimizeToTray && !OperatingSystem.IsMacOS())
-                {
-                    ShowInTaskbar = false;
-                    Hide();
-                }
-            }
-            UpdatePresenceForeground();
-        };
     }
 
     /// <summary>
@@ -131,7 +119,13 @@ public partial class MainWindow : Window
         SubscribeToEvents();
     }
 
-    public void SetSettingsService(ISettingsService settingsService) => _settingsService = settingsService;
+    public void SetSettingsService(ISettingsService settingsService)
+    {
+        _settingsService = settingsService;
+        // 初回レイアウトと描画開始の前にサイズ・位置・最大化状態を確定する。
+        // OnOpened で描画開始直後にサイズや状態を変更することを避ける。
+        RestoreWindowPosition();
+    }
 
     // === イベント購読 ===
 
@@ -199,7 +193,18 @@ public partial class MainWindow : Window
     protected override void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
-        RestoreWindowPosition();
+        if (_startupHandled) return;
+        _startupHandled = true;
+
+        // Loaded はネイティブウィンドウの表示完了を保証しない。
+        // Show と初回レイアウトが完了した後のディスパッチで一度だけ最小化する。
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_closed || App.IsExplicitShutdown || !IsVisible) return;
+            if (_settingsService?.Settings.StartMinimized == true)
+                WindowState = WindowState.Minimized;
+            UpdatePresenceForeground();
+        }, DispatcherPriority.ApplicationIdle);
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
@@ -277,10 +282,12 @@ public partial class MainWindow : Window
 
         if (s.WindowLeft != null && s.WindowTop != null)
         {
+            WindowStartupLocation = WindowStartupLocation.Manual;
             Position = new PixelPoint((int)s.WindowLeft.Value, (int)s.WindowTop.Value);
         }
         else if (!double.IsNaN(s.WindowX) && !double.IsNaN(s.WindowY))
         {
+            WindowStartupLocation = WindowStartupLocation.Manual;
             Position = new PixelPoint((int)s.WindowX, (int)s.WindowY);
         }
 

@@ -323,6 +323,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         // Theme ComboBox は ComboBoxItem.Content="{DynamicResource ...}" 直接参照で、
         // ItemsSource を触らないので SelectedIndex は不変。VM 側で再評価は不要。
         App.SetLocale(value);
+        OnPropertyChanged(nameof(IgnoredUpdateTagDisplay));
         SaveIfNotLoading();
     }
 

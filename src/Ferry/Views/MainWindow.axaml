@@ -75,11 +75,11 @@
 
                         <!-- 検索ボックス + 並び替えメニュー + 手動更新ボタン -->
                         <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="8,8">
-                            <TextBox Grid.Column="0" Classes="search"
+                            <TextBox AutomationProperties.Name="{DynamicResource Text.Transfer.SearchPeer}" Grid.Column="0" Classes="search"
                                      Text="{Binding Connection.PeerSearchText, Mode=TwoWay}"
                                      PlaceholderText="{DynamicResource Text.Transfer.SearchPeer}" />
                             <!-- 並び替えメニュー。アイコンはフォント非依存のベクター（幅の減る 3 本線＝ソート） -->
-                            <Button Grid.Column="1" Classes="icon"
+                            <Button AutomationProperties.Name="{DynamicResource Text.Peer.Sort}" Grid.Column="1" Classes="icon"
                                     Margin="6,0,0,0"
                                     ToolTip.Tip="{DynamicResource Text.Peer.Sort}">
                                 <StackPanel Spacing="2" VerticalAlignment="Center" HorizontalAlignment="Center">
@@ -104,7 +104,7 @@
                                     </MenuFlyout>
                                 </Button.Flyout>
                             </Button>
-                            <Button Grid.Column="2" Classes="icon"
+                            <Button AutomationProperties.Name="{DynamicResource Text.Sidebar.RefreshPeers}" Grid.Column="2" Classes="icon"
                                     Margin="6,0,0,0"
                                     ToolTip.Tip="{DynamicResource Text.Sidebar.RefreshPeers}"
                                     Command="{Binding Connection.RefreshPeersCommand}">
@@ -202,7 +202,7 @@
                                              旧 Content="&#x22EF;"(U+22EF) はフォントグリフ依存で、既定フォント Inter が
                                              当該グリフを持たず環境によって ≡ 状に化けた。フォント非依存・AOT 安全・
                                              クロス OS 同一表示のため Ellipse 3 個のベクター横 3 点に差し替えた。 -->
-                                        <Button Grid.Column="2"
+                                        <Button AutomationProperties.Name="{DynamicResource Text.Member.Menu}" Grid.Column="2"
                                                 ToolTip.Tip="{DynamicResource Text.Member.Menu}"
                                                 VerticalAlignment="Center"
                                                 MinWidth="28" Height="28"
@@ -238,7 +238,7 @@
                         <Border Grid.Row="2" BorderBrush="{DynamicResource BorderBrush}"
                                 BorderThickness="0,1,0,0" Padding="0,4">
                             <StackPanel Orientation="Vertical" Spacing="2">
-                                <Button Classes="sidebarMenuItem"
+                                <Button AutomationProperties.Name="{DynamicResource Text.Sidebar.AddPeer}" Classes="sidebarMenuItem"
                                         Classes.selected="{Binding IsAddPeerMode}"
                                         Command="{Binding ShowAddPeerCommand}">
                                     <StackPanel Orientation="Horizontal" Spacing="10">
@@ -247,7 +247,7 @@
                                                    FontSize="13" VerticalAlignment="Center" />
                                     </StackPanel>
                                 </Button>
-                                <Button Classes="sidebarMenuItem"
+                                <Button AutomationProperties.Name="{DynamicResource Text.Sidebar.Settings}" Classes="sidebarMenuItem"
                                         Classes.selected="{Binding IsSettingsMode}"
                                         Command="{Binding ToggleSettingsCommand}">
                                     <StackPanel Orientation="Horizontal" Spacing="10">

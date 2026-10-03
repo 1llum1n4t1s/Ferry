@@ -95,20 +95,20 @@ public sealed partial class SettingsService : ISettingsService, IDisposable
         {
             var json = File.ReadAllBytes(_filePath);
             var loaded = JsonSerializer.Deserialize(json, AppSettingsJsonContext.Default.AppSettings);
-            if (loaded != null)
-            {
-                Settings = loaded;
-            }
+            Settings = loaded ?? throw new InvalidDataException("設定オブジェクトがありません");
         }
         catch (Exception ex)
         {
             Util.Logger.Log($"settings.json の読み込みに失敗: {ex.Message}", Util.LogLevel.Error);
+            WasCorrupted = true;
+            var archived = false;
+            var deviceIdRestored = false;
             // 破損ファイルを退避して診断用に保全（次回 Save で静かに上書きされるのを防ぐ）
             try
             {
                 var backup = _filePath + $".corrupt-{DateTime.Now:yyyyMMddHHmmss}";
                 File.Move(_filePath, backup, overwrite: true);
-                WasCorrupted = true;  // rere #U13: 起動後に UI へ一度だけ通知させる
+                archived = true;
                 Util.Logger.Log($"破損した settings.json を退避しました: {backup}", Util.LogLevel.Warning);
 
                 // rere レビュー #F-009: 破損ファイルから DeviceId だけサルベージ。
@@ -124,10 +124,10 @@ public sealed partial class SettingsService : ISettingsService, IDisposable
                     if (match.Success)
                     {
                         Settings.DeviceId = match.Groups[1].Value.ToLowerInvariant();
+                        deviceIdRestored = true;
                         // CodeRabbit 指摘: MaskIp は IP 形式以外素通し → DeviceId が丸出しだったため
                         // 専用の MaskDeviceId (先頭 4 + ... + 末尾 4) に変更
                         Util.Logger.Log($"破損ファイルから DeviceId をサルベージ: {Util.Logger.MaskDeviceId(Settings.DeviceId)}", Util.LogLevel.Warning);
-                        Save(); // 復元した DeviceId で新 settings.json を書き出し
                     }
                 }
                 catch (Exception salvageEx)
@@ -136,6 +136,15 @@ public sealed partial class SettingsService : ISettingsService, IDisposable
                 }
             }
             catch { /* 退避失敗は無視 */ }
+
+            // ID まで欠落した破損や退避失敗でも、正常な副本を試す。
+            if (!deviceIdRestored && TryRestoreDeviceIdFromBackup())
+            {
+                deviceIdRestored = true;
+                Util.Logger.Log($"副本から DeviceId を復元: {Util.Logger.MaskDeviceId(Settings.DeviceId)}", Util.LogLevel.Warning);
+            }
+            if (archived && deviceIdRestored)
+                Save();
         }
     }
 

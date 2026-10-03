@@ -50,7 +50,7 @@
                                    TextTrimming="CharacterEllipsis"
                                    Foreground="{DynamicResource TahoeTextPrimaryBrush}"
                                    VerticalAlignment="Center" />
-                        <Button Grid.Column="1"
+                        <Button AutomationProperties.Name="{DynamicResource Text.Connection.Copy}" Grid.Column="1"
                                 Classes="tahoe-primary"
                                 FontSize="11"
                                 Margin="8,0,0,0"
@@ -89,7 +89,7 @@
                            TextWrapping="Wrap"
                            HorizontalAlignment="Center"
                            Foreground="{DynamicResource TahoeTextTertiaryBrush}" />
-                <TextBox FontSize="11"
+                <TextBox AutomationProperties.Name="{DynamicResource Text.Connection.PairFromCode.Placeholder}" FontSize="11"
                          FontFamily="Consolas, 'Courier New', monospace"
                          PlaceholderText="{DynamicResource Text.Connection.PairFromCode.Placeholder}"
                          Text="{Binding PairFromCodeText, Mode=TwoWay}" />

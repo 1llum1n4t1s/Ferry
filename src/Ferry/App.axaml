@@ -34,5 +34,9 @@
     <Application.Styles>
         <FluentTheme />
         <StyleInclude Source="/Styles/Theme.axaml" />
+        <!-- 起動前の言語復元と、後から生成する確認ウィンドウにも書字方向を適用する。 -->
+        <Style Selector=":is(Window)">
+            <Setter Property="FlowDirection" Value="{DynamicResource App.FlowDirection}" />
+        </Style>
     </Application.Styles>
 </Application>

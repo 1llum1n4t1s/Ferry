@@ -39,7 +39,7 @@
                     </Border>
                 </StackPanel>
                 <!-- 履歴クリア（選択中ピアの完了/失敗/キャンセル分のみ） -->
-                <Button Grid.Column="1" Classes="icon"
+                <Button AutomationProperties.Name="{DynamicResource Text.Transfer.ClearHistory}" Grid.Column="1" Classes="icon"
                         Content="🗑" FontSize="15"
                         VerticalAlignment="Center" Margin="0,0,8,0"
                         ToolTip.Tip="{DynamicResource Text.Transfer.ClearHistory}"
@@ -151,7 +151,7 @@
                                     <StackPanel Grid.Column="2" Grid.RowSpan="4"
                                                 Orientation="Horizontal" Spacing="2"
                                                 VerticalAlignment="Center">
-                                        <Button Classes="icon"
+                                        <Button AutomationProperties.Name="{DynamicResource Text.Transfer.Pause}" Classes="icon"
                                                 ToolTip.Tip="{DynamicResource Text.Transfer.Pause}"
                                                 IsVisible="{Binding CanPause}"
                                                 Command="{Binding ((vm:TransferViewModel)DataContext).PauseTransferCommand,
@@ -161,7 +161,7 @@
                                             <Path Fill="{Binding $parent[Button].Foreground}"
                                                   Data="M 2,1 L 5,1 L 5,11 L 2,11 Z M 7,1 L 10,1 L 10,11 L 7,11 Z" />
                                         </Button>
-                                        <Button Classes="icon"
+                                        <Button AutomationProperties.Name="{DynamicResource Text.Transfer.Resume}" Classes="icon"
                                                 ToolTip.Tip="{DynamicResource Text.Transfer.Resume}"
                                                 IsVisible="{Binding CanResumeSend}"
                                                 Command="{Binding ((vm:TransferViewModel)DataContext).ResumeSendCommand,
@@ -171,7 +171,7 @@
                                             <Path Fill="{Binding $parent[Button].Foreground}"
                                                   Data="{StaticResource Icon.Play}" />
                                         </Button>
-                                        <Button Classes="icon"
+                                        <Button AutomationProperties.Name="{DynamicResource Text.Transfer.ResumeSuspended}" Classes="icon"
                                                 ToolTip.Tip="{DynamicResource Text.Transfer.ResumeSuspended}"
                                                 IsVisible="{Binding CanResumeSuspended}"
                                                 Command="{Binding ((vm:TransferViewModel)DataContext).ResumeTransferCommand,
@@ -181,7 +181,7 @@
                                             <Path Fill="{Binding $parent[Button].Foreground}"
                                                   Data="{StaticResource Icon.Play}" />
                                         </Button>
-                                        <Button Classes="icon"
+                                        <Button AutomationProperties.Name="{DynamicResource Text.Transfer.Resend}" Classes="icon"
                                                 ToolTip.Tip="{DynamicResource Text.Transfer.Resend}"
                                                 IsVisible="{Binding CanResend}"
                                                 Command="{Binding ((vm:TransferViewModel)DataContext).ResendCommand,
@@ -191,7 +191,7 @@
                                             <Path Fill="{Binding $parent[Button].Foreground}"
                                                   Data="{StaticResource Icon.Refresh}" />
                                         </Button>
-                                        <Button Classes="icon"
+                                        <Button AutomationProperties.Name="{DynamicResource Text.Transfer.Cancel}" Classes="icon"
                                                 ToolTip.Tip="{DynamicResource Text.Transfer.Cancel}"
                                                 IsVisible="{Binding CanCancel}"
                                                 Command="{Binding ((vm:TransferViewModel)DataContext).CancelTransferCommand,
@@ -202,7 +202,7 @@
                                                   StrokeThickness="1.7" StrokeLineCap="Round"
                                                   Data="M 2,2 L 10,10 M 10,2 L 2,10" />
                                         </Button>
-                                        <Button Classes="icon"
+                                        <Button AutomationProperties.Name="{DynamicResource Text.Transfer.Delete}" Classes="icon"
                                                 ToolTip.Tip="{DynamicResource Text.Transfer.Delete}"
                                                 IsVisible="{Binding CanDelete}"
                                                 Command="{Binding ((vm:TransferViewModel)DataContext).DeleteTransferCommand,
