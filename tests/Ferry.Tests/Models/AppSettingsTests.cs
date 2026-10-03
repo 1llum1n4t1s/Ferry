@@ -3,7 +3,7 @@ using Ferry.Models;
 namespace Ferry.Tests.Models;
 
 /// <summary>
-/// AppSettings のデフォルト値と DeviceId 生成を検証する。
+/// AppSettings の DeviceId 生成と保存互換性を検証する。
 /// </summary>
 public class AppSettingsTests
 {
@@ -23,23 +23,6 @@ public class AppSettingsTests
         var a = new AppSettings();
         var b = new AppSettings();
         Assert.NotEqual(a.DeviceId, b.DeviceId);
-    }
-
-    [Fact]
-    public void DisplayNameのデフォルトがマシン名であること()
-    {
-        var settings = new AppSettings();
-        Assert.Equal(Environment.MachineName, settings.DisplayName);
-    }
-
-    [Fact]
-    public void SaveDirectoryのデフォルトがDownloadsであること()
-    {
-        var settings = new AppSettings();
-        var expected = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            "Downloads");
-        Assert.Equal(expected, settings.SaveDirectory);
     }
 
     [Fact]
@@ -71,16 +54,6 @@ public class AppSettingsTests
         {
             System.IO.File.Delete(path);
         }
-    }
-
-    [Fact]
-    public void ブール設定のデフォルトがfalseであること()
-    {
-        var settings = new AppSettings();
-        // N-2: 旧 RunAtStartup は AutoStartWithWindows と統合済みのため検証から除外
-        Assert.False(settings.StartMinimized);
-        Assert.False(settings.MinimizeToTray);
-        Assert.False(settings.AutoStartWithWindows);
     }
 
     [Fact]

@@ -1,0 +1,47 @@
+{
+  "node": "v24.18.0",
+  "results": [
+    {
+      "input": "RERE_CANARY 100%",
+      "entry": "getParams",
+      "sidPresent": true,
+      "output": "RERE_CANARY 100%",
+      "passed": true
+    },
+    {
+      "input": "RERE_CANARY 100%",
+      "entry": "parseQrUrl",
+      "sidPresent": true,
+      "output": "RERE_CANARY 100%",
+      "passed": true
+    },
+    {
+      "input": "RERE_CANARY %2F",
+      "entry": "getParams",
+      "sidPresent": true,
+      "output": "RERE_CANARY %2F",
+      "passed": true
+    },
+    {
+      "input": "RERE_CANARY %2F",
+      "entry": "parseQrUrl",
+      "sidPresent": true,
+      "output": "RERE_CANARY %2F",
+      "passed": true
+    },
+    {
+      "input": "ゆろち % # &",
+      "entry": "getParams",
+      "sidPresent": true,
+      "output": "ゆろち % # &",
+      "passed": true
+    },
+    {
+      "input": "ゆろち % # &",
+      "entry": "parseQrUrl",
+      "sidPresent": true,
+      "output": "ゆろち % # &",
+      "passed": true
+    }
+  ]
+}

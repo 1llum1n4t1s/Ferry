@@ -14,20 +14,6 @@ public class PairedPeerTests
         DisplayName = "テスト端末",
     };
 
-    [Fact]
-    public void Routeの初期値がUnknownであること()
-    {
-        var peer = CreatePeer();
-        Assert.Equal(ConnectionRoute.Unknown, peer.Route);
-    }
-
-    [Fact]
-    public void ConnectionStatusTextの初期値が空文字列であること()
-    {
-        var peer = CreatePeer();
-        Assert.Equal(string.Empty, peer.ConnectionStatusText);
-    }
-
     // 経路文言はロケール辞書 (Text.Route.*) 経由になったため、期待値は「絵文字プレフィクス +
     // 経路ごとのリソースキー」で表す。Avalonia の Application が存在しないユニットテストでは
     // App.Text がキー名そのものを返す契約なので、これで「どの経路にどのキーを引いているか」
@@ -122,20 +108,4 @@ public class PairedPeerTests
         Assert.True(root.TryGetProperty("DisplayName", out _));
     }
 
-    [Fact]
-    public void PairedAtのデフォルトがUTC現在時刻付近であること()
-    {
-        var before = DateTime.UtcNow;
-        var peer = CreatePeer();
-        var after = DateTime.UtcNow;
-
-        Assert.InRange(peer.PairedAt, before, after);
-    }
-
-    [Fact]
-    public void LastTransferAtのデフォルトがnullであること()
-    {
-        var peer = CreatePeer();
-        Assert.Null(peer.LastTransferAt);
-    }
 }

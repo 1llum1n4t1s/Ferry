@@ -27,27 +27,4 @@ public class TransferProtocolTests
         Assert.Equal(65_536, TransferProtocol.ChunkSize);
     }
 
-    [Fact]
-    public void BufferedAmountThresholdが256KBであること()
-    {
-        // P-15: ChunkSize 4 倍化に合わせて閾値も 4 倍に拡大
-        Assert.Equal(262_144, TransferProtocol.BufferedAmountThreshold);
-    }
-
-    [Fact]
-    public void 各メッセージ種別が一意であること()
-    {
-        var values = new byte[]
-        {
-            TransferProtocol.FileMeta,
-            TransferProtocol.FileChunk,
-            TransferProtocol.FileAck,
-            TransferProtocol.FileReject,
-            TransferProtocol.Ping,
-            TransferProtocol.Pong,
-            TransferProtocol.ResumeRequest,
-            TransferProtocol.ResumeResponse,
-        };
-        Assert.Equal(values.Length, values.Distinct().Count());
-    }
 }

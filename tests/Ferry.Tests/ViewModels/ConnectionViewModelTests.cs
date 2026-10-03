@@ -578,20 +578,6 @@ public class ConnectionViewModelTests : IDisposable
         _connectionService.DidNotReceive().StopListeningForConnection();
     }
 
-    // === Dispatcher が必要なメソッドのスキップ ===
-
-    [Fact(Skip = "Avalonia Dispatcher が必要")]
-    public void OnStateChanged_UIスレッドで状態が更新されること() { }
-
-    [Fact(Skip = "Avalonia Dispatcher が必要")]
-    public void OnRouteChanged_UIスレッドで経路テキストが更新されること() { }
-
-    [Fact(Skip = "Avalonia Dispatcher が必要")]
-    public void OnPairingCompleted_UIスレッドでピアが追加されること() { }
-
-    [Fact(Skip = "Avalonia Dispatcher が必要 - ClearQrCodeImage 内で Dispatcher.UIThread.Post を使用")]
-    public void Dispose_イベントハンドラが解除されること() { }
-
     // === AddNewPeerCommand ===
 
     [Fact]

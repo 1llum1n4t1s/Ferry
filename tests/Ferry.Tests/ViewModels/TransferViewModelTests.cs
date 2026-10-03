@@ -58,34 +58,6 @@ public class TransferViewModelTests : IDisposable
         return new TransferViewModel(_connectionService, _transferService, _connectionViewModel, _settingsService);
     }
 
-    /// <summary>v1.0.38 review nitpick: AutoAccept=true で UI を経由せず即承認、PendingApprovals に積まれないこと。</summary>
-    [Fact(Skip = "UI スレッド (Dispatcher.UIThread) を必要とするためテスト環境では Skip。実機で検証")]
-    public void OnApprovalRequested_AutoAccept有効時はPendingApprovalsに積まれず即ApproveTransferが呼ばれること()
-    {
-        _settingsService.Settings.Returns(new AppSettings { AutoAcceptFileTransfer = true, DisplayName = "TestPC" });
-        var vm = CreateViewModel(withSelectedPeer: true);
-        var item = new TransferItem { TransferId = Guid.NewGuid(), FileName = "a.txt", FileSize = 100 };
-
-        _transferService.ApprovalRequested += Raise.Event<EventHandler<TransferItem>>(_transferService, item);
-
-        Assert.Empty(vm.PendingApprovals);
-        _transferService.Received(1).ApproveTransfer(item.TransferId.ToString());
-    }
-
-    /// <summary>v1.0.38 review nitpick: AutoAccept=false で従来通り PendingApprovals に積まれること。</summary>
-    [Fact(Skip = "UI スレッド (Dispatcher.UIThread) を必要とするためテスト環境では Skip。実機で検証")]
-    public void OnApprovalRequested_AutoAccept無効時はPendingApprovalsに積まれApproveTransferは呼ばれないこと()
-    {
-        _settingsService.Settings.Returns(new AppSettings { AutoAcceptFileTransfer = false, DisplayName = "TestPC" });
-        var vm = CreateViewModel(withSelectedPeer: true);
-        var item = new TransferItem { TransferId = Guid.NewGuid(), FileName = "b.txt", FileSize = 200 };
-
-        _transferService.ApprovalRequested += Raise.Event<EventHandler<TransferItem>>(_transferService, item);
-
-        Assert.Single(vm.PendingApprovals);
-        _transferService.DidNotReceive().ApproveTransfer(Arg.Any<string>());
-    }
-
     public void Dispose()
     {
         if (Directory.Exists(_tempDir))
@@ -484,33 +456,6 @@ public class TransferViewModelTests : IDisposable
 
     // === OnProgressChanged ===
 
-    [Fact(Skip = "Avalonia Dispatcher が必要")]
-    public void OnProgressChanged_TransferIdで照合して更新されること()
-    {
-        using var vm = CreateViewModel();
-        var item = new TransferItem
-        {
-            FileName = "progress.txt",
-            FileSize = 1000,
-            State = TransferState.InProgress,
-            TransferredBytes = 0,
-        };
-        vm.Transfers.Add(item);
-
-        // イベントを発火
-        var progressItem = new TransferItem
-        {
-            TransferredBytes = 500,
-        };
-        // TransferId を合わせる
-        typeof(TransferItem).GetProperty(nameof(TransferItem.TransferId))!
-            .SetValue(progressItem, item.TransferId);
-
-        _transferService.ProgressChanged += Raise.Event<EventHandler<TransferItem>>(null!, progressItem);
-
-        Assert.Equal(500, item.TransferredBytes);
-    }
-
     [Fact]
     public void OnProgressChanged_TransferIdが一致しない場合は更新されないこと()
     {
@@ -563,50 +508,7 @@ public class TransferViewModelTests : IDisposable
 
     // === OnFileReceived ===
 
-    [Fact(Skip = "Avalonia Dispatcher が必要")]
-    public void OnFileReceived_コレクションに追加されること()
-    {
-        using var vm = CreateViewModel();
-        var receivedItem = new TransferItem
-        {
-            FileName = "received.txt",
-            FileSize = 2000,
-            Direction = TransferDirection.Receive,
-            State = TransferState.Completed,
-        };
-
-        _transferService.FileReceived += Raise.Event<EventHandler<TransferItem>>(null!, receivedItem);
-
-        Assert.Single(vm.Transfers);
-        Assert.Equal("received.txt", vm.Transfers[0].FileName);
-        Assert.Equal(TransferDirection.Receive, vm.Transfers[0].Direction);
-    }
-
     // === OnTransferError ===
-
-    [Fact(Skip = "Avalonia Dispatcher が必要")]
-    public void OnTransferError_該当アイテムのステータスが更新されること()
-    {
-        using var vm = CreateViewModel();
-        var item = new TransferItem
-        {
-            FileName = "error.txt",
-            State = TransferState.InProgress,
-        };
-        vm.Transfers.Add(item);
-
-        var errorItem = new TransferItem
-        {
-            ErrorMessage = "転送中断",
-        };
-        typeof(TransferItem).GetProperty(nameof(TransferItem.TransferId))!
-            .SetValue(errorItem, item.TransferId);
-
-        _transferService.TransferError += Raise.Event<EventHandler<TransferItem>>(null!, errorItem);
-
-        Assert.Equal(TransferState.Error, item.State);
-        Assert.Equal("転送中断", item.ErrorMessage);
-    }
 
     [Fact]
     public void OnTransferError_TransferIdが一致しない場合は更新されないこと()
