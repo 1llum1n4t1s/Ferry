@@ -57,7 +57,7 @@ function getParams() {
     const params = new URLSearchParams(window.location.search);
     return {
         sid: params.get("sid"),
-        name: params.get("name") ? decodeURIComponent(params.get("name")) : null,
+        name: params.get("name"),
         // rere #D-001(b): 長期公開鍵(base64url)。Bridge は中身を解釈せず文字列のまま中継する。
         pk: params.get("pk") || "",
         // 接続元 PC の PairingNonce (D1 pairing_nonces と一致する 32 hex)。
@@ -117,7 +117,7 @@ function parseQrUrl(text) {
         const params = new URLSearchParams(url.search);
         return {
             sid: params.get("sid"),
-            name: params.get("name") ? decodeURIComponent(params.get("name")) : null,
+            name: params.get("name"),
             pk: params.get("pk") || "",
             nonce: params.get("nonce") || "",
         };
