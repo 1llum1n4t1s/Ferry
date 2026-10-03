@@ -36,7 +36,7 @@ rere レビュー #F-008 / #F-015 対応で新設。
 | └ リレー `/ferry-relay` | **RelayDO** (Hibernation 対応) | CGNAT/symmetric NAT 環境で転送不可（TCP/UDP 直結は無事） |
 | **Bridge ページ** | 同 Worker の Static Assets (`public/`) | QR ペアリング不可（コード貼付ペアリングは可） |
 | **配信** (`ferry.kagayoi.com`) | Cloudflare R2 `ferry-updates` | 自動更新・新規ダウンロード不可 |
-| **ランディング** | Cloudflare Worker (`web/`) | サイト閲覧不可（アプリ動作には影響なし） |
+| **ランディング** | VPS `/srv/www/lp/ferry/`（Cloudflare 中継あり） | サイト閲覧不可（アプリ動作には影響なし） |
 
 **接続は 3 段フォールバック**: TCP 直結（LAN / IPv6）→ UDP ホールパンチ（STUN）→ WebSocket リレー。
 上位が生きていればリレー障害でも転送できる。
@@ -180,7 +180,11 @@ pnpm dlx wrangler d1 export ferry_ledger --remote --output ferry_ledger_$(date +
 
 ### ランディングページの rollback
 
-`web/` 配下を main に push すると `deploy-landing.yml` が配信する。git で旧版に戻して push し直す。
+編集元は `../vps-web/tools/lp/templates/`、配信 HTML は `../vps-web/lp/ferry/`。
+復旧対象の既知の正常版を `vps-web` 側で確認し、配信 HTML を復元して
+`../vps-web/deploy/deploy-lp.ps1` の現行手順で Ferry を再配信する。
+引数と配信後の確認は同スクリプトと `vps-web` の作業規約に従う。
+公開実体は VPS の `/srv/www/lp/ferry/`。公開 URL と既存 R2・ライセンス経路を維持する。
 
 ---
 

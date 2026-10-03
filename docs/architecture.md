@@ -34,7 +34,7 @@ Ferry/
 │   └── Util/                  # ログ・パス・パス安全性などのユーティリティ
 ├── infra/cloudflare/relay/    # Cloudflare Workers + Durable Objects + D1
 │                              # (シグナリング / プレゼンス / ペア台帳 / WebSocket リレー / QR Bridge ページ)
-├── web/                       # ダウンロード用ランディングページ
+├── ../vps-web/lp/ferry/        # 製品ページ（別リポジトリ、VPS 配信）
 ├── tests/Ferry.Tests/         # ユニットテスト
 ├── .github/workflows/         # CI/CD
 └── docs/                      # 設計書・運用手順

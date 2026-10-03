@@ -18,16 +18,19 @@
 # 使い方:
 #   pwsh scripts/release-local.ps1                # フルリリース (build + sign + upload + cleanup)
 #   pwsh scripts/release-local.ps1 -SkipUpload    # ビルド + 署名のみ (アップロードしない動作確認用)
+#   pwsh scripts/release-local.ps1 -UploadOnly    # 同版の検証済み署名パッケージを再ビルドせず公開
 #   pwsh scripts/release-local.ps1 -Runtimes win-x64   # 対象 RID を絞る (テスト用)
 
 [CmdletBinding()]
 param(
     [switch]$SkipUpload,
+    [switch]$UploadOnly,
     [string[]]$Runtimes = @('win-x64', 'win-arm64')
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+if ($SkipUpload -and $UploadOnly) { throw 'SkipUpload と UploadOnly は同時に指定できません' }
 
 # ---- 定数 ----
 # Velopack (vpk) は常に最新安定版を使う (ゆろ君ルール): NuGet から実行時に最新を解決して pin する
@@ -108,7 +111,17 @@ if (-not $SkipUpload) {
     $env:CLOUDFLARE_ACCOUNT_ID = $AccountId
 }
 
-if (Test-Path $WorkDir) { Remove-Item $WorkDir -Recurse -Force }
+if (-not $UploadOnly) {
+$resolvedWorkDir = [IO.Path]::GetFullPath($WorkDir)
+$expectedWorkDir = [IO.Path]::GetFullPath((Join-Path $RepoRoot 'local-release'))
+if ($resolvedWorkDir -ne $expectedWorkDir) { throw 'リリース作業ディレクトリが想定範囲外です' }
+if (Test-Path -LiteralPath $resolvedWorkDir) {
+    $workItems = @(Get-Item -LiteralPath $resolvedWorkDir) + @(Get-ChildItem -LiteralPath $resolvedWorkDir -Recurse -Force)
+    if ($workItems | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }) {
+        throw 'リリース作業ディレクトリにリンクが含まれています'
+    }
+    Remove-Item -LiteralPath $resolvedWorkDir -Recurse -Force
+}
 New-Item -ItemType Directory -Path $ArtifactsDir -Force | Out-Null
 
 # ---- 1. ビルド + 署名付きパッケージング (RID ごと) ----
@@ -117,11 +130,25 @@ foreach ($runtime in $Runtimes) {
     if (-not $config) { throw "未知の runtime: $runtime (本スクリプトは Windows チャンネル専用)" }
     $publishDir = Join-Path $WorkDir "publish-$runtime"
 
+    # VS 2026 のインストール構成によって旧 component ID の自動検出が失敗するため、
+    # 対象アーキテクチャの公式開発環境を明示的に読み込む。
+    $vsPath = & (Join-Path $vsInstallerDir 'vswhere.exe') -latest -prerelease -products '*' -property installationPath
+    $vcvars = Join-Path $vsPath 'VC\Auxiliary\Build\vcvarsall.bat'
+    if (-not (Test-Path -LiteralPath $vcvars)) { throw 'Visual C++ の開発環境が見つかりません' }
+    $vcArch = if ($runtime -eq 'win-arm64') { 'amd64_arm64' } else { 'amd64' }
+    $buildEnvironment = & cmd.exe /d /c "call `"$vcvars`" $vcArch >nul && set"
+    if ($LASTEXITCODE -ne 0) { throw "Visual C++ 開発環境の初期化に失敗しました ($runtime)" }
+    foreach ($entry in $buildEnvironment) {
+        if ($entry -match '^(PATH|INCLUDE|LIB|LIBPATH)=(.*)$') {
+            [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], 'Process')
+        }
+    }
+
     Write-Host "== publish: $runtime ==" -ForegroundColor Cyan
     Invoke-Native "dotnet publish ($runtime)" {
         # Native AOT は MSBuild の OS property で host OS を判定する。Codex 等の最小環境では
         # Windows 上でも OS 環境変数が無いことがあるため、Windows 専用スクリプト側で明示する。
-        dotnet publish src/Ferry/Ferry.csproj -c Release -r $runtime -o $publishDir -p:OS=Windows_NT
+        dotnet publish src/Ferry/Ferry.csproj -c Release -r $runtime -o $publishDir -p:OS=Windows_NT -p:IlcUseEnvironmentalTools=true
     }
 
     if (-not (Test-Path (Join-Path $publishDir 'Ferry.exe'))) {
@@ -141,6 +168,25 @@ foreach ($runtime in $Runtimes) {
             --channel $config.Channel `
             --icon (Join-Path $RepoRoot 'icon\app.ico') `
             --signParams $SignParams
+    }
+}
+} else {
+    foreach ($runtime in $Runtimes) {
+        if (-not $RuntimeMatrix.ContainsKey($runtime)) { throw "未知の runtime: $runtime" }
+        $manifestPath = Join-Path $ArtifactsDir "releases.$runtime.json"
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+        if (-not $manifest.Assets -or @($manifest.Assets | Where-Object { $_.Version -ne $version }).Count -gt 0) {
+            throw "公開対象のパッケージが指定バージョンと一致しません ($runtime)"
+        }
+        if (-not (Test-Path -LiteralPath (Join-Path $ArtifactsDir "Ferry-$runtime-Setup.exe"))) {
+            throw "署名済みインストーラがありません ($runtime)"
+        }
+        foreach ($asset in $manifest.Assets) {
+            $assetPath = Join-Path $ArtifactsDir $asset.FileName
+            if ((Get-FileHash -LiteralPath $assetPath -Algorithm SHA256).Hash -ne $asset.SHA256 -or (Get-Item -LiteralPath $assetPath).Length -ne $asset.Size) {
+                throw "パッケージのハッシュまたはサイズが一致しません ($runtime)"
+            }
+        }
     }
 }
 
@@ -182,17 +228,23 @@ Write-Host "✅ R2 アップロード完了: $uploaded ファイル"
 # ---- 2.5 Cloudflare エッジキャッシュのパージ ----
 # 固定名ファイル (Setup.exe / Portable.zip / RELEASES / releases.*.json / assets.*.json) は
 # 毎リリースで中身が変わるのに URL が不変。CDN エッジが旧版を Cache-Control の max-age 分保持するため、
-# パージしないと新規ダウンロード・自動更新が旧バージョンを掴む。アップロード直後に該当 URL をパージして
-# 伝播を確定する。バージョン付き nupkg は URL が一意 (旧キャッシュなし) のためパージ不要。
+# 古いキャッシュが残っているかを取得した内容のハッシュで確認し、不一致の URL だけパージする。
+# バージョン付き nupkg は URL が一意 (旧キャッシュなし) のためパージ不要。
 Write-Host '== Cloudflare キャッシュパージ ==' -ForegroundColor Cyan
 $cfHeaders = @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)" }
 $zoneName = ([uri]$BaseUrl).Host -replace '^[^.]+\.', ''   # <sub>.kagayoi.com → kagayoi.com (apex)
 $zoneResp = Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/zones?name=$zoneName" -Headers $cfHeaders -TimeoutSec 30
-if (-not $zoneResp.success -or @($zoneResp.result).Count -eq 0) { throw "Cloudflare zone '$zoneName' の取得に失敗しました" }
+if (-not $zoneResp.success -or @($zoneResp.result).Count -ne 1 -or $zoneResp.result[0].account.id -ne $AccountId) { throw "Cloudflare zone '$zoneName' を対象アカウントで一意に確認できませんでした" }
 $zoneId = $zoneResp.result[0].id
-$purgeUrls = @(Get-ChildItem $ArtifactsDir -File | Where-Object { $_.Name -notlike '*.nupkg' } | ForEach-Object { "$BaseUrl/$($_.Name)" })
+$purgeUrls = @(foreach ($artifact in (Get-ChildItem $ArtifactsDir -File | Where-Object { $_.Name -notlike '*.nupkg' })) {
+    $artifactUrl = "$BaseUrl/$($artifact.Name)"
+    $response = Invoke-WebRequest -Uri "${artifactUrl}?verify=$([Guid]::NewGuid().ToString('N'))" -Headers @{ 'Cache-Control' = 'no-cache' } -TimeoutSec 120
+    $bytes = if ($response.Content -is [byte[]]) { $response.Content } else { [Text.Encoding]::UTF8.GetBytes($response.Content) }
+    $remoteHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))
+    if ($remoteHash -ne (Get-FileHash -LiteralPath $artifact.FullName -Algorithm SHA256).Hash) { $artifactUrl }
+})
 if ($purgeUrls.Count -gt 0) {
-    $purgeBody = "{`"files`":$(ConvertTo-Json -InputObject $purgeUrls -AsArray -Compress)}"
+    $purgeBody = [PSCustomObject]@{ files = $purgeUrls } | ConvertTo-Json -Compress
     $purgeResp = Invoke-RestMethod -Method Post -Uri "https://api.cloudflare.com/client/v4/zones/$zoneId/purge_cache" `
         -Headers $cfHeaders -ContentType 'application/json' -Body $purgeBody -TimeoutSec 30
     if (-not $purgeResp.success) { throw "Cloudflare キャッシュパージに失敗しました: $($purgeResp.errors | ConvertTo-Json -Compress)" }
