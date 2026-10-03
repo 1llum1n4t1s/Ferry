@@ -234,10 +234,12 @@ public sealed class UdpHolePunchTransport : ITransport
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            // PR#5 Codex 指摘: デッドライン発火時、この送信が占有した window スロットと再送バッファを
-            // 回収する。回収しないと未 ACK パケットがスロットを占有し続け、ネットワーク回復後も
-            // 後続の SendAsync が全て自デッドラインまで詰まる。HandleAck 側と TryRemove で原子的に
-            // 取り合うため二重 Release は起きない
+            throw new TimeoutException($"UDP 送信が ACK 待ちでタイムアウトしました ({SendDeadlineMs / 1000}s、相手無応答)");
+        }
+        finally
+        {
+            // 利用者のキャンセルも含め、送信が終了したら占有枠と再送バッファを回収する。
+            // ACK 側と TryRemove で所有権を取り合うため二重 Release は起きない。
             var reclaimed = 0;
             foreach (var kv in _sentPackets)
             {
@@ -249,7 +251,6 @@ public sealed class UdpHolePunchTransport : ITransport
                 try { _windowSem.Release(reclaimed); } catch (SemaphoreFullException) { }
             }
             _pendingMessages.TryRemove((uint)msgId, out _);
-            throw new TimeoutException($"UDP 送信が ACK 待ちでタイムアウトしました ({SendDeadlineMs / 1000}s、相手無応答)");
         }
     }
 

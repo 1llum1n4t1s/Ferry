@@ -67,7 +67,7 @@ public sealed class TransferService : ITransferService, IDisposable
     /// <summary>承認待ちの転送状態（TransferId → ReceiveState）。承認/拒否後に _receiveStates へ移動。</summary>
     private readonly ConcurrentDictionary<Guid, ReceiveState> _pendingApprovals = new();
 
-    /// <summary>承認待ち件数の確認と追加を原子的に行う。削除は上限を緩めるだけなのでロック不要。</summary>
+    /// <summary>受信の登録・pending→receive交換・終了権取得を原子的に行う。I/Oと通知はゲート外。</summary>
     private readonly Lock _pendingApprovalGate = new();
 
     /// <summary>送信側の承認待ち（TransferId → TaskCompletionSource）。
@@ -193,32 +193,19 @@ public sealed class TransferService : ITransferService, IDisposable
             }
         }
 
-        // 受信中の部分ファイルを削除
-        foreach (var tid in _receiveStates.Keys.ToArray())
+        // pending→receive の交換と同じゲートで、切断対象を両集合から取得する。
+        var disconnected = new List<ReceiveState>();
+        lock (_pendingApprovalGate)
         {
-            if (!BelongsTo(tid)) continue;
-            if (_receiveStates.TryRemove(tid, out var state))
-            {
-                state.Item.State = TransferState.Cancelled;
-                state.Item.ErrorMessage = Util.ErrorText.Disconnected;
-                CleanupReceiveState(state);
-                TransferError?.Invoke(this, state.Item);
-            }
+            foreach (var tid in _receiveStates.Keys.Concat(_pendingApprovals.Keys).Distinct().ToArray())
+                if (BelongsTo(tid) && TryTakeReceiveState(tid, out var state)) disconnected.Add(state);
         }
-
-        // 受信側承認待ちもキャンセル扱い (送信側はもう存在しないので承認しても無意味)
-        foreach (var tid in _pendingApprovals.Keys.ToArray())
+        foreach (var state in disconnected)
         {
-            if (!BelongsTo(tid)) continue;
-            if (_pendingApprovals.TryRemove(tid, out var pending))
-            {
-                pending.Item.State = TransferState.Cancelled;
-                pending.Item.ErrorMessage = Util.ErrorText.Disconnected;
-                // 複数ペア同時接続対応 Stage 2 leak fix (PR #12 review): pending approval は
-                // CleanupReceiveState に到達しないため、_transferPeerId 索引を直接掃除する。
-                _transferPeerId.TryRemove(tid, out _);
-                TransferError?.Invoke(this, pending.Item);
-            }
+            state.Item.State = TransferState.Cancelled;
+            state.Item.ErrorMessage = Util.ErrorText.Disconnected;
+            CleanupReceiveState(state);
+            TransferError?.Invoke(this, state.Item);
         }
 
         // 送信側承認待ち TCS も解放。FileMeta 送信後 → 受信側からの FileApprove 待ちで切断したケース。
@@ -793,12 +780,12 @@ public sealed class TransferService : ITransferService, IDisposable
     /// 呼ばれるため、例外は内部で握り潰してタスクが faulted にならないようにする (UnobservedTaskException 防止)。
     /// Stage 5: transferId 紐付けの peerId に per-peer 送信。
     /// </summary>
-    private async Task SendFlowAckAsync(Guid transferId, int receivedChunkCount)
+    private async Task SendFlowAckAsync(Guid transferId, int receivedChunkCount, string peerId)
     {
         try
         {
             var msg = FileChunker.CreateFlowAckMessage(transferId, receivedChunkCount);
-            await SendToPeerAsync(ResolvePeerIdForTransfer(transferId), msg);
+            await SendToPeerAsync(peerId, msg);
         }
         catch (Exception ex)
         {
@@ -998,25 +985,29 @@ public sealed class TransferService : ITransferService, IDisposable
         var chunkIndex = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(17, 4));
         var chunkLength = data.Length - TransferProtocol.ChunkHeaderSize;
 
-        if (!_receiveStates.TryGetValue(transferId, out var state) || state.FileStream == null)
+        ReceiveState state;
+        lock (_pendingApprovalGate)
         {
-            // 承認待ち中のチャンクは TransferId 単位でバッファリング（上限超過分は破棄して OOM 防止）
-            if (_pendingApprovals.TryGetValue(transferId, out var pending))
+            if (!_receiveStates.TryGetValue(transferId, out state!) || state.FileStream == null)
             {
-                // rere #C2-002: per-transfer 上限に加え、全承認待ち合算の上限でも破棄する。
-                // 合算は承認前バッファ（正規経路ではほぼ発生しない異常パス）でのみ評価するので、
-                // 都度集計（O(承認待ち件数)）でも実コストは無視できる（カウンタの増減簿記による誤差を避ける）。
-                if (pending.BufferedBytes + chunkLength > MaxApprovalBufferBytes
-                    || TotalPendingApprovalBytes() + chunkLength > MaxTotalApprovalBufferBytes)
+                // 承認待ち中のチャンクは TransferId 単位でバッファリング（上限超過分は破棄して OOM 防止）
+                if (_pendingApprovals.TryGetValue(transferId, out var pending))
                 {
-                    Util.Logger.Log($"承認待ちバッファ上限超過のためチャンクを破棄: {pending.FileName}", Util.LogLevel.Warning);
-                    return;
+                    // rere #C2-002: per-transfer 上限に加え、全承認待ち合算の上限でも破棄する。
+                    // 合算は承認前バッファ（正規経路ではほぼ発生しない異常パス）でのみ評価するので、
+                    // 都度集計（O(承認待ち件数)）でも実コストは無視できる（カウンタの増減簿記による誤差を避ける）。
+                    if (pending.BufferedBytes + chunkLength > MaxApprovalBufferBytes
+                        || TotalPendingApprovalBytes() + chunkLength > MaxTotalApprovalBufferBytes)
+                    {
+                        Util.Logger.Log($"承認待ちバッファ上限超過のためチャンクを破棄: {pending.FileName}", Util.LogLevel.Warning);
+                        return;
+                    }
+                    pending.BufferedChunks ??= [];
+                    pending.BufferedChunks.Add(data);
+                    pending.BufferedBytes += chunkLength;
                 }
-                pending.BufferedChunks ??= [];
-                pending.BufferedChunks.Add(data);
-                pending.BufferedBytes += chunkLength;
+                return;
             }
-            return;
         }
 
         // chunkIndex の範囲検証
@@ -1029,7 +1020,7 @@ public sealed class TransferService : ITransferService, IDisposable
             Util.Logger.Log($"チャンクが申告サイズを超過: {Util.Logger.MaskFilename(state.FileName)}", Util.LogLevel.Warning);
             // rere #C2-001 review: 終端確定権を atomic に取り、勝者だけが TransferError を発火する
             // (CancelTransfer / OnConnectionLost / VerifyAndFinalize と二重終端イベントにしない。他 4 経路と揃える)。
-            if (!_receiveStates.TryRemove(state.TransferId, out _)) return;
+            if (!TryRemoveReceiveState(state)) return;
             state.Item.State = TransferState.Error;
             state.Item.ErrorMessage = Util.ErrorText.SizeExceeded;
             TransferError?.Invoke(this, state.Item);
@@ -1081,7 +1072,7 @@ public sealed class TransferService : ITransferService, IDisposable
                 // FlowAck は累積カウントなので、スナップショットが多少ずれても次の ACK で回復する。
                 if (receivedSnapshot % TransferProtocol.FlowAckIntervalChunks == 0
                     || receivedSnapshot == state.TotalChunks)
-                    _ = SendFlowAckAsync(transferId, receivedSnapshot);
+                    _ = SendFlowAckAsync(transferId, receivedSnapshot, state.Item.PeerId ?? string.Empty);
             }
 
             state.Item.TransferredBytes = writtenSnapshot;
@@ -1103,7 +1094,7 @@ public sealed class TransferService : ITransferService, IDisposable
             Util.Logger.Log($"チャンク書き込みエラー: {ex.GetType().Name}: {ex.Message}", Util.LogLevel.Error);
             // rere #C2-001 review: 同上。終端確定権を atomic に取り、勝者だけが終端イベントを発火する
             // (CancelTransfer が FileStream を dispose して書き込みが例外化したケースの二重終端を防ぐ)。
-            if (!_receiveStates.TryRemove(state.TransferId, out _)) return;
+            if (!TryRemoveReceiveState(state)) return;
             state.Item.State = TransferState.Error;
             state.Item.ErrorMessage = Util.ErrorText.Describe(ex);
             TransferError?.Invoke(this, state.Item);
@@ -1156,9 +1147,9 @@ public sealed class TransferService : ITransferService, IDisposable
             // claim 後・Task.Run 起動前に throw した場合の最終防衛線。state を確実に終端させ、
             // _receiveStates 永久残留(HasActiveTransfer 固着) と UI の「検証中…」固着を防ぐ。
             Util.Logger.LogException("受信完了処理の起動に失敗", ex);
-            if (_receiveStates.TryRemove(state.TransferId, out _))
+            if (TryRemoveReceiveState(state))
             {
-                if (_receiveStates.IsEmpty) _folderMappings.Clear();
+                ReleaseFolderMappingIfUnused(state);
                 state.Item.State = TransferState.Error;
                 state.Item.ErrorMessage = Util.ErrorText.Describe(ex);
                 try { TransferError?.Invoke(this, state.Item); } catch { /* 購読側例外は無視 */ }
@@ -1209,14 +1200,12 @@ public sealed class TransferService : ITransferService, IDisposable
             // 終端確定の権利を atomic に取る。検証中に CancelTransfer がこの状態を横取り(TryRemove 成功)して
             // いたら、ここでは何もせず二重終端イベントを防ぐ。キャンセルが消せなかった可能性のある
             // 受信ファイル(検証が掴んでいて File.Delete が失敗した等)だけ後始末する。
-            if (!_receiveStates.TryRemove(state.TransferId, out _))
+            if (!TryRemoveReceiveState(state))
             {
                 try { if (File.Exists(state.SavePath)) File.Delete(state.SavePath); } catch { }
                 return;
             }
-            // 全受信完了時にフォルダマッピングキャッシュをクリア
-            if (_receiveStates.IsEmpty)
-                _folderMappings.Clear();
+            ReleaseFolderMappingIfUnused(state);
 
             if (errorMessage == null && hashMatch)
             {
@@ -1382,34 +1371,15 @@ public sealed class TransferService : ITransferService, IDisposable
             return;
         }
 
-        // v1.0.38 review fix v8: 受信側で pending approval として待機中のケース。
-        // 送信側がタイムアウト等で expire を通知してきた → 受信側 UI からも消す必要がある
-        // (これを処理しないと、ユーザーが後から承認ボタンを押した時に FileApprove を送って
-        // 空ファイルが in-progress のまま残ってしまう)
-        if (_pendingApprovals.TryRemove(transferId, out var pendingState))
+        if (TryTakeReceiveState(transferId, out var state))
         {
-            Util.Logger.Log($"受信側 pending approval を expire (送信側通知): {pendingState.FileName} / 理由={reason}");
-            pendingState.Item.State = TransferState.Cancelled;
-            pendingState.Item.ErrorMessage = $"送信側がキャンセル: {reason}";
-            // 複数ペア同時接続対応 Stage 2 leak fix (PR #12 review): pending approval 経路は
-            // CleanupReceiveState に到達しないため、_transferPeerId 索引を直接掃除する。
-            _transferPeerId.TryRemove(transferId, out _);
-            TransferError?.Invoke(this, pendingState.Item);
-            return;
-        }
-
-        // v1.0.38 review fix v8: race ケース — 受信側が timeout 直前で承認していて
-        // 既に _receiveStates に移行している状態で送信側 reject が到着。
-        // file stream は開いて空ファイルが空のまま残るので、ここで cleanup する
-        if (_receiveStates.TryRemove(transferId, out var receiveState))
-        {
-            Util.Logger.Log($"受信側 in-progress を expire (送信側通知 / race): {receiveState.FileName} / 理由={reason}");
-            receiveState.Item.State = TransferState.Cancelled;
-            receiveState.Item.ErrorMessage = $"送信側がキャンセル: {reason}";
-            CleanupReceiveState(receiveState);
-            TransferError?.Invoke(this, receiveState.Item);
+            state.Item.State = TransferState.Cancelled;
+            state.Item.ErrorMessage = $"送信側がキャンセル: {reason}";
+            CleanupReceiveState(state);
+            TransferError?.Invoke(this, state.Item);
         }
     }
+
 
     /// <summary>
     /// v1.0.38: FileApprove メッセージを受信して、送信側の承認待ち TCS を完了させる。
@@ -1501,82 +1471,88 @@ public sealed class TransferService : ITransferService, IDisposable
     public void ApproveTransfer(string transferId)
     {
         if (!Guid.TryParse(transferId, out var tid)) return;
-        if (!_pendingApprovals.TryRemove(tid, out var state))
+        ReceiveState state;
+        lock (_pendingApprovalGate)
         {
-            Util.Logger.Log($"承認対象が見つかりません: {transferId}", Util.LogLevel.Warning);
-            return;
+            if (!_pendingApprovals.TryGetValue(tid, out state!) || state.Approving) return;
+            state.Approving = true;
         }
 
-        Util.Logger.Log($"受信承認: {Util.Logger.MaskFilename(state.FileName)}");
-
-        // 承認されてから初めて保存先を確定し、ディレクトリとファイルを作成する。
-        // FileMeta 到着だけではディスクやフォルダマッピングに副作用を残さない。
-        // rere #C2-001: バッファを 1MB に拡大 (デフォルト 4KB) + SetLength で全長を事前確保する。
-        // 事前確保により sparse 拡張による断片化を防ぎ、HDD/暗号化ボリュームでの受信スループット低下と
-        // 転送途中のディスク満杯エラー (途中まで書いて失敗) を承認時点で前倒し検出できる
+        // 作成中も pending に残す。I/O 中の切断・取消は pending の終了権を取得できる。
+        FileStream? stream = null;
+        string? createdPath = null;
+        List<byte[]>? bufferedChunks = null;
         try
         {
             lock (_savePathGate)
             {
-                state.SavePath = ResolveApprovedSavePath(state);
-                var saveFileDir = Path.GetDirectoryName(state.SavePath) ?? state.SaveDirectory;
-                Directory.CreateDirectory(saveFileDir);
-
-                // ResolveApprovedSavePath は既存名を避ける。CreateNew も併用し、外部プロセスとの
-                // 競合でも既存ファイルを上書きしない。
-                state.FileStream = new FileStream(
-                    state.SavePath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                var savePath = ResolveApprovedSavePath(state);
+                Directory.CreateDirectory(Path.GetDirectoryName(savePath) ?? state.SaveDirectory);
+                stream = new FileStream(savePath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
                     bufferSize: 1 << 20, FileOptions.None);
+                createdPath = savePath;
             }
-            state.FileStream.SetLength(state.FileSize);
+            stream.SetLength(state.FileSize);
+            var chunks = new bool[state.TotalChunks];
+            var published = false;
+            lock (_pendingApprovalGate)
+            {
+                if (_pendingApprovals.TryGetValue(tid, out var pending) && ReferenceEquals(pending, state))
+                {
+                    _pendingApprovals.TryRemove(tid, out _);
+                    state.SavePath = createdPath;
+                    state.FileStream = stream;
+                    stream = null;
+                    state.ReceivedChunkSet = chunks;
+                    state.WrittenBytes = 0;
+                    state.ReceivedChunks = 0;
+                    bufferedChunks = state.BufferedChunks;
+                    state.BufferedChunks = null;
+                    state.BufferedBytes = 0;
+                    state.Item.State = TransferState.InProgress;
+                    _receiveStates[tid] = state;
+                    published = true;
+                }
+            }
+            if (!published) return;
+
+            if (bufferedChunks != null)
+                foreach (var chunkData in bufferedChunks) HandleFileChunk(chunkData);
+            SendFireAndForget(state.Item.PeerId ?? string.Empty, FileChunker.CreateApproveMessage(tid), "FileApprove");
         }
         catch (Exception ex)
         {
-            // SetLength 失敗 (ディスク不足等) 時に開きかけのストリームを残さない
-            state.FileStream?.Dispose();
-            state.FileStream = null;
-            try
+            // 先に取消された場合、その終端状態を作成失敗で上書きしない。
+            var claimed = false;
+            lock (_pendingApprovalGate)
             {
-                if (!string.IsNullOrEmpty(state.SavePath) && File.Exists(state.SavePath))
-                    File.Delete(state.SavePath);
+                if (_pendingApprovals.TryGetValue(tid, out var pending) && ReferenceEquals(pending, state))
+                {
+                    claimed = _pendingApprovals.TryRemove(tid, out _);
+                    if (claimed) _transferPeerId.TryRemove(tid, out _);
+                }
+                else
+                    claimed = TryRemoveReceiveState(state);
             }
-            catch { /* 部分ファイルの後始末失敗は元エラーを上書きしない */ }
-            Util.Logger.Log($"受信ファイル作成エラー: {ex.GetType().Name}: {ex.Message}", Util.LogLevel.Error);
-            state.Item.State = TransferState.Error;
-            state.Item.ErrorMessage = Util.ErrorText.Describe(ex);
-            TransferError?.Invoke(this, state.Item);
-
-            // v1.0.38 review fix v6: file open 失敗時に sender へ FileReject を送って
-            // 60 秒の approval タイムアウト + 「相手が旧バージョン」の誤誘導エラーを防ぐ
-            // v1.0.38 review fix v9: SendRejectFireAndForget ヘルパーに統一 (重複削減)
-            // CodeRabbit 指摘: ex.Message に保存先絶対パス / ファイル名等のローカル PII が
-            // 含まれうるため、ネットワーク越しの理由は固定文言に絞る
-            SendRejectFireAndForget(tid, "受信ファイル作成エラー");
-            _transferPeerId.TryRemove(tid, out _);
-            return;
+            if (claimed)
+            {
+                CleanupReceiveState(state);
+                state.Item.State = TransferState.Error;
+                state.Item.ErrorMessage = Util.ErrorText.Describe(ex);
+                SendRejectFireAndForget(tid, "受信ファイル作成エラー", state.Item.PeerId ?? string.Empty);
+                TransferError?.Invoke(this, state.Item);
+            }
         }
-
-        state.Item.State = TransferState.InProgress;
-        // 受信済みチャンク追跡ビットマップを確保（chunkIndex ベースの書き込み・重複除外・完了判定に使用）
-        state.ReceivedChunkSet = new bool[state.TotalChunks];
-        state.WrittenBytes = 0;
-        state.ReceivedChunks = 0;
-        _receiveStates[tid] = state;
-
-        // 承認前にバッファされたチャンクを処理 (v1.0.38 で送信側が承認待ちになったので通常は空だが、
-        // 旧バージョン送信側との互換 / セーフティネットとして残す)
-        if (state.BufferedChunks is { Count: > 0 })
+        finally
         {
-            foreach (var chunkData in state.BufferedChunks)
-                HandleFileChunk(chunkData);
-            state.BufferedChunks = null;
-            state.BufferedBytes = 0;
+            // 移譲できなかった、今回作成したファイルだけを回収する。
+            if (stream != null)
+            {
+                try { stream.Dispose(); } catch { }
+                try { if (createdPath != null) File.Delete(createdPath); } catch { }
+            }
+            ReleaseFolderMappingIfUnused(state);
         }
-
-        // v1.0.38: 送信側に FileApprove を送って、チャンク送信を開始させる
-        // (送信側は FileMeta 送信後にこれを待っている)
-        // Stage 5: 受信ロジックは sender の peerId (state.Item.PeerId) に per-peer 送信。
-        SendFireAndForget(state.Item.PeerId ?? string.Empty, FileChunker.CreateApproveMessage(tid), "FileApprove");
     }
 
     private string ResolveApprovedSavePath(ReceiveState state)
@@ -1624,23 +1600,19 @@ public sealed class TransferService : ITransferService, IDisposable
     public void RejectTransfer(string transferId)
     {
         if (!Guid.TryParse(transferId, out var tid)) return;
-        if (!_pendingApprovals.TryRemove(tid, out var state))
+        ReceiveState state;
+        lock (_pendingApprovalGate)
         {
-            Util.Logger.Log($"拒否対象が見つかりません: {transferId}", Util.LogLevel.Warning);
-            return;
+            if (!_pendingApprovals.TryRemove(tid, out state!)) return;
+            _transferPeerId.TryRemove(tid, out _);
         }
 
         Util.Logger.Log($"受信拒否: {Util.Logger.MaskFilename(state.FileName)}");
         state.Item.State = TransferState.Cancelled;
         state.Item.ErrorMessage = Util.ErrorText.ReceiveRejected;
 
-        // FileReject メッセージを送信側に通知 — fire-and-forget でブロッキングを回避
-        // v1.0.38: TransferId プレフィックス付きに変更 (同時複数転送の区別のため)
-        // v1.0.38 review fix v9: SendRejectFireAndForget ヘルパーに統一 (重複削減)
-        // 複数ペア同時接続対応 Stage 2 leak fix (PR #12 review): SendRejectFireAndForget は
-        // 内部で _transferPeerId から peerId を引いて送るため、Remove はこの後で行う。
-        SendRejectFireAndForget(tid, "受信側が拒否しました");
-        _transferPeerId.TryRemove(tid, out _);
+        SendRejectFireAndForget(tid, "受信側が拒否しました", state.Item.PeerId ?? string.Empty);
+        CleanupReceiveState(state);
     }
 
     /// <summary>進行中の転送をキャンセルする。送受信どちら側からでも呼べ、相手にも FileReject で通知して
@@ -1649,29 +1621,13 @@ public sealed class TransferService : ITransferService, IDisposable
     {
         if (!Guid.TryParse(transferId, out var tid)) return;
 
-        // 受信中: 部分ファイルを削除し、送信側へ中断通知（送信側の _sendCts が cancel されて送信ループが止まる）
-        if (_receiveStates.TryRemove(tid, out var receiveState))
+        if (TryTakeReceiveState(tid, out var receiveState))
         {
-            Util.Logger.Log($"受信キャンセル: {receiveState.FileName}");
             receiveState.Item.State = TransferState.Cancelled;
             receiveState.Item.ErrorMessage = Util.ErrorText.Cancelled;
             CleanupReceiveState(receiveState);
-            SendRejectFireAndForget(tid, "受信側がキャンセルしました");
+            SendRejectFireAndForget(tid, "受信側がキャンセルしました", receiveState.Item.PeerId ?? string.Empty);
             TransferError?.Invoke(this, receiveState.Item);
-            return;
-        }
-
-        // 受信承認待ち: 送信側へ拒否通知して承認待ちを解除させる
-        if (_pendingApprovals.TryRemove(tid, out var pendingState))
-        {
-            Util.Logger.Log($"承認待ちキャンセル: {pendingState.FileName}");
-            pendingState.Item.State = TransferState.Cancelled;
-            pendingState.Item.ErrorMessage = Util.ErrorText.Cancelled;
-            // 複数ペア同時接続対応 Stage 2 leak fix (PR #12 review): SendRejectFireAndForget 内で
-            // _transferPeerId 索引から peerId を引くので、Remove はこの後で行う。
-            SendRejectFireAndForget(tid, "受信側がキャンセルしました");
-            _transferPeerId.TryRemove(tid, out _);
-            TransferError?.Invoke(this, pendingState.Item);
             return;
         }
 
@@ -1744,16 +1700,51 @@ public sealed class TransferService : ITransferService, IDisposable
     }
 
 
+    private bool TryTakeReceiveState(Guid tid, out ReceiveState state)
+    {
+        lock (_pendingApprovalGate)
+        {
+            if (!_receiveStates.TryRemove(tid, out state!) && !_pendingApprovals.TryRemove(tid, out state!)) return false;
+            _transferPeerId.TryRemove(tid, out _);
+            return true;
+        }
+    }
+
+    private bool TryRemoveReceiveState(ReceiveState state)
+    {
+        lock (_pendingApprovalGate)
+        {
+            if (!_receiveStates.TryGetValue(state.TransferId, out var current) || !ReferenceEquals(current, state))
+                return false;
+            _receiveStates.TryRemove(state.TransferId, out _);
+            _transferPeerId.TryRemove(state.TransferId, out _);
+            return true;
+        }
+    }
+
+    // 到着済みの同一フォルダの承認待ちがある間は、保存先を維持する。
+    // 未着の別メタデータまでまとめるには、プロトコルにバッチ識別子が必要。
+    private void ReleaseFolderMappingIfUnused(ReceiveState completed)
+    {
+        if (string.IsNullOrEmpty(completed.NormalizedRelativePath)) return;
+        var key = (completed.Item.PeerId ?? string.Empty, completed.NormalizedRelativePath.Split('/')[0]);
+        bool SameFolder(ReceiveState state) =>
+            (state.Item.PeerId ?? string.Empty) == key.Item1 &&
+            !string.IsNullOrEmpty(state.NormalizedRelativePath) &&
+            state.NormalizedRelativePath.Split('/')[0] == key.Item2;
+        lock (_pendingApprovalGate)
+        {
+            if (!_pendingApprovals.Values.Any(SameFolder) && !_receiveStates.Values.Any(SameFolder))
+                _folderMappings.TryRemove(key, out _);
+        }
+    }
+
     private void CleanupReceiveState(ReceiveState state)
     {
         // rere #C2-001 review (race verify): CompleteReceive(受信ループ) と並行しても同一 FileStream を
         // 二重 dispose しないよう Interlocked.Exchange で所有権を取った側だけが dispose する。
         var fs = Interlocked.Exchange(ref state.FileStream, null);
-        fs?.Dispose();
-        _receiveStates.TryRemove(state.TransferId, out _);
-        // 複数ペア同時接続対応 Stage 2: 受信終了時に索引も解放。
-        _transferPeerId.TryRemove(state.TransferId, out _);
-
+        try { fs?.Dispose(); } catch { /* flush失敗でも終了とファイル回収を続ける */ }
         // 不完全な受信ファイルを削除
         try
         {
@@ -1761,6 +1752,7 @@ public sealed class TransferService : ITransferService, IDisposable
                 File.Delete(state.SavePath);
         }
         catch { /* 削除失敗は無視 */ }
+        ReleaseFolderMappingIfUnused(state);
     }
 
     private void OnDataReceived(object? sender, Infrastructure.DataReceivedEventArgs e)
@@ -1795,6 +1787,8 @@ public sealed class TransferService : ITransferService, IDisposable
         /// <summary>検証(finalize)開始の atomic claim。0=未開始 / 1=開始済み。
         /// rere #C2-001 review (codex P2): chunk 経路と FileHash 経路の二重起動を防ぐ。Interlocked で操作する。</summary>
         public int Finalizing;
+        /// <summary>同じpendingの二重承認を防ぐ。_pendingApprovalGate内で操作する。</summary>
+        public bool Approving;
         /// <summary>受信済みチャンクの追跡ビットマップ（承認時に確保）。重複除外・完了判定に使用。</summary>
         public bool[]? ReceivedChunkSet { get; set; }
         /// <summary>実書き込みバイト数（Seek 書き込みのため Position と別管理）。</summary>
