@@ -26,6 +26,8 @@ Ferry は、2 台の PC を QR コードまたはワンタイムコードでペ�
 
 UI は AXAML + MVVM で構成し、`App.axaml.cs` がサービスを手動で組み立てる。DI コンテナは使用しない。Windows x64 / ARM64、macOS Apple Silicon、Linux x64 / ARM64 を Native AOT で配布する。
 
+保存された言語は初回ウィンドウ生成前に適用し、書字方向は共通ウィンドウスタイルから後発の画面にも反映する。保存サイズ・位置・最大化状態は初回表示前に復元する一方、起動時最小化はネイティブ表示処理との競合を避けるため初回 `OnOpened` 後の idle ディスパッチで一度だけ適用する。トレイや Dock からの復帰では起動時状態を再適用しない。OS ごとの表示差は [`references/architecture.md`](references/architecture.md) の「プラットフォーム差の吸収」を参照する。
+
 ## 主要データフロー
 
 ### ペアリング
@@ -55,6 +57,8 @@ STUN は Cloudflare (`stun.cloudflare.com:3478`) を主、Google (`stun.l.google
 3. 送信側が TransferId 付き 64 KiB チャンクを送り、受信側は chunk index のオフセットへ書く。relay 経路では累積 FlowAck で送信先行量を制限する。
 4. 受信完了時に SHA-256 を照合し、不一致、拒否、キャンセルは `FileReject` で相手側へも伝える。接続断後のレジュームは先頭から再送する。
 
+受信承認は承認待ちの `ReceiveState` を維持したまま進め、旧形式チャンクのバッファも引き継ぐ。ファイル作成と中断処理の競合では状態の所有権を確認し、中断済みの転送を再登録せず、作成済みの部分ファイルを回収する。Reject と遅延 FlowAck の返送先は受信状態の peer を使い、状態索引の削除後も別の接続へ流さない。フォルダ保存先は peer とルートフォルダの組で共有し、承認待ち・受信中の同じ組がなくなった時点で解放する。
+
 ### プレゼンスとペア同期
 
 クライアントは自分の presence を定期更新し、前面表示中だけ peer の `lastSeen` を ETag 付きで取得する。peer presence の参照は D1 の正式ペアに限定する。remote unpair は inbox push を受けて D1 の不在を再確認後に即時反映し、`PairSyncService` の定期照合と前面復帰時の即時照合を安全網にする。
@@ -71,6 +75,8 @@ STUN は Cloudflare (`stun.cloudflare.com:3478`) を主、Google (`stun.l.google
 | relay quota | RelayQuotaDO | 入室前予約を settle または期限切れで確定。異常終了は予約全量を使用済みにする |
 | 転送ファイル | 受信 PC | Cloudflare に保管しない。失敗した部分ファイルはクライアントが削除 |
 | 配布物 | R2 `ferry-updates` | manifest 参照中と直近 2 version を保持 |
+
+設定の空・途中切断・`null` JSON は破損として扱う。DeviceId は破損ファイルからの回収を先に試し、回収できない場合や退避に失敗した場合も設定と同じディレクトリの `device-id` の正常な副本から復元を試み、既存のペア関係を保つ。
 
 ## 重要な不変条件
 
@@ -104,6 +110,7 @@ STUN は Cloudflare (`stun.cloudflare.com:3478`) を主、Google (`stun.l.google
 
 - `infra/cloudflare/relay/**` の `main` push は `deploy-relay.yml` が型チェックと vitest 後に Worker を配信する。D1 `schema.sql` の変更は Worker deploy と別に適用する。
 - `release/**` push は macOS / Linux を build・署名・公証し、R2 へ配信する。Windows x64 / ARM64 は `scripts/release-local.ps1` が SimplySign で署名して配信する。
+- Windows の署名済み成果物を再ビルドせず公開する `-UploadOnly` 経路では、現行版との一致、manifest の SHA-256・サイズ、Setup の署名を検証してから通常のアップロードへ進む。ビルド/署名と公開を分離して、検証した成果物をそのまま配信できる。
 - R2 の固定 URL は更新時だけ exact URL purge の対象にし、version 付き package は purge しない。
 - Bridge ページは relay Worker の Static Assets（`infra/cloudflare/relay/public/`）であり、製品ページとは別系統である。
 - 製品ページの配信 HTML は `../vps-web/lp/ferry/`（編集元は `../vps-web/tools/lp/templates/`）、公開実体は VPS の `/srv/www/lp/ferry/`。Cloudflare の中継設定は `../vps-web/deploy/lp-gateways/ferry/` に置き、公開 URL と既存の R2・ライセンス通信を維持する。配信経路は `../vps-web/deploy/deploy-lp.ps1` に統一する。

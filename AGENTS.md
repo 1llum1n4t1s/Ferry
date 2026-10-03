@@ -7,7 +7,7 @@
 ```bash
 # デバッグビルド（単体プロジェクト / ソリューション全体 Ferry.slnx）
 dotnet build src/Ferry/Ferry.csproj
-dotnet build Ferry.slnx          # アプリ + テストを一括ビルド
+dotnet build Ferry.slnx          # アプリ + Ferry.Tests（StartupSmoke は含まない）
 
 # アプリをローカル起動して実機確認する（Debug は AvaloniaUI.DeveloperTools へ接続する）
 # ビルドが通っても起動時に落ちる類のバグ（DevTools 二重アタッチ等）はここでしか見つからない
@@ -22,6 +22,9 @@ dotnet test tests/Ferry.Tests/Ferry.Tests.csproj
 
 # テスト単体実行（クラス名 or メソッド名でフィルタ）
 dotnet test tests/Ferry.Tests/Ferry.Tests.csproj --filter "FullyQualifiedName~FileChunkerTests"
+
+# 実ウィンドウと実サービスの回帰検証（GUI を利用できる環境で実行）
+dotnet run --project tests/Ferry.StartupSmoke/Ferry.StartupSmoke.csproj -c Release -- --regressions --output docs/verification/local-regressions
 
 # relay Worker（シグナリング / リレー / Bridge ページ）の型チェック + テスト
 cd infra/cloudflare/relay && pnpm exec tsc --noEmit && pnpm test
@@ -42,9 +45,12 @@ cd infra/cloudflare/relay && pnpm exec wrangler deploy
 >
 > **relay（`infra/cloudflare/relay/**`）の PR は `relay-check.yml`（"Relay Check"）**の `tsc --noEmit` + `pnpm test` で検証する。.NET の CI では relay を検証しない。同じ検証は `deploy-relay.yml`（main push）でも配信前に実行する。
 
+`Ferry.StartupSmoke` はソリューションと PR CI の対象外なので、起動時表示・言語・設定復旧・受信承認/中断・UDP 送信枠を変更した場合は上記の回帰検証を別途実行し、`result.json` と PNG を保存する。対象ケースと検証範囲は [検証プロジェクトの README](tests/Ferry.StartupSmoke/README.md) を参照する。PNG は Avalonia の描画結果であり OS の合成結果ではないため、macOS の表示不具合は macOS 上で配布アプリの実起動と Dock 復帰も確認する。Bridge を変更した場合は relay の検証に加え、端末名に `%` や URL エンコードに見える文字列を含む QR の読み取りを確認する。
+
 ## 依存関係の保守
 
 - NuGet の直接依存は `src/Ferry/Ferry.csproj` と `tests/Ferry.Tests/Ferry.Tests.csproj`、解決結果は各ディレクトリの `packages.lock.json` で管理する。参照変更時は対応する lockfile も更新し、Avalonia 本体・Desktop・Fluent・Fonts.Inter の版を揃える。
+- `tests/Ferry.StartupSmoke/` は本体へのプロジェクト参照を持ち、独自の `packages.lock.json` も照合する。現行 Dependabot の NuGet 対象には含まれない。
 - relay は `infra/cloudflare/relay/package.json`、`pnpm-lock.yaml`、`pnpm-workspace.yaml` を照合する。インストールは同ディレクトリで `pnpm install --frozen-lockfile`。依存更新時は `allowBuilds`、リリース待機の例外、`undici` override の必要性も確認し、型チェックとテストを実行する。
 - Dependabot は `.github/dependabot.yml` で GitHub Actions、上記 2 つの NuGet プロジェクト、relay の npm 依存を監視する。プロジェクト追加・移動時は更新対象も照合する。
 
@@ -73,6 +79,7 @@ cd infra/cloudflare/relay && pnpm exec wrangler deploy
 - Native AOT 向けに、JSON モデル追加時は対応する JsonSerializerContext も更新する。Debug の開発ツールのアタッチは Program.cs の WithDeveloperTools() に集約し、画面側で二重にアタッチしない。起動に関わる変更はビルドだけで終えず、上記のローカル起動で確認する。
 - 暗号ハンドシェイクを変更する場合は、PairSecret を持つペアと旧ペアの互換経路を区別して確認する。認証と転送の不変条件は [DESIGN.md](DESIGN.md#重要な不変条件) を参照する。
 - settings.json / peers.json の保存は一時ファイルからのリネームと破損 JSON の .corrupt-* 退避を維持する。DeviceId の再生成はペア関係に影響するため、保存・読み込みの変更時は既存 ID の保持を確認する。
+- 受信承認・中断を変更する場合は、ファイル作成待ち中の切断/拒否/取消で状態が復活せず部分ファイルが削除されること、複数 peer 接続で Reject/FlowAck が元の送信 peer に届くこと、同名フォルダの保存先が peer と転送終了をまたいで混在しないことを確認する。
 - relay の実装・デプロイ手順は [infra/cloudflare/relay/README.md](infra/cloudflare/relay/README.md)、障害切り分けは [docs/operations/runbook.md](docs/operations/runbook.md) を参照する。使用量の確認は Cloudflare GraphQL Analytics の workersInvocationsAdaptive / httpRequestsAdaptiveGroups を使う。
 - Firebase と旧 VPS の ferry-relay / coturn を実行・配信経路に戻さない。現在のバックエンド構成は [DESIGN.md](DESIGN.md#主要コンポーネント)、移行理由は [docs/design/cf-only-migration.md](docs/design/cf-only-migration.md) を参照する。
 
