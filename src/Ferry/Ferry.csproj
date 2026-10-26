@@ -83,9 +83,9 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <!-- Komorebi と同じローカライズ＆アイコン注入パターンで自動更新ダイアログを提供する。
          自前の SelfUpdateWindow/VM/Model は撤去し、このライブラリの UpdateDialogWindow に統一 -->
-    <PackageReference Include="VelopackUpdateDialog.Avalonia" Version="1.0.19" />
+    <PackageReference Include="VelopackUpdateDialog.Avalonia" Version="1.0.20" />
     <PackageReference Include="QRCoder" Version="1.8.1" />
-    <PackageReference Include="SuperLightLogger" Version="1.0.17" />
+    <PackageReference Include="SuperLightLogger" Version="1.0.18" />
     <!-- Avalonia の Linux サポートが Tmds.DBus.Protocol を transitive に引くため、
          CVE 対応版 (0.93.0) を直接指定して上書きする。-->
     <PackageReference Include="Tmds.DBus.Protocol" Version="0.95.1" />
