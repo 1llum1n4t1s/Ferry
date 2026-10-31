@@ -61,7 +61,7 @@ STUN は Cloudflare (`stun.cloudflare.com:3478`) を主、Google (`stun.l.google
 
 ### プレゼンスとペア同期
 
-クライアントは自分の presence を定期更新し、前面表示中だけ peer の `lastSeen` を ETag 付きで取得する。peer presence の参照は D1 の正式ペアに限定する。remote unpair は inbox push を受けて D1 の不在を再確認後に即時反映し、`PairSyncService` の定期照合と前面復帰時の即時照合を安全網にする。
+クライアントは自分の presence を定期更新し、前面表示中だけ peer の `lastSeen` を ETag 付きで取得する。シグナリングと peer presence の参照は `PAIR_LEDGER_MODE` に従う。`required` は D1 の正式ペアだけを許可し、台帳未登録の要求を DO 起動前に拒否する。現行の `transition` は旧ペアとの互換性のため台帳未登録と D1 binding 未設定を許可するが、D1 の照会エラーや不正なモード値は両モードとも拒否する。remote unpair は inbox push を受けて D1 の不在を再確認後に即時反映し、`PairSyncService` の定期照合と前面復帰時の即時照合を安全網にする。
 
 ## データの所有と寿命
 
