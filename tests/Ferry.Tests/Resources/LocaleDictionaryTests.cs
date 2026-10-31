@@ -44,10 +44,10 @@ public class LocaleDictionaryTests
         "Text.Transfer.Error.",
     ];
 
-    private static string RepoRoot()
+    private static string RepoRoot([System.Runtime.CompilerServices.CallerFilePath] string sourceFile = "")
     {
-        // テストは tests/Ferry.Tests/bin/<cfg>/<tfm>/ から実行される
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        // 外部出力ディレクトリでもソースのあるリポジトリを探索する。
+        var dir = new DirectoryInfo(Path.GetDirectoryName(sourceFile)!);
         while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Ferry.slnx")))
             dir = dir.Parent;
         Assert.NotNull(dir);

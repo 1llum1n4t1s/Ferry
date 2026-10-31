@@ -14,7 +14,7 @@ name: Relay Check
 # ステップを置いてあるので、PR を経由しない直 push でも検証は外れない。
 on:
   pull_request:
-    branches: ["main"]
+    branches: [ "main" ]
     paths:
       - 'infra/cloudflare/relay/**'
       - '.github/workflows/relay-check.yml'
@@ -40,7 +40,7 @@ jobs:
 
       - name: Node.js セットアップ (wrangler 4.x が Node.js >=20 を要求)
         # actions/setup-node@v7.0.0
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
 
