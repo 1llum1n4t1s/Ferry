@@ -13,7 +13,7 @@
 # 前提:
 #   - SimplySign Desktop が接続済み (証明書が CurrentUser\My に見えていること)
 #   - Directory.Build.props の <Version> がリリースしたいバージョンになっていること (/vava 済み)
-#   - C:\Users\IMT\dev\Secret\secrets.json に cloudflare.api_token があること
+#   - D:\Dev\Secret\secrets.json に cloudflare.api_token があること
 #
 # 使い方:
 #   pwsh scripts/release-local.ps1                # フルリリース (build + sign + upload + cleanup)
@@ -31,34 +31,6 @@ param(
 
 
 
-# 検証済みの作業対象だけを標準APIで削除する。
-function Remove-LocalWorkItem {
-    param([string[]]$LiteralPath, [string]$AllowedRoot, [switch]$IgnoreMissing, [switch]$AllowLeafJunction)
-    if ([string]::IsNullOrWhiteSpace($AllowedRoot) -or -not [IO.Path]::IsPathRooted($AllowedRoot)) { throw 'Cleanup root must be absolute.' }
-    $boundary = [IO.Path]::GetFullPath($AllowedRoot).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
-    foreach ($target in $LiteralPath) {
-        if ([string]::IsNullOrWhiteSpace($target) -or -not [IO.Path]::IsPathRooted($target)) { throw 'Cleanup target must be absolute.' }
-        $resolved = [IO.Path]::GetFullPath($target)
-        if (-not $resolved.StartsWith($boundary, [StringComparison]::OrdinalIgnoreCase)) { throw 'Cleanup target is outside the allowed root.' }
-        $ancestor = $resolved
-        while ($ancestor) {
-            if (Test-Path -LiteralPath $ancestor) {
-                $item = Get-Item -LiteralPath $ancestor -Force -ErrorAction Stop
-                if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -and -not ($AllowLeafJunction -and $ancestor -eq $resolved -and $item.LinkType -eq 'Junction')) { throw 'Cleanup path contains a reparse point.' }
-            }
-            $ancestor = Split-Path $ancestor -Parent
-        }
-        if (-not (Test-Path -LiteralPath $resolved)) { if ($IgnoreMissing) { continue }; throw "Cleanup target is missing: $resolved" }
-        $item = Get-Item -LiteralPath $resolved -Force -ErrorAction Stop
-        $leafLink = [bool]($item.Attributes -band [IO.FileAttributes]::ReparsePoint)
-        if ($item.PSIsContainer -and -not $leafLink) {
-            if (@(Get-ChildItem -LiteralPath $resolved -Recurse -Force -ErrorAction Stop | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count) { throw 'Cleanup directory contains a reparse point.' }
-        }
-        Remove-Item -LiteralPath $resolved -Recurse:($item.PSIsContainer -and -not $leafLink) -Force -ErrorAction Stop
-        if (Test-Path -LiteralPath $resolved) { throw "Cleanup target remains: $resolved" }
-    }
-}
-
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($SkipUpload -and $UploadOnly) { throw 'SkipUpload と UploadOnly は同時に指定できません' }
@@ -69,11 +41,11 @@ $VpkVersion = (Invoke-RestMethod 'https://api.nuget.org/v3-flatcontainer/vpk/ind
     Where-Object { $_ -notmatch '-' } | Select-Object -Last 1
 if (-not $VpkVersion) { throw 'vpk の最新安定版バージョンの取得に失敗しました (NuGet API)' }
 Write-Host "vpk 最新安定版: $VpkVersion"
-$WranglerVersion = '4.135.0'        # サプライチェーン対策でバージョン固定
+$WranglerVersion = '4.156.0'        # サプライチェーン対策でバージョン固定
 $Bucket = 'ferry-updates'
 $BaseUrl = 'https://ferry.kagayoi.com'
 $AccountId = '10901bfadbf1005164774a7350082985'
-$SecretsPath = 'C:\Users\IMT\dev\Secret\secrets.json'
+$SecretsPath = 'D:\Dev\Secret\secrets.json'
 $CertSubjectName = 'Open Source Developer Yuichiro Shinozaki'
 # /n (Subject 名) で選択: 証明書の年次更新で thumbprint が変わっても動く
 $SignParams = "/n `"$CertSubjectName`" /fd SHA256 /td SHA256 /tr http://time.certum.pl"
@@ -88,13 +60,204 @@ $AllChannels = @('win-x64', 'win-arm64', 'osx-arm64', 'linux-x64', 'linux-arm64'
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot
-$WorkDir = Join-Path $RepoRoot 'local-release'
-$ArtifactsDir = Join-Path $WorkDir 'artifacts'
 
 function Invoke-Native {
     param([string]$Description, [scriptblock]$Block)
     & $Block
     if ($LASTEXITCODE -ne 0) { throw "$Description が失敗しました (exit $LASTEXITCODE)" }
+}
+
+# 書込み先は全親階層を確認し、既存のリンクをたどらない。
+function Assert-LocalPath([string]$Path, [string]$Root) {
+    if (-not [IO.Path]::IsPathFullyQualified($Path)) { throw "絶対パスではありません: $Path" }
+    $full = [IO.Path]::GetFullPath($Path)
+    $boundary = [IO.Path]::GetFullPath($Root).TrimEnd('\','/')
+    if ($full -ne $boundary -and -not $full.StartsWith($boundary + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "作業範囲外です: $full"
+    }
+    for ($ancestor = $full; $ancestor; $ancestor = Split-Path $ancestor -Parent) {
+        if ((Test-Path -LiteralPath $ancestor) -and ((Get-Item -LiteralPath $ancestor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "リンクを含むパスです: $ancestor"
+        }
+    }
+}
+
+function Expand-ReleaseArchive([string]$Archive, [string]$Destination) {
+    Assert-LocalPath $Destination $WorkDir
+    if (Test-Path -LiteralPath $Destination) { throw "検証先が既に存在します: $Destination" }
+    $zip = [IO.Compression.ZipFile]::OpenRead($Archive)
+    try {
+        $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        # 全エントリを検証してから展開する。ZIP内の絶対パス・親参照・ADS・symlinkを拒否。
+        foreach ($entry in $zip.Entries) {
+            $name = $entry.FullName.Replace('\','/')
+            if (-not $name -or $name.StartsWith('/') -or $name.Contains(':') -or $name -match '(^|/)\.\.?(\x2f|$)' -or
+                (($entry.ExternalAttributes -shr 16) -band 0xF000) -eq 0xA000) { throw "危険なZIPエントリ: $name" }
+            foreach ($part in $name.TrimEnd('/') -split '/') {
+                if (-not $part -or $part.EndsWith('.') -or $part.EndsWith(' ') -or $part.IndexOfAny([IO.Path]::GetInvalidFileNameChars()) -ge 0 -or
+                    $part -match '^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)') { throw "不正なZIPパス要素: $name" }
+            }
+            $path = [IO.Path]::GetFullPath((Join-Path $Destination $name))
+            Assert-LocalPath $path $Destination
+            if (-not $names.Add($path)) { throw "重複したZIPエントリ: $name" }
+        }
+        [IO.Directory]::CreateDirectory($Destination) | Out-Null
+        foreach ($entry in $zip.Entries) {
+            $path = [IO.Path]::GetFullPath((Join-Path $Destination $entry.FullName.Replace('\','/')))
+            Assert-LocalPath $path $Destination
+            if ($entry.FullName.EndsWith('/') -or $entry.FullName.EndsWith('\')) {
+                [IO.Directory]::CreateDirectory($path) | Out-Null
+            } else {
+                [IO.Directory]::CreateDirectory((Split-Path $path -Parent)) | Out-Null
+                [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $path, $false)
+            }
+        }
+    } finally { $zip.Dispose() }
+}
+
+function Assert-ReleaseExe([string]$Path, [int[]]$Machines, [switch]$CheckVersion) {
+    Assert-LocalPath $Path $WorkDir
+    $stream = [IO.File]::OpenRead($Path)
+    $reader = [IO.BinaryReader]::new($stream)
+    try {
+        if ($reader.ReadUInt16() -ne 0x5A4D) { throw "MZヘッダがありません: $Path" }
+        $stream.Position = 0x3C
+        $pe = $reader.ReadInt32()
+        if ($pe -lt 64 -or $pe -gt $stream.Length - 6) { throw "不正なPE位置: $Path" }
+        $stream.Position = $pe
+        if ($reader.ReadUInt32() -ne 0x4550 -or $Machines -notcontains $reader.ReadUInt16()) { throw "PEマシンが一致しません: $Path" }
+    } finally { $reader.Dispose() }
+    if ($CheckVersion) {
+        $productVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($Path).ProductVersion
+        if (($productVersion -split '\+', 2)[0] -ne $version) { throw "ProductVersionが一致しません: $Path ($productVersion)" }
+    }
+    $sig = Get-AuthenticodeSignature -LiteralPath $Path
+    if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notlike "CN=$CertSubjectName,*") {
+        throw "署名検証失敗: $Path ($($sig.Status))"
+    }
+}
+
+function Assert-PackageMetadata([string]$Path, [hashtable]$Expected) {
+    $settings = [Xml.XmlReaderSettings]::new()
+    $settings.DtdProcessing = [Xml.DtdProcessing]::Prohibit
+    $reader = [Xml.XmlReader]::Create($Path, $settings)
+    try { $xml = [Xml.XmlDocument]::new(); $xml.Load($reader) } finally { $reader.Dispose() }
+    foreach ($key in $Expected.Keys) {
+        $nodes = $xml.SelectNodes("/*[local-name()='package']/*[local-name()='metadata']/*[local-name()='$key']")
+        if ($nodes.Count -ne 1 -or $nodes[0].InnerText -cne $Expected[$key]) { throw "パッケージmetadata不一致: $Path ($key)" }
+    }
+}
+
+function Assert-PublishedPayload([string]$Runtime, [string]$PackageAppDir, [string]$PortableAppDir) {
+    $publishDir = Join-Path $WorkDir "publish-$Runtime"
+    Assert-LocalPath $publishDir $WorkDir
+    # UploadOnlyも同版のpublish出力を残して照合する。署名対象の主exeは別途検証する。
+    $publishedExe = Join-Path $publishDir 'Ferry.exe'
+    Assert-LocalPath $publishedExe $publishDir
+    $publishedVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($publishedExe).ProductVersion
+    if (($publishedVersion -split '\+', 2)[0] -ne $version) { throw "publishの版が一致しません: $Runtime" }
+    foreach ($file in Get-ChildItem -LiteralPath $publishDir -Recurse -File -Force) {
+        Assert-LocalPath $file.FullName $publishDir
+        $relative = [IO.Path]::GetRelativePath($publishDir, $file.FullName)
+        # vpkの正規除外であるデバッグシンボルだけを除く。DLLやdat等の実行時資源は全て必須。
+        if ($relative -eq 'Ferry.exe' -or $relative -match '(?i)(?:\.pdb|\.dbg)$|(?:^|[\\/])[^\\/]+\.dSYM(?:[\\/]|$)') { continue }
+        $expectedHash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+        foreach ($appDir in @($PackageAppDir, $PortableAppDir)) {
+            $payloadPath = Join-Path $appDir $relative
+            Assert-LocalPath $payloadPath $appDir
+            if (-not (Test-Path -LiteralPath $payloadPath -PathType Leaf) -or
+                (Get-FileHash -LiteralPath $payloadPath -Algorithm SHA256).Hash -ne $expectedHash) {
+                throw "publish由来の必須ファイルが欠落または不一致です: $Runtime/$relative ($appDir)"
+            }
+        }
+    }
+}
+
+function Assert-ReleaseArtifacts {
+    Assert-LocalPath $ArtifactsDir $WorkDir
+    $actualRids = @(Get-ChildItem -LiteralPath $ArtifactsDir -Filter 'releases.*.json' -File | ForEach-Object { $_.Name -replace '^releases\.|\.json$','' } | Sort-Object)
+    if (($actualRids -join ',') -ne (($Runtimes | Sort-Object) -join ',')) { throw 'manifestのRID集合が一致しません' }
+    $script:VerificationDir = Join-Path $WorkDir ('verification-' + [Guid]::NewGuid().ToString('N'))
+    Assert-LocalPath $VerificationDir $WorkDir
+    [IO.Directory]::CreateDirectory($VerificationDir) | Out-Null
+    $expectedFiles = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($runtime in $Runtimes) {
+        $packageName = "Ferry-$version-$runtime-full.nupkg"
+        $setupName = "Ferry-$runtime-Setup.exe"
+        $portableName = "Ferry-$runtime-Portable.zip"
+        foreach ($name in @($packageName, $setupName, $portableName, "releases.$runtime.json", "assets.$runtime.json", "RELEASES-$runtime")) { $expectedFiles.Add($name) | Out-Null }
+        $manifest = Get-Content -LiteralPath (Join-Path $ArtifactsDir "releases.$runtime.json") -Raw | ConvertFrom-Json
+        if (@($manifest.Assets).Count -ne 1) { throw "Fullパッケージが一意ではありません: $runtime" }
+        $asset = $manifest.Assets[0]
+        if ($asset.PackageId -cne 'Ferry' -or $asset.Version -cne $version -or $asset.Type -cne 'Full' -or $asset.FileName -cne $packageName -or [IO.Path]::GetFileName($asset.FileName) -cne $asset.FileName) { throw "manifest identity不一致: $runtime" }
+        $package = Join-Path $ArtifactsDir $packageName
+        if ($asset.Size -ne (Get-Item -LiteralPath $package).Length -or $asset.SHA256 -notmatch '^[a-fA-F0-9]{64}$' -or $asset.SHA256 -ne (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash -or $asset.SHA1 -ne (Get-FileHash -LiteralPath $package -Algorithm SHA1).Hash) { throw "manifest hash/size不一致: $runtime" }
+        $assets = @(Get-Content -LiteralPath (Join-Path $ArtifactsDir "assets.$runtime.json") -Raw | ConvertFrom-Json)
+        foreach ($pair in @(@{ Type='Full'; Name=$packageName }, @{ Type='Installer'; Name=$setupName }, @{ Type='Portable'; Name=$portableName })) {
+            if (@($assets | Where-Object { $_.Type -ceq $pair.Type -and $_.RelativeFileName -ceq $pair.Name }).Count -ne 1) { throw "assets参照不一致: $runtime" }
+        }
+        if ($assets.Count -ne 3) { throw "予期しないassets: $runtime" }
+        $releases = (Get-Content -LiteralPath (Join-Path $ArtifactsDir "RELEASES-$runtime") -Raw).Trim() -split '\s+'
+        if ($releases.Count -ne 3 -or $releases[0] -ne $asset.SHA1 -or $releases[1] -cne $packageName -or $releases[2] -ne [string]$asset.Size) { throw "RELEASES参照不一致: $runtime" }
+        $unpacked = Join-Path $VerificationDir $runtime
+        Expand-ReleaseArchive $package $unpacked
+        $arch = if ($runtime -eq 'win-arm64') { 'arm64' } else { 'x64' }
+        $machine = if ($runtime -eq 'win-arm64') { 0xAA64 } else { 0x8664 }
+        $identity = @{ id='Ferry'; version=$version; channel=$runtime; mainExe='Ferry.exe'; os='win' }
+        Assert-PackageMetadata (Join-Path $unpacked 'Ferry.nuspec') ($identity + @{ rid=$runtime; machineArchitecture=$arch })
+        Assert-PackageMetadata (Join-Path $unpacked 'lib/app/sq.version') $identity
+        $app = Join-Path $unpacked 'lib/app/Ferry.exe'
+        Assert-ReleaseExe $app @($machine) -CheckVersion
+        # SetupはVelopackのx86 bootstrapを含みうるため、appのRID一致を要求しない。
+        Assert-ReleaseExe (Join-Path $ArtifactsDir $setupName) @(0x14C,0x8664,0xAA64) -CheckVersion
+        $portable = Join-Path $VerificationDir "portable-$runtime"
+        Expand-ReleaseArchive (Join-Path $ArtifactsDir $portableName) $portable
+        Assert-PackageMetadata (Join-Path $portable 'current/sq.version') $identity
+        Assert-ReleaseExe (Join-Path $portable 'current/Ferry.exe') @($machine) -CheckVersion
+        Assert-ReleaseExe (Join-Path $portable 'Ferry.exe') @(0x14C,0x8664,0xAA64)
+        if ((Get-FileHash -LiteralPath $app -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath (Join-Path $portable 'current/Ferry.exe') -Algorithm SHA256).Hash) { throw "portableとnupkgの実appが異なります: $runtime" }
+        Assert-PublishedPayload $runtime (Join-Path $unpacked 'lib/app') (Join-Path $portable 'current')
+    }
+    $files = @(Get-ChildItem -LiteralPath $ArtifactsDir -Force)
+    if ($files.Count -ne $expectedFiles.Count -or @($files | Where-Object { $_.PSIsContainer -or -not $expectedFiles.Contains($_.Name) }).Count) { throw '未検証の成果物がartifactsに含まれています' }
+    $script:VerifiedHashes = @{}
+    foreach ($file in $files) { $script:VerifiedHashes[$file.Name] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash }
+    Write-Host "✅ 全成果物の版・構成・PE・署名・manifestを確認: $ArtifactsDir"
+}
+
+function Assert-ImmutableRemotePackages {
+    # R2自身の一覧を使い、CDNのキャッシュ済み404で既存packageを見落とさない。
+    $headers = @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)" }
+    $api = "https://api.cloudflare.com/client/v4/accounts/$AccountId/r2/buckets/$Bucket/objects?per_page=1000"
+    $keys = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $cursor = ''
+    do {
+        $uri = $api + $(if ($cursor) { '&cursor=' + [uri]::EscapeDataString($cursor) })
+        $response = Invoke-RestMethod -Uri $uri -Headers $headers -TimeoutSec 30
+        if (-not $response.success) { throw '既存R2オブジェクトを確認できません' }
+        foreach ($obj in $response.result) { $keys.Add($obj.key) | Out-Null }
+        $info = $response.PSObject.Properties['result_info']
+        $cursor = ''
+        if ($info -and $info.Value) {
+            $truncated = $info.Value.PSObject.Properties['is_truncated']
+            if ($truncated -and $truncated.Value) {
+                $next = $info.Value.PSObject.Properties['cursor']
+                if (-not $next -or -not $next.Value) { throw 'R2一覧のページ継続情報がありません' }
+                $cursor = [string]$next.Value
+            }
+        }
+    } while ($cursor)
+    foreach ($package in Get-ChildItem -LiteralPath $ArtifactsDir -Filter '*.nupkg' -File) {
+        if (-not $keys.Contains($package.Name)) { continue }
+        $remotePath = Join-Path $VerificationDir "remote-$($package.Name)"
+        Assert-LocalPath $remotePath $WorkDir
+        Invoke-Native "既存R2 package取得 ($($package.Name))" {
+            pnpm dlx "wrangler@$WranglerVersion" r2 object get "$Bucket/$($package.Name)" --file $remotePath --remote
+        }
+        if ((Get-FileHash -LiteralPath $remotePath -Algorithm SHA256).Hash -ne $VerifiedHashes[$package.Name]) {
+            throw "同じversionの公開packageが異なります。上書きを停止します: $($package.Name)"
+        }
+    }
 }
 
 # ---- 0. プリフライト ----
@@ -116,6 +279,13 @@ $env:DOTNET_ROLL_FORWARD = 'Major'
 $versionNode = ([xml](Get-Content 'Directory.Build.props' -Raw)).SelectSingleNode('/Project/PropertyGroup/Version')
 $version = if ($versionNode) { $versionNode.InnerText.Trim() } else { $null }
 if (-not $version) { throw 'Directory.Build.props から <Version> を取得できませんでした' }
+if ($version -notmatch '^\d+\.\d+\.\d+$') { throw '作業ディレクトリに使えないバージョンです' }
+$WorkDir = Join-Path $RepoRoot "local-release/$version"
+$ArtifactsDir = Join-Path $WorkDir 'artifacts'
+Assert-LocalPath $WorkDir $RepoRoot
+if ($Runtimes.Count -eq 0 -or @($Runtimes | Sort-Object -Unique).Count -ne $Runtimes.Count) { throw 'runtime集合が空または重複しています' }
+foreach ($runtime in $Runtimes) { if (-not $RuntimeMatrix.ContainsKey($runtime)) { throw "未知のruntime: $runtime" } }
+if ((Test-Path -LiteralPath $WorkDir) -and @(Get-ChildItem -LiteralPath $WorkDir -Recurse -Force | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count) { throw '作業ディレクトリにリンクが含まれています' }
 Write-Host "バージョン: $version"
 
 # SimplySign 接続確認 (証明書が見えなければ署名できないので最初に落とす)
@@ -143,15 +313,8 @@ if (-not $SkipUpload) {
 }
 
 if (-not $UploadOnly) {
-$resolvedWorkDir = [IO.Path]::GetFullPath($WorkDir)
-$expectedWorkDir = [IO.Path]::GetFullPath((Join-Path $RepoRoot 'local-release'))
-if ($resolvedWorkDir -ne $expectedWorkDir) { throw 'リリース作業ディレクトリが想定範囲外です' }
-if (Test-Path -LiteralPath $resolvedWorkDir) {
-    $workItems = @(Get-Item -LiteralPath $resolvedWorkDir) + @(Get-ChildItem -LiteralPath $resolvedWorkDir -Recurse -Force)
-    if ($workItems | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }) {
-        throw 'リリース作業ディレクトリにリンクが含まれています'
-    }
-    Remove-LocalWorkItem -LiteralPath $resolvedWorkDir -AllowedRoot $RepoRoot
+if ((Test-Path -LiteralPath $WorkDir) -and @(Get-ChildItem -LiteralPath $WorkDir -Force).Count -gt 0) {
+    throw "作業ディレクトリが空ではありません: $WorkDir。再送は -UploadOnly を使用し、再ビルドはPrunletで事前清掃してください。"
 }
 New-Item -ItemType Directory -Path $ArtifactsDir -Force | Out-Null
 
@@ -201,35 +364,10 @@ foreach ($runtime in $Runtimes) {
             --signParams $SignParams
     }
 }
-} else {
-    foreach ($runtime in $Runtimes) {
-        if (-not $RuntimeMatrix.ContainsKey($runtime)) { throw "未知の runtime: $runtime" }
-        $manifestPath = Join-Path $ArtifactsDir "releases.$runtime.json"
-        $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-        if (-not $manifest.Assets -or @($manifest.Assets | Where-Object { $_.Version -ne $version }).Count -gt 0) {
-            throw "公開対象のパッケージが指定バージョンと一致しません ($runtime)"
-        }
-        if (-not (Test-Path -LiteralPath (Join-Path $ArtifactsDir "Ferry-$runtime-Setup.exe"))) {
-            throw "署名済みインストーラがありません ($runtime)"
-        }
-        foreach ($asset in $manifest.Assets) {
-            $assetPath = Join-Path $ArtifactsDir $asset.FileName
-            if ((Get-FileHash -LiteralPath $assetPath -Algorithm SHA256).Hash -ne $asset.SHA256 -or (Get-Item -LiteralPath $assetPath).Length -ne $asset.Size) {
-                throw "パッケージのハッシュまたはサイズが一致しません ($runtime)"
-            }
-        }
-    }
 }
 
-# 署名検証 (Setup.exe が正しく署名されているかリリース前に確認)
-Write-Host '== 署名検証 ==' -ForegroundColor Cyan
-foreach ($exe in Get-ChildItem $ArtifactsDir -Filter '*.exe') {
-    $sig = Get-AuthenticodeSignature $exe.FullName
-    if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notlike "CN=$CertSubjectName*") {
-        throw "署名検証失敗: $($exe.Name) → $($sig.Status)"
-    }
-    Write-Host "  ✅ $($exe.Name): Valid ($($sig.SignerCertificate.Subject -replace ',.*$'))"
-}
+# 通常ビルドと UploadOnly は同じ実物検証を通す。
+Assert-ReleaseArtifacts
 
 if ($SkipUpload) {
     Write-Host "`n✅ -SkipUpload 指定のためここで終了。成果物: $ArtifactsDir" -ForegroundColor Green
@@ -243,11 +381,16 @@ if ($SkipUpload) {
 #   その間の更新チェックが 404 で失敗する
 # - *.nupkg は put のみ (過去版は cleanup ステップが manifest 基準で削除)
 Write-Host '== R2 アップロード ==' -ForegroundColor Cyan
+Assert-ImmutableRemotePackages
 $files = Get-ChildItem $ArtifactsDir -File
 $ordered = @($files | Where-Object { $_.Name -notlike 'releases.*.json' }) +
            @($files | Where-Object { $_.Name -like 'releases.*.json' })
 $uploaded = 0
 foreach ($f in $ordered) {
+    Assert-LocalPath $f.FullName $WorkDir
+    if (-not $VerifiedHashes.ContainsKey($f.Name) -or (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash -ne $VerifiedHashes[$f.Name]) {
+        throw "検証後に成果物が変わりました: $($f.Name)"
+    }
     Write-Host "  ↑ $($f.Name)"
     Invoke-Native "R2 put ($($f.Name))" {
         pnpm dlx "wrangler@$WranglerVersion" r2 object put "$Bucket/$($f.Name)" --file $f.FullName --remote

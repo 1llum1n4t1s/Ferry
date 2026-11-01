@@ -15,9 +15,11 @@ concurrency:
 
 jobs:
   build:
+    if: github.event.deleted != true
     name: Build
     uses: ./.github/workflows/build.yml
   version:
+    if: github.event.deleted != true
     name: Prepare version string
     runs-on: ubuntu-latest
     outputs:
@@ -62,6 +64,8 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Checkout verification gate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Download package artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -74,19 +78,33 @@ jobs:
           pattern: velopack.*
           path: velopack-packages
           merge-multiple: true
-      - name: 成果物を確認
-        run: |
-          echo "=== インストーラ (packages/) ==="
-          ls -lh packages/ || true
-          echo "=== Velopack 自動更新フィード (velopack-packages/) ==="
-          ls -lh velopack-packages/ || true
+      - name: Download verification evidence
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: verification.*
+          path: verification
+          merge-multiple: true
+      - name: Download dependency evidence
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: deps.*
+          path: dependencies
+          merge-multiple: true
+      - name: 最初の R2 put 前に全配布実物を照合
+        # 不一致なら認証情報を渡す upload step より前に停止する。
+        run: python3 build/scripts/verify-release.py aggregate --version '${{ needs.version.outputs.version }}' --root . --evidence verification
       - name: Node.js セットアップ (wrangler 4.x が Node.js >=22 を要求)
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '22'
+          node-version: '26'
       - name: wrangler CLI をインストール
         # サプライチェーン攻撃防止のため明示的にバージョン固定
         run: npm install -g wrangler@4.135.0
+      - name: 最初の R2 put 前に既存同版の異内容上書きを拒否
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: python3 build/scripts/verify-release.py remote --version '${{ needs.version.outputs.version }}' --root . --evidence verification
       - name: Velopack 自動更新フィードを R2 (ferry-updates) にアップロード
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
