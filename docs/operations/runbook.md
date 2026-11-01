@@ -164,9 +164,29 @@ pnpm dlx wrangler d1 execute ferry_ledger --remote --command "SELECT COUNT(*) FR
 
 逆順にすると、新コードが旧スキーマを触って `/pair/create`・`/pairs/*` が全ユーザーで失敗する。
 
-認証鍵の KV → D1 移行では、スキーマ追加だけで通常運用へ戻さない。`auth_key_migration` は初期 `importing` であり、D1 に未 import の端末は新規 / 既存を区別せず 503 `AUTH_BINDING_UNAVAILABLE` となる。これは誤った 401 から端末の `IdentityLost` を起こさないための保全である。旧 writer の停止・drain、operator が正本として検証した immutable snapshot の import、SHA・件数・全行一致と競合ゼロの確認、明示的な `ready` の順で切り替える。既存端末の再認証に一時的な影響が出るため、先に移行用の保守時間を確保する。詳細は [relay の移行手順](../../infra/cloudflare/relay/README.md) を参照する。
+認証鍵の KV → D1 移行では、スキーマ追加だけで通常運用へ戻さない。`auth_key_migration` は初期 `importing` であり、D1 に未 import の端末は新規 / 既存を区別せず 503 `AUTH_BINDING_UNAVAILABLE` となる。これは誤った 401 から端末の `IdentityLost` を起こさないための保全である。旧 writer の物理停止・drain 又は下記の論理フェンス、operator が正本として承認した immutable snapshot の import、SHA・件数・全行一致と競合ゼロの確認、明示的な `ready` の順で切り替える。既存端末の再認証に一時的な影響が出るため、先に移行用の保守時間を確保する。詳細は [relay の移行手順](../../infra/cloudflare/relay/README.md) を参照する。
 
 KV の positive / negative はともに古い値を返し得る。単発の一覧取得、固定秒数の待機、一覧の反復一致から import の完全性を自動認定しない。検証済み snapshot の取得・本番 import・deploy は、ローカルの移行回帰とは別の操作である。D1 を正本にした後は、KV に新しい登録が戻る旧コードへの `wrangler rollback` を行わない。D1 の正本を維持する修正版で復旧する。
+
+物理 drain を証明できない場合は `--writers-frozen` を使わず、明示承認したカットオフ snapshot を正本とする論理フェンスを用いる。
+2026-11-01 の承認対象は保存済み 10 鍵、raw SHA256 `aeadbfff25404b3a847a14a7a7757ee39aa7d45f2caa71a0d905502494e895aa`。
+これは KV 全件の収束や旧 isolate の停止を証明したという意味ではない。
+
+1. schema を追加し `importing` を維持する。snapshot の取得元・承認者・カットオフを記録する。旧 KV は削除しない。
+2. KV writer のない D1 認証コードと、新 `SESSION_HMAC_SECRET` を含む非公開 JSON を同じ version へ upload する。
+   `wrangler deploy --secrets-file <JSON>`、又は `wrangler versions upload --secrets-file <JSON>` の後に
+   `wrangler versions deploy <version-id>@100%` を使う（[公式手順](https://developers.cloudflare.com/workers/configuration/secrets/)）。
+   secret 単独の先行更新はしない。upload だけで配信完了としない。
+3. 実 deployment / version ID とその配信 100% を確認する。同一当事者の期限内 token を旧・新 HMAC で作り、
+   同じ `GET /pairs/{canonicalPairId}` で旧 401 `BAD_TOKEN`、新 200 又は 404 `NOT_FOUND` を確認する。
+   `/auth/token` の 503 や health 200 をこの認可確認の代用にしない。秘密値と token は証跡へ入れない。
+4. [README の証跡 schema / CLI](../../infra/cloudflare/relay/README.md#論理フェンスでの切替) に従い
+   `--legacy-writers-fenced --fence-version <実UUID> --fence-evidence <JSON> --snapshot-approved --snapshot-provenance <説明>` を指定し、
+   raw SHA / 件数 / 全 D1 行一致 / 競合0を確認して明示 `--activate` する。CLI は operator 証跡を検査・保存し、配信状態を自動観測しない。
+
+旧実行が遅れて KV を更新しても D1 へ取り込まず、遅れて発行した旧 HMAC token は新 version で拒否する。
+既存 WebSocket、認可済み in-flight、発行済み pairing nonce、token 任意の optional relay 経路の失効は保証しない。
+snapshot 後の KV 値を自動 import しない。フェンス後は旧 HMAC や旧 KV writer への rollback を禁止する。
 
 ペア通知の outbox 再送は毎分、session / nonce の cleanup は従来の日次 cron で実行する。片側 DeviceDO が失敗しても nonce や pair を巻き戻さず、宛先別に未配送行を残す。配送期限は元の作成時刻から 1 時間であり、再送で延長しない。調査時は `pairing_outbox` の `attempts` / `next_attempt_at` と Worker ログの配送延期を確認し、解除・再ペア後の古い通知を手動で復活させない。
 

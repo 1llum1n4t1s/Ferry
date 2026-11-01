@@ -7,17 +7,26 @@ import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 import { validateKeySnapshot, keySnapshotImportSql, keySnapshotReadySql } from '../src/key-snapshot.ts';
+import { validateMigrationAuthority } from '../src/migration-authority.ts';
 
 const { values } = parseArgs({ options: {
   input: { type: 'string' }, sha256: { type: 'string' }, count: { type: 'string' },
   remote: { type: 'boolean' }, 'work-dir': { type: 'string' },
   'persist-to': { type: 'string' }, 'writers-frozen': { type: 'boolean' },
   'snapshot-approved': { type: 'boolean' }, activate: { type: 'boolean' },
+  'legacy-writers-fenced': { type: 'boolean' }, 'fence-version': { type: 'string' },
+  'fence-evidence': { type: 'string' }, 'snapshot-provenance': { type: 'string' },
 } });
 if (!values.input || !values.sha256 || values.count === undefined
-    || !values['writers-frozen'] || !values['snapshot-approved']) {
-  throw new Error('input / sha256 / count / writers-frozen / snapshot-approved are required');
+    || !values['snapshot-approved']) {
+  throw new Error('input / sha256 / count / snapshot-approved are required');
 }
+if (values['fence-evidence'] && !isAbsolute(values['fence-evidence'])) throw new Error('fence-evidence must be absolute');
+const authority = validateMigrationAuthority({
+  writersFrozen: values['writers-frozen'], legacyWritersFenced: values['legacy-writers-fenced'],
+  fenceVersion: values['fence-version'], provenance: values['snapshot-provenance'],
+  fenceEvidence: values['fence-evidence'] ? JSON.parse(await readFile(values['fence-evidence'], 'utf8')) : undefined,
+}, values.sha256);
 if (values.remote ? Boolean(values['persist-to']) || !values['work-dir'] : !values['persist-to']) {
   throw new Error('local requires persist-to; remote requires work-dir and forbids persist-to');
 }
@@ -35,6 +44,9 @@ await mkdir(directory, { recursive: true });
 await access(directory, constants.W_OK);
 const text = await readFile(values.input, 'utf8');
 const entries = await validateKeySnapshot(text, values.sha256, Number(values.count));
+const receiptFile = join(directory, 'approved-key-import-' + randomUUID() + '.json');
+await writeFile(receiptFile, JSON.stringify({ approvedAt: new Date().toISOString(), snapshotApproved: true,
+  sha256: values.sha256.toLowerCase(), count: entries.length, authority }, null, 2), { encoding: 'utf8', flag: 'wx' });
 const relay = fileURLToPath(new URL('../', import.meta.url));
 const require = createRequire(import.meta.url);
 const wrangler = join(dirname(require.resolve('wrangler/package.json')), 'bin/wrangler.js');
@@ -66,4 +78,4 @@ if (values.activate) {
   const activated = (await execute('SELECT phase FROM auth_key_migration WHERE singleton=1', true))[0].results[0];
   if (activated?.phase !== 'ready') throw new Error('ready transition failed');
 }
-console.log(JSON.stringify({ remote: Boolean(values.remote), count: entries.length, sha256: values.sha256.toLowerCase(), ready: Boolean(values.activate) }));
+console.log(JSON.stringify({ remote: Boolean(values.remote), count: entries.length, sha256: values.sha256.toLowerCase(), ready: Boolean(values.activate), authorityMode: authority.mode, receiptFile }));

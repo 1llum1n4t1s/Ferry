@@ -84,6 +84,13 @@ STUN は Cloudflare (`stun.cloudflare.com:3478`) を主、Google (`stun.l.google
 
 設定の空・途中切断・`null` JSON は破損として扱う。DeviceId は破損ファイルからの回収を先に試し、回収できない場合や退避に失敗した場合も設定と同じディレクトリの `device-id` の正常な副本から復元を試み、既存のペア関係を保つ。
 
+認証鍵の移行は、物理停止・drain を証明した移行と、承認済み snapshot をカットオフ正本とする論理フェンス移行を区別する。
+後者は KV writer のない D1 認証コードと新 `SESSION_HMAC_SECRET` を同じ Worker version に upload し、
+その version の配信 100% と旧 HMAC 拒否・新 HMAC 受理を確認した後、snapshot の全件比較と明示 ready を行う。
+旧 isolate の物理 drain や KV 収束、既存 WebSocket・認可済み in-flight・発行済み nonce・optional relay の失効は主張しない。遅延した旧 writer の KV 更新は新 D1 に取り込まず、
+遅延発行された旧 HMAC token も新 version で拒否する。旧 KV は保持し、旧 writer / 旧 HMAC へ rollback しない。
+operator の取得元・承認・実 version / deployment・probe 証跡を保存する。実行手順は [relay README](infra/cloudflare/relay/README.md#論理フェンスでの切替) を参照する。
+
 ## 重要な不変条件
 
 - 接続順序は TCP → UDP → relay とし、LAN 直結では STUN も relay も使わない。

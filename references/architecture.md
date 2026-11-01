@@ -81,6 +81,16 @@ STUN は **Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google S
 
 認可は `POST /auth/token` が発行する **cfToken（自前 HMAC bearer、1h）** を全リクエストで検証する。`CfTokenProvider` が ECDSA P-256 署名チャレンジで取得・約 50 分ごとに refresh。deviceId↔公開鍵は D1 `device_key_bindings` の不可変 PK に束縛し、条件付き登録後も正本を読み返して勝者の鍵を照合する。確定した鍵の不一致だけを 401 `DEVICE_PUBKEY_MISMATCH` → `IdentityLost` イベント（clean slate UI）にし、移行中の未 import・スキーマ不備・ストレージ障害は 503 `AUTH_BINDING_UNAVAILABLE` とする。旧 KV `DEVICE_KEY_BINDING` は検証済み snapshot の移行元として保持し、positive / negative の読み結果から自動 seed しない。外部 ID プロバイダ非依存で SSE 再購読も不要。
 
+移行 CLI は `--writers-frozen`（物理停止・drain 済み）又は `--legacy-writers-fenced`（論理フェンス済み）を排他的に要求する。
+論理フェンスは承認済みカットオフ snapshot と実 Worker version UUID に束縛した証跡を受け取り、
+KV writer のない D1 認証コードと新 `SESSION_HMAC_SECRET` の同時 upload、配信 100%、同一認可経路での
+旧 HMAC 401 / 新 HMAC 受理を operator が確認してから import・全件比較・activate する。
+`wrangler deploy --secrets-file` 又は `wrangler versions upload --secrets-file` + 100% deploy を使う
+（[公式 secrets 手順](https://developers.cloudflare.com/workers/configuration/secrets/)）。
+物理 drain を証明する仕組みではなく、遅延旧 KV 更新と旧 HMAC token を新正本・認可から隔離する。
+既存 WebSocket・認可済み in-flight・発行済み nonce・optional relay の失効は保証せず、snapshot 後の KV 値を自動 import しない。
+入力と非秘密証跡の schema は [relay README](../infra/cloudflare/relay/README.md#論理フェンスでの切替) に定める。旧 KV は保持し、旧 writer / HMAC へ戻さない。
+
 | ルート | 実体 | 内容 |
 |---|---|---|
 | `/sig/{pairId}/offer・answer・endpoint`（per-sender）、`probe-offer/{nonce}`・`probe-offers`・`probe-answer/{nonce}`（per-nonce） | **PairDO**（pairId ごと 1 DO） | storage キー `offer:{sender}` / `answer:{sender}` / `endpoint:{sender}` / `probeOffer:{nonce}` / `probeAnswer:{nonce}`。当事者検証 + sender キー強制（`X-Ferry-Device`）は Worker 側（`signaling-routes.ts`）で完結し、旧 Firebase rules の per-sender なりすまし防止（#D-003）をコードで担保 |

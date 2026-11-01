@@ -74,9 +74,10 @@ positive / negative のどちらも初回登録・自動移行の根拠にはし
 `AUTH_BINDING_UNAVAILABLE`、確定 D1 鍵との差分だけが従来の 401 `DEVICE_PUBKEY_MISMATCH` になる。
 schema の再適用で `ready` や既存鍵を戻さない。
 
-切替は保守時間中に旧 KV writer を停止・drain し、operator が取得元・全件性・最終鍵を検証して
-承認した immutable snapshot を用いる。KV scan の一致、固定待機時間、再読込だけで完了と判断しない。
-writer freeze と snapshot の取得・承認はこの CLI が代行しない。新正本の稼働後に旧 KV writer 版へ
+切替は保守時間中に operator が取得元・承認者・全件性・カットオフを確認した immutable snapshot を用いる。
+物理停止・drain を実際に確認した `--writers-frozen` と、下記の論理フェンスを確認した
+`--legacy-writers-fenced` は排他的である。KV scan の一致、固定待機時間、再読込だけで完了と判断しない。
+writer freeze / fence と snapshot の取得・承認はこの CLI が代行しない。新正本の稼働後に旧 KV writer 版へ
 rollback してはならない。remote schema / import / deploy は別途明示した運用操作として行う。
 
 入力は UTF-8 JSON の `{"bindings":[{"deviceId":"32桁の小文字hex","pubKeySpki":"既存の公開鍵文字列"}]}`。
@@ -85,13 +86,70 @@ rollback してはならない。remote schema / import / deploy は別途明示
 
 ```powershell
 # Node 26。既定は --local。作業先は絶対パスで指定する。
-node scripts/import-key-snapshot.mjs --input <snapshot.json> --sha256 <承認済SHA256> --count <件数> --persist-to <作業領域の絶対パス> --writers-frozen --snapshot-approved
+node scripts/import-key-snapshot.mjs --input <snapshot.json> --sha256 <承認済SHA256> --count <件数> --persist-to <作業領域の絶対パス> --writers-frozen --snapshot-approved --snapshot-provenance <取得元・承認者・カットオフ説明>
 # 同じ固定入力を検証し、最後に ready を明示する場合だけ --activate を付ける。
 # 本番運用では --persist-to の代わりに --remote --work-dir <SQL作業領域の絶対パス> を明示する。
 ```
 
 `--activate` がない限り新規 ID は解禁しない。ready 後は一度確定した鍵を変更せず、新規同時登録の
 敗者へ cfToken を発行しない。SQL 作業ファイルは公開鍵を含み、指定した作業領域へ保持する。
+
+#### 論理フェンスでの切替
+
+既存 writer の物理 drain が証明できない場合に、物理停止済みとは宣言しない。operator が承認した
+カットオフ snapshot を正本に選び、KV writer を含まない D1 認証コードと新しい `SESSION_HMAC_SECRET`
+を **同じ Worker version** に含める。Cloudflare 公式の [コードと secrets の同時 upload](https://developers.cloudflare.com/workers/configuration/secrets/)
+に従い `pnpm exec wrangler deploy --secrets-file <非公開JSON>`、又は
+`pnpm exec wrangler versions upload --secrets-file <非公開JSON>` の後に
+`pnpm exec wrangler versions deploy <version-id>@100%` を行う。secret を単独で先行変更しない。
+`versions upload` だけでは配信は切り替わらない。JSON は secret 値を含むため証跡へ転載しない。
+
+実 deployment / version ID とその version の traffic 100% を確認し、同じ認可経路
+`GET /pairs/{canonicalPairId}` を同一当事者 ID の有効期限内診断 token で検査する。
+旧 HMAC token は 401 `BAD_TOKEN`、新 HMAC token は既存 pair の 200、又は未存在 pair の
+404 `NOT_FOUND` を要求する。import 前の `/auth/token` は 503 になり得るため受理確認の代用にしない。
+診断 token は operator がそれぞれの HMAC で作成し、token 自体を記録しない。新 HMAC の診断 token の
+受理は D1 鍵 import 済みを意味しない。100% と probe 確認の後、全件 import・比較・明示 activate を行う。
+
+次の非秘密 JSON を `--fence-evidence <絶対パス>` で渡し、`--fence-version <実version UUID>` を明示する。
+これは operator の観測証跡の検査であり、CLI が Cloudflare を問い合わせて証明するものではない。
+
+```json
+{
+  "schemaVersion": 1,
+  "worker": "ferry-relay",
+  "versionId": "実Worker version UUID",
+  "deploymentId": "実deployment UUID",
+  "trafficPercent": 100,
+  "snapshotSha256": "承認済raw SHA256",
+  "noKvWriter": true,
+  "d1KeyAuthority": true,
+  "hmacRotated": true,
+  "observedAt": "観測UTC ISO日時",
+  "probe": {
+    "host": "watashiba.kagayoi.com",
+    "method": "GET",
+    "path": "/pairs/小さい32hex_大きい32hex",
+    "oldHmacStatus": 401,
+    "oldHmacCode": "BAD_TOKEN",
+    "newHmacStatus": 404,
+    "newHmacCode": "NOT_FOUND"
+  }
+}
+```
+
+```powershell
+node scripts/import-key-snapshot.mjs --input <snapshot.json> --sha256 <SHA256> --count <件数> --remote --work-dir <絶対パス> --legacy-writers-fenced --fence-version <実version UUID> --fence-evidence <非秘密JSON> --snapshot-approved --snapshot-provenance <取得元・承認者・カットオフ説明> --activate
+```
+
+CLI は snapshot SHA / 件数 / 承認・provenance・フェンス証跡を作業領域の receipt JSON に保存する。
+2026-11-01 の承認済み候補は 10 鍵、raw SHA256
+`aeadbfff25404b3a847a14a7a7757ee39aa7d45f2caa71a0d905502494e895aa` をカットオフ正本とする。
+これは KV の収束や全旧 isolate の物理 drain の証明ではない。旧実行が遅れて KV に書いても
+新 D1 正本には反映せず、遅れて発行した旧 HMAC token も新 version では拒否される。旧 KV は保持し、
+旧 HMAC や旧 KV writer への rollback はしない。このフェンスの対象は新 D1 鍵正本と新 version の
+HMAC 認可であり、既存 WebSocket、認可済みの in-flight 処理、発行済み pairing nonce、token を
+要求しない optional relay 経路の取り消しを保証しない。snapshot 以降の KV 値を自動 import しない。
 
 ### ペア成立通知の再送
 

@@ -2,12 +2,35 @@ import { describe, it, expect } from 'vitest';
 import { validateKeySnapshot, keySnapshotImportSql, keySnapshotReadySql } from '../src/key-snapshot';
 import { SqliteD1 } from './d1-fixture';
 import { readFileSync } from 'node:fs';
+import { validateMigrationAuthority } from '../src/migration-authority';
 
 async function sha(text: string) {
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))),
     (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 describe('承認済み snapshot と不変 D1 鍵', () => {
+  it('物理停止と論理フェンスを区別し、実version・100%配信・HMAC境界・snapshotを束縛する', () => {
+    const version = '11111111-1111-4111-8111-111111111111';
+    const digest = 'a'.repeat(64);
+    const evidence = { schemaVersion: 1, worker: 'ferry-relay', versionId: version,
+      deploymentId: '22222222-2222-4222-8222-222222222222', trafficPercent: 100,
+      snapshotSha256: digest, noKvWriter: true, d1KeyAuthority: true, hmacRotated: true,
+      observedAt: '2026-11-01T00:00:00Z', probe: { method: 'GET', path: '/pairs/' + 'a'.repeat(32) + '_' + 'b'.repeat(32),
+        host: 'watashiba.kagayoi.com', oldHmacStatus: 401, oldHmacCode: 'BAD_TOKEN', newHmacStatus: 200 } };
+    const options = { legacyWritersFenced: true, fenceVersion: version, fenceEvidence: evidence, provenance: 'operator approval / cutoff candidate' };
+    expect(validateMigrationAuthority(options, digest).mode).toBe('logical-fenced');
+    expect(validateMigrationAuthority({ writersFrozen: true, provenance: 'physically stopped and drained' }, digest).mode).toBe('physical-frozen');
+    for (const change of [{}, { ...options, writersFrozen: true }, { ...options, fenceVersion: 'true' },
+      { ...options, provenance: '' }, { ...options, fenceEvidence: undefined },
+      ...[{ trafficPercent: 99 }, { snapshotSha256: 'b'.repeat(64) }, { noKvWriter: false },
+        { d1KeyAuthority: false }, { hmacRotated: false }, { observedAt: '' },
+        { probe: { ...evidence.probe, oldHmacStatus: 200 } },
+        { probe: { ...evidence.probe, newHmacStatus: 503 } }].map((patch) => ({ ...options, fenceEvidence: { ...evidence, ...patch } }))]) {
+      expect(() => validateMigrationAuthority(change, digest)).toThrow();
+    }
+    expect(validateMigrationAuthority({ ...options, fenceEvidence: { ...evidence,
+      probe: { ...evidence.probe, newHmacStatus: 404, newHmacCode: 'NOT_FOUND' } } }, digest).mode).toBe('logical-fenced');
+  });
   it('raw snapshot の SHA / 件数 / 重複を検査する', async () => {
     const entry = { deviceId: 'a'.repeat(32), pubKeySpki: 'public-key' };
     const text = JSON.stringify({ bindings: [entry] });
