@@ -295,9 +295,18 @@ def check_remote(root, version):
         with urllib.request.urlopen(request, timeout=60) as response:
             listing = json.load(response)
         require(listing.get('success') is True, 'R2 listing failed')
-        keys.update(item['key'] for item in listing['result'])
+        items = listing['result']
+        require(isinstance(items, list) and len(items) <= 1000, 'invalid R2 listing page')
+        keys.update(item['key'] for item in items)
+        # 全件が1ページに収まる応答では result_info が省略される。
+        # 要求上限に達したのに継続情報が無ければ、全件取得を断定せず停止する。
+        if 'result_info' not in listing:
+            require(len(items) < 1000, 'R2 listing pagination metadata missing')
+            break
         info = listing['result_info']
-        if not info.get('is_truncated', False):
+        require(isinstance(info, dict) and isinstance(info.get('is_truncated'), bool),
+                'R2 listing pagination status missing')
+        if not info['is_truncated']:
             break
         cursor = info.get('cursor')
         require(cursor and cursor not in cursors, 'R2 listing pagination incomplete')
