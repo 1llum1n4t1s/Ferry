@@ -235,7 +235,7 @@ def check_feed(root, rid, version, original, work):
         require(len(list(root.glob('*.pkg'))) == 1, 'signed notarized pkg required')
     legacy = root / ('RELEASES-' + rid)
     if legacy.exists():
-        fields = legacy.read_text(encoding='utf-8').split()
+        fields = legacy.read_text(encoding='utf-8-sig').split()
         require(len(fields) == 3 and fields[0].lower() == asset['SHA1'].lower() and fields[1:] == [name, str(asset['Size'])], 'legacy feed mismatch')
 
 
@@ -359,7 +359,12 @@ def main():
         return
     props = metadata(Path('Directory.Build.props').read_bytes())
     require(props.get('Version') == args.version, 'source version mismatch')
-    require(run('git', 'rev-parse', 'HEAD') == identity['GITHUB_SHA'], 'checkout SHA mismatch')
+    workspace = Path(os.environ['GITHUB_WORKSPACE'])
+    require(workspace.is_absolute() and workspace.resolve() == Path.cwd().resolve(), 'checkout workspace mismatch')
+    require((workspace / '.git').exists(), 'Git checkout missing')
+    # container の UID 境界を、この checkout の一回の照会だけで明示的に信頼する。
+    require(run('git', '-c', 'safe.directory=' + str(workspace.resolve()), '-C', workspace.resolve(),
+                'rev-parse', 'HEAD') == identity['GITHUB_SHA'], 'checkout SHA mismatch')
     require('dotnet publish src/Ferry/Ferry.csproj -c Release' in Path('.github/workflows/build.yml').read_text(encoding='utf-8'), 'Release build contract changed')
     executable = 'Ferry.exe' if args.runtime.startswith('win-') else 'Ferry' if args.runtime.startswith('osx-') else 'ferry'
     original = args.publish / executable

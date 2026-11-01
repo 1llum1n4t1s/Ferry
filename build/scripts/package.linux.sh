@@ -96,5 +96,7 @@ chmod 0755 resources/deb/DEBIAN/preinst resources/deb/DEBIAN/prerm
 # deb パッケージをビルド
 dpkg-deb -Zgzip --root-owner-group --build resources/deb "ferry_$VERSION-1_$arch.deb"
 
-rpmbuild -bb --target="$target" resources/rpm/SPECS/build.spec --define "_topdir $(pwd)/resources/rpm" --define "_version $VERSION"
+# publish 済み Native AOT 本体を RPM の追加 strip で変更しない。
+# 同じ publish を使う AppImage / deb と payload の SHA-256 を保つ（cross RID の host strip も防ぐ）。
+rpmbuild -bb --target="$target" resources/rpm/SPECS/build.spec --define "_topdir $(pwd)/resources/rpm" --define "_version $VERSION" --define "__strip /bin/true"
 mv "resources/rpm/RPMS/$target/ferry-$VERSION-1.$target.rpm" ./
