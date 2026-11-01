@@ -319,7 +319,16 @@ if ((Test-Path -LiteralPath $WorkDir) -and @(Get-ChildItem -LiteralPath $WorkDir
 New-Item -ItemType Directory -Path $ArtifactsDir -Force | Out-Null
 
 # ---- 1. ビルド + 署名付きパッケージング (RID ごと) ----
+$originalBuildEnvironment = @{}
+foreach ($name in @('PATH', 'INCLUDE', 'LIB', 'LIBPATH')) {
+    $originalBuildEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+}
+try {
 foreach ($runtime in $Runtimes) {
+    # 前のRIDのVC環境を引き継がず、プリフライト後の同じ環境から初期化する。
+    foreach ($name in $originalBuildEnvironment.Keys) {
+        [Environment]::SetEnvironmentVariable($name, ($originalBuildEnvironment[$name] ?? [NullString]::Value), 'Process')
+    }
     $config = $RuntimeMatrix[$runtime]
     if (-not $config) { throw "未知の runtime: $runtime (本スクリプトは Windows チャンネル専用)" }
     $publishDir = Join-Path $WorkDir "publish-$runtime"
@@ -362,6 +371,12 @@ foreach ($runtime in $Runtimes) {
             --channel $config.Channel `
             --icon (Join-Path $RepoRoot 'icon\app.ico') `
             --signParams $SignParams
+    }
+}
+} finally {
+    # 初期化・publish・packの失敗でも、未設定だった変数を含めて元へ戻す。
+    foreach ($name in $originalBuildEnvironment.Keys) {
+        [Environment]::SetEnvironmentVariable($name, ($originalBuildEnvironment[$name] ?? [NullString]::Value), 'Process')
     }
 }
 }
