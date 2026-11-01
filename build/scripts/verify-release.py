@@ -15,6 +15,11 @@ import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
 
+# Windows runner の既定 cp1252 でも日本語の検証結果を出力できるようにする (Python 3.8+)。
+for stream in (sys.stdout, sys.stderr):
+    if hasattr(stream, 'reconfigure'):
+        stream.reconfigure(encoding='utf-8')
+
 
 def require(condition, message):
     if not condition:
@@ -90,7 +95,7 @@ def check_plist(path, version):
     require(info.get('CFBundleVersion') == version + '.0', 'bundle build version mismatch')
 
 
-def extract_zip(path, destination):
+def extract_zip(path, destination, velopack_links=False):
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
         require(len(names) == len(set(names)), f'duplicate ZIP entries: {path}')
@@ -100,6 +105,18 @@ def extract_zip(path, destination):
     else:
         with zipfile.ZipFile(path) as archive:
             archive.extractall(destination)
+    if velopack_links:
+        # nupkg はシンボリックリンクを .__symlink の UTF-8 相対パスとして保存する。
+        # codesign 前に本来の bundle 構成へ戻し、展開領域外へのリンクは拒否する。
+        for marker in destination.rglob('*.__symlink'):
+            link = marker.with_name(marker.name[:-len('.__symlink')])
+            target = marker.read_text(encoding='utf-8')
+            require(not os.path.isabs(target), 'absolute Velopack link')
+            resolved = (link.parent / target).resolve()
+            require(os.path.commonpath([str(destination.resolve()), str(resolved)]) == str(destination.resolve()), 'escaping Velopack link')
+            require(resolved.exists() and not link.exists(), 'invalid Velopack link')
+            link.symlink_to(target)
+            marker.unlink()
 
 
 def app_bundle(root, version, signed=False):
@@ -139,6 +156,7 @@ def appimage(path, root, rid, original):
     require(len(candidates) == 1, 'AppImage Ferry payload missing or ambiguous')
     check_binary(candidates[0], rid, original)
     check_payload(original.parent, candidates[0].parent)
+    return candidates[0]
 
 
 def check_feed(root, rid, version, original, work):
@@ -169,18 +187,25 @@ def check_feed(root, rid, version, original, work):
     with zipfile.ZipFile(package) as archive:
         spec = metadata(archive.read('Ferry.nuspec'))
         require(spec.get('id') == 'Ferry' and spec.get('version') == version, 'nuspec identity mismatch')
-        require(spec.get('channel') == rid and spec.get('rid') == rid, 'nuspec RID/channel mismatch')
-        require(spec.get('machineArchitecture') == rid.rsplit('-', 1)[1], 'nuspec CPU mismatch')
+        require(spec.get('channel') == rid, 'nuspec channel mismatch')
+        if rid == 'osx-arm64':
+            # mac vpk は generic rid=osx を出す。CPU は実 Mach-O で必ず確認する。
+            require(spec.get('rid') in ('osx', rid), 'nuspec mac RID mismatch')
+            require(spec.get('machineArchitecture') in (None, 'arm64'), 'nuspec mac CPU mismatch')
+        else:
+            require(spec.get('rid') == rid, 'nuspec RID mismatch')
+            require(spec.get('machineArchitecture') == rid.rsplit('-', 1)[1], 'nuspec CPU mismatch')
         require(spec.get('os') == rid.split('-')[0], 'nuspec OS mismatch')
     extracted = work / 'nupkg'
-    extract_zip(package, extracted)
+    extract_zip(package, extracted, velopack_links=True)
     if rid.startswith('osx-'):
         payload = app_bundle(extracted, version, signed=True)
         check_payload(original.parent, payload.parent, signed=True)
     else:
-        payload = extracted / 'lib/app/ferry'
-        check_binary(payload, rid, original)
-        check_payload(original.parent, payload.parent)
+        # Linux の更新 nupkg は publish directory ではなく完成 AppImage を格納する。
+        bundled_image = extracted / 'lib/app/Ferry.AppImage'
+        require(bundled_image.is_file(), 'nupkg AppImage missing')
+        payload = appimage(bundled_image, work / 'nupkg-appimage', rid, original)
     for entry in root.iterdir():
         if entry.suffix == '.pkg':
             require(rid == 'osx-arm64', 'unexpected pkg')
@@ -201,6 +226,7 @@ def check_feed(root, rid, version, original, work):
             require(digest(portable_payload) == digest(payload), 'portable/feed app mismatch')
             check_payload(payload.parent, portable_payload.parent)
         elif entry.suffix == '.AppImage':
+            require(digest(entry) == digest(bundled_image), 'portable/nupkg AppImage mismatch')
             appimage(entry, work / entry.stem, rid, original)
         else:
             require(entry.suffix in ('.nupkg', '.json') or entry.name == 'RELEASES-' + rid, f'unexpected feed file: {entry}')
