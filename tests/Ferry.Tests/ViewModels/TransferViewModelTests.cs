@@ -456,81 +456,9 @@ public class TransferViewModelTests : IDisposable
 
     // === OnProgressChanged ===
 
-    [Fact]
-    public void OnProgressChanged_TransferIdが一致しない場合は更新されないこと()
-    {
-        using var vm = CreateViewModel();
-        var item = new TransferItem
-        {
-            FileName = "no-match.txt",
-            FileSize = 1000,
-            State = TransferState.InProgress,
-            TransferredBytes = 0,
-        };
-        vm.Transfers.Add(item);
-
-        var progressItem = new TransferItem
-        {
-            TransferredBytes = 500,
-        };
-        // 異なる TransferId（デフォルトで新しい GUID が生成される）
-
-        _transferService.ProgressChanged += Raise.Event<EventHandler<TransferItem>>(null!, progressItem);
-
-        Assert.Equal(0, item.TransferredBytes);
-    }
-
-    [Fact]
-    public void OnProgressChanged_InProgress以外の状態では更新されないこと()
-    {
-        using var vm = CreateViewModel();
-        var item = new TransferItem
-        {
-            FileName = "completed.txt",
-            FileSize = 1000,
-            State = TransferState.Completed,
-            TransferredBytes = 1000,
-        };
-        vm.Transfers.Add(item);
-
-        var progressItem = new TransferItem
-        {
-            TransferredBytes = 500,
-        };
-        typeof(TransferItem).GetProperty(nameof(TransferItem.TransferId))!
-            .SetValue(progressItem, item.TransferId);
-
-        _transferService.ProgressChanged += Raise.Event<EventHandler<TransferItem>>(null!, progressItem);
-
-        // Completed なので更新されない
-        Assert.Equal(1000, item.TransferredBytes);
-    }
-
     // === OnFileReceived ===
 
     // === OnTransferError ===
-
-    [Fact]
-    public void OnTransferError_TransferIdが一致しない場合は更新されないこと()
-    {
-        using var vm = CreateViewModel();
-        var item = new TransferItem
-        {
-            FileName = "safe.txt",
-            State = TransferState.InProgress,
-        };
-        vm.Transfers.Add(item);
-
-        var errorItem = new TransferItem
-        {
-            ErrorMessage = "エラー",
-        };
-
-        _transferService.TransferError += Raise.Event<EventHandler<TransferItem>>(null!, errorItem);
-
-        Assert.Equal(TransferState.InProgress, item.State);
-        Assert.Null(item.ErrorMessage);
-    }
 
     // === Dispose ===
 

@@ -319,7 +319,7 @@ public sealed class TransferService : ITransferService, IDisposable
             // 3. チャンクを順次送信しつつハッシュを並行計算
             using var hashSink = System.Security.Cryptography.IncrementalHash.CreateHash(
                 System.Security.Cryptography.HashAlgorithmName.SHA256);
-            await SendChunksAsync(filePath, transferId, startChunk: 0, item, sendPeerId, ct, hashSink);
+            await SendChunksAsync(filePath, transferId, item, sendPeerId, ct, hashSink);
 
             // 4. 確定したハッシュを後送り
             var sha256Bytes = hashSink.GetHashAndReset();
@@ -372,7 +372,6 @@ public sealed class TransferService : ITransferService, IDisposable
             return false;
         }
 
-        var startChunk = 0;
         Util.Logger.Log($"転送レジューム: {Util.Logger.MaskFilename(item.FileName)}, 先頭から再送 (全 {item.TotalChunks} チャンク)");
 
         // rere #B1-004: SendFileAsync と同様に _sendCts を登録し、レジューム送信中も
@@ -413,7 +412,7 @@ public sealed class TransferService : ITransferService, IDisposable
             item.State = TransferState.InProgress;
             ProgressChanged?.Invoke(this, item);
 
-            await SendChunksAsync(item.SourceFilePath, item.TransferId, startChunk, item, resumePeerId, ct);
+            await SendChunksAsync(item.SourceFilePath, item.TransferId, item, resumePeerId, ct);
             return true;
         }
         catch (Exception ex)
@@ -603,7 +602,7 @@ public sealed class TransferService : ITransferService, IDisposable
     /// 複数ペア同時接続対応 Stage 5: <paramref name="peerId"/> を受け、フロー制御 Route 判定と
     /// チャンクメッセージ送信を per-peer の API へ流す。
     /// </summary>
-    private async Task SendChunksAsync(string filePath, Guid transferId, int startChunk, TransferItem item, string peerId, CancellationToken ct, System.Security.Cryptography.IncrementalHash? hashSink = null)
+    private async Task SendChunksAsync(string filePath, Guid transferId, TransferItem item, string peerId, CancellationToken ct, System.Security.Cryptography.IncrementalHash? hashSink = null)
     {
         // rere レビュー #C-17: 送信側にも相関 ID Scope を張る（AsyncLocal なので await を跨いで継承される）。
         // MaxParallelSends=10 で同一ピアへ並行送信するため、transferId 無しでは
@@ -617,10 +616,8 @@ public sealed class TransferService : ITransferService, IDisposable
         var lastProgressTick = Environment.TickCount64;
         const long ProgressIntervalMs = 60;
 
-        // P-3: hashSink を渡された場合は ReadChunksWithHash でハッシュ並行計算（送信側 1 度読み）
-        var chunkSource = hashSink is null
-            ? FileChunker.ReadChunks(filePath)
-            : FileChunker.ReadChunksWithHash(filePath, hashSink);
+        // ハッシュは読取直後に計算し、送信完了までチャンクのメモリを保持する。
+        var chunkSource = FileChunker.ReadChunksForSend(filePath, hashSink);
 
         // v1.0.46: フロー制御カウンタを初期化（レジューム時に前回値が残らないように）
         Volatile.Write(ref item.FlowAckedChunks, 0);
@@ -633,10 +630,6 @@ public sealed class TransferService : ITransferService, IDisposable
         foreach (var (index, chunkData) in chunkSource)
         {
             ct.ThrowIfCancellationRequested();
-
-            // レジューム: 開始チャンクまでスキップ
-            if (index < startChunk)
-                continue;
 
             // v1.0.47: 一時停止中はここで待機する。接続は維持し、キャンセル（ct）されたら例外で抜ける。
             if (_pausedSends.ContainsKey(transferId))
@@ -710,7 +703,7 @@ public sealed class TransferService : ITransferService, IDisposable
             var buffer = ArrayPool<byte>.Shared.Rent(messageSize);
             try
             {
-                FileChunker.WriteChunkMessage(buffer.AsSpan(0, messageSize), transferId, index, chunkData);
+                FileChunker.WriteChunkMessage(buffer.AsSpan(0, messageSize), transferId, index, chunkData.Span);
                 await SendToPeerAsync(peerId, buffer.AsMemory(0, messageSize), ct);
             }
             finally

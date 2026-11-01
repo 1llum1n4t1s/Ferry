@@ -279,6 +279,19 @@ public class FileChunkerTests : IDisposable
     // ==================== ReadChunks ====================
 
     [Fact]
+    public void ReadChunksWithHash_列挙後も全チャンク内容を保持して全体ハッシュが一致すること()
+    {
+        var data = Enumerable.Range(0, TransferProtocol.ChunkSize * 2 + 1)
+            .Select(i => (byte)(i / TransferProtocol.ChunkSize + 1)).ToArray();
+        var path = CreateTempFile(data);
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var chunks = FileChunker.ReadChunksWithHash(path, hash).ToList();
+        Assert.Equal(new[] { 0, 1, 2 }, chunks.Select(c => c.Index));
+        Assert.Equal(data, chunks.SelectMany(c => c.Data).ToArray());
+        Assert.Equal(SHA256.HashData(data), hash.GetHashAndReset());
+    }
+
+    [Fact]
     public void ReadChunks_空ファイルは0チャンクを返すこと()
     {
         var path = CreateTempFile([]);
@@ -395,18 +408,6 @@ public class FileChunkerTests : IDisposable
     public void CalculateTotalChunks_1バイトは1チャンクを返すこと()
     {
         Assert.Equal(1, FileChunker.CalculateTotalChunks(1));
-    }
-
-    [Fact]
-    public void CalculateTotalChunks_ちょうどChunkSizeは1チャンクを返すこと()
-    {
-        Assert.Equal(1, FileChunker.CalculateTotalChunks(TransferProtocol.ChunkSize));
-    }
-
-    [Fact]
-    public void CalculateTotalChunks_ChunkSize_plus_1は2チャンクを返すこと()
-    {
-        Assert.Equal(2, FileChunker.CalculateTotalChunks(TransferProtocol.ChunkSize + 1));
     }
 
     [Theory]

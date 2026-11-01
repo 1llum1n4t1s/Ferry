@@ -57,7 +57,7 @@ internal static class ServiceChecks
         Require(salvaged.Settings.DeviceId == original, "原本からのID救済を副本より優先");
     }
 
-    private static void CheckCancel()
+    private static async Task CheckCancel()
     {
         using var directory = new ScratchDirectory();
         var connection = new CaptureConnection();
@@ -65,6 +65,7 @@ internal static class ServiceChecks
         var item = Announce(service, "secondary", "cancel.txt");
         service.ApproveTransfer(item.TransferId.ToString());
         service.CancelTransfer(item.TransferId.ToString());
+        await Wait(() => connection.Sent.Any(message => message.Data[0] == TransferProtocol.FileReject));
         var reject = connection.Sent.Single(message => message.Data[0] == TransferProtocol.FileReject);
         Require(reject.Peer == "secondary", "Rejectの送信先は受信元");
         Require(!service.HasActiveTransfer && item.State == TransferState.Cancelled, "取消後の状態回収");
@@ -169,11 +170,14 @@ internal static class ServiceChecks
     private static async Task CheckUdp()
     {
         using var peer = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+        peer.Client.ReceiveBufferSize = 256 * 1024;
         using var transport = new UdpHolePunchTransport();
         // 外部STUN/接続認可には接続せず、隔離した通常DATA/ACKの送信経路だけを実行する。
         var endpoint = (IPEndPoint)peer.Client.LocalEndPoint!;
         SetField(transport, "_remoteEp", endpoint);
         SetField(transport, "_isConnected", true);
+        var window = (SemaphoreSlim)Field(transport, "_windowSem");
+        var sentPackets = (System.Collections.ICollection)Field(transport, "_sentPackets");
         var ack = 0;
         var received = 0;
         using var peerCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -200,13 +204,16 @@ internal static class ServiceChecks
         {
             using var cancel = new CancellationTokenSource();
             var send = transport.SendAsync(new byte[1187 * 200], cancel.Token);
-            await Wait(() => Volatile.Read(ref received) >= 128);
+            // 再送ループを起動しないfixtureではUDP全数受信を前提にしない。
+            // 実受信と全128枠の占有を確認し、window待ち中の取消を再現する。
+            await Wait(() => Volatile.Read(ref received) > 0 && window.CurrentCount == 0 && sentPackets.Count == 128);
             cancel.Cancel();
             try { await send; throw new InvalidOperationException("取消が伝播しませんでした"); }
             catch (OperationCanceledException) { }
+            Require(window.CurrentCount == 128 && sentPackets.Count == 0, "取消後にwindow枠と再送バッファを全回収");
             Volatile.Write(ref ack, 1);
             await transport.SendAsync(Canary).WaitAsync(TimeSpan.FromSeconds(2));
-            Require(((SemaphoreSlim)Field(transport, "_windowSem")).CurrentCount == 128, "後続送信後にwindow枠を全回収");
+            Require(window.CurrentCount == 128 && sentPackets.Count == 0, "後続送信後にwindow枠と再送バッファを全回収");
         }
         finally
         {

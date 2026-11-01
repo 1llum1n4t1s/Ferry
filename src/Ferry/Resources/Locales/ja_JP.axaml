@@ -72,9 +72,6 @@
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">再接続中…</x:String>
 
   <!-- Connection Routes -->
-  <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN 直接接続</x:String>
-  <x:String x:Key="Text.Route.Stun" xml:space="preserve">インターネット P2P（STUN）</x:String>
-  <x:String x:Key="Text.Route.Relay" xml:space="preserve">サーバー経由（TURN リレー）</x:String>
 
   <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
   <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">新しいバージョンが利用可能です！</x:String>
@@ -158,9 +155,6 @@
   <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">このピアへの進行中転送</x:String>
 
   <!-- Route バッジ: 接続経路ごとのラベル / 短縮バッジ / ツールチップ -->
-  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">LAN 直接</x:String>
-  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P（STUN）</x:String>
-  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">リレー（TURN）</x:String>
   <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
   <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
   <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>

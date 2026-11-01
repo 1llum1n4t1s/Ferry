@@ -60,9 +60,6 @@
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">Reconiungens...</x:String>
 
   <!-- Connection Routes -->
-  <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN Directum</x:String>
-  <x:String x:Key="Text.Route.Stun" xml:space="preserve">Interrete P2P (STUN)</x:String>
-  <x:String x:Key="Text.Route.Relay" xml:space="preserve">Relay Servitoris (TURN)</x:String>
 
   <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
   <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">Nova versio huius programatis praesto est: </x:String>
@@ -174,13 +171,10 @@ Hoc revocari non potest.</x:String>
   <x:String x:Key="Text.Member.Menu" xml:space="preserve">Index</x:String>
   <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">Translationes cum hoc pari currentes</x:String>
   <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
-  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">LAN directum</x:String>
   <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">Nexus LAN directus (TCP) — celerrimus, latitudo maxima</x:String>
   <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
-  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P (STUN)</x:String>
   <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">Nexus P2P directus (perforatio UDP + STUN) — per interrete</x:String>
   <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
-  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">Transmissio (TURN)</x:String>
   <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">Per servitorem transmissum (TURN/WebSocket) — muros ignis transit</x:String>
   <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">Exploratur</x:String>
   <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">Via nexus exploratur…</x:String>

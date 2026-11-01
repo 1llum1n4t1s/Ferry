@@ -235,6 +235,25 @@ public static class FileChunker
     }
 
     /// <summary>
+    /// 内部送信用のチャンク列挙。Data は次の MoveNext または Dispose までだけ有効。
+    /// 送信完了を await してから列挙を進め、同じバッファを再利用する。
+    /// </summary>
+    internal static IEnumerable<(int Index, ReadOnlyMemory<byte> Data)> ReadChunksForSend(
+        string filePath, IncrementalHash? hashSink = null)
+    {
+        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        var buffer = new byte[TransferProtocol.ChunkSize];
+        var index = 0;
+        int bytesRead;
+        while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            hashSink?.AppendData(buffer, 0, bytesRead);
+            yield return (index, buffer.AsMemory(0, bytesRead));
+            index++;
+        }
+    }
+
+    /// <summary>
     /// ファイル SHA-256 後送りメッセージを生成する [種別 1byte] [TransferId 16byte] [sha256 32byte]。P-3 プロトコル拡張。
     /// rere #B1-001: 並列転送 (ParallelTransferCount>1) で別ファイルへハッシュが誤紐付けされないよう
     /// FileChunk/FileReject と同様に TransferId プレフィクスを持つ (旧形式 [種別][sha256] とは非互換)。

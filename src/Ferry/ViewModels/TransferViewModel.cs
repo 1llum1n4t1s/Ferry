@@ -37,9 +37,6 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     public const int MaxParallelSends = 10;
 
     [ObservableProperty]
-    public partial bool IsDragOver { get; set; }
-
-    [ObservableProperty]
     public partial bool IsTransferring { get; set; }
 
     /// <summary>選択中ピアの転送アイテムがあるか（空状態表示の切替に使用）。</summary>

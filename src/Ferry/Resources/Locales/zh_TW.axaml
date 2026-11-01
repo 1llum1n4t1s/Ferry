@@ -46,9 +46,6 @@
   <x:String x:Key="Text.Status.Error" xml:space="preserve">錯誤: {0}</x:String>
   <x:String x:Key="Text.Status.Connecting" xml:space="preserve">連線中…</x:String>
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">重新連線中…</x:String>
-  <x:String x:Key="Text.Route.Direct" xml:space="preserve">區域網路直連</x:String>
-  <x:String x:Key="Text.Route.Stun" xml:space="preserve">網際網路 P2P（STUN）</x:String>
-  <x:String x:Key="Text.Route.Relay" xml:space="preserve">伺服器中繼（TURN）</x:String>
   <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
   <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">軟體有版本更新:</x:String>
   <x:String x:Key="Text.SelfUpdate.Checking" xml:space="preserve">正在檢查更新...</x:String>
@@ -171,13 +168,10 @@
   <x:String x:Key="Text.Member.Menu" xml:space="preserve">選單</x:String>
   <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">與此裝置正在進行的傳輸</x:String>
   <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
-  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">區域網路直連</x:String>
   <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">區域網路直接連線（TCP）— 最快、頻寬最高</x:String>
   <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
-  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P（STUN）</x:String>
   <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">P2P 直接連線（UDP 打洞 + STUN）— 跨網際網路</x:String>
   <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
-  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">中繼（TURN）</x:String>
   <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">透過伺服器中繼（TURN/WebSocket）— 可穿透防火牆</x:String>
   <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">偵測中</x:String>
   <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">正在偵測連線路徑…</x:String>

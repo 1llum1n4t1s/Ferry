@@ -79,6 +79,7 @@ describe('handleAuthToken', () => {
         const res = await handleAuthToken(mkRequest(body), env);
         expect(res.status).toBe(200);
         const j = (await res.json()) as { cfToken: string; expiresIn: number };
+        expect(typeof j.cfToken).toBe('string');
         expect(j.cfToken.split('.').length).toBe(3);
         expect(j.expiresIn).toBe(3600);
         // cfToken は同じ secret で verify が通り deviceId を含む
@@ -187,15 +188,4 @@ describe('handleAuthToken', () => {
         expect(j.error).toBe('INVALID_DEVICE_ID');
     });
 
-    it('CF 単独完結: 返却 cfToken が verifySessionToken で deviceId に解決する', async () => {
-        const { env } = makeAuthEnv();
-        const deviceId = 'a'.repeat(32);
-        const body = await buildSignedAuthBody(deviceId);
-        const res = await handleAuthToken(mkRequest(body), env);
-        expect(res.status).toBe(200);
-        const j = (await res.json()) as { cfToken: string; expiresIn: number };
-        expect(typeof j.cfToken).toBe('string');
-        const claims = await verifySessionToken(j.cfToken, env);
-        expect(claims?.deviceId).toBe(deviceId);
-    });
 });

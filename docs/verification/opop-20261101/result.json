@@ -1,0 +1,175 @@
+{
+  "OS": "Microsoft Windows NT 10.0.26300.0",
+  "Runtime": "10.0.14",
+  "Avalonia": "12.1.4.0",
+  "Utc": "2026-10-31T23:48:40.4399374+00:00",
+  "ScreenshotKind": "Avalonia visual tree (not OS compositor)",
+  "Results": [
+    {
+      "Name": "normal",
+      "Passed": true,
+      "BeforeShow": "Normal",
+      "StartupState": "Normal",
+      "StartupVisible": true,
+      "RestoredState": "Normal",
+      "Width": 920,
+      "Height": 620
+    },
+    {
+      "Name": "minimized",
+      "Passed": true,
+      "BeforeShow": "Normal",
+      "StartupState": "Minimized",
+      "StartupVisible": true,
+      "RestoredState": "Normal",
+      "Width": 920,
+      "Height": 620
+    },
+    {
+      "Name": "minimized-tray",
+      "Passed": true,
+      "BeforeShow": "Normal",
+      "StartupState": "Minimized",
+      "StartupVisible": false,
+      "RestoredState": "Normal",
+      "Width": 920,
+      "Height": 620
+    },
+    {
+      "Name": "maximized-minimized",
+      "Passed": true,
+      "BeforeShow": "Maximized",
+      "StartupState": "Minimized",
+      "StartupVisible": true,
+      "RestoredState": "Maximized",
+      "Width": 920,
+      "Height": 620
+    },
+    {
+      "Name": "rtl-before-window-and-later-dialog",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "rtl-settings-only",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "locale-change-existing-windows",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "skipped-tag-localized-binding",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "settings-accessible-names-en_US",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "settings-accessible-names-he_IL",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "transfer-events-dispatcher",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "corrupt-settings-identity",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "secondary-peer-cancel",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "secondary-peer-flowack-after-cancel",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "approve-overlap-disconnect",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "approve-overlap-reject",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "approve-overlap-cancel",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "folder-sequential-approval",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "legacy-buffer-before-approval",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "udp-cancel-then-send",
+      "Passed": true,
+      "Error": null
+    }
+  ],
+  "TemporaryDirectories": [
+    {
+      "Path": "C:\\Users\\IMT\\.codex\\work-ferry-deps-20261101\\Ferry-Gogo-9990242f8b4d4dfaad58a920529497c0",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\.codex\\work-ferry-deps-20261101\\Ferry-Gogo-fb17ace63326437da37a087b4789bfc6",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\.codex\\work-ferry-deps-20261101\\Ferry-Gogo-c98eaa9399d74d44ad97cd334bd48b65",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\.codex\\work-ferry-deps-20261101\\Ferry-Gogo-a2a3fe65f8574e9894896a0ddbeaa587",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\.codex\\work-ferry-deps-20261101\\Ferry-Gogo-da48ed37adb24615b29dad284b2f8a2d",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\.codex\\work-ferry-deps-20261101\\Ferry-Gogo-77daa67ec1df47f095b95f9b66d9d1c4",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\.codex\\work-ferry-deps-20261101\\Ferry-Gogo-cb17fd8c56b44c69919bbd1930d55fe0",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\.codex\\work-ferry-deps-20261101\\Ferry-Gogo-b19a01ffba954353aa4c4409408ae20f",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\.codex\\work-ferry-deps-20261101\\Ferry-Gogo-bab27af0eeba4949905ca80b488b11f4",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\.codex\\work-ferry-deps-20261101\\Ferry-Gogo-eb6f8c83a2234340a72a17436f93fdf2",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\.codex\\work-ferry-deps-20261101\\Ferry-Gogo-c287135b4c5042468f526b006255abf7",
+      "Removed": true
+    }
+  ]
+}

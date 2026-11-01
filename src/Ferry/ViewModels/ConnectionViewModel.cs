@@ -111,10 +111,6 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     public partial bool HasPairedPeers { get; set; }
 
-    /// <summary>接続経路の表示テキスト。</summary>
-    [ObservableProperty]
-    public partial string ConnectionRouteText { get; set; } = string.Empty;
-
     /// <summary>リンクコピー済みフラグ（一時的に「コピー済み」表示にする）。</summary>
     [ObservableProperty]
     public partial bool IsLinkCopied { get; set; }
@@ -649,14 +645,6 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                     _ => string.Empty,
                 };
             }
-
-            // 未接続時は TransferView の経路テキストだけクリア。
-            // ピアの Route バッジ (メンバーリスト) は過去の接続実績として残す方が、
-            // 次回どの経路で繋がりそうか予測できて UX が良い。次回接続時に新しい Route で上書きされる。
-            if (state != PeerState.Connected)
-            {
-                ConnectionRouteText = string.Empty;
-            }
         });
     }
 
@@ -678,14 +666,6 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             // 選択中のピアの経路を更新（宛先リストの各行に表示される）
             if (SelectedPeer != null)
                 SelectedPeer.Route = route;
-
-            ConnectionRouteText = route switch
-            {
-                ConnectionRoute.Direct => "🟢 " + App.Text("Route.Direct"),
-                ConnectionRoute.StunAssisted => "🟡 " + App.Text("Route.Stun"),
-                ConnectionRoute.Relay => "🔴 " + App.Text("Route.Relay"),
-                _ => string.Empty,
-            };
         });
     }
 

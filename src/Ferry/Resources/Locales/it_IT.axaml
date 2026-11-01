@@ -60,9 +60,6 @@
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">Riconnessione in corso...</x:String>
 
   <!-- Connection Routes -->
-  <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN diretto</x:String>
-  <x:String x:Key="Text.Route.Stun" xml:space="preserve">P2P via Internet (STUN)</x:String>
-  <x:String x:Key="Text.Route.Relay" xml:space="preserve">Relay del server (TURN)</x:String>
 
   <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
   <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">È disponibile una nuova versione del software:</x:String>
@@ -188,13 +185,10 @@ Questa azione non può essere annullata.</x:String>
   <x:String x:Key="Text.Member.Menu" xml:space="preserve">Menu</x:String>
   <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">Trasferimenti in corso con questo peer</x:String>
   <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
-  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">LAN diretta</x:String>
   <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">Connessione LAN diretta (TCP) — la più veloce, banda massima</x:String>
   <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
-  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P (STUN)</x:String>
   <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">Connessione P2P diretta (UDP hole punching + STUN) — attraverso Internet</x:String>
   <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
-  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">Relay (TURN)</x:String>
   <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">Instradato tramite il server (TURN/WebSocket) — attraversa i firewall</x:String>
   <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">Verifica</x:String>
   <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">Verifica del percorso di connessione…</x:String>

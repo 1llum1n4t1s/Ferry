@@ -46,9 +46,6 @@
   <x:String x:Key="Text.Status.Error" xml:space="preserve">Fehler: {0}</x:String>
   <x:String x:Key="Text.Status.Connecting" xml:space="preserve">Verbinden…</x:String>
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">Erneut verbinden…</x:String>
-  <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN-Direktverbindung</x:String>
-  <x:String x:Key="Text.Route.Stun" xml:space="preserve">Internet-P2P (STUN)</x:String>
-  <x:String x:Key="Text.Route.Relay" xml:space="preserve">Server-Relay (TURN)</x:String>
   <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
   <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">Eine neue Version dieses Programms ist verfügbar: </x:String>
   <x:String x:Key="Text.SelfUpdate.Checking" xml:space="preserve">Suche nach Updates...</x:String>
@@ -173,13 +170,10 @@ Dies kann nicht rückgängig gemacht werden.</x:String>
   <x:String x:Key="Text.Member.Menu" xml:space="preserve">Menü</x:String>
   <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">Laufende Übertragungen mit diesem Peer</x:String>
   <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
-  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">LAN direkt</x:String>
   <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">Direkte LAN-Verbindung (TCP) — am schnellsten, höchste Bandbreite</x:String>
   <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
-  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P (STUN)</x:String>
   <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">Direkte P2P-Verbindung (UDP Hole Punching + STUN) — über das Internet</x:String>
   <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
-  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">Relay (TURN)</x:String>
   <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">Weiterleitung über den Server (TURN/WebSocket) — funktioniert durch Firewalls</x:String>
   <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">Wird geprüft</x:String>
   <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">Verbindungsweg wird geprüft …</x:String>

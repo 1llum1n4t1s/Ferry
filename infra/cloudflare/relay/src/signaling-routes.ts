@@ -12,29 +12,13 @@
  */
 
 import type { Env } from './index';
+import { pairLedgerMode, d1Unavailable, ledgerMisconfigured } from './pair-ledger';
 import { hashPairId } from './index';
 import { verifySessionToken } from './auth';
 import { notifyInbox } from './device-routes';
 import { jsonError, readTextBody } from './http';
 
 const PAIR_ID_RE = /^[a-f0-9]{32}_[a-f0-9]{32}$/;
-type PairLedgerMode = 'transition' | 'required';
-type RuntimeEnv = Env & { PAIR_LEDGER_MODE?: unknown };
-
-function pairLedgerMode(env: Env): PairLedgerMode | null {
-  const configured = (env as RuntimeEnv).PAIR_LEDGER_MODE;
-  if (configured === undefined) return 'transition';
-  if (configured === 'transition' || configured === 'required') return configured;
-  return null;
-}
-
-function d1Unavailable(): Response {
-  return jsonError(503, 'D1_UNAVAILABLE', 'pair ledger unavailable');
-}
-
-function ledgerMisconfigured(): Response {
-  return jsonError(503, 'PAIR_LEDGER_MISCONFIGURED', 'PAIR_LEDGER_MODE must be transition or required');
-}
 
 /** `/sig` から PairDO を起こす前に正式 pairs の存在を確認する。 */
 async function ensurePairRegistered(env: Env, pairId: string): Promise<Response | null> {

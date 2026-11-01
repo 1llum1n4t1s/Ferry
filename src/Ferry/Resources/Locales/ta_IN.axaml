@@ -60,9 +60,6 @@
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">மீண்டும் இணைக்கிறது...</x:String>
 
   <!-- Connection Routes -->
-  <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN நேரடி</x:String>
-  <x:String x:Key="Text.Route.Stun" xml:space="preserve">இணையம் P2P (STUN)</x:String>
-  <x:String x:Key="Text.Route.Relay" xml:space="preserve">சர்வர் ரிலே (TURN)</x:String>
 
   <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
   <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">இந்த மென்பொருளின் புதிய பதிப்பு கிடைக்கிறது: </x:String>
@@ -174,13 +171,10 @@
   <x:String x:Key="Text.Member.Menu" xml:space="preserve">பட்டி</x:String>
   <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">இந்தச் சாதனத்துடன் நடைபெறும் பரிமாற்றங்கள்</x:String>
   <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
-  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">நேரடி LAN</x:String>
   <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">நேரடி LAN இணைப்பு (TCP) — வேகமானது, அதிக அலைவரிசை</x:String>
   <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
-  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P (STUN)</x:String>
   <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">நேரடி P2P இணைப்பு (UDP hole punching + STUN) — இணையம் வழியாக</x:String>
   <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
-  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">ரிலே (TURN)</x:String>
   <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">சேவையகம் வழியாக ரிலே (TURN/WebSocket) — ஃபயர்வால்களைக் கடக்கும்</x:String>
   <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">சரிபார்க்கிறது</x:String>
   <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">இணைப்புப் பாதை சரிபார்க்கப்படுகிறது…</x:String>

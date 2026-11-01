@@ -46,9 +46,6 @@
   <x:String x:Key="Text.Status.Error" xml:space="preserve">Error: {0}</x:String>
   <x:String x:Key="Text.Status.Connecting" xml:space="preserve">Conectando…</x:String>
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">Reconectando…</x:String>
-  <x:String x:Key="Text.Route.Direct" xml:space="preserve">Conexión directa LAN</x:String>
-  <x:String x:Key="Text.Route.Stun" xml:space="preserve">P2P por Internet (STUN)</x:String>
-  <x:String x:Key="Text.Route.Relay" xml:space="preserve">Relé del servidor (TURN)</x:String>
   <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
   <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">Nueva versión de este software disponible: </x:String>
   <x:String x:Key="Text.SelfUpdate.Checking" xml:space="preserve">Buscando actualizaciones...</x:String>
@@ -171,13 +168,10 @@ Esta acción no se puede deshacer.</x:String>
   <x:String x:Key="Text.Member.Menu" xml:space="preserve">Menú</x:String>
   <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">Transferencias en curso con este par</x:String>
   <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
-  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">LAN directa</x:String>
   <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">Conexión LAN directa (TCP) — la más rápida y con mayor ancho de banda</x:String>
   <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
-  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P (STUN)</x:String>
   <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">Conexión P2P directa (perforación UDP + STUN) — a través de Internet</x:String>
   <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
-  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">Retransmisión (TURN)</x:String>
   <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">Retransmitido por el servidor (TURN/WebSocket) — atraviesa cortafuegos</x:String>
   <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">Comprobando</x:String>
   <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">Comprobando la ruta de conexión…</x:String>

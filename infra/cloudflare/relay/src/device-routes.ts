@@ -10,28 +10,12 @@
  */
 
 import type { Env } from './index';
+import { pairLedgerMode, d1Unavailable, ledgerMisconfigured } from './pair-ledger';
 import { hashPairId } from './index'; // 汎用 salted SHA-256 (pairId/deviceId 共通の DO 名ハッシュ)
 import { verifySessionToken } from './auth';
 import { jsonError, readTextBody } from './http';
 
 const DEVICE_RE = /^[a-f0-9]{32}$/;
-type PairLedgerMode = 'transition' | 'required';
-type RuntimeEnv = Env & { PAIR_LEDGER_MODE?: unknown };
-
-function pairLedgerMode(env: Env): PairLedgerMode | null {
-  const configured = (env as RuntimeEnv).PAIR_LEDGER_MODE;
-  if (configured === undefined) return 'transition';
-  if (configured === 'transition' || configured === 'required') return configured;
-  return null;
-}
-
-function d1Unavailable(): Response {
-  return jsonError(503, 'D1_UNAVAILABLE', 'pair ledger unavailable');
-}
-
-function ledgerMisconfigured(): Response {
-  return jsonError(503, 'PAIR_LEDGER_MISCONFIGURED', 'PAIR_LEDGER_MODE must be transition or required');
-}
 
 /** C# の pairId 規約と同じく deviceId を Ordinal 昇順で連結する。 */
 function derivePairId(a: string, b: string): string {

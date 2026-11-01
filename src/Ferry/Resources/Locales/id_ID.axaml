@@ -60,9 +60,6 @@
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">Menghubungkan ulang...</x:String>
 
   <!-- Connection Routes -->
-  <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN Langsung</x:String>
-  <x:String x:Key="Text.Route.Stun" xml:space="preserve">P2P internet (STUN)</x:String>
-  <x:String x:Key="Text.Route.Relay" xml:space="preserve">Relay Server (TURN)</x:String>
 
   <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
   <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">Versi baru dari perangkat lunak ini tersedia: </x:String>
@@ -174,13 +171,10 @@ Tindakan ini tidak dapat dibatalkan.</x:String>
   <x:String x:Key="Text.Member.Menu" xml:space="preserve">Menu</x:String>
   <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">Transfer yang sedang berlangsung dengan rekan ini</x:String>
   <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
-  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">LAN langsung</x:String>
   <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">Koneksi LAN langsung (TCP) — tercepat, bandwidth tertinggi</x:String>
   <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
-  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P (STUN)</x:String>
   <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">Koneksi P2P langsung (UDP hole punching + STUN) — melintasi internet</x:String>
   <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
-  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">Relai (TURN)</x:String>
   <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">Direlaikan melalui server (TURN/WebSocket) — dapat menembus firewall</x:String>
   <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">Memeriksa</x:String>
   <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">Memeriksa rute koneksi…</x:String>

@@ -46,9 +46,6 @@
   <x:String x:Key="Text.Status.Error" xml:space="preserve">Erreur : {0}</x:String>
   <x:String x:Key="Text.Status.Connecting" xml:space="preserve">Connexion…</x:String>
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">Reconnexion…</x:String>
-  <x:String x:Key="Text.Route.Direct" xml:space="preserve">Connexion directe LAN</x:String>
-  <x:String x:Key="Text.Route.Stun" xml:space="preserve">P2P Internet (STUN)</x:String>
-  <x:String x:Key="Text.Route.Relay" xml:space="preserve">Relais serveur (TURN)</x:String>
   <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
   <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">Une nouvelle version du logiciel est disponible :</x:String>
   <x:String x:Key="Text.SelfUpdate.Checking" xml:space="preserve">Recherche de mises a jour...</x:String>
@@ -171,13 +168,10 @@ Cette action est irréversible.</x:String>
   <x:String x:Key="Text.Member.Menu" xml:space="preserve">Menu</x:String>
   <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">Transferts en cours avec ce pair</x:String>
   <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
-  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">LAN direct</x:String>
   <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">Connexion LAN directe (TCP) — la plus rapide, bande passante maximale</x:String>
   <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
-  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P (STUN)</x:String>
   <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">Connexion P2P directe (perçage UDP + STUN) — à travers Internet</x:String>
   <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAIS</x:String>
-  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">Relais (TURN)</x:String>
   <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">Relayé par le serveur (TURN/WebSocket) — passe les pare-feu</x:String>
   <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">Vérification</x:String>
   <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">Vérification de la route de connexion…</x:String>

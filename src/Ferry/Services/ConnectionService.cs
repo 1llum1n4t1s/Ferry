@@ -1690,28 +1690,8 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     /// <summary>Stage 5: 共通化された送信コア。暗号ハンドシェイク完了を待ち、必要なら封筒化して transport に流す。
     /// 各 SendAsync オーバーロードが <see cref="ConnectionSession"/> を解決した後に委譲する。</summary>
-    private async Task SendAsyncCore(ConnectionSession session, byte[] data, CancellationToken ct)
-    {
-        var transport = session.Transport;
-        if (transport == null || !transport.IsConnected)
-            throw new InvalidOperationException("接続されていません");
-
-        // rere #D-001(b): 暗号有効時はハンドシェイク完了を待ってから封筒化する。
-        SecureChannel? channel;
-        TaskCompletionSource<bool>? ready;
-        lock (session.SecureLock) { channel = session.SecureChannel; ready = session.SecureReadyTcs; }
-        if (channel != null)
-        {
-            if (ready != null) await ready.Task.WaitAsync(ct);
-            if (channel.IsSecure)
-            {
-                await transport.SendAsync(channel.Encrypt(data), ct);
-                return;
-            }
-            ThrowIfSecureRequired(channel, session);
-        }
-        await transport.SendAsync(data, ct);
-    }
+    private Task SendAsyncCore(ConnectionSession session, byte[] data, CancellationToken ct)
+        => SendAsyncCore(session, (ReadOnlyMemory<byte>)data, ct);
 
     /// <summary>
     /// PairSecret を持つチャネルが未確立のまま平文送信へ落ちるのを止める（fail-closed）。

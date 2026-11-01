@@ -60,9 +60,6 @@
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">Переподключение...</x:String>
 
   <!-- Connection Routes -->
-  <x:String x:Key="Text.Route.Direct" xml:space="preserve">Прямое LAN-соединение</x:String>
-  <x:String x:Key="Text.Route.Stun" xml:space="preserve">Интернет P2P (STUN)</x:String>
-  <x:String x:Key="Text.Route.Relay" xml:space="preserve">Серверный ретранслятор (TURN)</x:String>
 
   <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
   <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">Доступна новая версия программного обеспечения: </x:String>
@@ -188,13 +185,10 @@
   <x:String x:Key="Text.Member.Menu" xml:space="preserve">Меню</x:String>
   <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">Текущие передачи с этим узлом</x:String>
   <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
-  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">Прямое LAN</x:String>
   <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">Прямое подключение по локальной сети (TCP) — самое быстрое, максимальная пропускная способность</x:String>
   <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
-  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P (STUN)</x:String>
   <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">Прямое P2P-подключение (пробивание UDP + STUN) — через интернет</x:String>
   <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
-  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">Ретрансляция (TURN)</x:String>
   <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">Ретрансляция через сервер (TURN/WebSocket) — проходит через брандмауэры</x:String>
   <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">Проверка</x:String>
   <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">Проверка маршрута подключения…</x:String>

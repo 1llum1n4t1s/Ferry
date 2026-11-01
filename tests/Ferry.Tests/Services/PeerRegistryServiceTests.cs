@@ -44,19 +44,6 @@ public sealed class PeerRegistryServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task コンストラクタ_既存ファイルからピアを読み込む()
-    {
-        // 事前にデータを保存
-        var svc1 = CreateService();
-        await svc1.AddOrUpdatePeerAsync(CreatePeer());
-
-        // 新しいインスタンスで読み込み
-        var svc2 = CreateService();
-        Assert.Single(svc2.GetPairedPeers());
-        Assert.Equal("peer1", svc2.GetPairedPeers()[0].PeerId);
-    }
-
-    [Fact]
     public void コンストラクタ_不正なJSONファイル_例外を投げずに空リストで初期化()
     {
         File.WriteAllText(_filePath, "{ invalid json }}}");
@@ -121,7 +108,9 @@ public sealed class PeerRegistryServiceTests : IDisposable
 
         // 新インスタンスで読み直して確認
         var svc2 = CreateService();
-        Assert.Single(svc2.GetPairedPeers());
+        var reloaded = Assert.Single(svc2.GetPairedPeers());
+        Assert.Equal("peer1", reloaded.PeerId);
+        Assert.Equal("テストPC", reloaded.DisplayName);
     }
 
     // === RemovePeerAsync ===
@@ -227,15 +216,4 @@ public sealed class PeerRegistryServiceTests : IDisposable
         Assert.Null(svc.FindPeer("nonexistent"));
     }
 
-    // === GetPairedPeers ===
-
-    [Fact]
-    public void GetPairedPeers_読み取り専用リストを返す()
-    {
-        var svc = CreateService();
-        var peers = svc.GetPairedPeers();
-
-        // IReadOnlyList なので Add 等のメソッドが使えないことを型で保証
-        Assert.IsAssignableFrom<IReadOnlyList<PairedPeer>>(peers);
-    }
 }

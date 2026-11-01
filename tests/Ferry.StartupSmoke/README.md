@@ -38,6 +38,7 @@ macOS 上でもこの検証と配布アプリの実起動・Dock 復帰を確認
 - 同じフォルダーの到着済み2件を個別承認すると保存先が分かれる。
 - 別 peer の承認待ちが、次回の同名フォルダー送信を前回の保存先へ混在させる。
 - UDP の利用者キャンセル後も送信枠が残り、後続の正常送信が停止する。
+- 転送進捗・エラーの実UIスレッド処理で、未知の送信IDや完了行が更新される、一致する進行中の行が更新されない。
 
 ```powershell
 dotnet run --project tests/Ferry.StartupSmoke/Ferry.StartupSmoke.csproj -c Release -- --regressions --output docs/verification/gogo-20261003

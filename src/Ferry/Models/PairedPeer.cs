@@ -68,7 +68,6 @@ public sealed partial class PairedPeer : ObservableObject
     /// 派生プロパティ群は [NotifyPropertyChangedFor] で宣言的に連動通知する (TransferItem と同パターン。
     /// 手書き OnRouteChanged 列挙だと派生プロパティ追加時に通知漏れが起きやすい)。</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(RouteText))]
     [NotifyPropertyChangedFor(nameof(IsConnected))]
     [NotifyPropertyChangedFor(nameof(IsLanRoute))]
     [NotifyPropertyChangedFor(nameof(IsP2pRoute))]
@@ -115,16 +114,6 @@ public sealed partial class PairedPeer : ObservableObject
         if (!oldValue && newValue)
             WentOnline?.Invoke(this, EventArgs.Empty);
     }
-
-    /// <summary>接続経路の表示テキスト（旧 UI / ログ用）。</summary>
-    [JsonIgnore]
-    public string RouteText => Route switch
-    {
-        ConnectionRoute.Direct => "🟢 " + App.Text("Route.Lan.Label"),
-        ConnectionRoute.StunAssisted => "🟡 " + App.Text("Route.P2p.Label"),
-        ConnectionRoute.Relay => "🔴 " + App.Text("Route.Relay.Label"),
-        _ => string.Empty,
-    };
 
     // === 接続経路バッジ用派生プロパティ（MainWindow メンバーリストのピル型バッジで使用）===
 
@@ -185,7 +174,6 @@ public sealed partial class PairedPeer : ObservableObject
     /// </summary>
     public void RaiseLocalizedTextChanged()
     {
-        OnPropertyChanged(nameof(RouteText));
         OnPropertyChanged(nameof(RouteBadgeLabel));
         OnPropertyChanged(nameof(RouteBadgeTooltip));
     }

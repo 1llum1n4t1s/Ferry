@@ -57,10 +57,8 @@ internal sealed class VerificationApp : App
                 WindowTop = 140,
                 SidebarWidth = 250,
             });
-            using var vm = new MainWindowViewModel(null!, null!, new SettingsViewModel(settings))
-            {
-                IsSettingsMode = true,
-            };
+            using var registry = new PeerRegistryService(Path.Combine(output, "window-peers.json"));
+            using var vm = CreateSettingsWindowViewModel(settings, registry);
             var window = new VerificationWindow { DataContext = vm };
             desktop.MainWindow = window;
             window.SetSettingsService(settings);
@@ -105,6 +103,7 @@ internal sealed class VerificationApp : App
                 await Task.Delay(400);
                 Require(window.IsVisible && window.WindowState == WindowState.Normal, "再表示での再最小化防止");
                 Require(window.Width == 920 && window.Height == 620, "再表示時のサイズ保持");
+                RequireSettingsOnly(window);
                 Require(window.GetVisualDescendants().OfType<TextBlock>().Any(text =>
                     text.IsEffectivelyVisible && text.Bounds.Width > 0 && !string.IsNullOrWhiteSpace(text.Text)),
                     "設定画面の文字とレイアウト");
@@ -129,6 +128,7 @@ internal sealed class VerificationApp : App
         if (args.Contains("--regressions"))
         {
             var regressionResults = await VerifyLocaleAsync(desktop, output);
+            regressionResults.Add(await VerifyTransferEventsAsync(output));
             regressionResults.AddRange(await ServiceChecks.RunAsync());
             results.AddRange(regressionResults);
             if (regressionResults.Any(result => !result.Passed)) exitCode = 1;
@@ -147,7 +147,8 @@ internal sealed class VerificationApp : App
     {
         var results = new List<CheckResult>();
         var settings = new MemorySettings(new AppSettings { Locale = "he_IL", IgnoreUpdateTag = "999.0.0" });
-        using var vm = new MainWindowViewModel(null!, null!, new SettingsViewModel(settings)) { IsSettingsMode = true };
+        using var registry = new PeerRegistryService(Path.Combine(output, "window-peers.json"));
+        using var vm = CreateSettingsWindowViewModel(settings, registry);
         var window = new VerificationWindow { DataContext = vm };
         desktop.MainWindow = window;
         window.SetSettingsService(settings);
@@ -166,6 +167,7 @@ internal sealed class VerificationApp : App
             Check("rtl-before-window-and-later-dialog", () =>
                 Require(window.FlowDirection == Avalonia.Media.FlowDirection.RightToLeft &&
                     dialog.FlowDirection == Avalonia.Media.FlowDirection.RightToLeft, "保存したhe_ILと後発確認画面のRTL"));
+            Check("rtl-settings-only", () => RequireSettingsOnly(window));
             using var image = new RenderTargetBitmap(new PixelSize(900, 600), new Vector(96, 96));
             image.Render(window);
             image.Save(Path.Combine(output, "he_IL.png"), PngBitmapEncoderOptions.Default);
@@ -202,6 +204,64 @@ internal sealed class VerificationApp : App
             SetLocale("en_US");
         }
         return results;
+    }
+
+    private static MainWindowViewModel CreateSettingsWindowViewModel(MemorySettings settings, IPeerRegistryService registry)
+    {
+        var connection = new StubConnectionService();
+        var connectionVm = new ConnectionViewModel(connection, null!, settings, registry, null!);
+        var transferVm = new TransferViewModel(connection, new StubTransferService(), connectionVm, settings);
+        // 子ViewModelの購読・タイマーは返却先のMainWindowViewModel.Disposeで一度だけ解放する。
+        return new(connectionVm, transferVm, new SettingsViewModel(settings)) { IsSettingsMode = true };
+    }
+
+    private static void RequireSettingsOnly(Window window)
+    {
+        Require(window.FindControl<TransferView>("TransferViewControl") is { IsEffectivelyVisible: false }, "設定表示中は転送ビュー非表示");
+        Require(window.FindControl<Border>("EmptyView") is { IsEffectivelyVisible: false }, "設定表示中は転送空状態非表示");
+    }
+
+    private static async Task<CheckResult> VerifyTransferEventsAsync(string output)
+    {
+        const string name = "transfer-events-dispatcher";
+        try
+        {
+            Dispatcher.UIThread.VerifyAccess();
+            var settings = new MemorySettings(new AppSettings());
+            var connection = new CaptureConnection();
+            using var registry = new PeerRegistryService(Path.Combine(output, "event-peers.json"));
+            using var connectionVm = new ConnectionViewModel(connection, null!, settings, registry, null!);
+            using var service = new EventTransferService();
+            using var vm = new TransferViewModel(connection, service, connectionVm, settings);
+            var active = new TransferItem { FileName = "active.txt", FileSize = 1000, Direction = TransferDirection.Send, State = TransferState.InProgress };
+            var completed = new TransferItem { FileName = "completed.txt", FileSize = 1000, State = TransferState.Completed, TransferredBytes = 1000 };
+            vm.Transfers.Add(active);
+            vm.Transfers.Add(completed);
+
+            // 未知の送信IDは既存行にも履歴件数にも影響しない。
+            service.RaiseProgress(new TransferItem { Direction = TransferDirection.Send, State = TransferState.InProgress, TransferredBytes = 500 });
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+            Require(active.TransferredBytes == 0 && vm.Transfers.Count == 2, "未知IDの送信進捗を無視");
+
+            service.RaiseProgress(new TransferItem { TransferId = completed.TransferId, State = TransferState.InProgress, TransferredBytes = 500 });
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+            Require(completed.TransferredBytes == 1000 && completed.State == TransferState.Completed, "完了行を遅延進捗で巻き戻さない");
+
+            // 一致する進捗が反映されることで、イベント購読とDispatcher処理の実行も確認する。
+            service.RaiseProgress(new TransferItem { TransferId = active.TransferId, State = TransferState.InProgress, TransferredBytes = 500 });
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+            Require(active.TransferredBytes == 500 && active.State == TransferState.InProgress, "一致IDの進捗を反映");
+
+            service.RaiseError(new TransferItem { Direction = TransferDirection.Send, State = TransferState.Error, ErrorMessage = "unknown-error" });
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+            Require(active.State == TransferState.InProgress && active.ErrorMessage == null && vm.Transfers.Count == 2, "未知IDの送信エラーを無視");
+
+            service.RaiseError(new TransferItem { TransferId = active.TransferId, Direction = TransferDirection.Send, State = TransferState.Error, ErrorMessage = "matching-error" });
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+            Require(active.State == TransferState.Error && active.ErrorMessage == "matching-error", "一致IDのエラーを反映");
+            return new(name, true);
+        }
+        catch (Exception ex) { return new(name, false, ex.ToString()); }
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)

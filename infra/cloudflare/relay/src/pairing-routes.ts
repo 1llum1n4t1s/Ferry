@@ -17,6 +17,7 @@
  */
 
 import type { Env } from './index';
+import { pairLedgerMode, d1Unavailable, ledgerMisconfigured } from './pair-ledger';
 import { verifySessionToken } from './auth';
 import { notifyInbox } from './device-routes';
 import { jsonOk, jsonError, readJsonObject } from './http';
@@ -27,30 +28,6 @@ const NONCE_TTL_MS = 60 * 60 * 1000;
 const MAX_DISPLAY_NAME_LEN = 128;
 const MAX_PUBLIC_KEY_LEN = 256;
 
-/**
- * 台帳の段階移行フラグ。
- *
- * Env は index.ts 側で宣言されるが、このファイルは型宣言の更新前でも単体テスト
- * できるよう、ここでは実行時の optional field として扱う。未設定だけは既存
- * クライアント互換の transition とし、明示された値は厳密に検証する。
- */
-type PairLedgerMode = 'transition' | 'required';
-type RuntimeEnv = Env & { PAIR_LEDGER_MODE?: unknown };
-
-function pairLedgerMode(env: Env): PairLedgerMode | null {
-  const configured = (env as RuntimeEnv).PAIR_LEDGER_MODE;
-  if (configured === undefined) return 'transition';
-  if (configured === 'transition' || configured === 'required') return configured;
-  return null;
-}
-
-function ledgerMisconfigured(): Response {
-  return jsonError(503, 'PAIR_LEDGER_MISCONFIGURED', 'PAIR_LEDGER_MODE must be transition or required');
-}
-
-function d1Unavailable(): Response {
-  return jsonError(503, 'D1_UNAVAILABLE', 'pair ledger unavailable');
-}
 
 /** 任意文字列を上限付きで読む。未指定は旧クライアント互換で空文字とする。 */
 function boundedText(
@@ -343,11 +320,10 @@ async function verifyNonce(env: Env, sid: string, nonce: string, label: string):
  * 止まってしまうので、可用性を優先する。申告値を絶対に使わない時点で防御目的は達成される。
  */
 async function loadSessionPublicKeys(env: Env, sidA: string, sidB: string): Promise<{ pkA: string; pkB: string }> {
-  const [rowA, rowB] = await Promise.all([
-    env.DB.prepare('SELECT public_key FROM sessions WHERE sid=?').bind(sidA).first<{ public_key: string }>(),
-    env.DB.prepare('SELECT public_key FROM sessions WHERE sid=?').bind(sidB).first<{ public_key: string }>(),
-  ]);
-  return { pkA: rowA?.public_key ?? '', pkB: rowB?.public_key ?? '' };
+  const row = await env.DB.prepare(
+    'SELECT (SELECT public_key FROM sessions WHERE sid=?) AS pkA, (SELECT public_key FROM sessions WHERE sid=?) AS pkB',
+  ).bind(sidA, sidB).first<{ pkA: string | null; pkB: string | null }>();
+  return { pkA: row?.pkA ?? '', pkB: row?.pkB ?? '' };
 }
 
 /** pairingId を導出し、両 deviceId の DeviceDO inbox にペア成立イベントを push する

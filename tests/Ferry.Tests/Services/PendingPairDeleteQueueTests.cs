@@ -12,7 +12,7 @@ namespace Ferry.Tests.Services;
 ///
 /// 検証観点:
 ///   - Enqueue / Process の挙動と永続化
-///   - exponential backoff（即時 → 1min → 5min → ...）と打ち切り（RetryCount >= 5）
+///   - 上限付き backoff（即時 → 1min → 5min → ... → 24h）と成功するまでの再試行
 ///   - delete callback が例外を投げても安全に retry 失敗として扱う
 ///   - ファイル破損時の自動退避（`.corrupt-*`）
 /// </summary>

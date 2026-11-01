@@ -450,29 +450,7 @@ public class ConnectionViewModelTests : IDisposable
         await _connectionService.DidNotReceive().DisconnectAsync(Arg.Any<CancellationToken>());
     }
 
-    // === ConnectToSelectedPeerAsync（OnSelectedPeerChanged 経由） ===
-
-    [Fact]
-    public async Task ConnectToSelectedPeerAsync_WaitingForPairing中はスキップされること()
-    {
-        var peer = new PairedPeer { PeerId = "peer1", DisplayName = "PC-1" };
-        var peers = new List<PairedPeer> { peer };
-        _peerRegistry.GetPairedPeers().Returns(peers);
-        _connectionService.StartPairingSessionAsync(Arg.Any<CancellationToken>())
-            .Returns("sid");
-        _qrCodeService.GenerateQrBitmap(Arg.Any<string>()).Returns((Bitmap?)null);
-
-        using var vm = CreateViewModel();
-        // WaitingForPairing 状態にする
-        await vm.StartSessionCommand.ExecuteAsync(null);
-        Assert.Equal(PeerState.WaitingForPairing, vm.ConnectionState);
-
-        // SelectedPeer を設定
-        vm.SelectedPeer = peer;
-
-        // ConnectToPeerAsync は呼ばれないはず
-        await _connectionService.DidNotReceive().ConnectToPeerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
-    }
+    // === ConnectToSelectedPeerAsync（転送開始時のオンデマンド接続） ===
 
     [Fact]
     public async Task ConnectToSelectedPeerAsync_同一ピア接続済みの場合スキップされること()
@@ -489,8 +467,7 @@ public class ConnectionViewModelTests : IDisposable
 
         vm.SelectedPeer = peer;
 
-        // 少し待つ（fire-and-forget のため）
-        await Task.Delay(100, TestContext.Current.CancellationToken);
+        await vm.ConnectToSelectedPeerAsync(TestContext.Current.CancellationToken);
 
         // ConnectToPeerAsync は呼ばれない
         await _connectionService.DidNotReceive().ConnectToPeerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
@@ -517,7 +494,7 @@ public class ConnectionViewModelTests : IDisposable
     }
 
     [Fact]
-    public void ピア選択時は宛先を記憶するだけで接続しないこと()
+    public async Task ピア選択時は宛先を記憶するだけで接続しないこと()
     {
         var peer = new PairedPeer { PeerId = "peer1", DisplayName = "PC-1" };
         var peers = new List<PairedPeer> { peer };
@@ -529,6 +506,7 @@ public class ConnectionViewModelTests : IDisposable
         // 接続は行われない
         Assert.Equal("PC-1", vm.PeerName);
         Assert.Equal(PeerState.Disconnected, vm.ConnectionState);
+        await _connectionService.DidNotReceive().ConnectToPeerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]

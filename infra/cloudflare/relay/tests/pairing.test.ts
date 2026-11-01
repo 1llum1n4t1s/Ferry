@@ -191,6 +191,10 @@ class FakeD1 {
         return {
           first: async <T>(): Promise<T | null> => {
             const sid = args[0] as string;
+            if (isSessions && sql.includes('AS pkA')) {
+              const key = (id: string) => sessions.get(id)?.publicKey ?? publicKeys.get(id) ?? null;
+              return { pkA: key(sid), pkB: key(args[1] as string) } as unknown as T;
+            }
             if (isSessions) {
               const session = sessions.get(sid);
               if (!session && !publicKeys.has(sid)) return null;

@@ -60,9 +60,6 @@
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">מתחבר מחדש...</x:String>
 
   <!-- Connection Routes -->
-  <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN ישיר</x:String>
-  <x:String x:Key="Text.Route.Stun" xml:space="preserve">אינטרנט P2P (STUN)</x:String>
-  <x:String x:Key="Text.Route.Relay" xml:space="preserve">ממסר שרת (TURN)</x:String>
 
   <!-- Transfer Messages -->
   <x:String x:Key="Text.Transfer.Rejected" xml:space="preserve">ההעברה נדחתה</x:String>
@@ -165,13 +162,10 @@
   <x:String x:Key="Text.Member.Menu" xml:space="preserve">תפריט</x:String>
   <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">העברות פעילות עם עמית זה</x:String>
   <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
-  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">LAN ישיר</x:String>
   <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">חיבור LAN ישיר (TCP) — המהיר ביותר, רוחב פס מרבי</x:String>
   <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
-  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P (STUN)</x:String>
   <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">חיבור P2P ישיר (ניקוב UDP + STUN) — דרך האינטרנט</x:String>
   <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
-  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">ממסר (TURN)</x:String>
   <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">מועבר דרך השרת (TURN/WebSocket) — עובר חומות אש</x:String>
   <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">בבדיקה</x:String>
   <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">בודק את נתיב החיבור…</x:String>

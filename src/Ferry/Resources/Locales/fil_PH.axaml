@@ -60,9 +60,6 @@
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">Muling kumokonekta...</x:String>
 
   <!-- Connection Routes -->
-  <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN Direkta</x:String>
-  <x:String x:Key="Text.Route.Stun" xml:space="preserve">P2P sa internet (STUN)</x:String>
-  <x:String x:Key="Text.Route.Relay" xml:space="preserve">Relay sa server (TURN)</x:String>
 
   <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
   <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">May bagong bersyon ng software na ito: </x:String>
@@ -174,13 +171,10 @@ Hindi ito maibabalik.</x:String>
   <x:String x:Key="Text.Member.Menu" xml:space="preserve">Menu</x:String>
   <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">Mga kasalukuyang paglilipat sa peer na ito</x:String>
   <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
-  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">Direktang LAN</x:String>
   <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">Direktang koneksyon sa LAN (TCP) — pinakamabilis, pinakamataas na bandwidth</x:String>
   <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
-  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P (STUN)</x:String>
   <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">Direktang koneksyong P2P (UDP hole punching + STUN) — sa buong internet</x:String>
   <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
-  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">Relay (TURN)</x:String>
   <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">Iniruruta sa server (TURN/WebSocket) — kayang tumawid sa firewall</x:String>
   <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">Sinusuri</x:String>
   <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">Sinusuri ang ruta ng koneksyon…</x:String>

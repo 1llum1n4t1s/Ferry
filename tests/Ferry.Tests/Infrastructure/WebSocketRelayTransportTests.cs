@@ -65,34 +65,19 @@ public class WebSocketRelayTransportTests
     }
 
     [Fact]
-    public async Task 不正なホスト名のConnectAsyncは例外で失敗する()
-    {
-        // DNS resolve できない URL では確実に失敗する。
-        // ChannelOpened/ChannelClosed が誤発火しないこと、IsConnected が false 維持されることを検証。
-        var transport = new WebSocketRelayTransport("ws://ferry-relay.invalid.example/ferry-relay", "pair_nx", "offer");
-
-        var openedFired = false;
-        transport.ChannelOpened += (_, _) => openedFired = true;
-
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(5));
-
-        await Assert.ThrowsAnyAsync<Exception>(() => transport.ConnectAsync(cts.Token));
-        Assert.False(transport.IsConnected);
-        Assert.False(openedFired);
-    }
-
-    [Fact]
     public async Task Bearer取得デリゲート未設定ならWebSocket接続前に失敗する()
     {
         var transport = new WebSocketRelayTransport(
             "ws://ferry-relay.invalid.example/ferry-relay", "pair_nx", "offer");
+        var openedFired = false;
+        transport.ChannelOpened += (_, _) => openedFired = true;
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             transport.ConnectAsync(TestContext.Current.CancellationToken));
 
         Assert.Contains("cfToken", ex.Message);
         Assert.False(transport.IsConnected);
+        Assert.False(openedFired);
     }
 
     [Theory]

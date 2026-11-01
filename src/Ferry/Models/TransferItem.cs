@@ -97,7 +97,6 @@ public sealed partial class TransferItem : ObservableObject
 
     /// <summary>転送完了日時。</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CompletedAtText))]
     public partial DateTime? CompletedAt { get; set; }
 
     /// <summary>転送開始（行生成）日時。履歴の「いつ送受信したか」を秒まで表示するため。
@@ -198,9 +197,6 @@ public sealed partial class TransferItem : ObservableObject
         TransferState.Paused => App.Text("State.Paused"),
         _ => "",
     };
-
-    /// <summary>完了日時の表示テキスト。</summary>
-    public string CompletedAtText => CompletedAt?.ToLocalTime().ToString("yyyy/MM/dd HH:mm") ?? string.Empty;
 
     /// <summary>履歴行に常時出す送受信日時テキスト（秒まで）。</summary>
     public string CreatedAtText => CreatedAt.ToString("yyyy-MM-dd HH:mm:ss");

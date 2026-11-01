@@ -4,7 +4,7 @@ using Ferry.Models;
 namespace Ferry.Tests.Models;
 
 /// <summary>
-/// PairedPeer の ObservableProperty 動作、RouteText 生成、JsonIgnore を検証する。
+/// PairedPeer の ObservableProperty 動作、経路バッジ、JsonIgnore を検証する。
 /// </summary>
 public class PairedPeerTests
 {
@@ -13,22 +13,6 @@ public class PairedPeerTests
         PeerId = "test-peer-id",
         DisplayName = "テスト端末",
     };
-
-    // 経路文言はロケール辞書 (Text.Route.*) 経由になったため、期待値は「絵文字プレフィクス +
-    // 経路ごとのリソースキー」で表す。Avalonia の Application が存在しないユニットテストでは
-    // App.Text がキー名そのものを返す契約なので、これで「どの経路にどのキーを引いているか」
-    // という本来の検証対象（マッピングの取り違え）をそのまま守れる。
-    [Theory]
-    [InlineData(ConnectionRoute.Direct, "🟢 Text.Route.Lan.Label")]
-    [InlineData(ConnectionRoute.StunAssisted, "🟡 Text.Route.P2p.Label")]
-    [InlineData(ConnectionRoute.Relay, "🔴 Text.Route.Relay.Label")]
-    [InlineData(ConnectionRoute.Unknown, "")]
-    public void RouteTextが全enum値に対して正しい文字列を返すこと(ConnectionRoute route, string expected)
-    {
-        var peer = CreatePeer();
-        peer.Route = route;
-        Assert.Equal(expected, peer.RouteText);
-    }
 
     [Theory]
     [InlineData(ConnectionRoute.Direct, "Text.Route.Lan.Badge", "Text.Route.Lan.Tooltip")]
@@ -53,13 +37,12 @@ public class PairedPeerTests
 
         peer.RaiseLocalizedTextChanged();
 
-        Assert.Contains(nameof(PairedPeer.RouteText), changed);
         Assert.Contains(nameof(PairedPeer.RouteBadgeLabel), changed);
         Assert.Contains(nameof(PairedPeer.RouteBadgeTooltip), changed);
     }
 
     [Fact]
-    public void Route変更時にRouteTextのPropertyChangedが発火すること()
+    public void Route変更時に経路バッジのPropertyChangedが発火すること()
     {
         var peer = CreatePeer();
         var changedProperties = new List<string>();
@@ -67,9 +50,9 @@ public class PairedPeerTests
 
         peer.Route = ConnectionRoute.Direct;
 
-        // Route 自体の通知と RouteText の通知の両方が来ること
-        Assert.Contains("Route", changedProperties);
-        Assert.Contains("RouteText", changedProperties);
+        Assert.Contains(nameof(PairedPeer.Route), changedProperties);
+        Assert.Contains(nameof(PairedPeer.RouteBadgeLabel), changedProperties);
+        Assert.Contains(nameof(PairedPeer.RouteBadgeTooltip), changedProperties);
     }
 
     [Fact]
@@ -98,10 +81,11 @@ public class PairedPeerTests
         var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
-        // Route, ConnectionStatusText, RouteText はシリアライズされないこと
+        // 接続経路と状態表示、経路バッジはシリアライズされないこと
         Assert.False(root.TryGetProperty("Route", out _), "Route がシリアライズされている");
         Assert.False(root.TryGetProperty("ConnectionStatusText", out _), "ConnectionStatusText がシリアライズされている");
-        Assert.False(root.TryGetProperty("RouteText", out _), "RouteText がシリアライズされている");
+        Assert.False(root.TryGetProperty(nameof(PairedPeer.RouteBadgeLabel), out _), "RouteBadgeLabel がシリアライズされている");
+        Assert.False(root.TryGetProperty(nameof(PairedPeer.RouteBadgeTooltip), out _), "RouteBadgeTooltip がシリアライズされている");
 
         // PeerId, DisplayName はシリアライズされること
         Assert.True(root.TryGetProperty("PeerId", out _));

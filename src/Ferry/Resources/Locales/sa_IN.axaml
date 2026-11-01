@@ -60,9 +60,6 @@
   <x:String x:Key="Text.Status.Reconnecting" xml:space="preserve">पुनः संयोजयति...</x:String>
 
   <!-- Connection Routes -->
-  <x:String x:Key="Text.Route.Direct" xml:space="preserve">LAN प्रत्यक्षम्</x:String>
-  <x:String x:Key="Text.Route.Stun" xml:space="preserve">अन्तर्जालं P2P (STUN)</x:String>
-  <x:String x:Key="Text.Route.Relay" xml:space="preserve">सेवकरिले (TURN)</x:String>
 
   <!-- Self-Update Messages (VelopackUpdateDialog.Avalonia 用、Komorebi と同キー命名) -->
   <x:String x:Key="Text.SelfUpdate.Available" xml:space="preserve">अस्य तन्त्रांशस्य नवीनसंस्करणम् उपलभ्यते: </x:String>
@@ -174,13 +171,10 @@
   <x:String x:Key="Text.Member.Menu" xml:space="preserve">सूची</x:String>
   <x:String x:Key="Text.Peer.Transferring.Tooltip" xml:space="preserve">अनेन सहचरेण सह चलन्तः प्रेषणाः</x:String>
   <x:String x:Key="Text.Route.Lan.Badge" xml:space="preserve">LAN</x:String>
-  <x:String x:Key="Text.Route.Lan.Label" xml:space="preserve">साक्षात् LAN</x:String>
   <x:String x:Key="Text.Route.Lan.Tooltip" xml:space="preserve">साक्षात् LAN सम्बन्धः (TCP) — शीघ्रतमः, अधिकतमा गतिः</x:String>
   <x:String x:Key="Text.Route.P2p.Badge" xml:space="preserve">P2P</x:String>
-  <x:String x:Key="Text.Route.P2p.Label" xml:space="preserve">P2P (STUN)</x:String>
   <x:String x:Key="Text.Route.P2p.Tooltip" xml:space="preserve">साक्षात् P2P सम्बन्धः (UDP hole punching + STUN) — अन्तर्जालमार्गेण</x:String>
   <x:String x:Key="Text.Route.Relay.Badge" xml:space="preserve">RELAY</x:String>
-  <x:String x:Key="Text.Route.Relay.Label" xml:space="preserve">प्रेषणम् (TURN)</x:String>
   <x:String x:Key="Text.Route.Relay.Tooltip" xml:space="preserve">सेवकद्वारा प्रेषितम् (TURN/WebSocket) — अग्निप्राकारम् अतिक्रामति</x:String>
   <x:String x:Key="Text.Route.Unknown.Badge" xml:space="preserve">परीक्ष्यते</x:String>
   <x:String x:Key="Text.Route.Unknown.Tooltip" xml:space="preserve">सम्बन्धमार्गः परीक्ष्यते…</x:String>

@@ -8,6 +8,93 @@ namespace Ferry.Tests.Services;
 public class TransferServiceValidationTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task 並列送信と先頭再送でawait中のチャンク内容とハッシュを保持する(bool cancelFirst)
+    {
+        var path = Path.GetTempFileName();
+        var content = Enumerable.Range(0, TransferProtocol.ChunkSize * 2 + 17)
+            .Select(i => (byte)(i / TransferProtocol.ChunkSize + 1)).ToArray();
+        await File.WriteAllBytesAsync(path, content, TestContext.Current.CancellationToken);
+        try
+        {
+            var connection = Substitute.For<IConnectionService>();
+            var settings = Substitute.For<ISettingsService>();
+            settings.Settings.Returns(new AppSettings());
+            using var service = new TransferService(connection, settings);
+            using var cts = new CancellationTokenSource();
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var firstId = Guid.NewGuid();
+            var secondId = Guid.NewGuid();
+            TransferItem? firstItem = null;
+            service.ProgressChanged += (_, item) =>
+            {
+                if (item.TransferId == firstId) firstItem = item;
+            };
+            var chunks = new System.Collections.Concurrent.ConcurrentDictionary<Guid, List<byte[]>>();
+            var hashes = new System.Collections.Concurrent.ConcurrentDictionary<Guid, byte[]>();
+            var holdFirst = true;
+            connection.SendAsync(Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<CancellationToken>())
+                .Returns(ci =>
+                {
+                    var message = ci.ArgAt<byte[]>(1);
+                    if (message[0] == TransferProtocol.FileMeta)
+                        service.HandleReceivedData(FileChunker.CreateApproveMessage(Guid.Parse(FileChunker.ParseFileMeta(message)!.TransferId)), ci.ArgAt<string>(0));
+                    if (message[0] == TransferProtocol.FileHash)
+                        hashes[new Guid(message.AsSpan(1, 16))] = message[17..];
+                    return Task.CompletedTask;
+                });
+            connection.SendAsync(Arg.Any<string>(), Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<CancellationToken>())
+                .Returns(async ci =>
+                {
+                    var memory = ci.ArgAt<ReadOnlyMemory<byte>>(1);
+                    var id = new Guid(memory.Span.Slice(1, 16));
+                    var before = memory.ToArray();
+                    if (id == firstId && holdFirst)
+                    {
+                        holdFirst = false;
+                        entered.SetResult();
+                        await release.Task.WaitAsync(ci.ArgAt<CancellationToken>(2));
+                    }
+                    Assert.Equal(before, memory.ToArray());
+                    chunks.GetOrAdd(id, _ => []).Add(memory.ToArray());
+                });
+
+            var first = service.SendFileAsync(path, requestedTransferId: firstId, peerId: "peer-A", ct: cts.Token);
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            await service.SendFileAsync(path, requestedTransferId: secondId, peerId: "peer-B", ct: TestContext.Current.CancellationToken);
+            if (cancelFirst)
+            {
+                cts.Cancel();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+                Assert.False(chunks.ContainsKey(firstId));
+            }
+            else
+            {
+                release.SetResult();
+                await first;
+                Assert.Equal(System.Security.Cryptography.SHA256.HashData(content), hashes[firstId]);
+                chunks[firstId].Clear();
+            }
+
+            // 終了した SendFileAsync は登録を除去するため、再送対象が保持されている条件を用意する。
+            var active = (System.Collections.Concurrent.ConcurrentDictionary<Guid, TransferItem>)typeof(TransferService)
+                .GetField("_activeTransfers", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                .GetValue(service)!;
+            active[firstId] = Assert.IsType<TransferItem>(firstItem);
+            Assert.True(await service.ResumeTransferAsync(firstId, TestContext.Current.CancellationToken));
+            foreach (var id in new[] { firstId, secondId })
+            {
+                Assert.Equal(new[] { 0, 1, 2 }, chunks[id].Select(m => System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(m.AsSpan(17, 4))));
+                Assert.Equal(content, chunks[id].SelectMany(m => m.Skip(TransferProtocol.ChunkHeaderSize)).ToArray());
+            }
+            Assert.Equal(System.Security.Cryptography.SHA256.HashData(content), hashes[secondId]);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Theory]
     [InlineData(0, 0, true)]
     [InlineData(0, 10, true)]
     [InlineData(10, 10, true)]
