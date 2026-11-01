@@ -60,6 +60,14 @@ public sealed class TransferService : ITransferService, IDisposable
     /// <summary>フォルダ受信時のルートフォルダ名マッピング（(peerId, 元の名前) → リネーム後の名前）。
     /// 同一フォルダの全ファイルを同じ先に保存しつつ、別ピアの同名ルートが混ざらないようピアごとに分離する。</summary>
     private readonly ConcurrentDictionary<(string PeerId, string RootFolder), string> _folderMappings = new();
+    private readonly Dictionary<(string PeerId, Guid BatchId), FolderBatch> _folderBatches = new();
+    private readonly ConcurrentDictionary<Guid, PendingResult> _pendingResults = new();
+    private readonly Lock _sendStateGate = new();
+    private readonly TimeSpan? _resultTimeoutOverride;
+    private readonly TimeProvider _timeProvider;
+    internal const int MaxFolderBatchesPerPeer = 128;
+    internal const int MaxFolderBatchesTotal = 512;
+    private static readonly TimeSpan FolderBatchIdleTimeout = TimeSpan.FromMinutes(30);
 
     /// <summary>保存パスの重複判定からファイル予約までを直列化し、同時承認で同じパスを選ばない。</summary>
     private readonly Lock _savePathGate = new();
@@ -113,9 +121,17 @@ public sealed class TransferService : ITransferService, IDisposable
     }
 
     public TransferService(IConnectionService connectionService, ISettingsService settingsService)
+        : this(connectionService, settingsService, null) { }
+
+    internal TransferService(IConnectionService connectionService, ISettingsService settingsService, TimeSpan? resultTimeoutOverride)
+        : this(connectionService, settingsService, resultTimeoutOverride, TimeProvider.System) { }
+
+    internal TransferService(IConnectionService connectionService, ISettingsService settingsService, TimeSpan? resultTimeoutOverride, TimeProvider timeProvider)
     {
         _connectionService = connectionService;
         _settingsService = settingsService;
+        _resultTimeoutOverride = resultTimeoutOverride;
+        _timeProvider = timeProvider;
 
         // 帯域制限器に現在の設定値を反映 (起動時 + 以降は SettingsViewModel から SyncRateLimits 経由で更新)
         SyncRateLimits();
@@ -150,6 +166,7 @@ public sealed class TransferService : ITransferService, IDisposable
 
         // 一時停止フラグも掃除（CTS Cancel でループは抜けるが、辞書エントリを残さない）
         _pausedSends.Clear();
+        lock (_savePathGate) _folderBatches.Clear();
     }
 
     /// <summary>
@@ -168,6 +185,10 @@ public sealed class TransferService : ITransferService, IDisposable
         // peerId 付きは当該 peer 由来の transfer のみに絞り込む（Stage 4 で並列接続が解禁されたあと、
         // peer A の切断で peer B の進行中転送を巻き込まないため）。
         var peerId = e.PeerId;
+        lock (_sendStateGate)
+            foreach (var result in _pendingResults.Values)
+                if ((string.IsNullOrEmpty(peerId) || result.PeerId == peerId) && result.Negotiated && result.Accepting)
+                    result.Completion.TrySetResult((false, [], new ReceiveResultUnknownException(Util.ErrorText.ResultUnknown)));
         var scopeLabel = string.IsNullOrEmpty(peerId) ? "全 peer" : $"peer={Util.Logger.MaskDeviceId(peerId)}";
         Util.Logger.Log($"接続切断検知 ({scopeLabel}): 受信中 {_receiveStates.Count} 件 + 承認待ち(受) {_pendingApprovals.Count} 件 + 承認待ち(送) {_pendingSendApprovals.Count} 件 + 送信中 {_activeTransfers.Count} 件を cleanup", Util.LogLevel.Warning);
 
@@ -238,7 +259,7 @@ public sealed class TransferService : ITransferService, IDisposable
     /// <param name="filePath">送信するファイルの絶対パス。</param>
     /// <param name="relativePath">フォルダ送信時の相対パス（例: "フォルダ名/サブフォルダ/ファイル名"）。null で単独ファイル。</param>
     /// <param name="ct">キャンセルトークン。</param>
-    public async Task SendFileAsync(string filePath, string? relativePath = null, Guid? requestedTransferId = null, string peerId = "", CancellationToken ct = default)
+    public async Task SendFileAsync(string filePath, string? relativePath = null, Guid? requestedTransferId = null, string peerId = "", CancellationToken ct = default, Guid? folderBatchId = null)
     {
         var fileInfo = new FileInfo(filePath);
         if (!fileInfo.Exists)
@@ -269,6 +290,7 @@ public sealed class TransferService : ITransferService, IDisposable
             Sha256Hash = string.Empty, // ハッシュは送信後確定
             SourceFilePath = filePath,
             RelativePath = relativePath,
+            FolderBatchId = folderBatchId,
         };
         _activeTransfers[transferId] = item;
 
@@ -286,12 +308,14 @@ public sealed class TransferService : ITransferService, IDisposable
         // 送信側の承認待ち TCS を準備 (FileMeta 送信前に登録する)
         var approvalTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pendingSendApprovals[transferId] = approvalTcs;
+        var result = new PendingResult(sendPeerId);
+        lock (_sendStateGate) _pendingResults[transferId] = result;
 
         try
         {
             // 1. メタデータを送信（ハッシュは空、後送り）→ 受信側で承認待ち状態になる
             var metaMessage = FileChunker.CreateFileMetaMessage(
-                fileInfo.Name, fileInfo.Length, totalChunks, string.Empty, transferId, relativePath);
+                fileInfo.Name, fileInfo.Length, totalChunks, string.Empty, transferId, relativePath, result.Token, folderBatchId);
 
             // 承認待ち UI 用に送信状態を Pending に
             item.State = TransferState.Pending;
@@ -325,7 +349,8 @@ public sealed class TransferService : ITransferService, IDisposable
             var sha256Bytes = hashSink.GetHashAndReset();
             item.Sha256Hash = Convert.ToHexStringLower(sha256Bytes);
             var hashMessage = FileChunker.CreateFileHashMessage(transferId, sha256Bytes);
-            await SendToPeerAsync(sendPeerId, hashMessage, ct);
+            await SendHashAndConfirmAsync(result, item, hashMessage, sha256Bytes, ct);
+            CompleteSend(item, ct);
 
             Util.Logger.Log($"ファイル送信完了: {displayName}, SHA256={item.Sha256Hash[..16]}…");
         }
@@ -336,7 +361,7 @@ public sealed class TransferService : ITransferService, IDisposable
             // 二重発火を防ぐ (TransferViewModel に重複行が出る問題の根本対策)
             if (item.State != TransferState.Cancelled)
             {
-                item.State = TransferState.Error;
+                item.State = ex is OperationCanceledException ? TransferState.Cancelled : TransferState.Error;
                 item.ErrorMessage = Util.ErrorText.Describe(ex);
                 TransferError?.Invoke(this, item);
             }
@@ -344,6 +369,7 @@ public sealed class TransferService : ITransferService, IDisposable
         }
         finally
         {
+            _pendingResults.TryRemove(transferId, out _);
             _pendingSendApprovals.TryRemove(transferId, out _);
             _activeTransfers.TryRemove(transferId, out _);
             _pausedSends.TryRemove(transferId, out _);
@@ -393,11 +419,17 @@ public sealed class TransferService : ITransferService, IDisposable
         var resumePeerId = ResolvePeerIdForTransfer(item.TransferId);
         if (string.IsNullOrEmpty(resumePeerId) && !string.IsNullOrEmpty(item.PeerId))
             resumePeerId = item.PeerId;
+        var result = new PendingResult(resumePeerId);
+        lock (_sendStateGate)
+        {
+            _activeTransfers[transferId] = item;
+            _pendingResults[transferId] = result;
+        }
 
         try
         {
             var metaMessage = FileChunker.CreateFileMetaMessage(
-                item.FileName, item.FileSize, item.TotalChunks, item.Sha256Hash ?? "", item.TransferId);
+                item.FileName, item.FileSize, item.TotalChunks, string.Empty, item.TransferId, item.RelativePath, result.Token, item.FolderBatchId);
             await SendToPeerAsync(resumePeerId, metaMessage, ct);
             Util.Logger.Log($"レジューム: メタデータ送信完了、相手の承認待ち…");
 
@@ -412,7 +444,12 @@ public sealed class TransferService : ITransferService, IDisposable
             item.State = TransferState.InProgress;
             ProgressChanged?.Invoke(this, item);
 
-            await SendChunksAsync(item.SourceFilePath, item.TransferId, item, resumePeerId, ct);
+            using var hashSink = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
+            await SendChunksAsync(item.SourceFilePath, item.TransferId, item, resumePeerId, ct, hashSink);
+            var hash = hashSink.GetHashAndReset();
+            item.Sha256Hash = Convert.ToHexStringLower(hash);
+            await SendHashAndConfirmAsync(result, item, FileChunker.CreateFileHashMessage(item.TransferId, hash), hash, ct);
+            CompleteSend(item, ct);
             return true;
         }
         catch (Exception ex)
@@ -422,7 +459,7 @@ public sealed class TransferService : ITransferService, IDisposable
             // 上書きしない（SendFileAsync L300 と同じガード）。キャンセルを Error に化けさせない。
             if (item.State != TransferState.Cancelled)
             {
-                item.State = TransferState.Error;
+                item.State = ex is OperationCanceledException ? TransferState.Cancelled : TransferState.Error;
                 item.ErrorMessage = Util.ErrorText.Describe(ex);
                 TransferError?.Invoke(this, item);
             }
@@ -430,10 +467,17 @@ public sealed class TransferService : ITransferService, IDisposable
         }
         finally
         {
-            _pendingSendApprovals.TryRemove(transferId, out _);
-            _pausedSends.TryRemove(transferId, out _);
-            if (_sendCts.TryRemove(transferId, out var cts))
-                cts.Dispose();
+            lock (_sendStateGate)
+            {
+                // 終了した試行だけを回収する。同じIDの新しい試行・進行中の状態は除去しない。
+                if (_pendingResults.TryRemove(new KeyValuePair<Guid, PendingResult>(transferId, result))
+                    && item.State is TransferState.Completed or TransferState.Cancelled or TransferState.Error
+                    && _activeTransfers.TryRemove(new KeyValuePair<Guid, TransferItem>(transferId, item)))
+                    _pausedSends.TryRemove(transferId, out _);
+                _pendingSendApprovals.TryRemove(new KeyValuePair<Guid, TaskCompletionSource<bool>>(transferId, approvalTcs));
+                _sendCts.TryRemove(new KeyValuePair<Guid, CancellationTokenSource>(transferId, sendCts));
+            }
+            sendCts.Dispose();
         }
     }
 
@@ -529,11 +573,11 @@ public sealed class TransferService : ITransferService, IDisposable
                 break;
 
             case TransferProtocol.FileAck:
-                HandleFileAck(data);
+                HandleFileAck(data, peerId);
                 break;
 
             case TransferProtocol.FileReject:
-                HandleFileReject(data);
+                HandleFileReject(data, peerId);
                 break;
 
             case TransferProtocol.FileHash:
@@ -541,7 +585,11 @@ public sealed class TransferService : ITransferService, IDisposable
                 break;
 
             case TransferProtocol.FileApprove:
-                HandleFileApprove(data);
+                HandleFileApprove(data, peerId);
+                break;
+
+            case TransferProtocol.FolderBatchEnd:
+                HandleFolderBatchEnd(data, peerId);
                 break;
 
             case TransferProtocol.FileFlowAck:
@@ -735,7 +783,6 @@ public sealed class TransferService : ITransferService, IDisposable
         if (item.State == TransferState.Cancelled)
             return;
         item.TransferredBytes = item.FileSize;
-        item.State = TransferState.Completed;
         ProgressChanged?.Invoke(this, item);
     }
 
@@ -888,6 +935,8 @@ public sealed class TransferService : ITransferService, IDisposable
             TotalChunks = meta.TotalChunks,
             // P-3: ハッシュはメタには含まれず、FileHash メッセージで後送りされる
             ExpectedSha256 = meta.Sha256, // 旧版互換のため受け取った値をそのまま保持（新版では空文字）
+            ResultToken = meta.ResultToken is { } token && token != Guid.Empty ? token : null,
+            FolderBatchId = meta.FolderBatchId is { } batch && batch != Guid.Empty ? batch : null,
             SaveDirectory = _settingsService.Settings.SaveDirectory,
             NormalizedRelativePath = normalizedRelativePath,
             SafeFileName = safeFileName,
@@ -943,6 +992,8 @@ public sealed class TransferService : ITransferService, IDisposable
                 rejectReason = "この送信元の受信承認待ちが上限に達しています";
                 return false;
             }
+
+            if (state.FolderBatchId.HasValue && !TryRegisterFolderBatch(state, out rejectReason)) return false;
 
             if (!_pendingApprovals.TryAdd(state.TransferId, state))
             {
@@ -1208,7 +1259,7 @@ public sealed class TransferService : ITransferService, IDisposable
                 state.Item.SavedFilePath = state.SavePath;
                 // ACK を送信（送信側に結果を通知）— fire-and-forget でブロッキングを回避
                 // Stage 5: 送信元 peer (state.Item.PeerId) に per-peer 送信。
-                SendFireAndForget(state.Item.PeerId ?? string.Empty, FileChunker.CreateAckMessage(true, sha256Bytes!), "ACK");
+                SendReceiveResult(state, true, sha256Bytes!);
                 FileReceived?.Invoke(this, state.Item);
                 MaybePlayReceiveNotification(state.Item.PeerId);
             }
@@ -1217,7 +1268,7 @@ public sealed class TransferService : ITransferService, IDisposable
                 // SHA-256 不一致（検証は完了したが内容が壊れている）
                 state.Item.State = TransferState.Error;
                 state.Item.ErrorMessage = Util.ErrorText.HashMismatch;
-                SendFireAndForget(state.Item.PeerId ?? string.Empty, FileChunker.CreateAckMessage(false, sha256Bytes!), "ACK");
+                SendReceiveResult(state, false, sha256Bytes!);
                 TransferError?.Invoke(this, state.Item);
                 // 不正なファイルを削除
                 try { File.Delete(state.SavePath); }
@@ -1228,6 +1279,7 @@ public sealed class TransferService : ITransferService, IDisposable
                 // 検証自体が例外で失敗。ACK は送れず、ファイルは保全する（原実装踏襲）
                 state.Item.State = TransferState.Error;
                 state.Item.ErrorMessage = errorMessage;
+                if (state.ResultToken.HasValue) SendReceiveResult(state, false, new byte[32]);
                 TransferError?.Invoke(this, state.Item);
             }
         }
@@ -1309,9 +1361,80 @@ public sealed class TransferService : ITransferService, IDisposable
         }
     }
 
-    private void HandleFileAck(byte[] data)
+    private void SendReceiveResult(ReceiveState state, bool success, byte[] hash)
     {
-        if (data.Length < 2) return;
+        var message = state.ResultToken is { } token
+            ? FileChunker.CreateResultAckMessage(success, hash, state.TransferId, token)
+            : FileChunker.CreateAckMessage(success, hash);
+        SendFireAndForget(state.Item.PeerId ?? string.Empty, message, "ACK");
+    }
+
+    internal static TimeSpan ResultTimeoutForSize(long size)
+        => TimeSpan.FromSeconds(Math.Min(86_400, 300 + Math.Max(0, size) / (16d * 1024 * 1024)));
+
+    private async Task SendHashAndConfirmAsync(PendingResult result, TransferItem item, byte[] message, byte[] hash, CancellationToken ct)
+    {
+        lock (_sendStateGate) result.Accepting = true;
+        try { await SendToPeerAsync(result.PeerId, message, ct); }
+        catch (Exception ex) when (result.Negotiated && !ct.IsCancellationRequested)
+        {
+            if (!result.Completion.Task.IsCompletedSuccessfully)
+                throw new ReceiveResultUnknownException(Util.ErrorText.ResultUnknown, ex);
+        }
+        await WaitForResultAsync(result, item, hash, ct);
+    }
+
+    private async Task WaitForResultAsync(PendingResult result, TransferItem item, byte[] hash, CancellationToken ct)
+    {
+        if (!result.Negotiated) return;
+        (bool Success, byte[] Hash, Exception? Error) received;
+        try { received = await result.Completion.Task.WaitAsync(_resultTimeoutOverride ?? ResultTimeoutForSize(item.FileSize), ct); }
+        catch (TimeoutException)
+        {
+            SendRejectFireAndForget(item.TransferId, "受信結果の確認がタイムアウトしました", result.PeerId);
+            throw new ReceiveResultUnknownException(Util.ErrorText.ResultUnknown);
+        }
+        ct.ThrowIfCancellationRequested();
+        if (received.Error is { } error) throw error;
+        if (!received.Success || !hash.AsSpan().SequenceEqual(received.Hash))
+            throw new ReceiveVerificationFailedException(Util.ErrorText.HashMismatch);
+    }
+
+    private void CompleteSend(TransferItem item, CancellationToken ct)
+    {
+        lock (_sendStateGate)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (item.State == TransferState.Cancelled) throw new OperationCanceledException(item.ErrorMessage, ct);
+            item.TransferredBytes = item.FileSize;
+            item.State = TransferState.Completed;
+        }
+        ProgressChanged?.Invoke(this, item);
+    }
+
+    private sealed class PendingResult(string peerId)
+    {
+        public string PeerId { get; } = peerId;
+        public Guid Token { get; } = Guid.NewGuid();
+        public bool Negotiated { get; set; }
+        public bool Accepting { get; set; }
+        public TaskCompletionSource<(bool Success, byte[] Hash, Exception? Error)> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private void HandleFileAck(byte[] data, string peerId)
+    {
+        var ack = FileChunker.ParseResultAck(data);
+        if (ack is { } value)
+        {
+            lock (_sendStateGate)
+            {
+                if (_pendingResults.TryGetValue(value.TransferId, out var pending) && pending.PeerId == peerId
+                    && pending.Token == value.ResultToken && pending.Negotiated && pending.Accepting)
+                    pending.Completion.TrySetResult((value.Success, value.Hash, null));
+            }
+            return;
+        }
+        if (data.Length != 34) return;
 
         var success = data[1] == 1;
         Util.Logger.Log($"ACK 受信: success={success}");
@@ -1323,7 +1446,7 @@ public sealed class TransferService : ITransferService, IDisposable
         }
     }
 
-    private void HandleFileReject(byte[] data)
+    private void HandleFileReject(byte[] data, string peerId)
     {
         var parsed = FileChunker.ParseReject(data);
         if (parsed == null)
@@ -1332,6 +1455,7 @@ public sealed class TransferService : ITransferService, IDisposable
             return;
         }
         var (transferId, reason) = parsed.Value;
+        if (_transferPeerId.TryGetValue(transferId, out var expectedPeer) && expectedPeer != peerId) return;
         Util.Logger.Log($"ファイル拒否: transferId={transferId}, 理由={reason}", Util.LogLevel.Warning);
 
         // v1.0.38: 承認待ち TCS を完了させる (送信側が SendFileAsync で待機中)
@@ -1352,8 +1476,12 @@ public sealed class TransferService : ITransferService, IDisposable
         // 受信側 CancelTransfer が送ってくる。送信ループ（_sendCts）を止めて Cancelled 表示にする。
         if (_activeTransfers.TryGetValue(transferId, out var sendingItem))
         {
+            lock (_sendStateGate)
+            {
+                if (sendingItem.State == TransferState.Completed) return;
+                sendingItem.State = TransferState.Cancelled;
+            }
             Util.Logger.Log($"送信中に相手が中断/拒否: transferId={transferId}, 理由={reason}", Util.LogLevel.Warning);
-            sendingItem.State = TransferState.Cancelled;
             sendingItem.ErrorMessage = $"相手が中断しました: {reason}";
             _pausedSends.TryRemove(transferId, out _);
             // rere #B1-005: SendFileAsync の finally が同 CTS を TryRemove+Dispose する競合で
@@ -1378,13 +1506,21 @@ public sealed class TransferService : ITransferService, IDisposable
     /// v1.0.38: FileApprove メッセージを受信して、送信側の承認待ち TCS を完了させる。
     /// これによって SendFileAsync の `await approvalTcs.Task` が解放され、チャンク送信が開始される。
     /// </summary>
-    private void HandleFileApprove(byte[] data)
+    private void HandleFileApprove(byte[] data, string peerId)
     {
         var transferId = FileChunker.ParseApprove(data);
         if (transferId == null)
         {
             Util.Logger.Log("FileApprove のパースに失敗", Util.LogLevel.Warning);
             return;
+        }
+        if (_pendingResults.TryGetValue(transferId.Value, out var pending))
+        {
+            if (pending.PeerId != peerId) return;
+            var token = FileChunker.ParseApproveResultToken(data);
+            // 同版同士の再試行へ古いApproveが届いても承認しない。旧17byteだけは互換経路。
+            if (data.Length != 17 && token != pending.Token) return;
+            lock (_sendStateGate) pending.Negotiated = token == pending.Token;
         }
         Util.Logger.Log($"FileApprove 受信: transferId={transferId}");
         if (_pendingSendApprovals.TryRemove(transferId.Value, out var tcs))
@@ -1511,7 +1647,7 @@ public sealed class TransferService : ITransferService, IDisposable
 
             if (bufferedChunks != null)
                 foreach (var chunkData in bufferedChunks) HandleFileChunk(chunkData);
-            SendFireAndForget(state.Item.PeerId ?? string.Empty, FileChunker.CreateApproveMessage(tid), "FileApprove");
+            SendFireAndForget(state.Item.PeerId ?? string.Empty, FileChunker.CreateApproveMessage(tid, state.ResultToken), "FileApprove");
         }
         catch (Exception ex)
         {
@@ -1557,7 +1693,7 @@ public sealed class TransferService : ITransferService, IDisposable
             var rootFolder = parts[0];
 
             // 同一フォルダの全ファイルは同じ実フォルダへ、別 peer の同名フォルダは別の実体へ送る。
-            var actualRoot = _folderMappings.GetOrAdd((state.Item.PeerId ?? string.Empty, rootFolder), _ =>
+            string ChooseRoot()
             {
                 var candidatePath = Path.Combine(state.SaveDirectory, rootFolder);
                 if (!Directory.Exists(candidatePath) && !File.Exists(candidatePath))
@@ -1572,7 +1708,14 @@ public sealed class TransferService : ITransferService, IDisposable
                 }
 
                 return $"{rootFolder}_{Guid.NewGuid():N}";
-            });
+            }
+            string actualRoot;
+            if (state.FolderBatchId is { } batchId)
+            {
+                var batch = _folderBatches[(state.Item.PeerId, batchId)];
+                actualRoot = batch.ActualRoot ??= ChooseRoot();
+            }
+            else actualRoot = _folderMappings.GetOrAdd((state.Item.PeerId ?? string.Empty, rootFolder), _ => ChooseRoot());
 
             parts[0] = actualRoot;
             savePath = Path.Combine(state.SaveDirectory, Path.Combine(parts));
@@ -1628,8 +1771,12 @@ public sealed class TransferService : ITransferService, IDisposable
         // _activeTransfers からの除去は SendFileAsync の finally に任せる（item / _sendCts を生かしたまま停止させる）。
         if (_activeTransfers.TryGetValue(tid, out var sendItem))
         {
+            lock (_sendStateGate)
+            {
+                if (sendItem.State == TransferState.Completed) return;
+                sendItem.State = TransferState.Cancelled;
+            }
             Util.Logger.Log($"送信キャンセル: {sendItem.FileName}");
-            sendItem.State = TransferState.Cancelled;
             sendItem.ErrorMessage = Util.ErrorText.Cancelled;
             _pausedSends.TryRemove(tid, out _);  // 一時停止中でも確実にループを抜けさせる
 
@@ -1719,6 +1866,18 @@ public sealed class TransferService : ITransferService, IDisposable
     // 未着の別メタデータまでまとめるには、プロトコルにバッチ識別子が必要。
     private void ReleaseFolderMappingIfUnused(ReceiveState completed)
     {
+        if (completed.FolderBatchId is { } batchId)
+        {
+            lock (_savePathGate)
+            {
+                if (_folderBatches.TryGetValue((completed.Item.PeerId, batchId), out var batch))
+                {
+                    batch.LastActivity = _timeProvider.GetUtcNow();
+                    if (batch.Ended && !BatchInUse((completed.Item.PeerId, batchId))) batch.ActualRoot = null;
+                }
+            }
+            return;
+        }
         if (string.IsNullOrEmpty(completed.NormalizedRelativePath)) return;
         var key = (completed.Item.PeerId ?? string.Empty, completed.NormalizedRelativePath.Split('/')[0]);
         bool SameFolder(ReceiveState state) =>
@@ -1730,6 +1889,65 @@ public sealed class TransferService : ITransferService, IDisposable
             if (!_pendingApprovals.Values.Any(SameFolder) && !_receiveStates.Values.Any(SameFolder))
                 _folderMappings.TryRemove(key, out _);
         }
+    }
+
+    public async Task EndFolderBatchAsync(Guid batchId, string peerId, CancellationToken ct = default)
+    {
+        try { await SendToPeerAsync(peerId, FileChunker.CreateFolderBatchEndMessage(batchId), ct); }
+        catch (Exception ex) { Util.Logger.Log($"フォルダ終了通知を送信できません: {ex.Message}", Util.LogLevel.Warning); }
+    }
+
+    private bool BatchInUse((string PeerId, Guid BatchId) key) =>
+        _pendingApprovals.Values.Concat(_receiveStates.Values).Any(s => s.Item.PeerId == key.PeerId && s.FolderBatchId == key.BatchId);
+
+    private bool TryRegisterFolderBatch(ReceiveState state, out string reason)
+    {
+        lock (_savePathGate)
+        {
+            var now = _timeProvider.GetUtcNow();
+            foreach (var pair in _folderBatches.ToArray())
+                if (now - pair.Value.LastActivity >= FolderBatchIdleTimeout && !BatchInUse(pair.Key)) _folderBatches.Remove(pair.Key);
+            var key = (state.Item.PeerId, state.FolderBatchId!.Value);
+            var root = state.NormalizedRelativePath?.Split('/')[0];
+            if (string.IsNullOrEmpty(root)) { reason = "フォルダバッチに相対パスがありません"; return false; }
+            if (_folderBatches.TryGetValue(key, out var batch))
+            {
+                if (batch.Ended || batch.RootName != root) { reason = "終了済みまたは異なるルートのフォルダバッチです"; return false; }
+                state.SaveDirectory = batch.SaveDirectory;
+                batch.LastActivity = now;
+            }
+            else
+            {
+                if (_folderBatches.Count >= MaxFolderBatchesTotal || _folderBatches.Keys.Count(k => k.PeerId == state.Item.PeerId) >= MaxFolderBatchesPerPeer)
+                { reason = "フォルダバッチの上限に達しています"; return false; }
+                _folderBatches.Add(key, new FolderBatch(root, state.SaveDirectory, now));
+            }
+            reason = string.Empty;
+            return true;
+        }
+    }
+
+    private void HandleFolderBatchEnd(byte[] data, string peerId)
+    {
+        if (data.Length != 17) return;
+        lock (_savePathGate)
+        {
+            if (_folderBatches.TryGetValue((peerId, new Guid(data.AsSpan(1, 16))), out var batch))
+            {
+                // 既知バッチだけを終了させる。残るpending/receiveの保存先は維持し、遅延Metaは拒否する。
+                batch.Ended = true;
+                if (!BatchInUse((peerId, new Guid(data.AsSpan(1, 16))))) batch.ActualRoot = null;
+            }
+        }
+    }
+
+    private sealed class FolderBatch(string rootName, string saveDirectory, DateTimeOffset now)
+    {
+        public string RootName { get; } = rootName;
+        public string SaveDirectory { get; } = saveDirectory;
+        public string? ActualRoot { get; set; }
+        public bool Ended { get; set; }
+        public DateTimeOffset LastActivity { get; set; } = now;
     }
 
     private void CleanupReceiveState(ReceiveState state)
@@ -1769,6 +1987,8 @@ public sealed class TransferService : ITransferService, IDisposable
         public string ExpectedSha256 { get; set; } = string.Empty;
         public string SaveDirectory { get; set; } = string.Empty;
         public string? NormalizedRelativePath { get; set; }
+        public Guid? ResultToken { get; set; }
+        public Guid? FolderBatchId { get; set; }
         public string SafeFileName { get; set; } = string.Empty;
         public string SavePath { get; set; } = string.Empty;
         public int ReceivedChunks { get; set; }

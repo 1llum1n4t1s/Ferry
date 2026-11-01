@@ -12,6 +12,35 @@ namespace Ferry.Tests.Infrastructure;
 /// </summary>
 public class FileChunkerTests : IDisposable
 {
+    [Fact]
+    public void 結果ACKと承認拡張は旧prefixを保ち試行tokenが往復すること()
+    {
+        var id = Guid.NewGuid();
+        var token = Guid.NewGuid();
+        var hash = SHA256.HashData([1, 2, 3]);
+        var ack = FileChunker.CreateResultAckMessage(true, hash, id, token);
+        Assert.Equal(FileChunker.CreateAckMessage(true, hash), ack[..34]);
+        var parsed = FileChunker.ParseResultAck(ack)!.Value;
+        Assert.Equal(id, parsed.TransferId);
+        Assert.Equal(token, parsed.ResultToken);
+        Assert.Equal(hash, parsed.Hash);
+        var approval = FileChunker.CreateApproveMessage(id, token);
+        Assert.Equal(FileChunker.CreateApproveMessage(id), approval[..17]);
+        Assert.Equal(id, FileChunker.ParseApprove(approval));
+        Assert.Equal(token, FileChunker.ParseApproveResultToken(approval));
+        var meta = FileChunker.ParseFileMeta(FileChunker.CreateFileMetaMessage("one", 1, 1, "", id, "folder/one", token, id))!;
+        Assert.Equal(token, meta.ResultToken);
+        Assert.Equal(id, meta.FolderBatchId);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(34)]
+    [InlineData(65)]
+    [InlineData(67)]
+    public void 結果ACKは拡張形式の正確な長さだけを受理する(int length)
+        => Assert.Null(FileChunker.ParseResultAck(new byte[length]));
+
     private readonly List<string> _tempFiles = [];
 
     /// <summary>テスト用の一時ファイルを作成し、パスを返す。</summary>

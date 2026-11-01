@@ -214,4 +214,5 @@ This cannot be undone.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">The pairing session was not found. Make sure Ferry is running on the other PC.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">Paired "{0}" with "{1}".</x:String>
 
+  <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Could not confirm receipt. Check the other device before resending.</x:String>
 </ResourceDictionary>

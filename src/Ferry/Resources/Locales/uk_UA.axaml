@@ -214,4 +214,5 @@
   <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">Сесію зв'язування не знайдено. Переконайтеся, що Ferry запущено на іншому ПК.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">«{0}» зв'язано з «{1}».</x:String>
 
+  <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Не вдалося підтвердити отримання. Перевірте інший пристрій перед повторним надсиланням.</x:String>
 </ResourceDictionary>

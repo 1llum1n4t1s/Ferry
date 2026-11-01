@@ -214,4 +214,5 @@ Hindi ito maibabalik.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">Hindi natagpuan ang pairing session. Tiyaking tumatakbo ang Ferry sa kabilang PC.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">Naipares ang "{0}" sa "{1}".</x:String>
 
+  <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Hindi makumpirma ang pagtanggap. Suriin ang kabilang device bago magpadala muli.</x:String>
 </ResourceDictionary>

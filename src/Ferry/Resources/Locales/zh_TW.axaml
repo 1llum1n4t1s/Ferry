@@ -199,4 +199,5 @@
   <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">找不到配對工作階段。請確認另一台電腦上的 Ferry 正在執行。</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">已將「{0}」與「{1}」配對。</x:String>
 
+  <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">無法確認接收結果。重新傳送前請檢查另一台裝置。</x:String>
 </ResourceDictionary>

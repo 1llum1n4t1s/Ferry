@@ -38,6 +38,9 @@ public static class TransferProtocol
     /// 先行しないよう待機することで中継バッファを一定量に抑える。</summary>
     public const byte FileFlowAck = 0x07;
 
+    /// <summary>フォルダ送信操作の終了 [BatchId 16byte]。旧版は未知メッセージとして無視する。</summary>
+    public const byte FolderBatchEnd = 0x08;
+
     /// <summary>rere #D-001(b): セッション暗号ハンドシェイクの Hello [sessionNonce(16)][challenge(16)]。
     /// 接続確立直後に暗号対応の両端が送り合い、セッション鍵 nonce と相互認証チャレンジを交換する。
     /// transport 上の認証ゲートで消費し、TransferService には渡さない（平文経路では無視）。</summary>

@@ -214,4 +214,5 @@ Tindakan ini tidak dapat dibatalkan.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">Sesi penyandingan tidak ditemukan. Pastikan Ferry berjalan di PC yang lain.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">"{0}" telah disandingkan dengan "{1}".</x:String>
 
+  <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Penerimaan tidak dapat dikonfirmasi. Periksa perangkat lain sebelum mengirim ulang.</x:String>
 </ResourceDictionary>

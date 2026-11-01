@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json.Serialization;
 
 namespace Ferry.Infrastructure;
@@ -23,4 +24,10 @@ public sealed class FileMeta
 
     /// <summary>フォルダ送信時の相対パス（例: "photos/2024/img.jpg"）。null またはファイル名のみの場合は単独ファイル。</summary>
     public string? RelativePath { get; set; }
+
+    /// <summary>対応する受信結果を照合する、送信試行ごとの識別子。旧版は無視する。</summary>
+    public Guid? ResultToken { get; set; }
+
+    /// <summary>同じフォルダ送信操作を識別する。旧送信側は null。</summary>
+    public Guid? FolderBatchId { get; set; }
 }

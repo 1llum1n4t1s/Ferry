@@ -214,4 +214,5 @@
   <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">இணைப்பு அமர்வு கிடைக்கவில்லை. மற்ற கணினியில் Ferry இயங்குகிறதா எனச் சரிபார்க்கவும்.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">"{0}" மற்றும் "{1}" இணைக்கப்பட்டன.</x:String>
 
+  <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">பெறப்பட்டதை உறுதிப்படுத்த முடியவில்லை. மீண்டும் அனுப்பும் முன் மற்ற சாதனத்தைச் சரிபார்க்கவும்.</x:String>
 </ResourceDictionary>

@@ -431,7 +431,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         // 旧実装は foreach で await SendOneFileAsync していたため、1 件完了するまで次の行が出ず
         // 「1 行ずつ遅れて増える」症状になっていた。
         var items = new List<TransferItem>(entries.Count);
-        foreach (var (absolutePath, relativePath) in entries)
+        foreach (var (absolutePath, relativePath, folderBatchId) in entries)
         {
             var fi = new FileInfo(absolutePath);
             var item = new TransferItem
@@ -444,6 +444,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 PeerId = peer.PeerId,
                 SourceFilePath = absolutePath,
                 RelativePath = relativePath,
+                FolderBatchId = folderBatchId,
             };
             AddTransfer(item);
             items.Add(item);
@@ -505,7 +506,12 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             }
         }).ToList();
 
-        await Task.WhenAll(sendTasks);
+        try { await Task.WhenAll(sendTasks); }
+        finally
+        {
+            foreach (var batchId in items.Select(i => i.FolderBatchId).OfType<Guid>().Distinct())
+                await _transferService.EndFolderBatchAsync(batchId, peer.PeerId);
+        }
     }
 
     /// <summary>
@@ -525,10 +531,15 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             PeerId = peer.PeerId,
             SourceFilePath = absolutePath,
             RelativePath = relativePath,
+            FolderBatchId = relativePath is null ? null : Guid.NewGuid(),
         };
         AddTransfer(item);
         RecomputeIsTransferring();
-        await SendItemAsync(item, peer);
+        try { await SendItemAsync(item, peer); }
+        finally
+        {
+            if (item.FolderBatchId is { } batchId) await _transferService.EndFolderBatchAsync(batchId, peer.PeerId);
+        }
     }
 
     /// <summary>
@@ -572,7 +583,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                     // 複数ペア同時接続対応 Stage 5: UI 行と同じ TransferId に加え、宛先 peerId も明示する。
                     // _connectionService 側で per-peer の transport へ流れ、Stage 4 で並列接続が解禁された後も
                     // 「宛先取り違え」が起きない。
-                    await _transferService.SendFileAsync(absolutePath, relativePath, item.TransferId, peer.PeerId, cts.Token);
+                    await _transferService.SendFileAsync(absolutePath, relativePath, item.TransferId, peer.PeerId, cts.Token, item.FolderBatchId);
 
                     item.State = TransferState.Completed;
                     item.TransferredBytes = item.FileSize;
@@ -599,6 +610,14 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                     Util.Logger.Log($"送信中断 ({displayName}): 相手無応答のためリトライせず終了: {ex.Message}", Util.LogLevel.Warning);
                     item.State = TransferState.Error;
                     item.ErrorMessage = ex.Message;
+                    item.Note = null;
+                    break;
+                }
+                catch (ReceiveResultUnknownException ex)
+                {
+                    // 受信先には保存済みかもしれない。結果確認なしの自動再送で重複を作らない。
+                    item.State = TransferState.Error;
+                    item.ErrorMessage = Util.ErrorText.Describe(ex);
                     item.Note = null;
                     break;
                 }
@@ -692,25 +711,26 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     /// <summary>
     /// ファイル/フォルダパスの配列を、(絶対パス, 相対パス) のリストに展開する。
     /// </summary>
-    private static List<(string AbsolutePath, string? RelativePath)> ExpandPaths(string[] paths)
+    private static List<(string AbsolutePath, string? RelativePath, Guid? FolderBatchId)> ExpandPaths(string[] paths)
     {
-        var result = new List<(string, string?)>();
+        var result = new List<(string, string?, Guid?)>();
 
         foreach (var path in paths)
         {
             if (File.Exists(path))
             {
-                result.Add((path, null));
+                result.Add((path, null, null));
             }
             else if (Directory.Exists(path))
             {
                 var dirInfo = new DirectoryInfo(path);
                 var rootName = dirInfo.Name;
+                var batchId = Guid.NewGuid();
                 foreach (var file in dirInfo.EnumerateFiles("*", SearchOption.AllDirectories))
                 {
                     var relative = Path.Combine(rootName, Path.GetRelativePath(path, file.FullName));
                     relative = relative.Replace('\\', '/');
-                    result.Add((file.FullName, relative));
+                    result.Add((file.FullName, relative, batchId));
                 }
             }
         }

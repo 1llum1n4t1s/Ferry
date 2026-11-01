@@ -216,4 +216,5 @@
   <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">Сессия связывания не найдена. Убедитесь, что Ferry запущен на другом ПК.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">«{0}» связан с «{1}».</x:String>
 
+  <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Не удалось подтвердить получение. Проверьте другое устройство перед повторной отправкой.</x:String>
 </ResourceDictionary>

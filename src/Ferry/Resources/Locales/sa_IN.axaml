@@ -214,4 +214,5 @@
   <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">योजनसत्रं न प्राप्तम्। अपरे सङ्गणके Ferry चलति इति निश्चिनोतु।</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">"{0}" "{1}" इत्यनेन सह योजितम्।</x:String>
 
+  <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">प्राप्तिः निश्चेतुं न शक्यते। पुनः प्रेषणात् पूर्वम् अन्ययन्त्रं परीक्ष्यताम्।</x:String>
 </ResourceDictionary>

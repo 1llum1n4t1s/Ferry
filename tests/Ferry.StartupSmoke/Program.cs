@@ -129,6 +129,7 @@ internal sealed class VerificationApp : App
         {
             var regressionResults = await VerifyLocaleAsync(desktop, output);
             regressionResults.Add(await VerifyTransferEventsAsync(output));
+            regressionResults.AddRange(await TransferIntegrationChecks.RunAsync(desktop, output));
             regressionResults.AddRange(await ServiceChecks.RunAsync());
             results.AddRange(regressionResults);
             if (regressionResults.Any(result => !result.Passed)) exitCode = 1;

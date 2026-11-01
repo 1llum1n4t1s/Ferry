@@ -39,6 +39,9 @@ macOS 上でもこの検証と配布アプリの実起動・Dock 復帰を確認
 - 別 peer の承認待ちが、次回の同名フォルダー送信を前回の保存先へ混在させる。
 - UDP の利用者キャンセル後も送信枠が残り、後続の正常送信が停止する。
 - 転送進捗・エラーの実UIスレッド処理で、未知の送信IDや完了行が更新される、一致する進行中の行が更新されない。
+- 実送信コマンドから承認・保存・SHA-256検証を通しても、結果ACK前や誤peer・転送ID・試行tokenのACKで完了する。
+- 転送内容の破損や結果ACKの欠落で送信が成功表示になる、ACK欠落で自動再送して保存済みファイルが重複する、timeout後の遅延ACKで完了へ復活する。
+- 11件のフォルダ送信で並列上限10件を越えた後続が投入されない、先行完了後の同batch未着後続が別保存先になる、同名rootの別batchが混在する、旧形式peerと転送できない。
 
 ```powershell
 dotnet run --project tests/Ferry.StartupSmoke/Ferry.StartupSmoke.csproj -c Release -- --regressions --output docs/verification/gogo-20261003
@@ -49,3 +52,9 @@ dotnet run --project tests/Ferry.StartupSmoke/Ferry.StartupSmoke.csproj -c Relea
 承認競合は既存の保存ゲートで順序を固定する。UDPは接続の前処理をfixtureで設定し、
 ACK入口を呼ぶため、STUN・実際のNAT・受信ループ全体を検証するものではない。
 API互換や外部サービスへ接続せず、実利用者の設定・ペア・プロセスを操作しない。
+
+転送統合シナリオは実ViewModelの送信・承認コマンドと両端の実TransferServiceを使用し、
+通信境界だけをメモリ内duplex fixtureで置換する。結果ACKと後続メタデータの保留、破損、
+旧形式の模擬を制御し、保存データ・hash・完了表示を確認して送受信画面のPNGを保存する。
+旧形式検証はoptionalフィールドの無いwire形式による互換経路の確認で、旧バイナリの実行ではない。
+結果ACKのtimeoutだけは本番と同じ待機経路に短い期限を注入する。

@@ -214,4 +214,5 @@ Hoc revocari non potest.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">Sessio coniunctionis non inventa. Confirma Ferry in altero computatro currere.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">"{0}" cum "{1}" coniunctum est.</x:String>
 
+  <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Receptio confirmari non potest. Alterum apparatum inspice antequam iterum mittas.</x:String>
 </ResourceDictionary>

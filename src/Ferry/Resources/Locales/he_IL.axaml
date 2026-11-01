@@ -212,4 +212,5 @@
   <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">לא נמצאה סשן התאמה. ודא ש-Ferry פועל במחשב השני.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">"{0}" הותאם עם "{1}".</x:String>
 
+  <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">לא ניתן לאשר את הקבלה. יש לבדוק במכשיר השני לפני שליחה חוזרת.</x:String>
 </ResourceDictionary>

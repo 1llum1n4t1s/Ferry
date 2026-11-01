@@ -201,4 +201,5 @@ Dies kann nicht rückgängig gemacht werden.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">Die Kopplungssitzung wurde nicht gefunden. Stelle sicher, dass Ferry auf dem anderen PC läuft.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">„{0}“ wurde mit „{1}“ gekoppelt.</x:String>
 
+  <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Der Empfang konnte nicht bestätigt werden. Prüfen Sie das andere Gerät vor dem erneuten Senden.</x:String>
 </ResourceDictionary>

@@ -216,4 +216,5 @@ Questa azione non può essere annullata.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">Sessione di associazione non trovata. Verifica che Ferry sia in esecuzione sull'altro PC.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">«{0}» è stato associato a «{1}».</x:String>
 
+  <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Impossibile confermare la ricezione. Controlla l’altro dispositivo prima di inviare di nuovo.</x:String>
 </ResourceDictionary>

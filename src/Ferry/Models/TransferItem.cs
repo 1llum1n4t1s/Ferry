@@ -20,6 +20,9 @@ public sealed partial class TransferItem : ObservableObject
     /// 再送時に元のフォルダ構造を保って送り直すために保持する。</summary>
     public string? RelativePath { get; set; }
 
+    /// <summary>フォルダ操作の識別子。自動再試行中は同じ値を保持する。</summary>
+    public Guid? FolderBatchId { get; set; }
+
     /// <summary>ファイル名。</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DisplayInfo))]
@@ -79,6 +82,7 @@ public sealed partial class TransferItem : ObservableObject
 
     /// <summary>エラーメッセージ（State が Error の場合）。</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StateText))]
     public partial string? ErrorMessage { get; set; }
 
     /// <summary>進行中の補足メッセージ（リトライ中・再接続中などの一時表示）。空なら非表示。</summary>

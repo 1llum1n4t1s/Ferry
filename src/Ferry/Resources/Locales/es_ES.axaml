@@ -199,4 +199,5 @@ Esta acción no se puede deshacer.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">No se encontró la sesión de emparejamiento. Comprueba que Ferry esté abierto en el otro PC.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">«{0}» se emparejó con «{1}».</x:String>
 
+  <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">No se pudo confirmar la recepción. Comprueba el otro dispositivo antes de reenviar.</x:String>
 </ResourceDictionary>

@@ -17,3 +17,15 @@ public sealed class ConnectionLostDuringTransferException : IOException
 {
     public ConnectionLostDuringTransferException(string message) : base(message) { }
 }
+
+/// <summary>保存済みの可能性がある受信結果不明。重複保存を避けるため自動再送しない。</summary>
+public sealed class ReceiveResultUnknownException : IOException
+{
+    public ReceiveResultUnknownException(string message, System.Exception? inner = null) : base(message, inner) { }
+}
+
+/// <summary>相手側が検証失敗を通知した、または返されたハッシュが一致しない。</summary>
+public sealed class ReceiveVerificationFailedException : IOException
+{
+    public ReceiveVerificationFailedException(string message) : base(message) { }
+}

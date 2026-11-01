@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Net.Sockets;
+using Ferry.Models;
 
 namespace Ferry.Util;
 
@@ -20,6 +21,8 @@ public static class ErrorText
     private static string _accessText = "Text.Transfer.Error.Access";
     private static string _ioText = "Text.Transfer.Error.Io";
     private static string _genericText = "Text.Transfer.Error.Generic";
+    private static string _resultUnknown = "Text.Transfer.Error.ResultUnknown";
+    public static string ResultUnknown => _resultUnknown;
 
     // rere レビュー #C-09: サービス層が UI へ出す定型文言も同じキャッシュ方式で持つ。
     //
@@ -55,6 +58,7 @@ public static class ErrorText
         _accessText = App.Text("Transfer.Error.Access");
         _ioText = App.Text("Transfer.Error.Io");
         _genericText = App.Text("Transfer.Error.Generic");
+        _resultUnknown = App.Text("Transfer.Error.ResultUnknown");
 
         _disconnected = App.Text("Transfer.Error.Disconnected");
         _rejectedByPeer = App.Text("Transfer.Error.RejectedByPeer");
@@ -67,6 +71,8 @@ public static class ErrorText
     /// <summary>例外の種別から UI 表示用のローカライズ文言を返す（任意スレッドから呼び出し可）。</summary>
     public static string Describe(Exception ex) => ex switch
     {
+        ReceiveResultUnknownException => _resultUnknown,
+        ReceiveVerificationFailedException => _hashMismatch,
         UnauthorizedAccessException => _accessText,
         // NetworkStream の切断は IOException が SocketException を内包する形で飛んでくる。
         // ディスク由来の IOException（容量不足・ロック等）と混同してディスクエラー文言を

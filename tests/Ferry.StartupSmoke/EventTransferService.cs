@@ -12,7 +12,8 @@ internal sealed class EventTransferService : ITransferService
     public void RaiseError(TransferItem item) => TransferError?.Invoke(this, item);
     public bool HasActiveTransfer => false;
     public IReadOnlyList<TransferItem> GetResumableTransfers() => [];
-    public Task SendFileAsync(string filePath, string? relativePath = null, Guid? transferId = null, string peerId = "", CancellationToken ct = default) => throw new NotSupportedException();
+    public Task SendFileAsync(string filePath, string? relativePath = null, Guid? transferId = null, string peerId = "", CancellationToken ct = default, Guid? folderBatchId = null) => throw new NotSupportedException();
+    public Task EndFolderBatchAsync(Guid batchId, string peerId, CancellationToken ct = default) => throw new NotSupportedException();
     public Task<bool> ResumeTransferAsync(Guid transferId, CancellationToken ct = default) => throw new NotSupportedException();
     public void HandleReceivedData(byte[] data, string peerId = "") => throw new NotSupportedException();
     public void ApproveTransfer(string transferId) => throw new NotSupportedException();

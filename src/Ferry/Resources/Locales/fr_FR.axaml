@@ -199,4 +199,5 @@ Cette action est irréversible.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">Session d'association introuvable. Vérifiez que Ferry est lancé sur l'autre PC.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">« {0} » a été associé à « {1} ».</x:String>
 
+  <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Impossible de confirmer la réception. Vérifiez l’autre appareil avant de renvoyer.</x:String>
 </ResourceDictionary>

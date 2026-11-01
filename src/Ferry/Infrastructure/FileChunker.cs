@@ -17,7 +17,7 @@ public static class FileChunker
     /// <summary>
     /// ファイルメタデータの JSON メッセージを生成する。
     /// </summary>
-    public static byte[] CreateFileMetaMessage(string fileName, long fileSize, int totalChunks, string sha256, Guid transferId = default, string? relativePath = null)
+    public static byte[] CreateFileMetaMessage(string fileName, long fileSize, int totalChunks, string sha256, Guid transferId = default, string? relativePath = null, Guid? resultToken = null, Guid? folderBatchId = null)
     {
         var meta = new FileMeta
         {
@@ -27,6 +27,8 @@ public static class FileChunker
             Sha256 = sha256,
             TransferId = transferId == default ? Guid.NewGuid().ToString() : transferId.ToString(),
             RelativePath = relativePath,
+            ResultToken = resultToken,
+            FolderBatchId = folderBatchId,
         };
         var json = JsonSerializer.SerializeToUtf8Bytes(meta, FileMetaJsonContext.Default.FileMeta);
         var message = new byte[1 + json.Length];
@@ -79,6 +81,22 @@ public static class FileChunker
         message[1] = success ? (byte)1 : (byte)0;
         sha256Hash.AsSpan(0, Math.Min(32, sha256Hash.Length)).CopyTo(message.AsSpan(2));
         return message;
+    }
+
+    /// <summary>旧ACKの先頭34byteを保ち、転送と試行の識別子を追加する。</summary>
+    public static byte[] CreateResultAckMessage(bool success, byte[] sha256Hash, Guid transferId, Guid resultToken)
+    {
+        var message = new byte[66];
+        CreateAckMessage(success, sha256Hash).CopyTo(message, 0);
+        transferId.TryWriteBytes(message.AsSpan(34, 16));
+        resultToken.TryWriteBytes(message.AsSpan(50, 16));
+        return message;
+    }
+
+    public static (Guid TransferId, Guid ResultToken, bool Success, byte[] Hash)? ParseResultAck(ReadOnlySpan<byte> message)
+    {
+        if (message.Length != 66 || message[0] != TransferProtocol.FileAck || message[1] > 1) return null;
+        return (new Guid(message.Slice(34, 16)), new Guid(message.Slice(50, 16)), message[1] == 1, message.Slice(2, 32).ToArray());
     }
 
     /// <summary>
@@ -139,11 +157,23 @@ public static class FileChunker
     /// ファイル承認メッセージを生成する [種別 1byte] [TransferId 16byte]。v1.0.38 追加。
     /// 受信側が ApproveTransfer 時に送信側へ送る。これを受け取った送信側がチャンク送信を開始する。
     /// </summary>
-    public static byte[] CreateApproveMessage(Guid transferId)
+    public static byte[] CreateApproveMessage(Guid transferId, Guid? resultToken = null)
     {
-        var message = new byte[1 + 16];
+        var message = new byte[resultToken.HasValue ? 33 : 17];
         message[0] = TransferProtocol.FileApprove;
         transferId.TryWriteBytes(message.AsSpan(1, 16));
+        if (resultToken.HasValue) resultToken.Value.TryWriteBytes(message.AsSpan(17, 16));
+        return message;
+    }
+
+    public static Guid? ParseApproveResultToken(ReadOnlySpan<byte> message)
+        => message.Length == 33 ? new Guid(message.Slice(17, 16)) : null;
+
+    public static byte[] CreateFolderBatchEndMessage(Guid batchId)
+    {
+        var message = new byte[17];
+        message[0] = TransferProtocol.FolderBatchEnd;
+        batchId.TryWriteBytes(message.AsSpan(1));
         return message;
     }
 

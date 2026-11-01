@@ -217,4 +217,5 @@ Esta ação não pode ser desfeita.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">Sessão de pareamento não encontrada. Verifique se o Ferry está aberto no outro PC.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">"{0}" foi pareado com "{1}".</x:String>
 
+  <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Não foi possível confirmar o recebimento. Verifique o outro dispositivo antes de reenviar.</x:String>
 </ResourceDictionary>

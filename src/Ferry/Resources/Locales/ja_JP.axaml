@@ -217,4 +217,5 @@
   <x:String x:Key="Text.Connection.PairFromCode.SessionNotFound" xml:space="preserve">ペアリング先のセッションが見つかりません。相手の PC でアプリが起動していることを確認してください。</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">「{0}」と「{1}」をペアリングしました。</x:String>
 
+  <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">受信結果を確認できません。再送前に相手の保存先を確認してください</x:String>
 </ResourceDictionary>

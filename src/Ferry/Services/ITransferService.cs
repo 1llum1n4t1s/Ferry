@@ -37,7 +37,10 @@ public interface ITransferService : IDisposable
     /// <param name="transferId">UI 側で生成済みの転送 ID。指定すると進捗・キャンセル・一時停止を UI 行と TransferId で正確に対応付けできる。null なら内部生成。</param>
     /// <param name="peerId">Stage 5: 送信先 peer の SessionId(32hex)。空文字なら旧来の <see cref="IConnectionService.ConnectedPeer"/> 逆引きに fallback。</param>
     /// <param name="ct">キャンセルトークン。</param>
-    Task SendFileAsync(string filePath, string? relativePath = null, Guid? transferId = null, string peerId = "", CancellationToken ct = default);
+    Task SendFileAsync(string filePath, string? relativePath = null, Guid? transferId = null, string peerId = "", CancellationToken ct = default, Guid? folderBatchId = null);
+
+    /// <summary>フォルダ操作の全送信が終端したことを通知する。未着項目用の保存先保持を終了する。</summary>
+    Task EndFolderBatchAsync(Guid batchId, string peerId, CancellationToken ct = default);
 
     /// <summary>
     /// 中断された転送を再開する。
