@@ -61,6 +61,8 @@ async function execute(sql, query = false) {
     cwd: relay, encoding: 'utf8', env: { ...process.env, WRANGLER_SEND_METRICS: 'false' },
   });
   if (child.status !== 0) throw new Error('D1 import/query failed; no ready transition');
+  // remote --file は --json でも upload の進捗を stdout に出す。書込の返値は使用しない。
+  if (!query) return undefined;
   return JSON.parse(child.stdout);
 }
 await execute(await readFile(join(relay, 'schema.sql'), 'utf8'));
