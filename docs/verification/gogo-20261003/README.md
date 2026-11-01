@@ -1,5 +1,7 @@
 # gogo 検証・修正記録（2026-10-03）
 
+RELAY-01/03・CORE-04/05 の現在の結論は、末尾の 2026-11-01 追補を参照する。以下の本文は 2026-10-03 時点の経緯を保持している。
+
 対象は直前のrere一次調査13候補。全件freshとして現在の実コード・呼出し元・既存契約から反証した。
 9件を修正、1件を限定修正、3件は問題成立だが処方未判定。rereの独立V1/V2検証の完了を意味しない。
 開始時のmac起動修正・テスト整理・既存生成物を保持し、今回unit testは追加していない。
@@ -83,3 +85,23 @@ UDPは実送信＋ACK入口のfixtureで、外部STUN/受信ループは対象�
 
 KVの同時書込み・negative cacheはCloudflare公式資料を2026-10-03に確認した:
 [write](https://developers.cloudflare.com/kv/api/write-key-value-pairs/)、[read](https://developers.cloudflare.com/kv/api/read-key-value-pairs/)。
+
+## 2026-11-01：4 残件の再確認
+
+利用者から 4 ID の修正・検証を明示依頼され、現在のコードで反証してから実装した。以下をこれらの ID の現在の結論とする。基準は `a243794b78287eb909e8cd2cc00221fbd4487f6b`。版は 1.0.81 を維持し、変更は未コミット、本番操作は行っていない。
+
+| ID | 採否・状態 | 解消内容と保全条件 |
+| --- | --- | --- |
+| RELAY-01 | 採用・ローカル検証済み | 認証鍵を既存 D1 の不可変 PK に登録し、並行登録の勝者を正本で照合する。KV 自動 seed はせず、未 import / 障害は 503、確定した不一致だけ 401。承認 snapshot の SHA・件数・全行・競合を確認して明示 ready にする移行 CLI を用意した |
+| RELAY-03 | 採用・ローカル検証済み | nonce / pairs / 宛先別 outbox を同一 D1 batch に保存。永続受理後だけ消費し、片側失敗は元の payload・1 時間 TTL で再送。解除・再成立の revision を DeviceDO の保存 / flush でも照合する。本人検索は複合 index を利用する |
+| CORE-04 | 採用・検証済み | 承認時の試行 token echo で交渉し、peer / TransferId / token / 成功 hash の一致後だけ送信完了。旧 17 / 34 byte prefix を維持する。結果不明は自動再送せず重複保存を防ぎ、取消・切断・Resume の終端と遅延 ACK を処理する |
+| CORE-05 | 採用・検証済み | 送信操作の FolderBatchId で保存先を分離し、未着後続を終了通知まで共有する。active / pending 保持、30 分の孤立回収、件数上限、旧メタ互換を確認。実 UI で並列枠 10 を越す 11 ファイル、別バッチ、旧形式の計 13 ファイルを検証した |
+
+追加で、エラー詳細更新時の `StateText` 通知漏れを実画面で再現し、通知 1 属性の修正後に同じ経路で解消を確認した。結果不明の説明は 18 言語へ同期した。
+
+- 最終 build は警告 / エラー 0、.NET は 469 / 469 成功、relay は型検査成功・168 / 168 成功。Win x64 Native AOT 発行も成功（既存 Velopack ShellLink の Invalid IL 診断は継続）。
+- [実画面の最終結果](../backlog-20261101-final/result.json) は 23 / 23 成功、一時領域 15 / 15 回収。今回の PNG 15 枚と、表示修正前の最小証拠を保存した。
+- [Windows](../backlog-20261101-final/relay-windows-evidence.json) / [Linux ARM64](../backlog-20261101-final/relay-linux-evidence.json) で実 workerd・D1・WebSocket を通し、同一 ID の別鍵並行登録、transaction rollback、片側通知失敗からの再送、解除 / 再成立 / 古世代排除を確認。現 source 40 ファイルの SHA-256 が両検証コピーと一致した。
+- 移行 CLI の実 `--local` 回帰は import 成功 → 競合拒否 → activate 成功。remote の SELECT 経路は実使用 Wrangler 4.156.0 の実装と独立照合した。コード・検証結果の修正後独立レビューは core / relay とも通過。
+
+本番の承認 snapshot 取得・remote import・schema 適用・deploy は別工程であり未実行。[運用手順](../../operations/runbook.md#d1-スキーマの適用と-rollback) と [移行手順](../../../infra/cloudflare/relay/README.md) に従う。RELAY-03 の保証は元通知の 1 時間 TTL 内の再送であり、既存クライアントの watch 時刻制限や永続 pairId 重複除外を越える復元、旧バイナリとの実機対向、実 NAT 経路を新たに保証するものではない。

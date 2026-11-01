@@ -21,7 +21,7 @@ Ferry は、2 台の PC を QR コードまたはワンタイムコードでペ�
 | `DeviceDO` | presence、inbox WebSocket、未読通知キュー | deviceId ごとの状態。接続ノックは永続化しない |
 | `RelayDO` | 2 peer 間の binary WebSocket フレーム中継 | Hibernation を使い、平文テキストフレームと上限超過を拒否する |
 | `RelayQuotaDO` | relay の月次・セッション quota、同時 room、idle、breaker の強整合予約 | `QUOTA` binding の global coordinator。入室前に lease を確定する |
-| D1 `ferry_ledger` | `sessions`、`pairing_nonces`、`pairs` | `pairs` はリモートペア台帳の SSoT。他 2 テーブルは 1 時間の一時データ |
+| D1 `ferry_ledger` | 認証鍵、ペア台帳、通知 outbox、session / nonce | 認証鍵は不可変の正本。ペア通知は成立と同じトランザクションに保存し、1 時間の配送期限を持つ |
 | R2 `ferry-updates` | 署名済み配布物と Velopack manifest の公開 | アプリ更新用。relay ペイロード保管には使わない |
 
 UI は AXAML + MVVM で構成し、`App.axaml.cs` がサービスを手動で組み立てる。DI コンテナは使用しない。Windows x64 / ARM64、macOS Apple Silicon、Linux x64 / ARM64 を Native AOT で配布する。
@@ -34,10 +34,12 @@ UI は AXAML + MVVM で構成し、`App.axaml.cs` がサービスを手動で組
 
 1. 各 PC が長期 ECDH 公開鍵を含む一時セッションを D1 へ登録し、QR コードを表示する。
 2. スマートフォンの Bridge ページが 2 台分の nonce を Worker へ送る。
-3. Worker が nonce を不可分に claim し、D1 `pairs` を作成して両 device の inbox へ結果を push する。
+3. Worker が nonce を不可分に claim し、D1 `pairs` と両 device 宛ての通知 outbox を同じトランザクションで作る。DeviceDO が通知を永続受理した宛先だけ配送済みにする。
 4. 各 PC は公開鍵から PairSecret を導出し、ペア情報を `peers.json` へアトミックに保存する。
 
 PC 間のコード貼付経路は、永続 deviceId と短命 nonce を組み合わせたワンタイムコードを使う。呼び出し元の cfToken と相手 nonce の所有を検証し、成立時に nonce を単回消費する。
+
+通知の一時障害は毎分の有界な outbox 再送と、本人の inbox 接続時の再送で復旧する。再送で作成時刻や 1 時間の期限を延長しない。解除・再ペアには新しい世代を割り当て、古い成立通知や解除通知が新しい状態を上書きしないよう DeviceDO の保存・再生でも照合する。重複配送を許す再送方式とし、無期限配送やクライアント再起動後の古い通知受理は保証しない。
 
 ### 着信検知と接続確立
 
@@ -55,9 +57,11 @@ STUN は Cloudflare (`stun.cloudflare.com:3478`) を主、Google (`stun.l.google
 1. 送信側が `FileMeta` を送り、受信側の `FileApprove` を待つ。未承認の状態では保存先のフォルダもファイルも作らない。
 2. 承認後に保存先を安全に確定し、`CreateNew` で既存ファイルの上書きを防ぐ。承認待ちは peer ごと 32 件、全体 128 件に制限する。
 3. 送信側が TransferId 付き 64 KiB チャンクを送り、受信側は chunk index のオフセットへ書く。relay 経路では累積 FlowAck で送信先行量を制限する。
-4. 受信完了時に SHA-256 を照合し、不一致、拒否、キャンセルは `FileReject` で相手側へも伝える。接続断後のレジュームは先頭から再送する。
+4. 受信完了時に SHA-256 を照合する。対応相手との送信は peer・TransferId・試行 token が一致する検証結果 ACK を待ち、成功時だけ完了にする。結果不明のタイムアウトは失敗表示にし、自動再送で保存済みファイルを重複作成しない。不一致、拒否、キャンセルは相手側へも伝える。接続断後のレジュームは先頭から再送する。
 
-受信承認は承認待ちの `ReceiveState` を維持したまま進め、旧形式チャンクのバッファも引き継ぐ。ファイル作成と中断処理の競合では状態の所有権を確認し、中断済みの転送を再登録せず、作成済みの部分ファイルを回収する。Reject と遅延 FlowAck の返送先は受信状態の peer を使い、状態索引の削除後も別の接続へ流さない。フォルダ保存先は peer とルートフォルダの組で共有し、承認待ち・受信中の同じ組がなくなった時点で解放する。
+受信承認は承認待ちの `ReceiveState` を維持したまま進め、旧形式チャンクのバッファも引き継ぐ。ファイル作成と中断処理の競合では状態の所有権を確認し、中断済みの転送を再登録せず、作成済みの部分ファイルを回収する。Reject と遅延 FlowAck の返送先は受信状態の peer を使い、状態索引の削除後も別の接続へ流さない。
+
+フォルダ保存先は peer・送信操作の BatchId・ルートフォルダで分離する。同じバッチの後続メタデータが未着でも終了通知まで予約し、終了通知後も承認待ち・受信中があれば最後の終端まで保持する。終了済み識別子や活動のない孤立バッチは 30 分で回収し、peer ごと 128、全体 512 の上限では既存転送を追い出さず新規バッチを拒否する。旧版の BatchId がない転送は従来の peer・ルート単位の寿命を使う。結果 ACK も承認応答で試行 token を echo した相手とだけ交渉し、旧版のワイヤ形式を維持する。
 
 ### プレゼンスとペア同期
 
@@ -68,7 +72,9 @@ STUN は Cloudflare (`stun.cloudflare.com:3478`) を主、Google (`stun.l.google
 | データ | 正本 | 寿命と削除 |
 | --- | --- | --- |
 | deviceId、設定、ペア鍵 | 各 PC の `settings.json` / `peers.json` / `identity.key` | 一時ファイルからリネームして保存。読み込み不能な JSON は `.corrupt-*` へ分離 |
+| deviceId と認証公開鍵の結合 | D1 `device_key_bindings` | 不可変。既存 KV は検証済み snapshot から移行し、移行中の未登録 ID は 503 で保留する |
 | ペア関係 | D1 `pairs`、各 PC にローカル副本 | 明示 unpair まで永続。D1 の 404 で remote unpair を検出 |
+| ペア通知 | D1 `pairing_outbox` / `pairing_generations`、DeviceDO | 元の作成時刻から 1 時間。宛先別に再送し、解除・再ペアの世代を保存・再生時にも照合する |
 | ペアリング session / nonce | D1 | 1 時間で失効。読み時検証と日次 scheduled cleanup で除去 |
 | signaling / probe | PairDO | 成功時の即時削除または 1 時間 alarm |
 | presence / inbox | DeviceDO | presence は時刻の老化で offline 判定。未読キューは上限と TTL を持つ |
@@ -87,6 +93,7 @@ STUN は Cloudflare (`stun.cloudflare.com:3478`) を主、Google (`stun.l.google
 - 現行クライアントは fresh な cfToken の取得に失敗したら relay に入らない。Worker の現行値は `RELAY_AUTH_MODE=optional` / `PAIR_LEDGER_MODE=transition` で、旧版は小さい legacy quota のみ使える。invalid bearer は legacy へ降格しない。
 - RelayDO は RelayQuotaDO の lease を入室前に得る。breaker、quota、binding の設定不備で fail closed する。
 - PairSecret を持つペアは HMAC 相互認証 + AES-GCM 封筒を常時使う。公開鍵交換前の旧ペアだけが平文互換経路に残る。
+- 認証鍵は D1 で最初に確定した値から変更しない。KV の結果を自動で正本へ取り込まず、移行の不確実さを鍵不一致の 401 に変換しない。切替条件と旧 writer への rollback 禁止は運用手順に従う。
 - `FileMeta` の受信だけでディスクを変更せず、承認後も保存先外へのパスと既存ファイルの上書きを拒否する。
 - Native AOT でリフレクション依存の JSON シリアライズを行わず、モデル追加時は対応する `JsonSerializerContext` を更新する。
 - R2 配信では package を先に upload し、それを参照する `releases.*.json` を最後に upload する。

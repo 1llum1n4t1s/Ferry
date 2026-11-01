@@ -79,16 +79,18 @@ STUN は **Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google S
 
 ### Cloudflare バックエンド構造（relay Worker）
 
-認可は `POST /auth/token` が発行する **cfToken（自前 HMAC bearer、1h）** を全リクエストで検証する。`CfTokenProvider` が ECDSA P-256 署名チャレンジで取得・約 50 分ごとに refresh。deviceId↔公開鍵は KV `DEVICE_KEY_BINDING` に **first-write-wins** で束縛され、鍵不一致は 401 `DEVICE_PUBKEY_MISMATCH` → `IdentityLost` イベント（clean slate UI）。外部 ID プロバイダ非依存で SSE 再購読も不要。
+認可は `POST /auth/token` が発行する **cfToken（自前 HMAC bearer、1h）** を全リクエストで検証する。`CfTokenProvider` が ECDSA P-256 署名チャレンジで取得・約 50 分ごとに refresh。deviceId↔公開鍵は D1 `device_key_bindings` の不可変 PK に束縛し、条件付き登録後も正本を読み返して勝者の鍵を照合する。確定した鍵の不一致だけを 401 `DEVICE_PUBKEY_MISMATCH` → `IdentityLost` イベント（clean slate UI）にし、移行中の未 import・スキーマ不備・ストレージ障害は 503 `AUTH_BINDING_UNAVAILABLE` とする。旧 KV `DEVICE_KEY_BINDING` は検証済み snapshot の移行元として保持し、positive / negative の読み結果から自動 seed しない。外部 ID プロバイダ非依存で SSE 再購読も不要。
 
 | ルート | 実体 | 内容 |
 |---|---|---|
 | `/sig/{pairId}/offer・answer・endpoint`（per-sender）、`probe-offer/{nonce}`・`probe-offers`・`probe-answer/{nonce}`（per-nonce） | **PairDO**（pairId ごと 1 DO） | storage キー `offer:{sender}` / `answer:{sender}` / `endpoint:{sender}` / `probeOffer:{nonce}` / `probeAnswer:{nonce}`。当事者検証 + sender キー強制（`X-Ferry-Device`）は Worker 側（`signaling-routes.ts`）で完結し、旧 Firebase rules の per-sender なりすまし防止（#D-003）をコードで担保 |
 | `/presence/{deviceId}`（POST/DELETE=本人のみ、peer GET・`/last-seen`=D1正式ペア） | **DeviceDO**（deviceId ごと 1 DO） | presence（`lastSeen` は server now）。`/last-seen` は ETag/304 対応（帯域節約）。transition 中だけ旧ペアの未登録台帳を許容 |
 | `/inbox`（WebSocket） | DeviceDO | ペア成立通知の真 push + **接続ノック**（§着信検知）。未読はキュー（TTL 1h・最大 50 件）に積んで接続時 flush。knock は transient で積まない。device 別接続 rate limit + 1 DeviceDO 最大 4 接続 |
-| `/pair/session`・`/pair/create`・`/pair/link` | **D1** `ferry_ledger`（`sessions` / `pairing_nonces` / `pairs`） | セッション登録・QR ペア成立・ワンタイムコード貼付ペア成立（認可モデルは上記） |
+| `/pair/session`・`/pair/create`・`/pair/link` | **D1** `ferry_ledger`（session / nonce / pairs / outbox） | セッション登録・QR ペア成立・ワンタイムコード貼付ペア成立。nonce 消費、ペア確定、宛先別の配送予定を同一 batch で保存する |
 | `/pairs/{pairId}`（PUT/GET/DELETE、bearer 当事者のみ） | D1 `pairs` | ペア台帳 SSoT。GET 404 で remote-unpair 検出（`PairSyncService`）。DELETE は相手 inbox へ unpair push |
 | `/ferry-relay`（WebSocket） | **RelayDO + RelayQuotaDO** | 転送リレー本体（Hibernation 対応）と quota 予約。`wrangler.toml` の `QUOTA` / migration v4（v1〜v3 は不変）。pairId は `SALT` 付き SHA-256 で DO 名化（生 pairId 漏洩による横入り防止）。入室認可は optional 段階移行（下記） |
+
+**ペア通知の配送**: `pairing_outbox` は宛先ごとの固定 payload と元の作成時刻・1 時間の期限を保持する。DeviceDO の永続受理後だけ当該 event / 宛先の行を削除し、片側失敗や応答不明では残して再送する。`pairing_generations` は解除後も世代を比較できるよう保持し、DeviceDO の受理・保存・flush でも古い成立 / 解除を排除する。inbox 接続では認証した本人だけを、毎分 cron では due 行を上限付きで処理する。空の定期確認は 1 日 1,440 回の indexed D1 読み取りを追加するが、全 DeviceDO を起こす走査はしない。日次の session / nonce cleanup は元の cron に限定する。
 
 **`/ferry-relay` の入室認可と段階移行**: `RELAY_AUTH_MODE=optional` / `PAIR_LEDGER_MODE=transition` では、`Upgrade: websocket` の前に Bearer と D1 台帳を判定する。
 
@@ -189,6 +191,7 @@ TCP / WebSocket 上の長さプレフィクス付きバイナリプロトコル�
 | **FileHash** | **0x05** | SHA-256 ハッシュ後送り (送信側が全 chunk 送信後に送付、P-3 で導入) |
 | **FileApprove** | **0x06** | 受信承認通知 (受信側が承認時に送信、送信側はこれを待ってチャンク送信開始、v1 で導入) |
 | **FileFlowAck** | **0x07** | フロー制御 ACK (`[0x07][TransferId 16byte][receivedChunkCount 4byte]`)。受信側が `FlowAckIntervalChunks`(64=4MB) ごと + 完了時に書き込み済みチャンク数を返す。送信側は `FlowControlWindowChunks`(512=32MB) を超えて先行しないよう待機 (v1.0.46 で導入、後述「リレー経路のフロー制御」) |
+| **FolderBatchEnd** | **0x08** | `[0x08][BatchId 16byte]`。フォルダ送信操作の終端。未着後続のための保存先予約を閉じる。旧版は未知種別として無視する |
 | Ping / Pong | 0x10 / 0x11 | キープアライブ |
 | ResumeRequest / ResumeResponse | 0x20 / 0x21 | レジューム関連 (現状応答は false 固定) |
 
@@ -209,6 +212,12 @@ UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レ
 ### 承認プロトコル (v1〜v8 で大改修)
 
 ファイル送信は送信側が `FileMeta` 送信 → **受信側の `FileApprove` (0x06) を 60 秒待つ** → 承認受信後にチャンク送信開始、というフロー。AutoAcceptFileTransfer 有効時は受信側が即承認を返す。
+
+`FileMeta` の optional `ResultToken` は試行ごとの Guid であり、再送・レジュームでも新しくする。対応受信側は従来の 17 byte の `FileApprove` に token 16 byte を追加して echo する。一致 echo の場合だけ、送信側は従来 ACK の 34 byte prefix（種別・status・SHA-256）に TransferId と token を各 16 byte 追加した 66 byte の結果を待つ。peer・TransferId・token を照合し、成功時は送信 hash とも一致させる。結果の受付は最後の `FileHash` を送る直前に有効化し、早過ぎる ACK と旧試行の遅延 ACK を採用しない。旧版の承認・ACK はそのまま受理し、echo がない相手は従来の送信完了判定を維持する。
+
+結果待ち期限は 5 分 + file size / 16 MiB/s（最大 24 時間）。この値は転送性能の実測値ではなく、大きなファイルの受信検証に猶予を与える待機契約である。否定結果・hash 不一致は失敗、確認できないまま期限切れや結果待ち中の切断になった場合も完了にしない。結果不明は自動再送の対象から外し、既に保存済みかもしれないファイルの重複作成を防ぐ。取消・Reject・切断・Dispose も待機を解放する。
+
+optional `FolderBatchId` は送信元フォルダの選択ごとに発行し、VM の転送行からメタデータまで保持する。同名ルートでも別バッチは別の保存先とし、同バッチ内では前のファイルが完了して後続メタデータがまだなくても予約を保持する。VM は全項目の処理を終えた `finally` で `FolderBatchEnd` を送る。終了後の active / pending は保存先を使い切るまで保持し、活動のない孤立状態・終了済み識別子は 30 分、peer ごと 128 / 全体 512 の有界な管理とする。BatchId がない旧転送には従来の peer / root 寿命を適用する。
 
 - 受信側拒否時は `FileReject (0x04, TransferId プレフィクス付き)` を送信
 - 送信側 60s タイムアウト時も `FileReject` を受信側に投げて **symmetric expiry** (v8)

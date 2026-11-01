@@ -29,7 +29,7 @@ rere レビュー #F-008 / #F-015 対応で新設。
 | コンポーネント | 実体 | 落ちると何が起きるか |
 |---|---|---|
 | **relay Worker** (`watashiba.kagayoi.com`) | Cloudflare Workers | 下記すべての土台。全機能停止 |
-| ├ 認証 `/auth/token` | 自前 HMAC bearer (cfToken, 1h) + ECDSA 署名チャレンジ、KV `DEVICE_KEY_BINDING` | **全 API が 401**。ペアリング・接続・presence が全滅 |
+| ├ 認証 `/auth/token` | 自前 HMAC bearer (cfToken, 1h) + ECDSA 署名チャレンジ、D1 `device_key_bindings` | 鍵不一致は 401。移行中の未 import や D1 障害は 503 となり、token 更新・新規接続に影響 |
 | ├ シグナリング `/sig/*` | **PairDO** (Durable Object) | 接続確立不可（既存転送は継続） |
 | ├ presence / inbox | **DeviceDO** (Durable Object) | オンライン表示が消え、接続ノックが届かず着信が遅延 |
 | ├ ペア台帳 `/pairs/*`・`/pair/*` | **D1** `ferry_ledger` | 新規ペアリング不可。`/pairs` 404 が続くと remote-unpair 誤検知の恐れ |
@@ -159,10 +159,16 @@ pnpm dlx wrangler d1 execute ferry_ledger --remote --command "SELECT COUNT(*) FR
 
 **スキーマ変更を含む PR を main にマージする場合の順序**:
 
-1. **先に** `wrangler d1 execute` でスキーマを適用（後方互換な変更＝列追加のみにする）
+1. **先に** `wrangler d1 execute` でスキーマを適用（既存列・データを維持した追加にする）
 2. その後にコードを push（`deploy-relay.yml` が自動配信）
 
 逆順にすると、新コードが旧スキーマを触って `/pair/create`・`/pairs/*` が全ユーザーで失敗する。
+
+認証鍵の KV → D1 移行では、スキーマ追加だけで通常運用へ戻さない。`auth_key_migration` は初期 `importing` であり、D1 に未 import の端末は新規 / 既存を区別せず 503 `AUTH_BINDING_UNAVAILABLE` となる。これは誤った 401 から端末の `IdentityLost` を起こさないための保全である。旧 writer の停止・drain、operator が正本として検証した immutable snapshot の import、SHA・件数・全行一致と競合ゼロの確認、明示的な `ready` の順で切り替える。既存端末の再認証に一時的な影響が出るため、先に移行用の保守時間を確保する。詳細は [relay の移行手順](../../infra/cloudflare/relay/README.md) を参照する。
+
+KV の positive / negative はともに古い値を返し得る。単発の一覧取得、固定秒数の待機、一覧の反復一致から import の完全性を自動認定しない。検証済み snapshot の取得・本番 import・deploy は、ローカルの移行回帰とは別の操作である。D1 を正本にした後は、KV に新しい登録が戻る旧コードへの `wrangler rollback` を行わない。D1 の正本を維持する修正版で復旧する。
+
+ペア通知の outbox 再送は毎分、session / nonce の cleanup は従来の日次 cron で実行する。片側 DeviceDO が失敗しても nonce や pair を巻き戻さず、宛先別に未配送行を残す。配送期限は元の作成時刻から 1 時間であり、再送で延長しない。調査時は `pairing_outbox` の `attempts` / `next_attempt_at` と Worker ログの配送延期を確認し、解除・再ペア後の古い通知を手動で復活させない。
 
 **バックアップ**: `pairs` テーブルは永続 SSoT（消えると全ユーザーのペアが失われる）。
 Cloudflare D1 の Time Travel（過去 30 日の任意時点へ復元）が使える。
@@ -244,7 +250,7 @@ pnpm dlx wrangler d1 export ferry_ledger --remote --output ferry_ledger_$(date +
 **想定原因**:
 
 1. D1 (`ferry_ledger`) の障害・スキーマ不整合
-2. `/auth/token` が通らない（`SESSION_HMAC_SECRET` 消失、KV バインディング喪失）
+2. `/auth/token` が通らない（`SESSION_HMAC_SECRET` 消失、D1 鍵正本の障害、認証鍵の移行未完了）
 3. Bridge ページ（Static Assets）の配信失敗 — QR 経路のみ影響
 4. `deploy-relay.yml` の失敗でコードが古いまま
 

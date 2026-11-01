@@ -1,0 +1,8 @@
+reject {"status":503,"code":"AUTH_BINDING_UNAVAILABLE","message":"device key binding migration or storage unavailable"}
+reject {"status":401,"code":"DEVICE_PUBKEY_MISMATCH","message":"deviceId is already bound to a different pubKey"}
+reject {"status":401,"code":"DEVICE_PUBKEY_MISMATCH","message":"deviceId is already bound to a different pubKey"}
+workerd D1: importing / immutable key / concurrent first binding OK
+pair/create D1 transaction failed Error: D1_ERROR: injected outbox failure: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_TRIGGER)
+reject {"status":503,"code":"D1_UNAVAILABLE","message":"pair ledger unavailable"}
+pairing delivery deferred Error: notify failed: HTTP 503
+workerd D1 + real WebSocket: atomic rollback / one-sided failure / retry / unpair / new generation / stale replay rejection OK

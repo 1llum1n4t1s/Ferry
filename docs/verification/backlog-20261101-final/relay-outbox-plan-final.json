@@ -1,0 +1,13 @@
+{
+  "global": [
+    "SEARCH o USING INDEX idx_outbox_due (next_attempt_at<?)",
+    "SEARCH g USING INDEX sqlite_autoindex_pairing_generations_1 (pair_id=?) LEFT-JOIN",
+    "SEARCH p USING COVERING INDEX sqlite_autoindex_pairs_1 (pair_id=?) LEFT-JOIN"
+  ],
+  "recipient": [
+    "SEARCH o USING INDEX idx_outbox_recipient (recipient_id=? AND next_attempt_at<?)",
+    "SEARCH g USING INDEX sqlite_autoindex_pairing_generations_1 (pair_id=?) LEFT-JOIN",
+    "SEARCH p USING COVERING INDEX sqlite_autoindex_pairs_1 (pair_id=?) LEFT-JOIN",
+    "USE TEMP B-TREE FOR LAST TERM OF ORDER BY"
+  ]
+}

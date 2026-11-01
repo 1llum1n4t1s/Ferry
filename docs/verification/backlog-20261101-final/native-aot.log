@@ -1,0 +1,6 @@
+  復元対象のプロジェクトを決定しています...
+  復元対象のすべてのプロジェクトは最新です。
+  Ferry -> D:\Dev\Ferry\src\Ferry\bin\Release\net10.0\win-x64\Ferry.dll
+  Generating native code
+  ILC: Method '[Velopack]Velopack.Windows.ShellLink+CShellLink..ctor()' will always throw because: Invalid IL or CLR metadata in 'Void CShellLink..ctor()'
+  Ferry -> C:\Users\IMT\.codex\work-ferry-gogo-backlog-20261101\integration\native-aot-win-x64\

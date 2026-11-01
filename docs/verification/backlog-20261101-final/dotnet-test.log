@@ -1,0 +1,9 @@
+次からテストを実行しています: D:\Dev\Ferry\tests\Ferry.Tests\bin\Debug\net10.0\Ferry.Tests.dll (net10.0|x64)
+D:\Dev\Ferry\tests\Ferry.Tests\bin\Debug\net10.0\Ferry.Tests.dll (net10.0|x64) 合格しました (7s 290ms)
+
+テストの実行の概要: 成功!
+  合計: 469
+  失敗: 0
+  成功: 469
+  スキップ済み: 0
+  期間: 7s 629ms
