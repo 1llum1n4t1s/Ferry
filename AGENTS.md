@@ -45,7 +45,9 @@ cd infra/cloudflare/relay && pnpm exec wrangler deploy
 >
 > **relay（`infra/cloudflare/relay/**`）の PR は `relay-check.yml`（"Relay Check"）**の `tsc --noEmit` + `pnpm test` で検証する。.NET の CI では relay を検証しない。同じ検証は `deploy-relay.yml`（main push）でも配信前に実行する。
 
-`Ferry.StartupSmoke` はソリューションと PR CI の対象外なので、起動時表示・言語・設定復旧・受信承認/中断・UDP 送信枠を変更した場合は上記の回帰検証を別途実行し、`result.json` と PNG を保存する。対象ケースと検証範囲は [検証プロジェクトの README](tests/Ferry.StartupSmoke/README.md) を参照する。PNG は Avalonia の描画結果であり OS の合成結果ではないため、macOS の表示不具合は macOS 上で配布アプリの実起動と Dock 復帰も確認する。Bridge を変更した場合は relay の検証に加え、端末名に `%` や URL エンコードに見える文字列を含む QR の読み取りを確認する。
+`Ferry.StartupSmoke` はソリューションと PR CI の対象外なので、起動時表示・言語・設定復旧・受信承認/中断・受信結果 ACK・フォルダ送信バッチ・UDP 送信枠を変更した場合は上記の回帰検証を別途実行し、`result.json` と PNG を保存する。対象ケースと検証範囲は [検証プロジェクトの README](tests/Ferry.StartupSmoke/README.md) を参照する。PNG は Avalonia の描画結果であり OS の合成結果ではないため、macOS の表示不具合は macOS 上で配布アプリの実起動と Dock 復帰も確認する。Bridge を変更した場合は relay の検証に加え、端末名に `%` や URL エンコードに見える文字列を含む QR の読み取りを確認する。
+
+relay の認証鍵移行・ペア通知 outbox・DeviceDO の通知保存/再生を変更した場合は、型チェックと単体テストに加え、`infra/cloudflare/relay/` で `node tests/workerd-regressions.mjs --work-dir <新規の検証作業領域の絶対パス>` を実行する。実 workerd / D1 / WebSocket の検証範囲と鍵移行手順は [relay README](infra/cloudflare/relay/README.md#開発) を参照する。
 
 ## 依存関係の保守
 
@@ -80,7 +82,9 @@ cd infra/cloudflare/relay && pnpm exec wrangler deploy
 - 暗号ハンドシェイクを変更する場合は、PairSecret を持つペアと旧ペアの互換経路を区別して確認する。認証と転送の不変条件は [DESIGN.md](DESIGN.md#重要な不変条件) を参照する。
 - settings.json / peers.json の保存は一時ファイルからのリネームと破損 JSON の .corrupt-* 退避を維持する。DeviceId の再生成はペア関係に影響するため、保存・読み込みの変更時は既存 ID の保持を確認する。
 - 受信承認・中断を変更する場合は、ファイル作成待ち中の切断/拒否/取消で状態が復活せず部分ファイルが削除されること、複数 peer 接続で Reject/FlowAck が元の送信 peer に届くこと、同名フォルダの保存先が peer と転送終了をまたいで混在しないことを確認する。
+- 受信結果 ACK・フォルダ送信バッチを変更する場合は、誤 peer / TransferId / 試行 token の ACK で完了しないこと、結果不明時に自動再送しないこと、終了通知より前のメタデータ間隔で保存先を解放しないこと、旧版との互換経路を回帰検証する。寿命・上限と交渉条件は [DESIGN.md](DESIGN.md#ファイル転送) を参照する。
 - relay の実装・デプロイ手順は [infra/cloudflare/relay/README.md](infra/cloudflare/relay/README.md)、障害切り分けは [docs/operations/runbook.md](docs/operations/runbook.md) を参照する。使用量の確認は Cloudflare GraphQL Analytics の workersInvocationsAdaptive / httpRequestsAdaptiveGroups を使う。
+- relay の D1 schema は Worker 配信と別に適用する。認証鍵移行では [relay README の移行手順](infra/cloudflare/relay/README.md#論理フェンスでの切替) に従い、承認済み snapshot・フェンス証跡・全件照合を確認してから ready にする。D1 正本への切替後は旧 KV writer / 旧 HMAC 版へロールバックしない。
 - Firebase と旧 VPS の ferry-relay / coturn を実行・配信経路に戻さない。現在のバックエンド構成は [DESIGN.md](DESIGN.md#主要コンポーネント)、移行理由は [docs/design/cf-only-migration.md](docs/design/cf-only-migration.md) を参照する。
 - 配布処理を変更する場合は、`build/scripts/verify-release.py` と `scripts/release-local.ps1` の成果物検証も照合する。CI の package / feed 検証、公開前の証拠集約と R2 同版照合を省略せず、対象 OS で生成した実物を検証する。検証対象と公開対象の一致、および同じ version の配布物を異なる内容で上書きしない境界は [DESIGN.md](DESIGN.md#配布と運用の境界) を参照する。
 
