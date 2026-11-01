@@ -110,7 +110,9 @@ STUN は Cloudflare (`stun.cloudflare.com:3478`) を主、Google (`stun.l.google
 
 - `infra/cloudflare/relay/**` の `main` push は `deploy-relay.yml` が型チェックと vitest 後に Worker を配信する。D1 `schema.sql` の変更は Worker deploy と別に適用する。
 - `release/**` push は macOS / Linux を build・署名・公証し、R2 へ配信する。Windows x64 / ARM64 は `scripts/release-local.ps1` が SimplySign で署名して配信する。
-- Windows の署名済み成果物を再ビルドせず公開する `-UploadOnly` 経路では、現行版との一致、manifest の SHA-256・サイズ、Setup の署名を検証してから通常のアップロードへ進む。ビルド/署名と公開を分離して、検証した成果物をそのまま配信できる。
+- CI は `build/scripts/verify-release.py` で最終 package と Velopack feed を検証する。版・RID・ネイティブ形式・publish 出力との対応に加え、macOS の署名・公証と manifest のハッシュ・サイズを照合し、成果物の SHA-256 と source / run / version・依存解決結果を結び付けた証拠を生成する。R2 への最初の書き込み前に証拠の集合と配布実物を再照合し、別 run や未検証の成果物の混入を拒否する。
+- Windows は通常公開と `-UploadOnly` の両方で、版・PE の RID・署名・manifest・publish 出力と package / Portable の内容を検証する。`-UploadOnly` でも同版の publish 出力を照合に使い、検証後の SHA-256 を各 upload 直前に再確認する。ビルド/署名と公開を分離して、検証した成果物をそのまま配信できる。
+- CI と Windows の公開処理は、R2 の一覧と既存オブジェクトの実物を使い、同じ version の配布物の異内容上書きを拒否する。CI は version 付き package 全形式、Windows は nupkg を対象とする。CDN のキャッシュ済み 404 を未公開の根拠にしない。
 - R2 の固定 URL は更新時だけ exact URL purge の対象にし、version 付き package は purge しない。
 - Bridge ページは relay Worker の Static Assets（`infra/cloudflare/relay/public/`）であり、製品ページとは別系統である。
 - 製品ページの配信 HTML は `../vps-web/lp/ferry/`（編集元は `../vps-web/tools/lp/templates/`）、公開実体は VPS の `/srv/www/lp/ferry/`。Cloudflare の中継設定は `../vps-web/deploy/lp-gateways/ferry/` に置き、公開 URL と既存の R2・ライセンス通信を維持する。配信経路は `../vps-web/deploy/deploy-lp.ps1` に統一する。

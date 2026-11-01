@@ -82,6 +82,7 @@ cd infra/cloudflare/relay && pnpm exec wrangler deploy
 - 受信承認・中断を変更する場合は、ファイル作成待ち中の切断/拒否/取消で状態が復活せず部分ファイルが削除されること、複数 peer 接続で Reject/FlowAck が元の送信 peer に届くこと、同名フォルダの保存先が peer と転送終了をまたいで混在しないことを確認する。
 - relay の実装・デプロイ手順は [infra/cloudflare/relay/README.md](infra/cloudflare/relay/README.md)、障害切り分けは [docs/operations/runbook.md](docs/operations/runbook.md) を参照する。使用量の確認は Cloudflare GraphQL Analytics の workersInvocationsAdaptive / httpRequestsAdaptiveGroups を使う。
 - Firebase と旧 VPS の ferry-relay / coturn を実行・配信経路に戻さない。現在のバックエンド構成は [DESIGN.md](DESIGN.md#主要コンポーネント)、移行理由は [docs/design/cf-only-migration.md](docs/design/cf-only-migration.md) を参照する。
+- 配布処理を変更する場合は、`build/scripts/verify-release.py` と `scripts/release-local.ps1` の成果物検証も照合する。CI の package / feed 検証、公開前の証拠集約と R2 同版照合を省略せず、対象 OS で生成した実物を検証する。検証対象と公開対象の一致、および同じ version の配布物を異なる内容で上書きしない境界は [DESIGN.md](DESIGN.md#配布と運用の境界) を参照する。
 
 ## 言語
 
