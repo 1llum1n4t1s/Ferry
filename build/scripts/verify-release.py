@@ -26,8 +26,8 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def run(*args, cwd=None):
-    return subprocess.check_output([str(a) for a in args], cwd=cwd, text=True).strip()
+def run(*args, cwd=None, env=None):
+    return subprocess.check_output([str(a) for a in args], cwd=cwd, env=env, text=True).strip()
 
 
 def digest(path, algorithm='sha256'):
@@ -362,9 +362,16 @@ def main():
     workspace = Path(os.environ['GITHUB_WORKSPACE'])
     require(workspace.is_absolute() and workspace.resolve() == Path.cwd().resolve(), 'checkout workspace mismatch')
     require((workspace / '.git').exists(), 'Git checkout missing')
-    # container の UID 境界を、この checkout の一回の照会だけで明示的に信頼する。
-    require(run('git', '-c', 'safe.directory=' + str(workspace.resolve()), '-C', workspace.resolve(),
-                'rev-parse', 'HEAD') == identity['GITHUB_SHA'], 'checkout SHA mismatch')
+    # 古い Git は safe.directory の -c 指定を認めない。子 Git 専用の一時 HOME に
+    # 正式な global 設定を書き、この checkout の SHA 照会だけで使う。
+    with tempfile.TemporaryDirectory(prefix='ferry-git-', dir=os.environ['RUNNER_TEMP']) as git_home:
+        git_env = os.environ.copy()
+        git_env.update(HOME=git_home, XDG_CONFIG_HOME=git_home,
+                       GIT_CONFIG_GLOBAL=str(Path(git_home) / '.gitconfig'))
+        run('git', 'config', '--global', '--add', 'safe.directory', workspace.resolve(),
+            cwd=git_home, env=git_env)
+        require(run('git', '-C', workspace.resolve(), 'rev-parse', 'HEAD',
+                    env=git_env) == identity['GITHUB_SHA'], 'checkout SHA mismatch')
     require('dotnet publish src/Ferry/Ferry.csproj -c Release' in Path('.github/workflows/build.yml').read_text(encoding='utf-8'), 'Release build contract changed')
     executable = 'Ferry.exe' if args.runtime.startswith('win-') else 'Ferry' if args.runtime.startswith('osx-') else 'ferry'
     original = args.publish / executable
