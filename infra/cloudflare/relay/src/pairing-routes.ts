@@ -18,6 +18,7 @@
 
 import type { Env } from './index';
 import { pairLedgerMode, d1Unavailable, ledgerMisconfigured } from './pair-ledger';
+import { pairingDeliveryStatements, tryDrainPairingOutbox } from './pairing-outbox';
 import { verifySessionToken } from './auth';
 import { notifyInbox } from './device-routes';
 import { jsonOk, jsonError, readJsonObject } from './http';
@@ -253,6 +254,10 @@ export async function handlePairCreate(req: Request, env: Env): Promise<Response
          SELECT ?,?,?,?
          WHERE (SELECT COUNT(*) FROM pairing_nonces WHERE sid IN (?,?) AND nonce=?)=2`,
       ).bind(pairingId, orientedNames.nameA, orientedNames.nameB, createdAt, sidA, sidB, nonceClaim),
+      ...pairingDeliveryStatements(env, nonceClaim, pairingId, sidA, sidB,
+        pairingEvent(sidA, names.nameA, sidB, names.nameB, keys, createdAt), createdAt,
+        'SELECT 1 WHERE (SELECT COUNT(*) FROM pairing_nonces WHERE sid IN (?,?) AND nonce=?)=2',
+        [sidA, sidB, nonceClaim]),
       env.DB.prepare(
         'DELETE FROM pairing_nonces WHERE sid IN (?,?) AND nonce=?',
       ).bind(sidA, sidB, nonceClaim),
@@ -266,11 +271,12 @@ export async function handlePairCreate(req: Request, env: Env): Promise<Response
   }
   // claim 取得後の INSERT/DELETE は同一 transaction 内では必ず 1/2 行になる。不変条件が
   // 崩れた場合は push せず fail closed にし、台帳無しの成立をクライアントへ返さない。
-  if (changesOf(consumed[1]) !== 1 || changesOf(consumed[2]) !== 2) return d1Unavailable();
+  if ([1, 2, 3, 4].some((index) => changesOf(consumed[index]) !== 1)
+      || changesOf(consumed[5]) !== 2) return d1Unavailable();
 
   // 公開鍵は body.pkA / body.pkB ではなく D1 の権威データを使う (#C-32)。正式台帳と
   // nonce 消費の transaction が成功した後にだけ両 DeviceDO へ push する。
-  await notifyPairEstablished(env, sidA, names.nameA, sidB, names.nameB, keys);
+  await Promise.all([tryDrainPairingOutbox(env, sidA), tryDrainPairingOutbox(env, sidB)]);
 
   // （消費は上の条件付き DELETE で完了済み）単回使用がサーバ側で保証されることの背景:
   // 旧実装は verifyNonce が SELECT のみで、消費はクライアント側の revoke
@@ -329,17 +335,16 @@ async function loadSessionPublicKeys(env: Env, sidA: string, sidB: string): Prom
 /** pairingId を導出し、両 deviceId の DeviceDO inbox にペア成立イベントを push する
  *  (handlePairCreate / handlePairLink で共通)。2 つの DO は互いに独立しているため並列実行する。
  *  公開鍵は呼び出し元の申告ではなく D1 の権威データを使う (#C-32)。 */
-async function notifyPairEstablished(
-  env: Env,
+function pairingEvent(
   sidA: string,
   nameA: string,
   sidB: string,
   nameB: string,
-  suppliedKeys?: { pkA: string; pkB: string },
-): Promise<string> {
-  const keys = suppliedKeys ?? (await loadSessionPublicKeys(env, sidA, sidB));
+  keys: { pkA: string; pkB: string },
+  createdAt: number,
+): object {
   const pairingId = derivePairId(sidA, sidB);
-  const event = {
+  return {
     pairingId,
     sidA,
     nameA: nameA || 'PC-A',
@@ -347,10 +352,8 @@ async function notifyPairEstablished(
     nameB: nameB || 'PC-B',
     pkA: keys.pkA,
     pkB: keys.pkB,
-    createdAt: Date.now(),
+    createdAt,
   };
-  await Promise.all([notifyInbox(env, sidA, event), notifyInbox(env, sidB, event)]);
-  return pairingId;
 }
 
 // ---------- /pair/link (bearer 必須・PC コード貼付ペアリング用) ----------
@@ -420,6 +423,9 @@ export async function handlePairLink(req: Request, env: Env): Promise<Response> 
          SELECT ?,?,?,?
          WHERE EXISTS (SELECT 1 FROM pairing_nonces WHERE sid=? AND nonce=?)`,
       ).bind(pairingId, orientedNames.nameA, orientedNames.nameB, createdAt, sidB, nonceClaim),
+      ...pairingDeliveryStatements(env, nonceClaim, pairingId, sidA, sidB,
+        pairingEvent(sidA, names.nameA, sidB, names.nameB, keys, createdAt), createdAt,
+        'SELECT 1 FROM pairing_nonces WHERE sid=? AND nonce=?', [sidB, nonceClaim]),
       env.DB.prepare(
         'DELETE FROM pairing_nonces WHERE sid=? AND nonce=?',
       ).bind(sidB, nonceClaim),
@@ -431,10 +437,10 @@ export async function handlePairLink(req: Request, env: Env): Promise<Response> 
   if (changesOf(consumed[0]) !== 1) {
     return jsonError(409, 'NONCE_ALREADY_CONSUMED', 'pairing nonce was already consumed');
   }
-  if (changesOf(consumed[1]) !== 1 || changesOf(consumed[2]) !== 1) return d1Unavailable();
+  if ([1, 2, 3, 4, 5].some((index) => changesOf(consumed[index]) !== 1)) return d1Unavailable();
 
   // 正式台帳への upsert 成功後にだけ、両 DeviceDO へ成立イベントを push する。
-  await notifyPairEstablished(env, sidA, names.nameA, sidB, names.nameB, keys);
+  await Promise.all([tryDrainPairingOutbox(env, sidA), tryDrainPairingOutbox(env, sidB)]);
   return jsonOk({ ok: true, pairingId });
 }
 
@@ -521,15 +527,25 @@ export async function handlePairs(req: Request, env: Env, url: URL): Promise<Res
   }
   if (method === 'DELETE') {
     if (!env.DB) return d1Unavailable();
+    const cancellation = crypto.randomUUID().replaceAll('-', '');
     try {
-      await env.DB.prepare('DELETE FROM pairs WHERE pair_id=?').bind(pairId).run();
+      await env.DB.batch([
+        env.DB.prepare('DELETE FROM pairing_outbox WHERE pair_id=?').bind(pairId),
+        env.DB.prepare(`INSERT INTO pairing_generations (pair_id, generation, active) VALUES (?,?,0)
+          ON CONFLICT(pair_id) DO UPDATE SET generation=excluded.generation, revision=revision+1, active=0`)
+          .bind(pairId, cancellation),
+        env.DB.prepare('DELETE FROM pairs WHERE pair_id=?').bind(pairId),
+      ]);
     } catch (e) {
       console.error('pairs DELETE D1 failed', String(e));
       return d1Unavailable();
     }
     // 相手へ unpair を push (D1 ポーリング線形増殖を避ける・realtime 批判 §0-5)。
-    const peer = claims.deviceId === a ? b : a;
-    await notifyInbox(env, peer, { type: 'unpair', pairingId: pairId, createdAt: Date.now() });
+    const event = { type: 'unpair', pairingId: pairId, createdAt: Date.now() };
+    const deliveries = await Promise.allSettled([
+      notifyInbox(env, a, event, cancellation), notifyInbox(env, b, event, cancellation),
+    ]);
+    if (deliveries.some((delivery) => delivery.status === 'rejected')) console.error('unpair notification deferred to pair sync');
     return jsonOk({ ok: true });
   }
   return jsonError(405, 'METHOD_NOT_ALLOWED', method);

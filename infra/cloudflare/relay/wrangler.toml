@@ -11,10 +11,10 @@ compatibility_date = "2026-05-26"
 workers_dev = false
 preview_urls = false
 
-# sessions / pairing_nonces は 1h の一時データ。日次でまとめて削除し、短周期の
-# scheduled invocation は増やさない（pairs は永続 SSoT のため削除しない）。
+# sessions / pairing_nonces は日次だけで削除する。毎分の別 cron は配送予定の
+# 最大50件だけを処理し、全 DeviceDO を起こさない（pairs / 鍵は削除しない）。
 [triggers]
-crons = ["17 3 * * *"]
+crons = ["17 3 * * *", "* * * * *"]
 
 # === CF 単独完結移行 Step 4: Bridge QR ページを Workers Static Assets で配信 ===
 # public/ の index.html + bridge.js を Worker より先に配信し、API パス

@@ -9,6 +9,7 @@
 import { reserveRelayQuota, settleRelayQuota, validateRelayQuotaConfig } from './quota-do';
 import { verifySessionToken } from './auth';
 import { cleanupExpiredPairingData } from './maintenance';
+import { drainPairingOutbox } from './pairing-outbox';
 
 export interface Env {
   RELAY: DurableObjectNamespace;
@@ -205,7 +206,11 @@ const worker = {
     if (url.pathname !== RELAY_PATH) return new Response('Not Found', { status: 404 });
     return handleRelayAdmission(req, env);
   },
-  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+  async scheduled(controller: ScheduledController, env: Env): Promise<void> {
+    if (controller.cron === '* * * * *') {
+      await drainPairingOutbox(env);
+      return;
+    }
     const result = await cleanupExpiredPairingData(env);
     console.log(JSON.stringify({ message: 'pairing temp cleanup', ...result }));
   },

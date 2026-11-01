@@ -11,6 +11,7 @@
 
 import type { Env } from './index';
 import { pairLedgerMode, d1Unavailable, ledgerMisconfigured } from './pair-ledger';
+import { tryDrainPairingOutbox } from './pairing-outbox';
 import { hashPairId } from './index'; // 汎用 salted SHA-256 (pairId/deviceId 共通の DO 名ハッシュ)
 import { verifySessionToken } from './auth';
 import { jsonError, readTextBody } from './http';
@@ -120,6 +121,8 @@ export async function handleInbox(req: Request, env: Env): Promise<Response> {
     }
   }
 
+  // upgrade 前に未受理の成立通知を本人の inbox へ復旧する。障害中も既存 inbox は開ける。
+  await tryDrainPairingOutbox(env, claims.deviceId);
   // 接続先 DeviceDO は token.deviceId から決まる (自分の inbox にしか繋げない)。
   const stub = await deviceStub(env, claims.deviceId);
   // WS upgrade をそのまま forward (URL を DO 内部パスに差し替えつつ upgrade を保持)。
@@ -134,12 +137,13 @@ export async function handleInbox(req: Request, env: Env): Promise<Response> {
  * 残らなかった。接続中 WS の本数を返して呼び出し側が観測できるようにする
  * （delivered=0 は「相手がオフライン」という正常な縮退で、エラーではない）。
  */
-export async function notifyInbox(env: Env, deviceId: string, event: object): Promise<number> {
+export async function notifyInbox(env: Env, deviceId: string, event: object, deliveryId?: string): Promise<number> {
   const stub = await deviceStub(env, deviceId);
   const resp = await stub.fetch(
     new Request('https://do/notify', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json',
+        ...(deliveryId ? { 'X-Ferry-Pairing-Delivery': deliveryId, 'X-Ferry-Recipient': deviceId } : {}) },
       body: JSON.stringify(event),
     }),
   );

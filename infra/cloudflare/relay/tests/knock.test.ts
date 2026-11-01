@@ -6,6 +6,7 @@
  * - DeviceDO.notify: type=knock は transient (storage に積まない・接続中 WS にだけ送る)。
  *   knock が INBOX_MAX を溢れさせてペア成立イベントを押し出す事故と、次回接続時の stale knock replay を防ぐ。
  */
+import { SqliteD1 } from './d1-fixture';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleSignaling } from '../src/signaling-routes';
 import { DeviceDO, INBOX_MAX_CONNECTIONS } from '../src/devicedo';
@@ -139,6 +140,7 @@ function makeFakeState() {
   const sent: string[] = [];
   const fakeWs = { readyState: 1, send: (m: string) => sent.push(m) };
   const state = {
+    blockConcurrencyWhile: async <T>(callback: () => Promise<T>) => callback(),
     storage: {
       get: async (k: string) => store.get(k),
       put: putSpy,
@@ -227,7 +229,9 @@ describe('DeviceDO.notify の knock transient 化', () => {
       (globalThis as { WebSocket?: unknown }).WebSocket = { OPEN: 1 };
     }
     const { state, putSpy, sent } = makeFakeState();
-    const dev = new DeviceDO(state as never, {});
+    const db = new SqliteD1();
+    db.sqlite.prepare('INSERT INTO pairs VALUES (?,?,?,?)').run('p', '', '', Date.now());
+    const dev = new DeviceDO(state as never, { DB: db });
     const res = await dev.fetch(
       new Request('https://do/notify', {
         method: 'POST',
@@ -245,7 +249,9 @@ describe('DeviceDO.notify の knock transient 化', () => {
       (globalThis as { WebSocket?: unknown }).WebSocket = { OPEN: 1 };
     }
     const { state, store } = makeFakeState();
-    const dev = new DeviceDO(state as never, {});
+    const db = new SqliteD1();
+    for (const id of ['p1', 'p2']) db.sqlite.prepare('INSERT INTO pairs VALUES (?,?,?,?)').run(id, '', '', Date.now());
+    const dev = new DeviceDO(state as never, { DB: db });
     const post = (body: unknown) =>
       dev.fetch(
         new Request('https://do/notify', {
@@ -262,14 +268,28 @@ describe('DeviceDO.notify の knock transient 化', () => {
     }
     // 別ペアのイベントは残る（畳み込みは pairingId 単位）
     await post({ pairingId: 'p2', sidA: A, sidB: B, createdAt: Date.now() });
-    // unpair は type が違うので成立イベントとは別枠で保持される
+    // unpair 後は同じ pair の成立イベントも取り消す。
+    db.sqlite.prepare('DELETE FROM pairs WHERE pair_id=?').run('p1');
     await post({ type: 'unpair', pairingId: 'p1', createdAt: Date.now() });
 
     const inbox = store.get('inbox') as Array<{ pairingId: string; type?: string }>;
-    expect(inbox.filter((x) => x.pairingId === 'p1' && x.type === undefined)).toHaveLength(1);
+    expect(inbox.filter((x) => x.pairingId === 'p1' && x.type === undefined)).toHaveLength(0);
     expect(inbox.filter((x) => x.pairingId === 'p2')).toHaveLength(1);
     expect(inbox.filter((x) => x.type === 'unpair')).toHaveLength(1);
-    expect(inbox).toHaveLength(3);
+    expect(inbox).toHaveLength(2);
+  });
+
+  it('durable inbox 保存失敗は非2xxで返し、WebSocketへ先に送らない', async () => {
+    const { state, putSpy, sent } = makeFakeState();
+    const db = new SqliteD1();
+    db.sqlite.prepare('INSERT INTO pairs VALUES (?,?,?,?)').run('p', '', '', Date.now());
+    putSpy.mockRejectedValueOnce(new Error('durable storage unavailable'));
+    const dev = new DeviceDO(state as never, { DB: db });
+    const response = await dev.fetch(new Request('https://do/notify', {
+      method: 'POST', body: JSON.stringify({ pairingId: 'p', sidA: A, sidB: B, createdAt: Date.now() }),
+    }));
+    expect(response.status).toBe(500);
+    expect(sent).toHaveLength(0);
   });
 
   it('openInbox は stale 行を storage から prune して fresh 行だけ flush する', async () => {
@@ -278,12 +298,14 @@ describe('DeviceDO.notify の knock transient 化', () => {
     const { state, putSpy, deleteSpy, store, setAlarmSpy } = makeFakeState();
     const stale = { pairingId: 'stale', createdAt: now - 60 * 60 * 1000 };
     const fresh = { pairingId: 'fresh', createdAt: now - 1_000 };
+    const db = new SqliteD1();
+    db.sqlite.prepare('INSERT INTO pairs VALUES (?,?,?,?)').run('fresh', '', '', now);
     store.set('inbox', [stale, fresh]);
     const flushed: string[] = [];
     const restorePair = installFakeWebSocketPair(flushed);
     const restoreResponse = installFakeResponse();
     try {
-      const dev = new DeviceDO(state as never, {});
+      const dev = new DeviceDO(state as never, { DB: db });
       const response = await (dev as unknown as { openInbox: () => Promise<Response> }).openInbox();
       expect(response.status).toBe(101);
       expect(store.get('inbox')).toEqual([fresh]);
@@ -345,7 +367,9 @@ describe('DeviceDO.notify の knock transient 化', () => {
     const now = 1_800_000_000_000;
     vi.spyOn(Date, 'now').mockReturnValue(now);
     const { state, setAlarmSpy } = makeFakeState();
-    const dev = new DeviceDO(state as never, {});
+    const db = new SqliteD1();
+    for (const id of ['old', 'new']) db.sqlite.prepare('INSERT INTO pairs VALUES (?,?,?,?)').run(id, '', '', now);
+    const dev = new DeviceDO(state as never, { DB: db });
     const post = (body: unknown) =>
       dev.fetch(
         new Request('https://do/notify', {

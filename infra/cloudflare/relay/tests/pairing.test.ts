@@ -1,3 +1,4 @@
+import { SqliteD1 } from './d1-fixture';
 /**
  * CF 単独完結移行 Step 2 / Step 7: pairing-routes の単体テスト。
  *
@@ -8,6 +9,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { derivePairId, handlePairCreate, handlePairLink, handlePairSession, handlePairs } from '../src/pairing-routes';
 import { mintSessionToken } from '../src/auth';
+import { drainPairingOutbox } from '../src/pairing-outbox';
 import type { Env } from '../src/index';
 
 const notifyInboxMock = vi.fn(async () => {});
@@ -41,193 +43,24 @@ describe('derivePairId', () => {
 
 // ------------------ handlePairLink (D1 stub + notifyInbox mock) ------------------
 
-class FakeD1 {
-  private nonces = new Map<string, { nonce: string; createdAt: number }>(); // sid -> pairing_nonces 行
-  private sessions = new Map<string, { displayName: string; publicKey: string; createdAt: number }>();
-  private publicKeys = new Map<string, string>(); // sid -> sessions.public_key
-  private pairs = new Map<string, { nameA: string; nameB: string; createdAt: number }>();
-
+class FakeD1 extends SqliteD1 {
   setSessionActive(sid: string, createdAt: number, nonce = 'n'.repeat(32)) {
-    this.nonces.set(sid, { nonce, createdAt });
-    this.sessions.set(sid, { displayName: '', publicKey: this.publicKeys.get(sid) ?? '', createdAt });
+    this.sqlite.prepare("INSERT INTO sessions (sid,created_at) VALUES (?,?) ON CONFLICT(sid) DO UPDATE SET created_at=excluded.created_at").run(sid, createdAt);
+    this.sqlite.prepare('INSERT OR REPLACE INTO pairing_nonces VALUES (?,?,?)').run(sid, nonce, createdAt);
   }
-
-  /** pairing_nonces 行が残っているか（/pair/create の nonce 消費を検証する）。 */
-  hasNonce(sid: string): boolean {
-    return this.nonces.has(sid);
-  }
-
-  /** rere #C-32 用: sessions.public_key（サーバーが持つ権威データ）を仕込む。 */
+  hasNonce(sid: string): boolean { return Boolean(this.sqlite.prepare('SELECT 1 FROM pairing_nonces WHERE sid=?').get(sid)); }
   setSessionPublicKey(sid: string, publicKey: string) {
-    this.publicKeys.set(sid, publicKey);
-    const session = this.sessions.get(sid);
-    if (session) session.publicKey = publicKey;
+    this.sqlite.prepare('INSERT INTO sessions (sid,public_key,created_at) VALUES (?,?,?) ON CONFLICT(sid) DO UPDATE SET public_key=excluded.public_key').run(sid, publicKey, Date.now());
   }
-
-  hasPair(pairId: string): boolean {
-    return this.pairs.has(pairId);
+  hasPair(pairId: string): boolean { return Boolean(this.sqlite.prepare('SELECT 1 FROM pairs WHERE pair_id=?').get(pairId)); }
+  getPair(pairId: string) {
+    const row = this.sqlite.prepare('SELECT name_a,name_b,created_at FROM pairs WHERE pair_id=?').get(pairId);
+    return row ? { nameA: row.name_a as string, nameB: row.name_b as string, createdAt: row.created_at as number } : undefined;
   }
-
-  getPair(pairId: string): { nameA: string; nameB: string; createdAt: number } | undefined {
-    return this.pairs.get(pairId);
-  }
-
-  setPair(pairId: string, nameA = '', nameB = '', createdAt = Date.now()): void {
-    this.pairs.set(pairId, { nameA, nameB, createdAt });
-  }
-
-  prepare(sql: string) {
-    const nonces = this.nonces;
-    const sessions = this.sessions;
-    const publicKeys = this.publicKeys;
-    const pairs = this.pairs;
-    // sessions と pairing_nonces で返す列が違うので SQL で振り分ける
-    const isSessions = sql.includes('FROM sessions');
-    const isSessionInsert = sql.includes('INTO sessions');
-    const isSessionDelete = sql.includes('DELETE FROM sessions');
-    const isNonceInsert = sql.includes('INTO pairing_nonces');
-    const isDeleteNonce = sql.includes('DELETE FROM pairing_nonces');
-    const isNonceClaim = sql.includes('UPDATE pairing_nonces SET nonce=?');
-    const isPairSelect = sql.includes('FROM pairs');
-    const isPairInsert = sql.includes('INTO pairs');
-    const isPairUpdate = sql.includes('UPDATE pairs');
-    const isPairDelete = sql.includes('DELETE FROM pairs');
-    // 条件付き DELETE (WHERE sid=? AND nonce=?) は compare-and-swap。nonce 不一致なら消えない。
-    const isConditionalDelete = isDeleteNonce && sql.includes('nonce=?');
-    return {
-      bind: (...args: unknown[]) => {
-        const apply = (): number => {
-          if (isSessionInsert) {
-            const sid = args[0] as string;
-            const displayName = args[1] as string;
-            const publicKey = args[2] as string;
-            const createdAt = args[3] as number;
-            sessions.set(sid, { displayName, publicKey, createdAt });
-            publicKeys.set(sid, publicKey);
-            return 1;
-          }
-          if (isSessionDelete) {
-            const existed = sessions.delete(args[0] as string);
-            publicKeys.delete(args[0] as string);
-            return existed ? 1 : 0;
-          }
-          if (isNonceInsert) {
-            nonces.set(args[0] as string, { nonce: args[1] as string, createdAt: args[2] as number });
-            return 1;
-          }
-          if (isNonceClaim) {
-            const claim = args[0] as string;
-            if (!sql.includes('sid IN')) {
-              const sid = args[1] as string;
-              const nonce = args[2] as string;
-              const cutoff = args[3] as number;
-              const row = nonces.get(sid);
-              if (!row || row.nonce !== nonce || row.createdAt < cutoff) return 0;
-              row.nonce = claim;
-              return 1;
-            }
-            const sidA = args[3] as string;
-            const nonceA = args[4] as string;
-            const cutoffA = args[5] as number;
-            const sidB = args[6] as string;
-            const nonceB = args[7] as string;
-            const cutoffB = args[8] as number;
-            const rowA = nonces.get(sidA);
-            const rowB = nonces.get(sidB);
-            if (!rowA || !rowB || rowA.nonce !== nonceA || rowB.nonce !== nonceB) return 0;
-            if (rowA.createdAt < cutoffA || rowB.createdAt < cutoffB) return 0;
-            rowA.nonce = claim;
-            rowB.nonce = claim;
-            return 2;
-          }
-          if (isPairInsert) {
-            const pairId = args[0] as string;
-            const nameA = args[1] as string;
-            const nameB = args[2] as string;
-            const createdAt = args[3] as number;
-            // /pair/create の INSERT ... SELECT は、両 nonce が同じ claim 値かを条件にする。
-            if (sql.includes('SELECT')) {
-              if (sql.includes('COUNT(*)')) {
-                const rowA = nonces.get(args[4] as string);
-                const rowB = nonces.get(args[5] as string);
-                if (!rowA || !rowB || rowA.nonce !== args[6] || rowB.nonce !== args[6]) return 0;
-              } else {
-                const row = nonces.get(args[4] as string);
-                if (!row || row.nonce !== args[5]) return 0;
-              }
-            }
-            pairs.set(pairId, { nameA, nameB, createdAt });
-            return 1;
-          }
-          if (isPairUpdate) {
-            const pairId = args[3] as string;
-            if (!pairs.has(pairId)) return 0;
-            pairs.set(pairId, { nameA: args[0] as string, nameB: args[1] as string, createdAt: args[2] as number });
-            return 1;
-          }
-          if (isPairDelete) {
-            const existed = pairs.delete(args[0] as string);
-            return existed ? 1 : 0;
-          }
-          if (!isDeleteNonce) return 0;
-          if (sql.includes('sid IN')) {
-            const claim = args[2] as string;
-            let changes = 0;
-            for (const sid of [args[0] as string, args[1] as string]) {
-              if (nonces.get(sid)?.nonce === claim) {
-                nonces.delete(sid);
-                changes += 1;
-              }
-            }
-            return changes;
-          }
-          const sid = args[0] as string;
-          const row = nonces.get(sid);
-          if (!row) return 0;
-          if (isConditionalDelete && row.nonce !== (args[1] as string)) return 0;
-          nonces.delete(sid);
-          return 1;
-        };
-        return {
-          first: async <T>(): Promise<T | null> => {
-            const sid = args[0] as string;
-            if (isSessions && sql.includes('AS pkA')) {
-              const key = (id: string) => sessions.get(id)?.publicKey ?? publicKeys.get(id) ?? null;
-              return { pkA: key(sid), pkB: key(args[1] as string) } as unknown as T;
-            }
-            if (isSessions) {
-              const session = sessions.get(sid);
-              if (!session && !publicKeys.has(sid)) return null;
-              return {
-                display_name: session?.displayName ?? '',
-                public_key: session?.publicKey ?? publicKeys.get(sid) ?? '',
-              } as unknown as T;
-            }
-            if (isPairSelect) {
-              const pairId = sid;
-              const pair = pairs.get(pairId);
-              if (!pair) return null;
-              return { pair_id: pairId, name_a: pair.nameA, name_b: pair.nameB, created_at: pair.createdAt } as unknown as T;
-            }
-            const row = nonces.get(sid);
-            if (!row) return null;
-            return { nonce: row.nonce, created_at: row.createdAt } as unknown as T;
-          },
-          // batch() から実行される DELETE/INSERT/UPDATE を反映する擬似 statement。
-          __run: apply,
-          run: async () => ({ success: true, meta: { changes: apply() } }),
-        };
-      },
-    };
-  }
-
-  /** env.DB.batch(stmts) 相当。prepare().bind() が返す擬似 statement の __run を順に適用し、
-   *  D1 と同じく meta.changes を返す。 */
-  async batch(stmts: Array<{ __run?: () => number }>): Promise<unknown[]> {
-    return stmts.map((s) => ({ success: true, meta: { changes: s.__run?.() ?? 0 } }));
+  setPair(pairId: string, nameA = '', nameB = '', createdAt = Date.now()) {
+    this.sqlite.prepare('INSERT OR REPLACE INTO pairs VALUES (?,?,?,?)').run(pairId, nameA, nameB, createdAt);
   }
 }
-
 const SECRET = 'test-cf-hmac-secret-0123456789';
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -248,6 +81,100 @@ function mkRequest(body: unknown, token?: string): Request {
 describe('handlePairLink', () => {
   beforeEach(() => {
     notifyInboxMock.mockClear();
+  });
+
+  it('片側通知失敗でも nonce/pairs と配送予定を確定し、失敗宛先だけ元 payload を再送する', async () => {
+    const db = new FakeD1();
+    db.setSessionActive(B, Date.now(), LINK_NONCE);
+    const env = makeEnv(db);
+    const token = await bearerFor(A, env);
+    notifyInboxMock.mockImplementation(async (...args: unknown[]) => {
+      if (args[1] === B) throw new Error('recipient unavailable');
+    });
+    try {
+      const response = await handlePairLink(mkRequest({ sidB: B, nonceB: LINK_NONCE }, token), env);
+      expect(response.status).toBe(200);
+      expect(db.hasNonce(B)).toBe(false);
+      const pending = db.sqlite.prepare('SELECT recipient_id,payload_json,attempts FROM pairing_outbox').all();
+      expect(pending).toHaveLength(1);
+      expect(pending[0]).toMatchObject({ recipient_id: B, attempts: 1 });
+      const original = JSON.parse(pending[0].payload_json as string);
+      notifyInboxMock.mockImplementation(async () => {});
+      notifyInboxMock.mockClear();
+      await drainPairingOutbox(env, B, Date.now() + 30_001);
+      expect(notifyInboxMock).toHaveBeenCalledTimes(1);
+      expect(notifyInboxMock.mock.calls[0][2]).toEqual(original);
+      expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM pairing_outbox').get()?.n).toBe(0);
+    } finally { notifyInboxMock.mockImplementation(async () => {}); }
+  });
+
+  it('outbox 保存失敗は nonce 消費と pairs 作成も同 transaction で取り消す', async () => {
+    const db = new FakeD1();
+    db.setSessionActive(B, Date.now(), LINK_NONCE);
+    db.sqlite.exec(`CREATE TRIGGER fail_outbox BEFORE INSERT ON pairing_outbox
+      WHEN NEW.recipient_id='${B}' BEGIN SELECT RAISE(ABORT,'injected failure'); END`);
+    const env = makeEnv(db);
+    const response = await handlePairLink(mkRequest({ sidB: B, nonceB: LINK_NONCE }, await bearerFor(A, env)), env);
+    expect(response.status).toBe(503);
+    expect(db.hasNonce(B)).toBe(true);
+    expect(db.hasPair(derivePairId(A, B))).toBe(false);
+    expect(db.sqlite.prepare('SELECT COUNT(*) n FROM pairing_outbox').get()?.n).toBe(0);
+    expect(db.sqlite.prepare('SELECT COUNT(*) n FROM pairing_generations').get()?.n).toBe(0);
+    expect(notifyInboxMock).not.toHaveBeenCalled();
+  });
+
+  it('DeviceDO受理後のD1削除失敗も配送予定を残し、同じevent/宛先/payloadだけ再送する', async () => {
+    const db = new FakeD1();
+    db.setSessionActive(B, Date.now(), LINK_NONCE);
+    const originalPrepare = db.prepare.bind(db);
+    let failAck = true;
+    vi.spyOn(db, 'prepare').mockImplementation((sql) => {
+      const statement = originalPrepare(sql);
+      if (!sql.startsWith('DELETE FROM pairing_outbox WHERE event_id=')) return statement;
+      return { ...statement, bind: (...args: unknown[]) => {
+        const bound = statement.bind(...args);
+        return { ...bound, run: async () => {
+          if (args[1] === A && failAck) { failAck = false; throw new Error('D1 delete unavailable'); }
+          return bound.run();
+        } };
+      } };
+    });
+    const env = makeEnv(db);
+    expect((await handlePairLink(mkRequest({ sidB: B, nonceB: LINK_NONCE }, await bearerFor(A, env)), env)).status).toBe(200);
+    const rows = db.sqlite.prepare('SELECT event_id,recipient_id,payload_json FROM pairing_outbox').all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].recipient_id).toBe(A);
+    notifyInboxMock.mockClear();
+    await drainPairingOutbox(env, A, Date.now() + 30_001);
+    expect(notifyInboxMock).toHaveBeenCalledTimes(1);
+    expect(notifyInboxMock.mock.calls[0].slice(1)).toEqual([A, JSON.parse(rows[0].payload_json as string), rows[0].event_id]);
+    expect(db.sqlite.prepare('SELECT COUNT(*) n FROM pairing_outbox').get()?.n).toBe(0);
+  });
+
+  it('unpair は両宛先の未受理通知を消し、再 pair は取消より新しい別世代になる', async () => {
+    const db = new FakeD1();
+    db.setSessionActive(B, Date.now(), LINK_NONCE);
+    const env = makeEnv(db), token = await bearerFor(A, env);
+    notifyInboxMock.mockImplementation(async () => { throw new Error('temporary DO failure'); });
+    try {
+      expect((await handlePairLink(mkRequest({ sidB: B, nonceB: LINK_NONCE }, token), env)).status).toBe(200);
+      const pairId = derivePairId(A, B);
+      const first = db.sqlite.prepare('SELECT generation FROM pairing_generations').get()?.generation;
+      const url = new URL('https://relay.test/pairs/' + pairId);
+      expect((await handlePairs(new Request(url, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } }), env, url)).status).toBe(200);
+      expect(db.sqlite.prepare('SELECT COUNT(*) n FROM pairing_outbox').get()?.n).toBe(0);
+      expect(db.sqlite.prepare('SELECT active,revision FROM pairing_generations').get()).toMatchObject({ active: 0, revision: 2 });
+      db.setSessionActive(B, Date.now(), LINK_NONCE);
+      expect((await handlePairLink(mkRequest({ sidB: B, nonceB: LINK_NONCE }, token), env)).status).toBe(200);
+      const latest = db.sqlite.prepare('SELECT generation,active,revision FROM pairing_generations').get();
+      expect(latest).toMatchObject({ active: 1, revision: 3 });
+      expect(latest?.generation).not.toBe(first);
+      db.sqlite.exec('UPDATE pairing_outbox SET expires_at=0,next_attempt_at=0');
+      notifyInboxMock.mockClear();
+      await drainPairingOutbox(env);
+      expect(notifyInboxMock).not.toHaveBeenCalled();
+      expect(db.sqlite.prepare('SELECT COUNT(*) n FROM pairing_outbox').get()?.n).toBe(0);
+    } finally { notifyInboxMock.mockImplementation(async () => {}); }
   });
 
   it('正常系: 相手セッションがアクティブなら 200 + pairingId + 両者へ notifyInbox', async () => {

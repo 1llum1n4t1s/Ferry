@@ -17,6 +17,7 @@
  */
 
 import { readJsonObject } from './http';
+import type { Env } from './index';
 
 const INBOX_TTL_MS = 60 * 60 * 1000; // 1h
 const INBOX_MAX = 50;
@@ -57,15 +58,18 @@ function pruneInbox(events: InboxEvent[], now: number): InboxEvent[] {
 
 export class DeviceDO {
   private state: DurableObjectState;
+  private env: Env;
 
-  constructor(state: DurableObjectState, _env: unknown) {
+  constructor(state: DurableObjectState, env: unknown) {
     this.state = state;
+    this.env = env as Env;
   }
 
   async fetch(req: Request): Promise<Response> {
     // inbox WebSocket upgrade
     if (req.headers.get('Upgrade') === 'websocket') {
-      return this.openInbox();
+      // D1 の照会待ち中に新世代 notify を受理してから旧 flush を送る順序を作らない。
+      return this.state.blockConcurrencyWhile(() => this.openInbox());
     }
 
     const url = new URL(req.url);
@@ -81,7 +85,7 @@ export class DeviceDO {
           if (method === 'DELETE') return await this.deletePresence();
           return await this.readPresence();
         case 'notify': // Worker 内部のみ (/pair/create から)
-          return await this.notify(req);
+          return await this.state.blockConcurrencyWhile(() => this.notify(req));
         default:
           return json(400, { error: 'BAD_ACTION', action });
       }
@@ -153,7 +157,6 @@ export class DeviceDO {
     const client = pair[0];
     const server = pair[1];
     // Hibernation 対応で accept (アイドル中は課金 0)。
-    this.state.acceptWebSocket(server);
 
     // 接続時に未読 (TTL 内) を flush。重複は client 側 SeenPairingIds + start-time gate で dedupe する
     // (Firebase の subscribe-replay と同じ前提なので client 防御をそのまま使える)。
@@ -172,7 +175,9 @@ export class DeviceDO {
     // 旧デプロイ時に alarm 無しで保存された行も、次回接続時に cleanup を予約する。
     // 既存 alarm より早い期限があれば前倒しするが、通知時の「最も遅い期限」設定は崩さない。
     if (events.length > 0) await this.ensureInboxAlarm(events, 'earliest');
-    for (const e of events) {
+    const deliverable = await this.currentInboxEvents(events);
+    this.state.acceptWebSocket(server);
+    for (const e of deliverable) {
       try {
         server.send(JSON.stringify(e));
       } catch {
@@ -188,24 +193,49 @@ export class DeviceDO {
    *  押し出す上、次回 inbox 接続時の flush で stale ノックが replay される。 */
   private async notify(req: Request): Promise<Response> {
     const e = (await req.json()) as InboxEvent;
+    const delivery = req.headers.get('X-Ferry-Pairing-Delivery');
+    let revision: number | undefined;
+    if (delivery) {
+      const current = await this.env.DB.prepare('SELECT generation, revision, active FROM pairing_generations WHERE pair_id=?')
+        .bind(e.pairingId).first<{ generation: string; revision: number; active: number }>();
+      if (!current || current.generation !== delivery || current.active !== (e.type === 'unpair' ? 0 : 1)) {
+        return json(200, { ok: true, delivered: 0 });
+      }
+      if (e.type !== 'unpair') {
+        const pending = await this.env.DB.prepare(`SELECT 1 FROM pairing_outbox
+          WHERE event_id=? AND recipient_id=? AND expires_at>?`)
+          .bind(delivery, req.headers.get('X-Ferry-Recipient'), Date.now()).first();
+        if (!pending) return json(200, { ok: true, delivered: 0 });
+      }
+      const accepted = await this.state.storage.get<number>(`pair-revision:${e.pairingId}`);
+      if (accepted !== undefined && accepted > current.revision) return json(200, { ok: true, delivered: 0 });
+      revision = current.revision;
+      e._pairingGeneration = delivery;
+      e._pairingRevision = revision;
+    } else if (typeof e.pairingId === 'string' && e.type !== 'knock') {
+      // 旧 worker から飛行中の未version通知も、新世代を巻き戻す根拠にはしない。
+      const current = await this.env.DB.prepare('SELECT generation FROM pairing_generations WHERE pair_id=?')
+        .bind(e.pairingId).first();
+      const pair = await this.env.DB.prepare('SELECT pair_id FROM pairs WHERE pair_id=?').bind(e.pairingId).first();
+      if (current || Boolean(pair) !== (e.type !== 'unpair')) return json(200, { ok: true, delivered: 0 });
+    }
     const transient = e.type === 'knock';
     if (!transient) {
       const stored = await this.state.storage.get<InboxEvent[]>('inbox');
       const events = Array.isArray(stored) ? stored : [];
       const now = Date.now();
-      // 同じ (pairingId, type) のイベントは積み増さず最新 1 件に畳む。
-      // /pair/link は相手セッションが 1h アクティブな間なら何度でも成立でき（設計どおり: 相手の
-      // nonce 値所有を要求しない認可モデル）、同一 sidA→sidB の繰り返しは常に同じ pairingId を生む。
-      // 積み増すと RATELIMIT_DEVICE(30/60s) の範囲でも 2 分弱で INBOX_MAX(50) を溢れさせ、
-      // **他ピアの未読ペア成立/unpair イベントを押し出せる**（WS 未接続の相手が取りこぼす）。
-      // クライアントは元々 SeenPairingIds で重複を捨てるため、畳んでも観測される挙動は変わらない。
+      // 同じ pair は最新状態へ畳み、取消・再成立で古い通知が他 peer の枠を押し出さないようにする。
       const pairingId = typeof e.pairingId === 'string' ? e.pairingId : null;
       const kept = pairingId === null
         ? events
-        : events.filter((x) => !(x.pairingId === pairingId && x.type === e.type));
+        : events.filter((x) => !(x.pairingId === pairingId && (revision !== undefined || e.type === 'unpair' || x.type === e.type)));
       kept.push(e);
       const pruned = pruneInbox(kept, now);
-      await this.state.storage.put('inbox', pruned);
+      if (revision !== undefined) {
+        await this.state.storage.put({ inbox: pruned, [`pair-revision:${e.pairingId}`]: revision });
+      } else {
+        await this.state.storage.put('inbox', pruned);
+      }
       // 新しい通知で延命される範囲の最も遅い期限を、DO あたり 1 個の alarm に設定する。
       await this.ensureInboxAlarm(pruned, 'latest');
     }
@@ -222,6 +252,24 @@ export class DeviceDO {
       }
     }
     return json(200, { ok: true, delivered });
+  }
+
+  /** 再接続でも、取消済み・再成立前の世代を replay しない。D1 障害なら upgrade を失敗させる。 */
+  private async currentInboxEvents(events: InboxEvent[]): Promise<InboxEvent[]> {
+    const retained: InboxEvent[] = [];
+    for (const event of events) {
+      if (typeof event.pairingId !== 'string') { retained.push(event); continue; }
+      const current = await this.env.DB.prepare('SELECT generation, active FROM pairing_generations WHERE pair_id=?')
+        .bind(event.pairingId).first<{ generation: string; active: number }>();
+      if (current) {
+        if (event._pairingGeneration === current.generation && current.active === (event.type === 'unpair' ? 0 : 1)) retained.push(event);
+      } else if (event._pairingGeneration === undefined) {
+        // 世代導入前から残る inbox だけは、既存台帳の有無で成立/取消を区別する。
+        const pair = await this.env.DB.prepare('SELECT pair_id FROM pairs WHERE pair_id=?').bind(event.pairingId).first();
+        if (Boolean(pair) === (event.type !== 'unpair')) retained.push(event);
+      }
+    }
+    return retained;
   }
 
   /** inbox の cleanup 用 alarm を、既存 alarm を不必要に後ろ倒ししない範囲で予約する。 */

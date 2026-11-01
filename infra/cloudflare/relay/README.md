@@ -66,6 +66,54 @@
 
 ## 開発
 
+### 認証鍵の移行
+
+`device_key_bindings` が deviceId と認証公開鍵の強整合な正本となる。KV の既存値は保持するが、
+positive / negative のどちらも初回登録・自動移行の根拠にはしない。`auth_key_migration` の初期状態は
+`importing` で、D1 へ import 済みの鍵だけを認証する。未移行 ID・D1 障害・状態欠損は 503
+`AUTH_BINDING_UNAVAILABLE`、確定 D1 鍵との差分だけが従来の 401 `DEVICE_PUBKEY_MISMATCH` になる。
+schema の再適用で `ready` や既存鍵を戻さない。
+
+切替は保守時間中に旧 KV writer を停止・drain し、operator が取得元・全件性・最終鍵を検証して
+承認した immutable snapshot を用いる。KV scan の一致、固定待機時間、再読込だけで完了と判断しない。
+writer freeze と snapshot の取得・承認はこの CLI が代行しない。新正本の稼働後に旧 KV writer 版へ
+rollback してはならない。remote schema / import / deploy は別途明示した運用操作として行う。
+
+入力は UTF-8 JSON の `{"bindings":[{"deviceId":"32桁の小文字hex","pubKeySpki":"既存の公開鍵文字列"}]}`。
+秘密鍵は含めない。承認済みファイルの raw SHA-256 と件数を別入力し、全件 D1 比較・競合0を確認する。
+既存鍵と違う import は全 INSERT を失敗させ、上書きしない。
+
+```powershell
+# Node 26。既定は --local。作業先は絶対パスで指定する。
+node scripts/import-key-snapshot.mjs --input <snapshot.json> --sha256 <承認済SHA256> --count <件数> --persist-to <作業領域の絶対パス> --writers-frozen --snapshot-approved
+# 同じ固定入力を検証し、最後に ready を明示する場合だけ --activate を付ける。
+# 本番運用では --persist-to の代わりに --remote --work-dir <SQL作業領域の絶対パス> を明示する。
+```
+
+`--activate` がない限り新規 ID は解禁しない。ready 後は一度確定した鍵を変更せず、新規同時登録の
+敗者へ cfToken を発行しない。SQL 作業ファイルは公開鍵を含み、指定した作業領域へ保持する。
+
+### ペア成立通知の再送
+
+create / link は nonce claim、正式 pairs、配送世代、固定 payload の両宛先 outbox を同じ D1 transaction
+へ保存する。DeviceDO の durable inbox 受理後だけその event / 宛先行を削除し、一時障害は確定済み
+ペアを取り消さない。再送で `createdAt` / 1時間 TTL を延長せず、at-least-once（重複し得る）で配る。
+
+既存の日次一時データ清掃を保ち、毎分 cron では due index から最大50宛先だけを処理する。
+失敗は30秒から最大5分まで backoff し、本人の inbox 接続前にもその宛先を drain する。
+空でも毎日1,440回の indexed D1 read が増える。全 DeviceDO の列挙・起動は行わない。
+
+unpair は両宛先の outbox を同じ transaction で取消し、永続 revision / tombstone を進める。
+DeviceDO は受理・保存・再接続 flush 時に正本の最新世代を確認し、受理済み新世代から旧世代へ戻らない。
+遅延した旧 pair / unpair は新しい成立を上書きしない。分散操作の瞬時の全体線形化や、旧クライアントの
+watch 開始前の古いイベントまで無期限に復元する保証は追加しない。
+
+実 workerd / D1 / WebSocket のローカル回帰は、既存 wrangler の Miniflare / esbuild を使う。
+
+```powershell
+node tests/workerd-regressions.mjs --work-dir <新規の検証作業領域の絶対パス>
+```
+
 ```powershell
 # ローカル実行 (DO は memory mode、本番と微妙に挙動が違う点に注意)
 wrangler dev

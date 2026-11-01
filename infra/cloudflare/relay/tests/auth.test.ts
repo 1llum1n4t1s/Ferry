@@ -1,3 +1,4 @@
+import { SqliteD1 } from './d1-fixture';
 /**
  * Ferry Workers /auth/token の単体テスト（CF 単独完結）
  *
@@ -46,11 +47,13 @@ class InMemoryKv {
 
 function makeAuthEnv() {
     const kv = new InMemoryKv();
+    const db = new SqliteD1();
     const env = {
         DEVICE_KEY_BINDING: kv,
+        DB: db,
         SESSION_HMAC_SECRET: 'test-cf-hmac-secret-0123456789',
     } as unknown as Env;
-    return { env, kv };
+    return { env, kv, db };
 }
 
 async function buildSignedAuthBody(deviceId: string, tsOverride?: number) {
@@ -72,8 +75,8 @@ function mkRequest(body: unknown): Request {
 }
 
 describe('handleAuthToken', () => {
-    it('正常系: 署名検証 通過 + KV 新規バインド + cfToken 返却', async () => {
-        const { env, kv } = makeAuthEnv();
+    it('正常系: 署名検証 通過 + D1 新規バインド + cfToken 返却', async () => {
+        const { env, db } = makeAuthEnv();
         const deviceId = 'a'.repeat(32);
         const body = await buildSignedAuthBody(deviceId);
         const res = await handleAuthToken(mkRequest(body), env);
@@ -85,8 +88,8 @@ describe('handleAuthToken', () => {
         // cfToken は同じ secret で verify が通り deviceId を含む
         const claims = await verifySessionToken(j.cfToken, env);
         expect(claims?.deviceId).toBe(deviceId);
-        // KV に新規バインドされている
-        expect(await kv.get(`device-pubkey:${deviceId}`)).toBe(body.pubKeySpki);
+        // D1 に新規バインドされている
+        expect(db.sqlite.prepare('SELECT pubkey_spki FROM device_key_bindings WHERE device_id=?').get(deviceId)?.pubkey_spki).toBe(body.pubKeySpki);
     });
 
     it('SESSION_HMAC_SECRET 未設定なら 500 SERVER_MISCONFIGURED', async () => {
@@ -127,10 +130,10 @@ describe('handleAuthToken', () => {
         expect(j.error).toBe('BAD_SIGNATURE');
     });
 
-    it('KV に既存と異なる pubKey が binding 済みなら 401 DEVICE_PUBKEY_MISMATCH', async () => {
-        const { env, kv } = makeAuthEnv();
+    it('D1 に既存と異なる pubKey が binding 済みなら 401 DEVICE_PUBKEY_MISMATCH', async () => {
+        const { env, db } = makeAuthEnv();
         const deviceId = 'd'.repeat(32);
-        await kv.put(`device-pubkey:${deviceId}`, 'totally-different-key');
+        db.seedKey(deviceId, 'totally-different-key');
         const body = await buildSignedAuthBody(deviceId);
         const res = await handleAuthToken(mkRequest(body), env);
         expect(res.status).toBe(401);
@@ -142,9 +145,9 @@ describe('handleAuthToken', () => {
         // attacker が他者 deviceId を主張して別 key で署名して repeat すると、 victim の device RL
         // を消費させてしまう DoS の回帰防止テスト。 KV binding mismatch check を device RL の前に
         // 置く設計を vitest で固定する。
-        const { env: baseEnv, kv } = makeAuthEnv();
+        const { env: baseEnv, db } = makeAuthEnv();
         const deviceId = 'd'.repeat(32);
-        await kv.put(`device-pubkey:${deviceId}`, 'totally-different-key');
+        db.seedKey(deviceId, 'totally-different-key');
         const limitSpy = vi.fn(async () => ({ success: true }));
         const env = { ...baseEnv, RATELIMIT_DEVICE: { limit: limitSpy } } as unknown as Env;
         const body = await buildSignedAuthBody(deviceId);
@@ -156,12 +159,12 @@ describe('handleAuthToken', () => {
         expect(limitSpy).not.toHaveBeenCalled();
     });
 
-    it('Codex 第7弾 #4: KV 一致時のみ RATELIMIT_DEVICE.limit を消費する', async () => {
+    it('Codex 第7弾 #4: D1 一致時のみ RATELIMIT_DEVICE.limit を消費する', async () => {
         // 設計の対称性を固定: binding 一致 (= 本物 client) なら RL を消費する。
-        const { env: baseEnv, kv } = makeAuthEnv();
+        const { env: baseEnv, db } = makeAuthEnv();
         const deviceId = 'e'.repeat(32);
         const body = await buildSignedAuthBody(deviceId);
-        await kv.put(`device-pubkey:${deviceId}`, body.pubKeySpki);
+        db.seedKey(deviceId, body.pubKeySpki);
         const limitSpy = vi.fn(async () => ({ success: true }));
         const env = { ...baseEnv, RATELIMIT_DEVICE: { limit: limitSpy } } as unknown as Env;
         const res = await handleAuthToken(mkRequest(body), env);
@@ -171,10 +174,10 @@ describe('handleAuthToken', () => {
     });
 
     it('既存 binding が同じ pubKey なら 200 を返す（再認証 OK）', async () => {
-        const { env, kv } = makeAuthEnv();
+        const { env, db } = makeAuthEnv();
         const deviceId = 'e'.repeat(32);
         const body = await buildSignedAuthBody(deviceId);
-        await kv.put(`device-pubkey:${deviceId}`, body.pubKeySpki);
+        db.seedKey(deviceId, body.pubKeySpki);
         const res = await handleAuthToken(mkRequest(body), env);
         expect(res.status).toBe(200);
     });
@@ -186,6 +189,44 @@ describe('handleAuthToken', () => {
         expect(res.status).toBe(400);
         const j = (await res.json()) as { error: string };
         expect(j.error).toBe('INVALID_DEVICE_ID');
+    });
+
+    it('移行中の未知 ID は KV の positive/negative によらず 503、KV を正本へ昇格しない', async () => {
+        for (const legacy of [null, 'legacy-public-key']) {
+            const db = new SqliteD1(false);
+            const get = vi.fn(async () => legacy);
+            const put = vi.fn();
+            const limit = vi.fn(async () => ({ success: true }));
+            const env = { DB: db, DEVICE_KEY_BINDING: { get, put }, RATELIMIT_DEVICE: { limit } } as unknown as Env;
+            const result = await handleAuthToken(mkRequest(await buildSignedAuthBody('f'.repeat(32))), env);
+            expect(result.status).toBe(503);
+            expect(get).not.toHaveBeenCalled();
+            expect(put).not.toHaveBeenCalled();
+            expect(limit).not.toHaveBeenCalled();
+            expect(db.sqlite.prepare('SELECT COUNT(*) AS n FROM device_key_bindings').get()?.n).toBe(0);
+        }
+    });
+
+    it('異なる正しい署名鍵による同一 ID の並列登録は D1 の一鍵だけが勝ち、敗者は RL を消費しない', async () => {
+        const { env: base, db } = makeAuthEnv();
+        const limit = vi.fn(async () => ({ success: true }));
+        const env = { ...base, RATELIMIT_DEVICE: { limit } } as unknown as Env;
+        const bodies = await Promise.all([buildSignedAuthBody('f'.repeat(32)), buildSignedAuthBody('f'.repeat(32))]);
+        const results = await Promise.all(bodies.map((body) => handleAuthToken(mkRequest(body), env)));
+        expect(results.map((result) => result.status).sort()).toEqual([200, 401]);
+        const winner = db.sqlite.prepare('SELECT pubkey_spki FROM device_key_bindings').get()?.pubkey_spki;
+        expect(winner).toBe(bodies[results.findIndex((result) => result.status === 200)].pubKeySpki);
+        expect(limit).toHaveBeenCalledTimes(1);
+    });
+
+    it('import 済みの鍵は importing 中も再認証でき、状態欠損では 503 に閉じる', async () => {
+        const { env, db } = makeAuthEnv();
+        const body = await buildSignedAuthBody('f'.repeat(32));
+        db.seedKey(body.deviceId, body.pubKeySpki);
+        db.sqlite.exec("UPDATE auth_key_migration SET phase='importing'");
+        expect((await handleAuthToken(mkRequest(body), env)).status).toBe(200);
+        db.sqlite.exec('DELETE FROM auth_key_migration');
+        expect((await handleAuthToken(mkRequest(body), env)).status).toBe(503);
     });
 
 });
