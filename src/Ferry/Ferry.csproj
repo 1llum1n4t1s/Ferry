@@ -39,7 +39,7 @@
   </ItemGroup>
 
   <Target Name="GenerateIcon" BeforeTargets="BeforeBuild" Inputs="..\..\icon\app_icon.png" Outputs="..\..\icon\app.ico" Condition="$([MSBuild]::IsOSPlatform('Windows'))">
-    <Exec Command="powershell -ExecutionPolicy Bypass -NoProfile -File &quot;$(ProjectDir)..\..\icon\generate_icon.ps1&quot;" />
+    <Exec Command="pwsh -ExecutionPolicy Bypass -NoProfile -File &quot;$(ProjectDir)..\..\icon\generate_icon.ps1&quot;" />
   </Target>
 
   <!-- AppVersion.Value を Directory.Build.props の <Version> から毎ビルド生成する。
@@ -83,12 +83,12 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <!-- Komorebi と同じローカライズ＆アイコン注入パターンで自動更新ダイアログを提供する。
          自前の SelfUpdateWindow/VM/Model は撤去し、このライブラリの UpdateDialogWindow に統一 -->
-    <PackageReference Include="VelopackUpdateDialog.Avalonia" Version="1.0.20" />
+    <PackageReference Include="VelopackUpdateDialog.Avalonia" Version="1.0.21" />
     <PackageReference Include="QRCoder" Version="1.8.1" />
-    <PackageReference Include="SuperLightLogger" Version="1.0.18" />
+    <PackageReference Include="SuperLightLogger" Version="1.0.19" />
     <!-- Avalonia の Linux サポートが Tmds.DBus.Protocol を transitive に引くため、
          CVE 対応版 (0.93.0) を直接指定して上書きする。-->
-    <PackageReference Include="Tmds.DBus.Protocol" Version="0.95.1" />
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.95.2" />
   </ItemGroup>
 
   <ItemGroup>

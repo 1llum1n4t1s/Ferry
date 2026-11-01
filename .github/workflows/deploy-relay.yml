@@ -50,13 +50,13 @@ jobs:
         # actions/setup-node@v7.0.0
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '22'
+          node-version: '26'
 
       # rere レビュー #C-05: wrangler を global install するとバージョンが lockfile と
       # 二重管理になる (旧実装は global 4.93.0 / lockfile 4.106.0 で、本番デプロイだけ
       # 古い CLI が使われていた)。pnpm を固定して lockfile 経由で解決し、単一の正本にする。
       - name: pnpm をインストール (サプライチェーン対策でバージョン固定)
-        run: npm install -g pnpm@12.5.1
+        run: npm install -g pnpm@12.16.1
 
       - name: 依存をインストール (lockfile 固定)
         working-directory: infra/cloudflare/relay

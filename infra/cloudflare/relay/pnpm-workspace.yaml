@@ -4,10 +4,4 @@ allowBuilds:
   sharp: true
   workerd: true
 minimumReleaseAgeExclude:
-  - miniflare@5.20260801.0-alpha || 5.20260926.1-alpha
-  - wrangler@4.119.0 || 4.144.0
-  - '@cloudflare/workers-types@5.20260920.1 || 5.20260930.1'
-# wrangler > miniflare の undici 解決版で脆弱性 10 件 (GHSA-w293-vg96-wgc3 他、
-# undici <7.29.1 対象) が残るため、既存 override の下限を修正版へ揃える。
-overrides:
-  undici: "^7.29.1"
+  - '@cloudflare/workers-types@5.20261031.1'

@@ -42,10 +42,10 @@ jobs:
         # actions/setup-node@v7.0.0
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '22'
+          node-version: '26'
 
       - name: pnpm をインストール (サプライチェーン対策でバージョン固定)
-        run: npm install -g pnpm@12.5.1
+        run: npm install -g pnpm@12.16.1
 
       - name: 依存をインストール (lockfile 固定)
         working-directory: infra/cloudflare/relay

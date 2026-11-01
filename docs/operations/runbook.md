@@ -60,14 +60,14 @@ Release ビルドは Info 以上を出力し 7 日保持。アプリのトレイ
 
 1. **影響範囲確認**: 全ユーザー影響か、特定環境（CGNAT・特定 OS・特定バージョン）のみか
 
-2. **`/health` を叩く**（依存の健全性まで検査する）
+2. **`/health` を叩く**（設定と binding の readiness を確認する）
 
    ```bash
    curl -s -w "\nHTTP %{http_code}\n" https://watashiba.kagayoi.com/health
    ```
 
-   - `HTTP 200` + `OK` → Worker と依存（D1 / KV / `SESSION_HMAC_SECRET` / `SALT`）はすべて健全
-   - `HTTP 503` + `{"ok":false,"failed":["D1"]}` → **`failed` 配列が壊れている依存を名指しする**。シナリオ B へ
+   - `HTTP 200` + `OK` → 必須設定と binding の readiness は正常。D1 / KV への実アクセスは行わないため、アクセス障害は各ルートの応答とログで切り分ける
+   - `HTTP 503` + `{"ok":false,"failed":["D1"]}` → **`failed` 配列が設定・binding の不備を示す**。シナリオ B へ
    - 応答なし / 5xx → Worker 自体かルーティングの問題。シナリオ B へ
 
 3. **症状から当たりをつける**
@@ -215,7 +215,7 @@ pnpm dlx wrangler d1 export ferry_ledger --remote --output ferry_ledger_$(date +
    - 権限: `Workers R2 Storage:Edit` + `Workers Scripts:Edit` + `D1:Edit`
    - スコープ: 対象アカウントのみ
 2. **GitHub Secrets 更新**: Settings → Secrets and variables → Actions → `CLOUDFLARE_API_TOKEN`
-3. **ローカル側も更新**: `C:\Users\IMT\dev\Secret\secrets.json` の `cloudflare.api_token`
+3. **ローカル側も更新**: `D:\Dev\Secret\secrets.json` の `cloudflare.api_token`
    （`scripts/release-local.ps1` が実行時に読む）
 4. **動作確認**: `deploy-relay.yml` を `workflow_dispatch` で手動実行して通ることを確認
 5. **旧トークン revoke**: Cloudflare ダッシュボードで Delete
@@ -251,7 +251,7 @@ pnpm dlx wrangler d1 export ferry_ledger --remote --output ferry_ledger_$(date +
 **確認手順**:
 
 ```bash
-# 1. 依存の健全性（failed 配列が原因を名指しする）
+# 1. 設定・binding の readiness（failed 配列が不備を示す。D1 / KV への実アクセスは行わない）
 curl -s https://watashiba.kagayoi.com/health
 
 # 2. D1 のテーブルと行数
@@ -411,8 +411,9 @@ gh run list --workflow release.yml --limit 3
 - 失敗時に Issue 自動作成（本文からこの runbook のシナリオ B へ誘導）
 - HTTP 応答前の通信失敗は `HTTP 000` と curl 終了コード・エラー内容を Issue に記録
 
-`/health` は D1 / KV / `SESSION_HMAC_SECRET` / `SALT` を実際に検査し、壊れている依存名を
-`failed` 配列で返す（v1.0.70 以降）。それ以前は無条件 200 だったため、依存の障害を検知できなかった。
+`/health` は必須設定と D1 / KV / quota の binding の readiness を確認し、不備を
+`failed` 配列で返す。D1 / KV への実アクセスは発行しないため、200 でもアクセス障害は
+各ルートの応答とログで切り分ける。
 
 ### 監視の穴（把握しておくこと）
 

@@ -50,9 +50,9 @@ cd infra/cloudflare/relay && pnpm exec wrangler deploy
 ## 依存関係の保守
 
 - NuGet の直接依存は `src/Ferry/Ferry.csproj` と `tests/Ferry.Tests/Ferry.Tests.csproj`、解決結果は各ディレクトリの `packages.lock.json` で管理する。参照変更時は対応する lockfile も更新し、Avalonia 本体・Desktop・Fluent・Fonts.Inter の版を揃える。
-- `tests/Ferry.StartupSmoke/` は本体へのプロジェクト参照を持ち、独自の `packages.lock.json` も照合する。現行 Dependabot の NuGet 対象には含まれない。
+- `tests/Ferry.StartupSmoke/` は本体へのプロジェクト参照を持ち、独自の `packages.lock.json` も照合する。Dependabot の NuGet 対象にも含める。
 - relay は `infra/cloudflare/relay/package.json`、`pnpm-lock.yaml`、`pnpm-workspace.yaml` を照合する。インストールは同ディレクトリで `pnpm install --frozen-lockfile`。依存更新時は `allowBuilds`、リリース待機の例外、`undici` override の必要性も確認し、型チェックとテストを実行する。
-- Dependabot は `.github/dependabot.yml` で GitHub Actions、上記 2 つの NuGet プロジェクト、relay の npm 依存を監視する。プロジェクト追加・移動時は更新対象も照合する。
+- Dependabot は `.github/dependabot.yml` で GitHub Actions、上記 3 つの NuGet プロジェクト、relay の npm 依存を監視する。プロジェクト追加・移動時は更新対象も照合する。
 
 ## アーキテクチャ
 

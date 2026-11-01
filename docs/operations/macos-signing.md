@@ -26,8 +26,8 @@ Velopack が **`.app` の codesign → `.pkg` の productsign → notarytool へ
 
 ## クレデンシャルの単一の真実の源 (single source of truth)
 
-署名・公証の素材はすべて **`C:\Users\IMT\dev\Secret\secrets.json` の `apple_signing` ブロック** と
-`C:\Users\IMT\dev\Secret\apple_signing\` ディレクトリ (証明書 `.p12` ×2) に集約してある。
+署名・公証の素材はすべて **`D:\Dev\Secret\secrets.json` の `apple_signing` ブロック** と
+`D:\Dev\Secret\apple_signing\` ディレクトリ (証明書 `.p12` ×2) に集約してある。
 
 ```jsonc
 "apple_signing": {
@@ -42,7 +42,7 @@ Velopack が **`.app` の codesign → `.pkg` の productsign → notarytool へ
 }
 ```
 
-> パス (`p12_file`) は `C:\Users\IMT\dev\Secret\` ルートからの相対。`developer_id_*` はネストオブジェクトで
+> パス (`p12_file`) は `D:\Dev\Secret\` ルートからの相対。`developer_id_*` はネストオブジェクトで
 > identity 文字列は **`.identity` サブフィールド** にある。
 > (`app_store_connect_api` ブロックは API キー方式の名残。notarytool では使わない。)
 
@@ -70,7 +70,7 @@ GitHub Secrets はこのブロックから派生させた値にすぎない (下
 ```powershell
 $ErrorActionPreference = 'Stop'
 $repo = '1llum1n4t1s/Ferry'
-$root = 'C:/Users/IMT/dev/Secret'
+$root = 'D:/Dev/Secret'
 $a = (Get-Content "$root/secrets.json" -Raw | ConvertFrom-Json).apple_signing
 function B64([string]$rel) { [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $root $rel))) }
 $secrets = [ordered]@{

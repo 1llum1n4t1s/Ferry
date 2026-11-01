@@ -126,7 +126,7 @@ STUN は **Cloudflare 公開 STUN (`stun.cloudflare.com:3478`) を主、Google S
 
 ### ローカライズ（18 言語）
 
-UI 文言は `src/Ferry/Resources/Locales/<locale>.axaml`（`ResourceDictionary`）に置き、`App.axaml` が `x:Key` 付きの `ResourceInclude` として全ロケールを宣言する。**全 18 ファイルが同一のキー集合を持つ**のが契約（現在 175 キー）。
+UI 文言は `src/Ferry/Resources/Locales/<locale>.axaml`（`ResourceDictionary`）に置き、`App.axaml` が `x:Key` 付きの `ResourceInclude` として全ロケールを宣言する。**全 18 ファイルが同一のキー集合を持つ**のが契約。
 
 - **参照方法**: AXAML からは `{DynamicResource Text.Xxx}`（辞書差し替えで自動追従）、C# からは `App.Text("Xxx")`（`Text.` プレフィックスは付けない）。
 - **フォールバック**: `App.SetLocale` は `en_US` を `MergedDictionaries[0]` に常駐させ、選択ロケールを後ろに Add する（後勝ち）。さらに各ロケールファイル自身も冒頭で `en_US` を merge する。**二重のフォールバックで欠損キーは英語表示**になる。
@@ -157,7 +157,7 @@ OS 依存処理は実行時分岐（`OperatingSystem.IsWindows()/IsMacOS()/IsLin
 
 Velopack による自動更新の配信元は **Cloudflare R2**（カスタムドメイン `https://ferry.kagayoi.com`、bucket `ferry-updates`）。クライアントは `App.axaml.cs` の `UpdateBaseUrl` 定数 + `Velopack.Sources.SimpleWebSource` で更新を取得する（旧 `GithubSource` から移行済み）。`Check4Update` は起動時 + 24時間ごとに実行。
 
-**Windows リリース (ローカル実行)**: `pwsh scripts/release-local.ps1` — Lhamiel で確立したローカル署名付きリリースフローの横展開。コード署名 (Authenticode、Certum **Open Source Code Signing in the cloud**、CN=`Open Source Developer Yuichiro Shinozaki`) は SimplySign Desktop のトークンログイン中セッション + スマホ OTP が必要で GitHub Actions からは署名できないため、win-x64 / win-arm64 の 2 チャンネルはローカルスクリプトでリリースする。スクリプトは publish (Native AOT) → `vpk pack` + **Authenticode 署名** (`--signParams`、タイムスタンプ `http://time.certum.pl`) → 署名検証 → `wrangler` (pnpm dlx) で R2 バケット `ferry-updates` にアップロード (manifest は最後) → 配信確認 (`releases.{channel}.json` HTTP 200) → **manifest 外の旧配布物を Cloudflare API V4 で自動削除** (Aggressive 保持戦略。⚠️ 対象は `*.nupkg` だけでなく**バージョン文字列 `x.y.z` を含む全オブジェクト**〔zip / deb / rpm / AppImage 含む〕で、manifest 参照分と**直近 2 世代**〔`KEEP_VERSIONS` / `$KeepVersionCount`〕だけを保持する。今回ビルドしないチャンネルの manifest は R2 から取得して keep set に加えるため、macOS / Linux の配布物は誤削除しない。ランディングページの DL リンクはバージョン文字列を含まない固定名なので対象外) まで一括実行。Cloudflare トークンは `C:\Users\IMT\dev\Secret\secrets.json` の `cloudflare.api_token` を実行時に読む。動作確認は `-SkipUpload` (ビルド + 署名のみ)、RID 絞り込みは `-Runtimes win-x64`。**実行前提: SimplySign Desktop がトークンログイン済み** (証明書が CurrentUser\My に見えること。スクリプトがプリフライトで検査して落とす)。リリース時は AGENTS.md の事前確認後にこのスクリプトを実行する。
+**Windows リリース (ローカル実行)**: `pwsh scripts/release-local.ps1` — Lhamiel で確立したローカル署名付きリリースフローの横展開。コード署名 (Authenticode、Certum **Open Source Code Signing in the cloud**、CN=`Open Source Developer Yuichiro Shinozaki`) は SimplySign Desktop のトークンログイン中セッション + スマホ OTP が必要で GitHub Actions からは署名できないため、win-x64 / win-arm64 の 2 チャンネルはローカルスクリプトでリリースする。スクリプトは publish (Native AOT) → `vpk pack` + **Authenticode 署名** (`--signParams`、タイムスタンプ `http://time.certum.pl`) → 署名検証 → `wrangler` (pnpm dlx) で R2 バケット `ferry-updates` にアップロード (manifest は最後) → 配信確認 (`releases.{channel}.json` HTTP 200) → **manifest 外の旧配布物を Cloudflare API V4 で自動削除** (Aggressive 保持戦略。⚠️ 対象は `*.nupkg` だけでなく**バージョン文字列 `x.y.z` を含む全オブジェクト**〔zip / deb / rpm / AppImage 含む〕で、manifest 参照分と**直近 2 世代**〔`KEEP_VERSIONS` / `$KeepVersionCount`〕だけを保持する。今回ビルドしないチャンネルの manifest は R2 から取得して keep set に加えるため、macOS / Linux の配布物は誤削除しない。ランディングページの DL リンクはバージョン文字列を含まない固定名なので対象外) まで一括実行。Cloudflare トークンは `D:\Dev\Secret\secrets.json` の `cloudflare.api_token` を実行時に読む。動作確認は `-SkipUpload` (ビルド + 署名のみ)、RID 絞り込みは `-Runtimes win-x64`。**実行前提: SimplySign Desktop がトークンログイン済み** (証明書が CurrentUser\My に見えること。スクリプトがプリフライトで検査して落とす)。リリース時は AGENTS.md の事前確認後にこのスクリプトを実行する。
 
 **macOS / Linux (CI)**: `release/**` ブランチへの push で `.github/workflows/release.yml` が発火し、以下を順に呼ぶ（GitHub Releases は使わず R2 単独配信）:
 
@@ -202,7 +202,7 @@ UDP ホールパンチ経由の場合は `UdpHolePunchTransport` が信頼性レ
 >
 > **フロー制御が実際に発火したかの確認 (v1.0.47 で診断ログ追加)**: `SendChunksAsync` の窓待機が初めて発火した時に Info ログ「フロー制御 window 発火（受信ドレイン律速に移行）」を 1 度だけ出す (`%LOCALAPPDATA%\Ferry\logs`)。**このログが出ていれば送信が受信ドレインに律速された＝中継バッファは 32MB で頭打ち**。出ないまま完走した場合は (a) ファイルが窓 (32MB) 未満で構造的に未行使 (b) 受信が十分速い、のどちらか。受信側で帯域を絞っても送信が減速しないように見える時は、まず ① 経路が Relay か (`接続完了！ 経路:` ログ) ② ファイルが 32MB 超か ③ 絞りが受信↔Cloudflare edge のソケット読み出しに実効しているか (Relay ではローカル帯域絞りは受信↔edge 間にしか効かず、送信→DO 流入は独立) を確認する。受信側を一時停止すると送信側が 512 chunk で確実に待機に入る。`HandleFileFlowAck` も Debug ログで ack 到達と item 解決 (`found`) を出す。
 
-> **レジュームは「先頭から再送」方式**（`ResumeTransferAsync`、`startChunk=0`）。受信側は承認時にファイルを再作成するため、部分再送ではなく全チャンクを送り直す。
+> **レジュームは「先頭から再送」方式**（`ResumeTransferAsync`）。受信側は承認時にファイルを再作成するため、部分再送ではなく全チャンクを送り直す。
 >
 > チャンクメッセージ形式は 2026-05 に `chunkIndex` 単独から `TransferId + chunkIndex` に変更済み。**旧形式とは非互換**（既存の配布クライアントは存在しないため移行問題なし）。形式を再度変える場合は送受信（`FileChunker.CreateChunkMessage` ↔ `HandleFileChunk`）と `FileChunkerTests` のオフセットを揃えること。
 
