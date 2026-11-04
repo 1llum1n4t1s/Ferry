@@ -33,6 +33,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot 'R2Distribution.Common.ps1')
 if ($SkipUpload -and $UploadOnly) { throw 'SkipUpload と UploadOnly は同時に指定できません' }
 
 # ---- 定数 ----
@@ -41,7 +42,6 @@ $VpkVersion = (Invoke-RestMethod 'https://api.nuget.org/v3-flatcontainer/vpk/ind
     Where-Object { $_ -notmatch '-' } | Select-Object -Last 1
 if (-not $VpkVersion) { throw 'vpk の最新安定版バージョンの取得に失敗しました (NuGet API)' }
 Write-Host "vpk 最新安定版: $VpkVersion"
-$WranglerVersion = '4.156.0'        # サプライチェーン対策でバージョン固定
 $Bucket = 'ferry-updates'
 $BaseUrl = 'https://ferry.kagayoi.com'
 $AccountId = '10901bfadbf1005164774a7350082985'
@@ -251,9 +251,8 @@ function Assert-ImmutableRemotePackages {
         if (-not $keys.Contains($package.Name)) { continue }
         $remotePath = Join-Path $VerificationDir "remote-$($package.Name)"
         Assert-LocalPath $remotePath $WorkDir
-        Invoke-Native "既存R2 package取得 ($($package.Name))" {
-            pnpm dlx "wrangler@$WranglerVersion" r2 object get "$Bucket/$($package.Name)" --file $remotePath --remote
-        }
+        $objectUri = "https://api.cloudflare.com/client/v4/accounts/$AccountId/r2/buckets/$Bucket/objects/$([uri]::EscapeDataString($package.Name))"
+        Invoke-WebRequest -Uri $objectUri -Headers $headers -OutFile $remotePath -TimeoutSec 300 -MaximumRedirection 0
         if ((Get-FileHash -LiteralPath $remotePath -Algorithm SHA256).Hash -ne $VerifiedHashes[$package.Name]) {
             throw "同じversionの公開packageが異なります。上書きを停止します: $($package.Name)"
         }
@@ -398,8 +397,8 @@ if ($SkipUpload) {
 Write-Host '== R2 アップロード ==' -ForegroundColor Cyan
 Assert-ImmutableRemotePackages
 $files = Get-ChildItem $ArtifactsDir -File
-$ordered = @($files | Where-Object { $_.Name -notlike 'releases.*.json' }) +
-           @($files | Where-Object { $_.Name -like 'releases.*.json' })
+$ordered = @($files | Where-Object { $_.Name -notmatch '^(?:releases\..*\.json|assets\..*\.json|RELEASES(?:-.*)?)$' }) +
+           @($files | Where-Object { $_.Name -match '^(?:releases\..*\.json|assets\..*\.json|RELEASES(?:-.*)?)$' })
 $uploaded = 0
 foreach ($f in $ordered) {
     Assert-LocalPath $f.FullName $WorkDir
@@ -407,9 +406,10 @@ foreach ($f in $ordered) {
         throw "検証後に成果物が変わりました: $($f.Name)"
     }
     Write-Host "  ↑ $($f.Name)"
-    Invoke-Native "R2 put ($($f.Name))" {
-        pnpm dlx "wrangler@$WranglerVersion" r2 object put "$Bucket/$($f.Name)" --file $f.FullName --remote
-    }
+    $immutable = $f.Name -match '(?:\.nupkg$|[-_.]\d+\.\d+\.\d+(?:[-_.]|$))'
+    $cacheControl = if ($immutable) { 'public, max-age=31536000, immutable' } else { 'no-cache, must-revalidate' }
+    $contentType = switch -Regex ($f.Name) { '\.json$' { 'application/json'; break }; '^RELEASES' { 'text/plain'; break }; '\.(zip|nupkg)$' { 'application/zip'; break }; default { 'application/octet-stream' } }
+    Publish-R2Object -AccountId $AccountId -Bucket $Bucket -FilePath $f.FullName -Immutable:$immutable -CacheControl $cacheControl -ContentType $contentType | Out-Null
     $uploaded++
 }
 Write-Host "✅ R2 アップロード完了: $uploaded ファイル"

@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import re
 import struct
 import subprocess
 import sys
@@ -282,6 +283,11 @@ def check_package(root, rid, label, version, original, work):
 
 def check_remote(root, version):
     """CDN のキャッシュ済み 404 を使わず、R2 一覧と実物で同版不変を確認する。"""
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    opener = urllib.request.build_opener(NoRedirect)
     account = os.environ['CLOUDFLARE_ACCOUNT_ID']
     endpoint = f'https://api.cloudflare.com/client/v4/accounts/{account}/r2/buckets/ferry-updates/objects'
     keys, cursors = set(), set()
@@ -292,7 +298,7 @@ def check_remote(root, version):
             query['cursor'] = cursor
         request = urllib.request.Request(endpoint + '?' + urllib.parse.urlencode(query), headers={
             'Authorization': 'Bearer ' + os.environ['CLOUDFLARE_API_TOKEN']})
-        with urllib.request.urlopen(request, timeout=60) as response:
+        with opener.open(request, timeout=60) as response:
             listing = json.load(response)
         require(listing.get('success') is True, 'R2 listing failed')
         items = listing['result']
@@ -322,7 +328,12 @@ def check_remote(root, version):
                              or (name.startswith(f'ferry-{version}-') and name.endswith('.rpm')))
                 if immutable and name in keys:
                     downloaded = Path(directory) / name
-                    run('wrangler', 'r2', 'object', 'get', 'ferry-updates/' + name, '--file=' + str(downloaded), '--remote')
+                    request = urllib.request.Request(
+                        endpoint + '/' + urllib.parse.quote(name, safe=''),
+                        headers={'Authorization': 'Bearer ' + os.environ['CLOUDFLARE_API_TOKEN']})
+                    with opener.open(request, timeout=300) as response, downloaded.open('wb') as output:
+                        while block := response.read(1024 * 1024):
+                            output.write(block)
                     require(digest(downloaded) == digest(path), f'existing version has different bytes: {name}')
     print('既存の同版 version 付き配布物の不変条件を確認しました。')
 
@@ -343,14 +354,25 @@ def main():
     identity = {k: os.environ[k] for k in ['GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT']}
     identity.update(version=args.version, configuration='Release')
     if args.mode == 'aggregate':
+        producer_attempts = {}
+        variants = {'package': ['win-x64', 'win-arm64', 'osx-arm64', 'linux-x64', 'linux-arm64'],
+                    'feed': ['osx-arm64', 'linux-x64', 'linux-arm64']}
+        for mode, rids in variants.items():
+            attempts = json.loads(os.environ[mode.upper() + '_ARTIFACT_ATTEMPTS'])
+            require(isinstance(attempts, dict) and set(attempts) == set(rids), 'producer attempt RID set mismatch')
+            require(all(isinstance(value, str) and re.fullmatch(r'[1-9][0-9]*', value)
+                        for value in attempts.values()), 'invalid producer attempt')
+            producer_attempts[mode] = attempts
         expected = {f'{mode}-{rid}' for mode, rids in [('package', ['win-x64', 'win-arm64', 'osx-arm64', 'linux-x64', 'linux-arm64']), ('feed', ['osx-arm64', 'linux-x64', 'linux-arm64'])] for rid in rids}
         reports = list(args.evidence.glob('*.json'))
         require({p.stem for p in reports} == expected, 'verification variant set mismatch')
         seen = {'packages': set(), 'velopack-packages': set()}
         for report in reports:
             proof = json.loads(report.read_text(encoding='utf-8'))
-            require(proof['identity'] == identity, 'verification source/run/version mismatch')
             require(report.stem == proof['mode'] + '-' + proof['runtime'], 'verification variant identity mismatch')
+            require(proof['mode'] in variants and proof['runtime'] in variants[proof['mode']], 'verification producer RID mismatch')
+            producer_identity = dict(identity, GITHUB_RUN_ATTEMPT=producer_attempts[proof['mode']][proof['runtime']])
+            require(proof['identity'] == producer_identity, 'verification source/run/version/producer attempt mismatch')
             require(proof['dependency']['name'] == 'deps.' + proof['runtime'] + '.txt', 'dependency RID mismatch')
             require(len(proof['files']) > 0, 'empty verification report')
             dep = Path('dependencies') / proof['dependency']['name']

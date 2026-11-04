@@ -4,7 +4,7 @@
   "private": true,
   "description": "Ferry WebSocket リレー (Cloudflare Workers + Durable Objects, Hibernation 対応)",
   "scripts": {
-    "deploy": "wrangler deploy",
+    "deploy": "pwsh -NoProfile -File scripts/Deploy-CloudflareWorker.ps1 -ConfigPath wrangler.toml",
     "dev": "wrangler dev",
     "tail": "wrangler tail",
     "test": "vitest run"

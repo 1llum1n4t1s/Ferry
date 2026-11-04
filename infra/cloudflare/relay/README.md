@@ -41,8 +41,16 @@
 
 5. **デプロイ**
 
+   PowerShell 7 を使い、公開用 API token と account ID を環境変数へ設定します。
+   `wrangler login` の OAuth は native 公開スクリプトでは使いません。
+   token には Workers Scripts Edit と、対象 zone の Zone Read / Workers Routes Edit を
+   付与してください。既存 D1 / KV binding の接続先は config の ID を使います。
+   secret 管理は上の手順を使えます。
+
    ```powershell
-   wrangler deploy
+   $env:CLOUDFLARE_API_TOKEN = '<公開用 API token>'
+   $env:CLOUDFLARE_ACCOUNT_ID = '<Cloudflare account ID>'
+   pwsh -NoProfile -File scripts/Deploy-CloudflareWorker.ps1 -ConfigPath wrangler.toml
    ```
 
    初回は `watashiba.kagayoi.com` の Custom Domain 紐付けが Cloudflare Dashboard 側でも必要な場合がある。
@@ -60,7 +68,7 @@
 
 新規のリレー処理を緊急停止する場合は、`wrangler.toml` の `[vars]` にある
 `RELAY_CIRCUIT_OPEN="0"` を `RELAY_CIRCUIT_OPEN="1"` に変更してから Worker をデプロイする。
-この設定はデプロイ後に有効になる。`wrangler deploy` は外部サービスを書き換える操作なので、
+この設定はデプロイ後に有効になる。`scripts/Deploy-CloudflareWorker.ps1` は外部サービスを書き換える操作なので、
 この runbook から自動実行せず、ユーザーの明示依頼がある場合だけ実行すること。復旧時は値を
 `"0"` に戻し、同じく明示依頼を受けてデプロイする。
 
@@ -85,7 +93,7 @@ rollback してはならない。remote schema / import / deploy は別途明示
 既存鍵と違う import は全 INSERT を失敗させ、上書きしない。
 
 ```powershell
-# Node 26。既定は --local。作業先は絶対パスで指定する。
+# Node 26.13.0。既定は --local。作業先は絶対パスで指定する。
 node scripts/import-key-snapshot.mjs --input <snapshot.json> --sha256 <承認済SHA256> --count <件数> --persist-to <作業領域の絶対パス> --writers-frozen --snapshot-approved --snapshot-provenance <取得元・承認者・カットオフ説明>
 # 同じ固定入力を検証し、最後に ready を明示する場合だけ --activate を付ける。
 # 本番運用では --persist-to の代わりに --remote --work-dir <SQL作業領域の絶対パス> を明示する。
@@ -99,10 +107,8 @@ node scripts/import-key-snapshot.mjs --input <snapshot.json> --sha256 <承認済
 既存 writer の物理 drain が証明できない場合に、物理停止済みとは宣言しない。operator が承認した
 カットオフ snapshot を正本に選び、KV writer を含まない D1 認証コードと新しい `SESSION_HMAC_SECRET`
 を **同じ Worker version** に含める。Cloudflare 公式の [コードと secrets の同時 upload](https://developers.cloudflare.com/workers/configuration/secrets/)
-に従い `pnpm exec wrangler deploy --secrets-file <非公開JSON>`、又は
-`pnpm exec wrangler versions upload --secrets-file <非公開JSON>` の後に
-`pnpm exec wrangler versions deploy <version-id>@100%` を行う。secret を単独で先行変更しない。
-`versions upload` だけでは配信は切り替わらない。JSON は secret 値を含むため証跡へ転載しない。
+に従い `pwsh -NoProfile -File scripts/Deploy-CloudflareWorker.ps1 -ConfigPath wrangler.toml -SecretsFile <非公開JSON>` を行う。secret を単独で先行変更しない。
+JSON は secret 値を含むため証跡へ転載しない。
 
 実 deployment / version ID とその version の traffic 100% を確認し、同じ認可経路
 `GET /pairs/{canonicalPairId}` を同一当事者 ID の有効期限内診断 token で検査する。
@@ -185,7 +191,7 @@ wrangler tail
 ## ロールバック
 
 - **Workers 緊急停止**: Dashboard → Workers & Pages → ferry-relay → ⋯ → Disable
-- **コードロールバック**: `wrangler rollback` (直前のデプロイに戻す) または `git revert` してから `wrangler deploy`
+- **コードロールバック**: `wrangler rollback` (直前のデプロイに戻す) または `git revert` してから `pwsh -NoProfile -File scripts/Deploy-CloudflareWorker.ps1 -ConfigPath wrangler.toml`
 
 ## プロトコル仕様
 

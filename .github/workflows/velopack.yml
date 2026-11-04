@@ -1,7 +1,18 @@
 name: Velopack
 on:
   workflow_call:
+    outputs:
+      osx-arm64:
+        value: ${{ jobs['velopack'].outputs['osx-arm64'] }}
+      linux-x64:
+        value: ${{ jobs['velopack'].outputs['linux-x64'] }}
+      linux-arm64:
+        value: ${{ jobs['velopack'].outputs['linux-arm64'] }}
     inputs:
+      build-attempts:
+        description: Exact producer attempt for each build runtime
+        required: true
+        type: string
       version:
         required: true
         type: string
@@ -13,6 +24,10 @@ on:
     # ※ App Store Connect API キー (.p8) 方式は Team Key + Developer 権限が必須で、個人キー/
     #   権限不足だと notarytool が invalidAsn1 を返すため、確実な app-specific password 方式を採用。
     secrets:
+      R2_ARTIFACT_ACCESS_KEY_ID:
+        required: true
+      R2_ARTIFACT_SECRET_ACCESS_KEY:
+        required: true
       APPLE_CERT_APP_P12_BASE64:
         required: false   # DeveloperID_Application.p12 (.app 署名用) の base64
       APPLE_CERT_INSTALLER_P12_BASE64:
@@ -36,6 +51,10 @@ permissions:
 
 jobs:
   velopack:
+    outputs:
+      osx-arm64: ${{ steps.artifact-attempt.outputs['osx-arm64'] }}
+      linux-x64: ${{ steps.artifact-attempt.outputs['linux-x64'] }}
+      linux-arm64: ${{ steps.artifact-attempt.outputs['linux-arm64'] }}
     strategy:
       # 1 つの runtime (osx の署名等) が失敗しても linux チャンネルの発行を巻き込まない
       fail-fast: false
@@ -61,24 +80,64 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Setup .NET
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: 10.0.x
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $windows = $env:RUNNER_OS -eq 'Windows'
+          $sdkVersion = $null
+          if (Test-Path global.json) {
+            $settings = Get-Content global.json -Raw | ConvertFrom-Json -AsHashtable
+            if ($settings.ContainsKey('sdk') -and $settings['sdk'] -is [Collections.IDictionary] -and $settings['sdk'].ContainsKey('version')) {
+              $sdkVersion = [string]$settings['sdk']['version']
+            }
+          }
+          $extension = if ($windows) { 'ps1' } else { 'sh' }
+          $installer = Join-Path $env:RUNNER_TEMP "dotnet-install.$extension"
+          Invoke-WebRequest "https://dot.net/v1/dotnet-install.$extension" -OutFile $installer
+          $install = Join-Path $env:RUNNER_TEMP 'dotnet'
+          $global:LASTEXITCODE = 0
+          if ($windows) {
+            if ($sdkVersion) { & $installer -Version $sdkVersion -InstallDir $install }
+            else { & $installer -Channel '10.0' -InstallDir $install }
+          } else {
+            if ($sdkVersion) { & bash $installer --version $sdkVersion --install-dir $install }
+            else { & bash $installer --channel '10.0' --install-dir $install }
+          }
+          if ($LASTEXITCODE -ne 0) { throw '.NET SDK installation failed' }
+          $dotnetName = if ($windows) { 'dotnet.exe' } else { 'dotnet' }
+          $dotnet = Join-Path $install $dotnetName
+          if (-not (Test-Path -LiteralPath $dotnet -PathType Leaf)) { throw '.NET SDK executable is missing' }
+          & $dotnet --version
+          if ($LASTEXITCODE -ne 0) { throw '.NET SDK version check failed' }
+          & $dotnet --info
+          if ($LASTEXITCODE -ne 0) { throw '.NET SDK runtime check failed' }
+          $install | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+          "DOTNET_ROOT=$install" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
       - name: Checkout app metadata
         if: ${{ !startsWith(matrix.runtime, 'win-') }}
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: |
-            build/resources/app/App.plist
-            build/resources/_common/icons/ferry.png
-            build/scripts/verify-release.py
-            Directory.Build.props
-            .github/workflows/build.yml
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git checkout --detach FETCH_HEAD
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" submodule update --init --recursive
+        working-directory: ${{ github.workspace }}
       - name: Download build artifact
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: ferry.${{ matrix.runtime }}
-          path: publish
+        shell: pwsh
+        env:
+          R2_ARTIFACT_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ARTIFACT_BUCKET: ${{ vars.R2_ARTIFACT_BUCKET }}
+          R2_ARTIFACT_ACCESS_KEY_ID: ${{ secrets.R2_ARTIFACT_ACCESS_KEY_ID }}
+          R2_ARTIFACT_SECRET_ACCESS_KEY: ${{ secrets.R2_ARTIFACT_SECRET_ACCESS_KEY }}
+          R2_ARTIFACT_RUN_ATTEMPT: ${{ fromJSON(inputs.build-attempts)[matrix.runtime] }}
+        run: |
+          & ./scripts/Receive-ReleaseArtifact.ps1 -Name 'ferry.${{ matrix.runtime }}' -Destination 'publish' -RunAttempt $env:R2_ARTIFACT_RUN_ATTEMPT
+        working-directory: ${{ github.workspace }}
       - name: Extract tar
         if: ${{ !startsWith(matrix.runtime, 'win-') }}
         run: |
@@ -189,25 +248,51 @@ jobs:
           --notaryProfile ferry-notary
           --keychain "$FERRY_KEYCHAIN_PATH"
       - name: Download dependency evidence
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: deps.${{ matrix.runtime }}
-          path: dependencies
+        shell: pwsh
+        env:
+          R2_ARTIFACT_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ARTIFACT_BUCKET: ${{ vars.R2_ARTIFACT_BUCKET }}
+          R2_ARTIFACT_ACCESS_KEY_ID: ${{ secrets.R2_ARTIFACT_ACCESS_KEY_ID }}
+          R2_ARTIFACT_SECRET_ACCESS_KEY: ${{ secrets.R2_ARTIFACT_SECRET_ACCESS_KEY }}
+          R2_ARTIFACT_RUN_ATTEMPT: ${{ fromJSON(inputs.build-attempts)[matrix.runtime] }}
+        run: |
+          & ./scripts/Receive-ReleaseArtifact.ps1 -Name 'deps.${{ matrix.runtime }}' -Destination 'dependencies' -RunAttempt $env:R2_ARTIFACT_RUN_ATTEMPT
+        working-directory: ${{ github.workspace }}
       - name: Install artifact inspection tools (Linux)
         if: startsWith(matrix.runtime, 'linux-')
         run: sudo apt-get update && sudo apt-get install -y squashfs-tools
       - name: 配布実物と署名・公証を検証
         run: python3 build/scripts/verify-release.py feed --version '${{ inputs.version }}' --runtime '${{ matrix.runtime }}' --root artifacts --publish publish --evidence verification
       - name: Upload verification evidence
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: verification.feed.${{ matrix.runtime }}
-          path: verification/*.json
-          if-no-files-found: error
+        shell: pwsh
+        env:
+          R2_ARTIFACT_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ARTIFACT_BUCKET: ${{ vars.R2_ARTIFACT_BUCKET }}
+          R2_ARTIFACT_ACCESS_KEY_ID: ${{ secrets.R2_ARTIFACT_ACCESS_KEY_ID }}
+          R2_ARTIFACT_SECRET_ACCESS_KEY: ${{ secrets.R2_ARTIFACT_SECRET_ACCESS_KEY }}
+        if: ${{ github.event_name != 'pull_request' }}
+        run: |
+          . ./scripts/R2Artifact.Common.ps1
+          Publish-R2Artifact -AccountId $env:R2_ARTIFACT_ACCOUNT_ID -Bucket $env:R2_ARTIFACT_BUCKET -AccessKeyId $env:R2_ARTIFACT_ACCESS_KEY_ID -SecretAccessKey $env:R2_ARTIFACT_SECRET_ACCESS_KEY -Name 'verification.feed.${{ matrix.runtime }}' -Path 'verification/*.json' | Out-Null
+        working-directory: ${{ github.workspace }}
       - name: Upload Velopack artifact
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: velopack.${{ matrix.label }}
-          path: artifacts/*
-          if-no-files-found: error
-          retention-days: 3
+        shell: pwsh
+        env:
+          R2_ARTIFACT_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          R2_ARTIFACT_BUCKET: ${{ vars.R2_ARTIFACT_BUCKET }}
+          R2_ARTIFACT_ACCESS_KEY_ID: ${{ secrets.R2_ARTIFACT_ACCESS_KEY_ID }}
+          R2_ARTIFACT_SECRET_ACCESS_KEY: ${{ secrets.R2_ARTIFACT_SECRET_ACCESS_KEY }}
+        if: ${{ github.event_name != 'pull_request' }}
+        run: |
+          . ./scripts/R2Artifact.Common.ps1
+          Publish-R2Artifact -AccountId $env:R2_ARTIFACT_ACCOUNT_ID -Bucket $env:R2_ARTIFACT_BUCKET -AccessKeyId $env:R2_ARTIFACT_ACCESS_KEY_ID -SecretAccessKey $env:R2_ARTIFACT_SECRET_ACCESS_KEY -Name 'velopack.${{ matrix.label }}' -Path 'artifacts/*' | Out-Null
+        working-directory: ${{ github.workspace }}
+      - name: Record artifact producer attempt
+        id: artifact-attempt
+        if: ${{ github.event_name != 'pull_request' }}
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          ARTIFACT_RUNTIME: ${{ matrix.runtime }}
+        run: |
+          printf '%s=%s\n' "$ARTIFACT_RUNTIME" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
