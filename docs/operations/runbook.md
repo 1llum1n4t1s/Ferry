@@ -83,7 +83,7 @@ Release ビルドは Info 以上を出力し 7 日保持。アプリのトレイ
 4. **サーバー側ログを見る**（拒否理由まで残る）
 
    ```bash
-   cd infra/cloudflare/relay && pnpm dlx wrangler tail
+   cd infra/cloudflare/relay && bun run --bun wrangler tail
    ```
 
    `reject` 行に `{status, code, message}` が出る（`BAD_SIGNATURE` / `DEVICE_PUBKEY_MISMATCH` /
@@ -130,10 +130,10 @@ Release ビルドは Info 以上を出力し 7 日保持。アプリのトレイ
 cd infra/cloudflare/relay
 
 # 直近 deploy 履歴を確認
-pnpm dlx wrangler deployments list
+bun run --bun wrangler deployments list
 
 # 1 つ前の deploy へ rollback
-pnpm dlx wrangler rollback
+bun run --bun wrangler rollback
 ```
 
 > ⚠️ `wrangler rollback` は **Worker のコードだけ**を戻す。D1 スキーマは戻らない（下記参照）。
@@ -148,13 +148,13 @@ pnpm dlx wrangler rollback
 cd infra/cloudflare/relay
 
 # スキーマ適用（手動。CI からは実行されない）
-pnpm dlx wrangler d1 execute ferry_ledger --remote --file=schema.sql
+bun run --bun wrangler d1 execute ferry_ledger --remote --file=schema.sql
 
 # 現在のスキーマを確認
-pnpm dlx wrangler d1 execute ferry_ledger --remote --command "SELECT name, sql FROM sqlite_master WHERE type='table'"
+bun run --bun wrangler d1 execute ferry_ledger --remote --command "SELECT name, sql FROM sqlite_master WHERE type='table'"
 
 # 行数の確認（ペア台帳が消えていないか）
-pnpm dlx wrangler d1 execute ferry_ledger --remote --command "SELECT COUNT(*) FROM pairs"
+bun run --bun wrangler d1 execute ferry_ledger --remote --command "SELECT COUNT(*) FROM pairs"
 ```
 
 **スキーマ変更を含む PR を main にマージする場合の順序**:
@@ -195,13 +195,13 @@ Cloudflare D1 の Time Travel（過去 30 日の任意時点へ復元）が使�
 
 ```bash
 # 復元可能な時点を確認
-pnpm dlx wrangler d1 time-travel info ferry_ledger
+bun run --bun wrangler d1 time-travel info ferry_ledger
 
 # 指定時刻へ復元（破壊的。実行前に必ず影響範囲を確認する）
-pnpm dlx wrangler d1 time-travel restore ferry_ledger --timestamp <ISO8601>
+bun run --bun wrangler d1 time-travel restore ferry_ledger --timestamp <ISO8601>
 
 # 手動エクスポート（リリース前など、節目で取っておく）
-pnpm dlx wrangler d1 export ferry_ledger --remote --output ferry_ledger_$(date +%Y%m%d).sql
+bun run --bun wrangler d1 export ferry_ledger --remote --output ferry_ledger_$(date +%Y%m%d).sql
 ```
 
 ### ランディングページの rollback
@@ -224,14 +224,14 @@ pnpm dlx wrangler d1 export ferry_ledger --remote --output ferry_ledger_$(date +
 > refresh ループ（約 50 分周期）が回るまで 401 のままになる。
 
 1. **新シークレット生成**: `openssl rand -hex 32`
-2. **Workers Secret 更新**: `cd infra/cloudflare/relay && pnpm dlx wrangler secret put SESSION_HMAC_SECRET`
+2. **Workers Secret 更新**: `cd infra/cloudflare/relay && bun run --bun wrangler secret put SESSION_HMAC_SECRET`
 3. **即座に確認**: `curl -s https://watashiba.kagayoi.com/health` が 200 であること（未設定だと 503 で `failed:["SESSION_HMAC_SECRET"]`）
 4. **クライアント影響の確認**: `wrangler tail` で `reject` の `BAD_TOKEN` が一時的に増え、数分で収束することを確認
 
 ### SALT（pairId の DO 名ハッシュ用）
 
 1. **新 SALT 生成**: `openssl rand -hex 32`
-2. **Workers Secret 更新**: `cd infra/cloudflare/relay && pnpm dlx wrangler secret put SALT`
+2. **Workers Secret 更新**: `cd infra/cloudflare/relay && bun run --bun wrangler secret put SALT`
 3. ⚠️ **進行中のリレー転送は切断される**（DO 名が変わり別インスタンスになるため）。閑散時間に実施する
 4. クライアント側の変更は不要（pairId のハッシュ化は relay 内部のみ）
 
@@ -282,11 +282,11 @@ curl -s https://watashiba.kagayoi.com/health
 
 # 2. D1 のテーブルと行数
 cd infra/cloudflare/relay
-pnpm dlx wrangler d1 execute ferry_ledger --remote --command "SELECT COUNT(*) FROM pairs"
-pnpm dlx wrangler d1 execute ferry_ledger --remote --command "SELECT COUNT(*) FROM sessions"
+bun run --bun wrangler d1 execute ferry_ledger --remote --command "SELECT COUNT(*) FROM pairs"
+bun run --bun wrangler d1 execute ferry_ledger --remote --command "SELECT COUNT(*) FROM sessions"
 
 # 3. 拒否理由をリアルタイムで見る（BAD_SIGNATURE / CLOCK_SKEW 等が出る）
-pnpm dlx wrangler tail
+bun run --bun wrangler tail
 
 # 4. Bridge ページが配信されているか
 curl -s -o /dev/null -w "%{http_code}\n" https://watashiba.kagayoi.com/
@@ -321,15 +321,15 @@ gh run list --workflow deploy-relay.yml --limit 3
 curl -s -w "\nHTTP %{http_code}\n" https://watashiba.kagayoi.com/health
 
 # リアルタイムログ（DO の例外は "PairDO error" / "DeviceDO error" で出る）
-cd infra/cloudflare/relay && pnpm dlx wrangler tail
+cd infra/cloudflare/relay && bun run --bun wrangler tail
 
 # デプロイ履歴
-pnpm dlx wrangler deployments list
+bun run --bun wrangler deployments list
 ```
 
 **復旧手順**:
 
-- (1) `pnpm dlx wrangler rollback` または再 deploy
+- (1) `bun run --bun wrangler rollback` または再 deploy
 - (2) `/health` の `failed` を見て `wrangler secret put <名前>` で再設定
 - (3) <https://dash.cloudflare.com/> で Workers の使用量・請求状況を確認
 - (4) `wrangler tail` の DO 例外を確認。TCP/UDP 直結は影響を受けないので、ユーザーには

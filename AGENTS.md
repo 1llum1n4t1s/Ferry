@@ -27,14 +27,14 @@ dotnet test tests/Ferry.Tests/Ferry.Tests.csproj --filter "FullyQualifiedName~Fi
 dotnet run --project tests/Ferry.StartupSmoke/Ferry.StartupSmoke.csproj -c Release -- --regressions --output docs/verification/local-regressions
 
 # relay Worker（シグナリング / リレー / Bridge ページ）の型チェック + テスト
-cd infra/cloudflare/relay && pnpm exec tsc --noEmit && pnpm test
+cd infra/cloudflare/relay && bun run --bun tsc --noEmit && bun run --bun test
 
 # relay Worker のテスト単体実行（ファイル指定 / テスト名フィルタ）
-cd infra/cloudflare/relay && pnpm vitest run tests/signaling-ratelimit.test.ts
-cd infra/cloudflare/relay && pnpm vitest run -t "rate limit"
+cd infra/cloudflare/relay && bun run --bun vitest run tests/signaling-ratelimit.test.ts
+cd infra/cloudflare/relay && bun run --bun vitest run -t "rate limit"
 
 # relay Worker の手動デプロイ（通常は main push で deploy-relay.yml が自動配信するので不要）
-cd infra/cloudflare/relay && pnpm exec wrangler deploy
+cd infra/cloudflare/relay && bun run --bun wrangler deploy
 ```
 
 > Windows 向けリリースは `pwsh scripts/release-local.ps1` でローカル実行する（コード署名のため）。macOS / Linux は `release/**` ブランチへの push で CI が配信する。配信境界は [DESIGN.md](DESIGN.md#配布と運用の境界)、詳細手順は [references/architecture.md](references/architecture.md) の「自動更新と配信（CI/CD）」を参照する。
@@ -43,17 +43,18 @@ cd infra/cloudflare/relay && pnpm exec wrangler deploy
 >
 > PR（→ main）は `.github/workflows/dotnet-build.yml`（".NET Build"）が build + test で検証する。Markdown と `docs/**` だけの変更は対象外。配信 CI とは別ワークフローなので、コード変更の正否はこの PR CI で確認する。
 >
-> **relay（`infra/cloudflare/relay/**`）の PR は `relay-check.yml`（"Relay Check"）**の `tsc --noEmit` + `pnpm test` で検証する。.NET の CI では relay を検証しない。同じ検証は `deploy-relay.yml`（main push）でも配信前に実行する。
+> **relay（`infra/cloudflare/relay/**`）の PR は `relay-check.yml`（"Relay Check"）**の `tsc --noEmit` + `bun run --bun test` で検証する。.NET の CI では relay を検証しない。同じ検証は `deploy-relay.yml`（main push）でも配信前に実行する。
 
 `Ferry.StartupSmoke` はソリューションと PR CI の対象外なので、起動時表示・言語・設定復旧・受信承認/中断・受信結果 ACK・フォルダ送信バッチ・UDP 送信枠を変更した場合は上記の回帰検証を別途実行し、`result.json` と PNG を保存する。対象ケースと検証範囲は [検証プロジェクトの README](tests/Ferry.StartupSmoke/README.md) を参照する。PNG は Avalonia の描画結果であり OS の合成結果ではないため、macOS の表示不具合は macOS 上で配布アプリの実起動と Dock 復帰も確認する。Bridge を変更した場合は relay の検証に加え、端末名に `%` や URL エンコードに見える文字列を含む QR の読み取りを確認する。
 
-relay の認証鍵移行・ペア通知 outbox・DeviceDO の通知保存/再生を変更した場合は、型チェックと単体テストに加え、`infra/cloudflare/relay/` で `node tests/workerd-regressions.mjs --work-dir <新規の検証作業領域の絶対パス>` を実行する。実 workerd / D1 / WebSocket の検証範囲と鍵移行手順は [relay README](infra/cloudflare/relay/README.md#開発) を参照する。
+relay の認証鍵移行・ペア通知 outbox・DeviceDO の通知保存/再生を変更した場合は、型チェックと単体テストに加え、`infra/cloudflare/relay/` で `bun tests/workerd-regressions.mjs --work-dir <新規の検証作業領域の絶対パス>` を実行する。実 workerd / D1 / WebSocket の検証範囲と鍵移行手順は [relay README](infra/cloudflare/relay/README.md#開発) を参照する。
 
 ## 依存関係の保守
 
 - NuGet の直接依存は `src/Ferry/Ferry.csproj` と `tests/Ferry.Tests/Ferry.Tests.csproj`、解決結果は各ディレクトリの `packages.lock.json` で管理する。参照変更時は対応する lockfile も更新し、Avalonia 本体・Desktop・Fluent・Fonts.Inter の版を揃える。
 - `tests/Ferry.StartupSmoke/` は本体へのプロジェクト参照を持ち、独自の `packages.lock.json` も照合する。Dependabot の NuGet 対象にも含める。
-- relay は `infra/cloudflare/relay/package.json`、`pnpm-lock.yaml`、`pnpm-workspace.yaml` を照合する。インストールは同ディレクトリで `pnpm install --frozen-lockfile`。依存更新時は `allowBuilds`、リリース待機の例外、`undici` override の必要性も確認し、型チェックとテストを実行する。
+- relay は `infra/cloudflare/relay/package.json`、`pnpm-lock.yaml`、`pnpm-workspace.yaml`、`bunfig.toml` を照合する。インストールは同ディレクトリで `bun --no-env-file --no-install --bun run bun install --frozen-lockfile --no-save --network-concurrency=4`。公式 Bun shim を使い、許可した lifecycle に外部 Node を要求しない。依存更新時は `trustedDependencies`、リリース待機の例外を確認し、型チェックとテストを実行する。
+- 導入前に `bun --no-env-file --no-install --bun run bun add --global --trust pnpm@12.16.1 --network-concurrency=4` で固定した native CLI を準備し、`bun --no-env-file --no-install --bun run pnpm install --lockfile-only --frozen-lockfile --network-concurrency=4` で既存の supply-chain policy を維持する。`--trust` は global CLI manifest の pnpm だけを対象にし、製品の許可一覧は変えない。lock-only 検査は node_modules と lifecycle を作らず、正本 lockfile も変えない。
 - Dependabot は `.github/dependabot.yml` で GitHub Actions、上記 3 つの NuGet プロジェクト、relay の npm 依存を監視する。プロジェクト追加・移動時は更新対象も照合する。
 
 ## アーキテクチャ

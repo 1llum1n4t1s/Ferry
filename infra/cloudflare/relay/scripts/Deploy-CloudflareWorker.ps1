@@ -25,6 +25,6 @@ for($ancestor=$BuildRoot;$ancestor;$ancestor=Split-Path $ancestor -Parent){
 $entry=Join-Path $BuildRoot 'entry.mjs'
 $buildArgs=@('--main',$main,'--out',$entry,'--root',$ProjectRoot,'--project',$ProjectRoot)
 if($raw -match '(?m)^\s*["'']?minify["'']?\s*[:=]\s*true'){$buildArgs+='--minify'}
-& node (Join-Path $PSScriptRoot 'Build-CloudflareWorker.mjs') @buildArgs
+& bun --no-install --no-env-file (Join-Path $PSScriptRoot 'Build-CloudflareWorker.mjs') @buildArgs
 if($LASTEXITCODE -ne 0){throw 'Worker の製品ビルドに失敗しました。'}
 & (Join-Path $PSScriptRoot 'Publish-CloudflareWorker.ps1') -ConfigPath $ConfigPath -Main $entry -ModuleRoot $BuildRoot -ModuleManifestPath (Join-Path $BuildRoot 'modules.json') -SecretsFile $SecretsFile -AccountId $AccountId -ApiToken $ApiToken -DryRun:$DryRun

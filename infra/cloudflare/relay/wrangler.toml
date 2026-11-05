@@ -97,8 +97,8 @@ custom_domain = true
 # === CF 単独完結移行 Step 2: ペア台帳 D1 ===
 # sessions / pairing_nonces / pairs を保持 (pairs は永続 SSoT、他は 1h stale)。
 # 作成手順 (deploy 前に必須):
-#   pnpm dlx wrangler d1 create ferry_ledger          # 出力の database_id を下に貼る
-#   pnpm dlx wrangler d1 execute ferry_ledger --remote --file=schema.sql
+#   bun run --bun wrangler d1 create ferry_ledger          # 出力の database_id を下に貼る
+#   bun run --bun wrangler d1 execute ferry_ledger --remote --file=schema.sql
 # database_id は CF リソース識別子 (アクセスには API token + account 権限が要る) なので公開可。
 [[d1_databases]]
 binding = "DB"
@@ -109,7 +109,7 @@ database_id = "05b906bc-0c78-470d-8afe-6ee41b273049"
 # deviceId ↔ pubKeySpki binding KV (first-write-wins)
 # Codex 第13弾 #4 (P1) fix: 旧 placeholder "REPLACE_WITH_KV_NAMESPACE_ID" のままだと deploy 後 /auth/token が
 # DEVICE_KEY_BINDING undefined で動かないため、 1llum1n4t1 account 配下に作成済の KV namespace ID を貼る
-# (`pnpm dlx wrangler kv namespace create DEVICE_KEY_BINDING` の出力)。
+# (`bun run --bun wrangler kv namespace create DEVICE_KEY_BINDING` の出力)。
 # namespace ID 自体は Cloudflare リソース識別子で、 アクセスには API token + account 権限が必要なので
 # 公開しても security 上の悪化はない。
 [[kv_namespaces]]
@@ -160,10 +160,10 @@ simple = { limit = 5, period = 60 }
 
 # secret は手動投入:
 #   # CF 単独完結 (cf-only-migration): cfToken (自前 HMAC bearer) 署名鍵。ランダム 32 byte を投入（本番必須）。
-#   openssl rand -hex 32 | pnpm dlx wrangler secret put SESSION_HMAC_SECRET
+#   openssl rand -hex 32 | bun run --bun wrangler secret put SESSION_HMAC_SECRET
 #
 # 旧 Firebase Custom Token 用の FIREBASE_PRIVATE_KEY / FIREBASE_CLIENT_EMAIL は CF 単独完結 Step 7 で撤去済み。
-# デプロイ後に `pnpm dlx wrangler secret delete FIREBASE_PRIVATE_KEY` / `... FIREBASE_CLIENT_EMAIL` で消すこと。
+# デプロイ後に `bun run --bun wrangler secret delete FIREBASE_PRIVATE_KEY` / `... FIREBASE_CLIENT_EMAIL` で消すこと。
 
 # === Observability ===
 # Workers 標準のメトリクス + Logpush 連携時の保管設定。

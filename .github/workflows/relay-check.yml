@@ -8,8 +8,8 @@ name: Relay Check
 # main にマージされ deploy-relay.yml でそのまま本番 (watashiba.kagayoi.com) へ
 # 配信されうる状態だった。
 #
-# CLAUDE.md が relay の検証コマンドとして規定している
-#   `pnpm exec tsc --noEmit && pnpm test`
+# AGENTS.md が relay の検証コマンドとして規定している
+#   `bun run --bun tsc --noEmit && bun run --bun test`
 # をそのまま CI のゲートにする。deploy-relay.yml (main への push) 側にも同じ
 # ステップを置いてあるので、PR を経由しない直 push でも検証は外れない。
 on:
@@ -38,23 +38,25 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Node.js セットアップ (wrangler 4.x が Node.js >=20 を要求)
-        # actions/setup-node@v7.0.0
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - name: Bun セットアップ
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          node-version: '26.13.0'
-
-      - name: pnpm をインストール (サプライチェーン対策でバージョン固定)
-        run: npm install -g pnpm@12.16.1
+          bun-version: '1.4.4'
 
       - name: 依存をインストール (lockfile 固定)
         working-directory: infra/cloudflare/relay
-        run: pnpm install --frozen-lockfile
+        run: |
+          bun --no-env-file --no-install --bun run bun add --global --trust pnpm@12.16.1 --network-concurrency=4
+          bun --no-env-file --no-install --bun run pnpm install --lockfile-only --frozen-lockfile --network-concurrency=4
+
+      - name: Bun で製品依存を導入
+        working-directory: infra/cloudflare/relay
+        run: bun --no-env-file --no-install --bun run bun install --frozen-lockfile --no-save --network-concurrency=4
 
       - name: 型チェック
         working-directory: infra/cloudflare/relay
-        run: pnpm exec tsc --noEmit
+        run: bun run --bun tsc --noEmit
 
       - name: テスト
         working-directory: infra/cloudflare/relay
-        run: pnpm test
+        run: bun run --bun test

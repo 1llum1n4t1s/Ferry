@@ -2,9 +2,19 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { readFile, writeFile, mkdir, lstat } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
 import { resolve, dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+const proxyNames = Object.keys(process.env).filter(name => /^(?:https?_proxy|all_proxy|no_proxy|npm_config_(?:https?_proxy|proxy|noproxy|no_proxy))$/i.test(name));
+if (process.env.FERRY_LOCAL_NO_PROXY === '1' && proxyNames.length) throw new Error('proxy settings remained in the local regression process');
+if (proxyNames.length) {
+  const env = { ...process.env, FERRY_LOCAL_NO_PROXY: '1' };
+  for (const name of proxyNames) delete env[name];
+  const child = spawn(process.execPath, [...process.execArgv, ...process.argv.slice(1)], { env, stdio: 'inherit' });
+  const status = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); });
+  process.exit(status ?? 1);
+}
 const { values } = parseArgs({ options: { 'work-dir': { type: 'string' } } });
 assert(values['work-dir'] && isAbsolute(values['work-dir']), '--work-dir must be absolute');
 const work = values['work-dir'];
@@ -53,14 +63,17 @@ export default { ...worker, async fetch(req, env, ctx) {
 `, 'utf8');
 const bundle = join(work, 'worker.mjs');
 await build({ entryPoints: [entry], bundle: true, outfile: bundle, format: 'esm', platform: 'browser', target: 'es2022', external: ['cloudflare:workers'] });
-const mf = new Miniflare(convertV4MiniflareOptions({ rootPath: work, modules: true, scriptPath: bundle, compatibilityDate: '2026-05-26',
+const mf = new Miniflare(convertV4MiniflareOptions({ rootPath: work, host: '127.0.0.1', cf: false, modules: true, scriptPath: bundle, compatibilityDate: '2026-05-26',
   log: new Log(LogLevel.ERROR), d1Databases: { DB: 'ferry-local-regression' }, kvNamespaces: ['DEVICE_KEY_BINDING'],
   durableObjects: { DEVICE: { className: 'DeviceDO', useSQLite: true } },
   d1Persist: join(work, 'd1'), durableObjectsPersist: join(work, 'do'),
   bindings: { SALT: 'local-regression-salt', SESSION_HMAC_SECRET: 'local-regression-hmac-secret-0123456789' },
 }));
+const origin = await mf.ready;
+assert.equal(origin.protocol, 'http:');
+assert(['127.0.0.1', 'localhost', '[::1]'].includes(origin.hostname), 'Miniflare must bind to loopback');
 const A = 'a'.repeat(32), B = 'b'.repeat(32), C = 'c'.repeat(32), pairId = A + '_' + B;
-const fetch = (path, body, token, method = 'POST') => mf.dispatchFetch('http://local' + path, {
+const fetch = (path, body, token, method = 'POST') => mf.dispatchFetch(new URL(path, origin), {
   method, headers: { 'content-type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
   ...(body === undefined ? {} : { body: JSON.stringify(body) }),
 });
@@ -73,7 +86,7 @@ async function authBody(id) {
   return { deviceId: id, pubKeySpki, ts, sig };
 }
 async function connect(token) {
-  const response = await mf.dispatchFetch('http://local/inbox', { headers: { Upgrade: 'websocket', Authorization: 'Bearer ' + token } });
+  const response = await mf.dispatchFetch(new URL('/inbox', origin), { headers: { Upgrade: 'websocket', Authorization: 'Bearer ' + token } });
   assert.equal(response.status, 101);
   const socket = response.webSocket;
   const messages = [], waiters = [];
@@ -123,7 +136,7 @@ try {
   assert.equal((await db.prepare('SELECT COUNT(*) n FROM pairing_nonces').first()).n, 2);
   assert.equal((await db.prepare('SELECT COUNT(*) n FROM pairs').first()).n, 0);
   await db.prepare('DROP TRIGGER fail_delivery').run();
-  await mf.dispatchFetch('http://local/__fault', { method: 'POST', body: B });
+  await mf.dispatchFetch(new URL('/__fault', origin), { method: 'POST', body: B });
   assert.equal((await fetch('/pair/create', request)).status, 200);
   await wsA.count(1);
   assert.equal(wsB.messages.length, 0);

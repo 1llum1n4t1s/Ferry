@@ -1,5 +1,5 @@
 -- Ferry ペア台帳 D1 スキーマ (CF 単独完結移行 Step 2)。
--- 適用: pnpm dlx wrangler d1 execute ferry_ledger --remote --file=schema.sql
+-- 適用: bun run --bun wrangler d1 execute ferry_ledger --remote --file=schema.sql
 --
 -- sessions / pairing_nonces は QR ペアリングの一時データ (1h で stale)。
 -- pairs は永続 SSoT (明示 unpair でのみ削除。remote-unpair を 404 で検出する基盤)。

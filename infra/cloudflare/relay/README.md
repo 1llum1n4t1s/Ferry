@@ -16,25 +16,26 @@
 
 1. **Workers Paid プラン契約** (RealTimeTranslator 用契約と共用)
 
-2. **wrangler CLI を入れる**
-
-   ```powershell
-   pnpm add -g wrangler
-   wrangler login
-   # ブラウザで Cloudflare アカウントを選択して認可
-   ```
-
-3. **依存をインストール** (初回のみ)
+2. **依存をインストール** (初回のみ)
 
    ```powershell
    cd infra/cloudflare/relay
-   pnpm install
+   bun --no-env-file --no-install --bun run bun add --global --trust pnpm@12.16.1 --network-concurrency=4
+   bun --no-env-file --no-install --bun run pnpm install --lockfile-only --frozen-lockfile --network-concurrency=4
+   bun --no-env-file --no-install --bun run bun install --frozen-lockfile --no-save --network-concurrency=4
+   ```
+
+3. **wrangler にログイン**
+
+   ```powershell
+   bun run --bun wrangler login
+   # ブラウザで Cloudflare アカウントを選択して認可
    ```
 
 4. **pairId ハッシュ用 SALT を登録**
 
    ```powershell
-   wrangler secret put SALT
+   bun run --bun wrangler secret put SALT
    # 入力プロンプトに長めの任意文字列 (32文字以上推奨) を貼り付ける。
    # 一度設定すれば以降のデプロイでも保持される。
    ```
@@ -93,8 +94,8 @@ rollback してはならない。remote schema / import / deploy は別途明示
 既存鍵と違う import は全 INSERT を失敗させ、上書きしない。
 
 ```powershell
-# Node 26.13.0。既定は --local。作業先は絶対パスで指定する。
-node scripts/import-key-snapshot.mjs --input <snapshot.json> --sha256 <承認済SHA256> --count <件数> --persist-to <作業領域の絶対パス> --writers-frozen --snapshot-approved --snapshot-provenance <取得元・承認者・カットオフ説明>
+# Bun 1.4.4。既定は --local。作業先は絶対パスで指定する。
+bun scripts/import-key-snapshot.mjs --input <snapshot.json> --sha256 <承認済SHA256> --count <件数> --persist-to <作業領域の絶対パス> --writers-frozen --snapshot-approved --snapshot-provenance <取得元・承認者・カットオフ説明>
 # 同じ固定入力を検証し、最後に ready を明示する場合だけ --activate を付ける。
 # 本番運用では --persist-to の代わりに --remote --work-dir <SQL作業領域の絶対パス> を明示する。
 ```
@@ -145,7 +146,7 @@ JSON は secret 値を含むため証跡へ転載しない。
 ```
 
 ```powershell
-node scripts/import-key-snapshot.mjs --input <snapshot.json> --sha256 <SHA256> --count <件数> --remote --work-dir <絶対パス> --legacy-writers-fenced --fence-version <実version UUID> --fence-evidence <非秘密JSON> --snapshot-approved --snapshot-provenance <取得元・承認者・カットオフ説明> --activate
+bun scripts/import-key-snapshot.mjs --input <snapshot.json> --sha256 <SHA256> --count <件数> --remote --work-dir <絶対パス> --legacy-writers-fenced --fence-version <実version UUID> --fence-evidence <非秘密JSON> --snapshot-approved --snapshot-provenance <取得元・承認者・カットオフ説明> --activate
 ```
 
 CLI は snapshot SHA / 件数 / 承認・provenance・フェンス証跡を作業領域の receipt JSON に保存する。
@@ -175,15 +176,15 @@ watch 開始前の古いイベントまで無期限に復元する保証は追�
 実 workerd / D1 / WebSocket のローカル回帰は、既存 wrangler の Miniflare / esbuild を使う。
 
 ```powershell
-node tests/workerd-regressions.mjs --work-dir <新規の検証作業領域の絶対パス>
+bun tests/workerd-regressions.mjs --work-dir <新規の検証作業領域の絶対パス>
 ```
 
 ```powershell
 # ローカル実行 (DO は memory mode、本番と微妙に挙動が違う点に注意)
-wrangler dev
+bun run --bun wrangler dev
 
 # ログをリアルタイム監視 (デプロイ後)
-wrangler tail
+bun run --bun wrangler tail
 ```
 
 `wrangler dev` の DO はメモリモードで本物の Durable Object とは挙動が違うため、Hibernation 周りの確認は必ず一度デプロイして確認すること。
