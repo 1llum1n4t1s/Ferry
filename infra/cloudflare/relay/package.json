@@ -6,9 +6,9 @@
   "description": "Ferry WebSocket リレー (Cloudflare Workers + Durable Objects, Hibernation 対応)",
   "scripts": {
     "deploy": "pwsh -NoProfile -File scripts/Deploy-CloudflareWorker.ps1 -ConfigPath wrangler.toml",
-    "dev": "wrangler dev",
-    "tail": "wrangler tail",
-    "test": "vitest run"
+    "dev": "node -e \"if (process.versions.bun || process.release.name !== 'node') throw new Error('Wrangler dev requires a real Node.js runtime')\" && node ./node_modules/wrangler/bin/wrangler.js dev",
+    "tail": "node -e \"if (process.versions.bun || process.release.name !== 'node') throw new Error('Wrangler tail requires a real Node.js runtime')\" && node ./node_modules/wrangler/bin/wrangler.js tail",
+    "test": "bun --no-env-file --no-install --bun run vitest run"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261031.1",

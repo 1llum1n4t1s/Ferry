@@ -27,15 +27,17 @@ dotnet test tests/Ferry.Tests/Ferry.Tests.csproj --filter "FullyQualifiedName~Fi
 dotnet run --project tests/Ferry.StartupSmoke/Ferry.StartupSmoke.csproj -c Release -- --regressions --output docs/verification/local-regressions
 
 # relay Worker（シグナリング / リレー / Bridge ページ）の型チェック + テスト
-cd infra/cloudflare/relay && bun run --bun tsc --noEmit && bun run --bun test
+cd infra/cloudflare/relay && bun run --bun tsc --noEmit && bun run test
 
 # relay Worker のテスト単体実行（ファイル指定 / テスト名フィルタ）
 cd infra/cloudflare/relay && bun run --bun vitest run tests/signaling-ratelimit.test.ts
 cd infra/cloudflare/relay && bun run --bun vitest run -t "rate limit"
 
 # relay Worker の手動デプロイ（通常は main push で deploy-relay.yml が自動配信するので不要）
-cd infra/cloudflare/relay && bun run --bun wrangler deploy
+cd infra/cloudflare/relay && node ./node_modules/wrangler/bin/wrangler.js deploy
 ```
+
+relayのtestはscript内でBunを指定する。Wranglerのdev/tailはSDK互換性のためNode.jsを明示するので、`bun run dev` / `bun run tail` の外側に `--bun` を付けない。
 
 > Windows 向けリリースは `pwsh scripts/release-local.ps1` でローカル実行する（コード署名のため）。macOS / Linux は `release/**` ブランチへの push で CI が配信する。配信境界は [DESIGN.md](DESIGN.md#配布と運用の境界)、詳細手順は [references/architecture.md](references/architecture.md) の「自動更新と配信（CI/CD）」を参照する。
 >

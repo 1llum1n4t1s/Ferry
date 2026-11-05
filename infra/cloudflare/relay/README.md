@@ -28,14 +28,14 @@
 3. **wrangler にログイン**
 
    ```powershell
-   bun run --bun wrangler login
+   node ./node_modules/wrangler/bin/wrangler.js login
    # ブラウザで Cloudflare アカウントを選択して認可
    ```
 
 4. **pairId ハッシュ用 SALT を登録**
 
    ```powershell
-   bun run --bun wrangler secret put SALT
+   node ./node_modules/wrangler/bin/wrangler.js secret put SALT
    # 入力プロンプトに長めの任意文字列 (32文字以上推奨) を貼り付ける。
    # 一度設定すれば以降のデプロイでも保持される。
    ```
@@ -181,11 +181,13 @@ bun tests/workerd-regressions.mjs --work-dir <新規の検証作業領域の絶�
 
 ```powershell
 # ローカル実行 (DO は memory mode、本番と微妙に挙動が違う点に注意)
-bun run --bun wrangler dev
+bun --no-env-file --no-install run dev
 
 # ログをリアルタイム監視 (デプロイ後)
-bun run --bun wrangler tail
+bun --no-env-file --no-install run tail
 ```
+
+Wranglerのdev・tail・認証操作はSDK互換性のためNode.jsで実行する。`bun run dev` / `bun run tail` も内部でNode.jsを使うため、Node.jsを用意し、外側の起動に `--bun` を付けない。
 
 `wrangler dev` の DO はメモリモードで本物の Durable Object とは挙動が違うため、Hibernation 周りの確認は必ず一度デプロイして確認すること。
 

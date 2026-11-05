@@ -83,7 +83,7 @@ Release ビルドは Info 以上を出力し 7 日保持。アプリのトレイ
 4. **サーバー側ログを見る**（拒否理由まで残る）
 
    ```bash
-   cd infra/cloudflare/relay && bun run --bun wrangler tail
+   cd infra/cloudflare/relay && bun --no-env-file --no-install run tail
    ```
 
    `reject` 行に `{status, code, message}` が出る（`BAD_SIGNATURE` / `DEVICE_PUBKEY_MISMATCH` /
@@ -286,7 +286,7 @@ bun run --bun wrangler d1 execute ferry_ledger --remote --command "SELECT COUNT(
 bun run --bun wrangler d1 execute ferry_ledger --remote --command "SELECT COUNT(*) FROM sessions"
 
 # 3. 拒否理由をリアルタイムで見る（BAD_SIGNATURE / CLOCK_SKEW 等が出る）
-bun run --bun wrangler tail
+bun --no-env-file --no-install run tail
 
 # 4. Bridge ページが配信されているか
 curl -s -o /dev/null -w "%{http_code}\n" https://watashiba.kagayoi.com/
@@ -321,7 +321,7 @@ gh run list --workflow deploy-relay.yml --limit 3
 curl -s -w "\nHTTP %{http_code}\n" https://watashiba.kagayoi.com/health
 
 # リアルタイムログ（DO の例外は "PairDO error" / "DeviceDO error" で出る）
-cd infra/cloudflare/relay && bun run --bun wrangler tail
+cd infra/cloudflare/relay && bun --no-env-file --no-install run tail
 
 # デプロイ履歴
 bun run --bun wrangler deployments list

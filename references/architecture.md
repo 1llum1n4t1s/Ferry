@@ -292,5 +292,5 @@ xUnit v3 + NSubstitute。テスト内の非同期メソッドには `TestContext
 **通信デバッグのポイント:**
 - SDP offer/answer の待機: `SDP 受信(CF, offer|answer)` / `SDP ポーリングエラー(CF, ...)` ログで状態を確認（404 継続 = PairDO に相手の書き込みが無い）。着信検知は `接続ノック受信`（Debug）と `CF inbox WebSocket 接続成立`（Debug）で追う
 - 接続失敗時は常にログに原因が出力されるよう各所で `Util.Logger.Log(..., Util.LogLevel.Error)` を使用
-- relay Worker 側は `cd infra/cloudflare/relay && pnpm dlx wrangler tail` でライブログ（DO の exception や knock 配送を確認できる）
+- relay Worker 側は `cd infra/cloudflare/relay && bun --no-env-file --no-install run tail` で固定済みSDKのライブログを確認する（内部はNode.js、DO の exception や knock 配送を確認できる）
 
