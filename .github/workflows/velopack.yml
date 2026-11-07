@@ -51,6 +51,7 @@ permissions:
 
 jobs:
   velopack:
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     outputs:
       osx-arm64: ${{ steps.artifact-attempt.outputs['osx-arm64'] }}
       linux-x64: ${{ steps.artifact-attempt.outputs['linux-x64'] }}
@@ -77,7 +78,7 @@ jobs:
             os: ubuntu-latest
             mainExe: ferry
     name: Velopack ${{ matrix.label }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ fromJSON(startsWith(matrix.os, 'windows-') && format('["{0}"]', matrix.os) || startsWith(matrix.os, 'macos-') && '["self-hosted","macOS","ARM64","m3mb14"]' || endsWith(matrix.os, '-arm') && '["self-hosted","Linux","ARM64","m3mb14"]' || '["self-hosted","Linux","X64","m3mb14"]') }}
     steps:
       - name: Setup .NET
         shell: pwsh
@@ -161,7 +162,9 @@ jobs:
       # CI 側も最低限バージョンを記録してサマリに残し、対称にする。
       - name: Install Velopack CLI
         run: |
-          dotnet tool install --global vpk
+          dotnet tool install --tool-path "$RUNNER_TEMP/vpk" vpk
+          echo "$RUNNER_TEMP/vpk" >> "$GITHUB_PATH"
+          export PATH="$RUNNER_TEMP/vpk:$PATH"
           vpk_version=$(vpk --version 2>&1 | head -1 || echo 'unknown')
           echo "vpk version: $vpk_version"
           echo "- \`${{ matrix.runtime }}\`: vpk $vpk_version" >> "$GITHUB_STEP_SUMMARY"
@@ -192,6 +195,7 @@ jobs:
           fi
           # GitHub ランナーの login.keychain を汚さないよう、専用の一時キーチェーンを使う。
           # パスワードはこのジョブ内でしか使わない使い捨て (ログにも出さない)。
+          security list-keychains -d user > "$RUNNER_TEMP/original-keychains.txt"
           KEYCHAIN_PATH="$RUNNER_TEMP/ferry-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -208,7 +212,13 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
             -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
           # vpk(codesign) がデフォルト検索でこのキーチェーンを見つけられるよう検索リスト先頭へ
-          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          keychains=()
+          while IFS= read -r entry; do
+            entry="${entry#*\"}"
+            entry="${entry%\"*}"
+            keychains+=("$entry")
+          done < "$RUNNER_TEMP/original-keychains.txt"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "${keychains[@]}"
           echo "FERRY_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
           # 取り込んだ署名 identity を確認 (出力は証明書名のみ。秘密鍵は出ない)
           security find-identity -v -p codesigning "$KEYCHAIN_PATH"
@@ -296,3 +306,17 @@ jobs:
           ARTIFACT_RUNTIME: ${{ matrix.runtime }}
         run: |
           printf '%s=%s\n' "$ARTIFACT_RUNTIME" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+
+      - name: 元のKeychain検索一覧を復元
+        if: ${{ always() && startsWith(matrix.runtime, 'osx-') }}
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/original-keychains.txt" ]; then
+            keychains=()
+            while IFS= read -r entry; do
+              entry="${entry#*\"}"
+              entry="${entry%\"*}"
+              keychains+=("$entry")
+            done < "$RUNNER_TEMP/original-keychains.txt"
+            security list-keychains -d user -s "${keychains[@]}"
+          fi

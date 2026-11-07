@@ -118,10 +118,11 @@ jobs:
         run: |
           printf '%s=%s\n' "$ARTIFACT_RUNTIME" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
   osx-app:
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     outputs:
       osx-arm64: ${{ steps.artifact-attempt.outputs['osx-arm64'] }}
     name: Package macOS
-    runs-on: macos-latest
+    runs-on: [self-hosted, macOS, ARM64, m3mb14]
     strategy:
       matrix:
         include:
@@ -211,11 +212,12 @@ jobs:
         run: |
           printf '%s=%s\n' "$ARTIFACT_RUNTIME" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
   linux:
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     outputs:
       linux-x64: ${{ steps.artifact-attempt.outputs['linux-x64'] }}
       linux-arm64: ${{ steps.artifact-attempt.outputs['linux-arm64'] }}
     name: Package Linux
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, m3mb14]
     container: ubuntu:20.04
     strategy:
       matrix:

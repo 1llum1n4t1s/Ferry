@@ -21,6 +21,7 @@ permissions:
 
 jobs:
   build:
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     outputs:
       win-x64: ${{ steps.artifact-attempt.outputs['win-x64'] }}
       win-arm64: ${{ steps.artifact-attempt.outputs['win-arm64'] }}
@@ -48,7 +49,7 @@ jobs:
             runtime: linux-arm64
             container: ubuntu:20.04
     name: Build ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ fromJSON(startsWith(matrix.os, 'windows-') && format('["{0}"]', matrix.os) || startsWith(matrix.os, 'macos-') && '["self-hosted","macOS","ARM64","m3mb14"]' || endsWith(matrix.os, '-arm') && '["self-hosted","Linux","ARM64","m3mb14"]' || '["self-hosted","Linux","X64","m3mb14"]') }}
     container: ${{ matrix.container || '' }}
     steps:
       - name: Install common CLI tools

@@ -20,9 +20,9 @@ jobs:
     uses: ./.github/workflows/build.yml
     secrets: inherit
   version:
-    if: github.event.deleted != true
+    if: ${{ (github.event.deleted != true) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Prepare version string
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, ARM64, m3mb14]
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
@@ -75,9 +75,10 @@ jobs:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
   r2-upload:
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     needs: [build, package, velopack, version]
     name: R2 Upload
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, ARM64, m3mb14]
     permissions:
       contents: read
     steps:

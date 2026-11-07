@@ -29,8 +29,9 @@ permissions:
 
 jobs:
   check:
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Typecheck & Test
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, ARM64, m3mb14]
     steps:
       - name: リポジトリをチェックアウト
         # actions/checkout@v7.0.1
