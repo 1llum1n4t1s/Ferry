@@ -140,6 +140,7 @@ public class TransferServiceCompletionTests
         var first = pair.Send([1]);
         var oldAck = await pair.Ack.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         await Assert.ThrowsAsync<ReceiveResultUnknownException>(() => first);
+        await pair.SenderRejectDelivered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         pair.Ack = new(TaskCreationOptions.RunContinuationsAsynchronously);
         var second = pair.Send([2]);
         var newAck = await pair.Ack.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
@@ -160,6 +161,7 @@ public class TransferServiceCompletionTests
         var first = pair.Send([1]);
         var oldAck = await pair.Ack.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         await Assert.ThrowsAsync<ReceiveResultUnknownException>(() => first);
+        await pair.SenderRejectDelivered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         // 正常送信APIは終了時に除去するため、既存Resume入口の保持済み対象という前提だけを用意する。
         var active = (System.Collections.Concurrent.ConcurrentDictionary<Guid, TransferItem>)typeof(TransferService)
             .GetField("_activeTransfers", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(pair.Sender)!;
@@ -260,6 +262,7 @@ public class TransferServiceCompletionTests
         public Func<byte[], bool>? SenderFilter { get; set; }
         public Func<byte[], bool>? ReceiverFilter { get; set; }
         public TaskCompletionSource<byte[]> Ack { get; set; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource SenderRejectDelivered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public FileMeta? Meta { get; private set; }
         public TransferItem? SentItem { get; private set; }
         public TransferItem? ReceivedItem { get; private set; }
@@ -296,7 +299,12 @@ public class TransferServiceCompletionTests
         private Task DeliverToReceiver(byte[] message)
         {
             if (message[0] == TransferProtocol.FileMeta) Meta = FileChunker.ParseFileMeta(message);
-            if (SenderFilter?.Invoke(message) != false) Receiver.HandleReceivedData(message, "sender");
+            if (SenderFilter?.Invoke(message) != false)
+            {
+                Receiver.HandleReceivedData(message, "sender");
+                // 同IDを再利用する前に、旧試行の取消が受信側で処理済みであることを確認する。
+                if (message[0] == TransferProtocol.FileReject) SenderRejectDelivered.TrySetResult();
+            }
             return Task.CompletedTask;
         }
 
