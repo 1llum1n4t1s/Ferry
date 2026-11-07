@@ -7,6 +7,11 @@ on:
       - "docs/**"
       - "**.md"
   workflow_dispatch:
+    inputs:
+      build_only:
+        description: "CIビルドの修正だけを検証し、テストの重複実行を省く"
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -22,7 +27,7 @@ jobs:
     uses: ./.github/workflows/build.yml
     secrets: inherit
   test:
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && !(github.event_name == 'workflow_dispatch' && inputs.build_only) }}
     name: Test (${{ matrix.os }})
     strategy:
       fail-fast: false
