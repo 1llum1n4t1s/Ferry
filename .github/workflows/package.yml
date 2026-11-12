@@ -212,12 +212,11 @@ jobs:
         run: |
           printf '%s=%s\n' "$ARTIFACT_RUNTIME" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
   linux:
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     outputs:
       linux-x64: ${{ steps.artifact-attempt.outputs['linux-x64'] }}
       linux-arm64: ${{ steps.artifact-attempt.outputs['linux-arm64'] }}
     name: Package Linux
-    runs-on: [self-hosted, Linux, X64, m3mb14]
+    runs-on: ubuntu-latest
     container: ubuntu:20.04
     strategy:
       matrix:
@@ -240,26 +239,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          test ! -L "$GITHUB_WORKSPACE"
-          test "$(pwd -P)" = "$GITHUB_WORKSPACE"
-          case "$GITHUB_WORKSPACE" in *"'"*|*$'\n'*) exit 1 ;; esac
-          original_home="$HOME"
-          original_xdg="${XDG_CONFIG_HOME:-$HOME/.config}/git/config"
-          umask 077
-          git_home=$(mktemp -d "$RUNNER_TEMP/ferry-git.XXXXXX")
-          trap 'rm -f -- "$git_home/.gitconfig"; rmdir -- "$git_home"' EXIT
-          : > "$git_home/.gitconfig"
-          (
-            cd "$git_home"
-            if [ -f "$original_xdg" ]; then
-              command git config --file "$git_home/.gitconfig" --add include.path "$original_xdg"
-            fi
-            if [ -f "$original_home/.gitconfig" ]; then
-              command git config --file "$git_home/.gitconfig" --add include.path "$original_home/.gitconfig"
-            fi
-            command git config --file "$git_home/.gitconfig" --add safe.directory "$GITHUB_WORKSPACE"
-          )
-          git() { env HOME="$git_home" XDG_CONFIG_HOME="$git_home" GIT_CONFIG_GLOBAL="$git_home/.gitconfig" git "$@"; }
           git init .
           git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
           auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')

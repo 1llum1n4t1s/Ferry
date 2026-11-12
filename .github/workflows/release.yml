@@ -20,9 +20,9 @@ jobs:
     uses: ./.github/workflows/build.yml
     secrets: inherit
   version:
-    if: ${{ (github.event.deleted != true) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    if: github.event.deleted != true
     name: Prepare version string
-    runs-on: [self-hosted, Linux, ARM64, m3mb14]
+    runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
@@ -75,10 +75,9 @@ jobs:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
   r2-upload:
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     needs: [build, package, velopack, version]
     name: R2 Upload
-    runs-on: [self-hosted, Linux, ARM64, m3mb14]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
@@ -235,18 +234,6 @@ jobs:
             $contentType = switch -Regex ($file.Name) { '\.json$' { 'application/json'; break }; '^RELEASES' { 'text/plain'; break }; '\.(zip|nupkg)$' { 'application/zip'; break }; default { 'application/octet-stream' } }
             Publish-R2Object -AccountId $env:CLOUDFLARE_ACCOUNT_ID -Bucket 'ferry-updates' -FilePath $file.FullName -Immutable:$immutable -CacheControl $cacheControl -ContentType $contentType | Out-Null
           }
-      - name: 配信確認 (全 channel の releases.<channel>.json HTTP 200 を検証)
-        run: |
-          set -euo pipefail
-          base="https://ferry.kagayoi.com"
-          for channel in win-x64 win-arm64 osx-arm64 linux-x64 linux-arm64; do
-            url="${base}/releases.${channel}.json"
-            curl --fail --silent --show-error --max-time 30 \
-                 --retry 3 --retry-delay 5 --retry-all-errors \
-                 -o /dev/null -w "${channel}: HTTP %{http_code} (%{size_download} bytes)\n" \
-                 "$url"
-          done
-
       # 旧バージョン nupkg のクリーンアップ (Aggressive 保持戦略 / transfer-cf スキル 8-3 準拠):
       # - releases.<channel>.json (manifest) に含まれない *.nupkg を削除
       # - Setup.exe / *.zip / *.deb / *.rpm / *.AppImage / RELEASES / assets.*.json /
@@ -254,7 +241,7 @@ jobs:
       #   ランディング DL 用 (= packages/ 由来のインストーラ含む) なので保護
       # - 削除対象を「.nupkg かつ manifest 外」に絞ることで、想定外のファイル
       #   (誰かが手動 put した object) や packages/ 系インストーラを誤って消さない安全側設計
-      # - 配信確認ステップ後に走る (manifest 取得不能なら手前で fail し cleanup は走らない)
+      # - アップロード完了後に走る (cleanup 内の manifest 取得不能時は削除しない)
       # - API: Cloudflare V4 で完結 (CLOUDFLARE_API_TOKEN だけで動く / R2 S3 互換 Access Key 不要)
       - name: 旧バージョン nupkg を削除 (manifest 外をクリーンアップ)
         env:

@@ -49,7 +49,7 @@ jobs:
             runtime: linux-arm64
             container: ubuntu:20.04
     name: Build ${{ matrix.name }}
-    runs-on: ${{ fromJSON(startsWith(matrix.os, 'windows-') && format('["{0}"]', matrix.os) || startsWith(matrix.os, 'macos-') && '["self-hosted","macOS","ARM64","m3mb14"]' || endsWith(matrix.os, '-arm') && '["self-hosted","Linux","ARM64","m3mb14"]' || '["self-hosted","Linux","X64","m3mb14"]') }}
+    runs-on: ${{ fromJSON(startsWith(matrix.os, 'macos-') && '["self-hosted","macOS","ARM64","m3mb14"]' || format('["{0}"]', matrix.os)) }}
     container: ${{ matrix.container || '' }}
     steps:
       - name: Install common CLI tools
@@ -80,28 +80,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [ "$RUNNER_OS" = Linux ]; then
-            test ! -L "$GITHUB_WORKSPACE"
-            test "$(pwd -P)" = "$GITHUB_WORKSPACE"
-            case "$GITHUB_WORKSPACE" in *"'"*|*$'\n'*) exit 1 ;; esac
-            original_home="$HOME"
-            original_xdg="${XDG_CONFIG_HOME:-$HOME/.config}/git/config"
-            umask 077
-            git_home=$(mktemp -d "$RUNNER_TEMP/ferry-git.XXXXXX")
-            trap 'rm -f -- "$git_home/.gitconfig"; rmdir -- "$git_home"' EXIT
-            : > "$git_home/.gitconfig"
-            (
-              cd "$git_home"
-              if [ -f "$original_xdg" ]; then
-                command git config --file "$git_home/.gitconfig" --add include.path "$original_xdg"
-              fi
-              if [ -f "$original_home/.gitconfig" ]; then
-                command git config --file "$git_home/.gitconfig" --add include.path "$original_home/.gitconfig"
-              fi
-              command git config --file "$git_home/.gitconfig" --add safe.directory "$GITHUB_WORKSPACE"
-            )
-            git() { env HOME="$git_home" XDG_CONFIG_HOME="$git_home" GIT_CONFIG_GLOBAL="$git_home/.gitconfig" git "$@"; }
-          fi
           git init .
           git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
           auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
@@ -128,10 +106,10 @@ jobs:
           $global:LASTEXITCODE = 0
           if ($windows) {
             if ($sdkVersion) { & $installer -Version $sdkVersion -InstallDir $install }
-            else { & $installer -Channel '10.0' -InstallDir $install }
+            else { & $installer -Channel '11.0' -InstallDir $install }
           } else {
             if ($sdkVersion) { & bash $installer --version $sdkVersion --install-dir $install }
-            else { & bash $installer --channel '10.0' --install-dir $install }
+            else { & bash $installer --channel '11.0' --install-dir $install }
           }
           if ($LASTEXITCODE -ne 0) { throw '.NET SDK installation failed' }
           $dotnetName = if ($windows) { 'dotnet.exe' } else { 'dotnet' }

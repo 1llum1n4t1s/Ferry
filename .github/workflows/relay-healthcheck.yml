@@ -18,9 +18,8 @@ permissions:
 
 jobs:
   healthcheck:
-    if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
     name: Relay /health endpoint check
-    runs-on: [self-hosted, Linux, ARM64, m3mb14]
+    runs-on: ubuntu-latest
     steps:
       - name: /health の HTTP 200 を確認
         id: probe

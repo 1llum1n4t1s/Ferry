@@ -78,7 +78,7 @@ jobs:
             os: ubuntu-latest
             mainExe: ferry
     name: Velopack ${{ matrix.label }}
-    runs-on: ${{ fromJSON(startsWith(matrix.os, 'windows-') && format('["{0}"]', matrix.os) || startsWith(matrix.os, 'macos-') && '["self-hosted","macOS","ARM64","m3mb14"]' || endsWith(matrix.os, '-arm') && '["self-hosted","Linux","ARM64","m3mb14"]' || '["self-hosted","Linux","X64","m3mb14"]') }}
+    runs-on: ${{ fromJSON(startsWith(matrix.os, 'macos-') && '["self-hosted","macOS","ARM64","m3mb14"]' || format('["{0}"]', matrix.os)) }}
     steps:
       - name: Setup .NET
         shell: pwsh
@@ -99,10 +99,10 @@ jobs:
           $global:LASTEXITCODE = 0
           if ($windows) {
             if ($sdkVersion) { & $installer -Version $sdkVersion -InstallDir $install }
-            else { & $installer -Channel '10.0' -InstallDir $install }
+            else { & $installer -Channel '11.0' -InstallDir $install }
           } else {
             if ($sdkVersion) { & bash $installer --version $sdkVersion --install-dir $install }
-            else { & bash $installer --channel '10.0' --install-dir $install }
+            else { & bash $installer --channel '11.0' --install-dir $install }
           }
           if ($LASTEXITCODE -ne 0) { throw '.NET SDK installation failed' }
           $dotnetName = if ($windows) { 'dotnet.exe' } else { 'dotnet' }
