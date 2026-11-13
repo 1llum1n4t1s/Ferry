@@ -414,7 +414,7 @@ jobs:
   #   R2 から読んで保護するため、同じ run の macOS / Linux 配信が終わってから実行して取り違えを防ぐ。
   #   win フィードは CI の velopack / package では生成しないので、二重配信にはならない。
   # - Secrets (SIGILUNE_* / CLOUDFLARE_API_TOKEN) は Environment "release" のものだけを使い、このジョブ以外へ渡さない。
-  #   Environment の承認とブランチ許可 (release/** を含めること) を通ったときだけ実行される。
+  #   Environment のブランチ許可 (release/** を含めること) を通ったときだけ実行される (承認者は置かない)。
   # - 署名は TOTP の 30 秒窓を共有できないため 1 ジョブで全 RID を署名する (RID ごとの並列ジョブにしない)。
   windows-release:
     needs: [r2-upload]

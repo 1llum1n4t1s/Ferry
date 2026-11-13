@@ -55,7 +55,7 @@ cd infra/cloudflare/relay && pnpm vitest run tests/signaling-ratelimit.test.ts
 
 - バージョンは `Directory.Build.props` の `<Version>` が単一の正本
 - **Windows (win-x64 / win-arm64) も CI** — `release.yml` の `windows-release` ジョブが macOS / Linux の配信後に
-  `scripts/release-local.ps1` を実行し、Sigilune で Authenticode 署名する（Environment `release` の承認が必要）。
+  `scripts/release-local.ps1` を実行し、Sigilune で Authenticode 署名する（Secrets は Environment `release` から渡す。承認待ちはない）。
   ローカル実行は `-SkipUpload` の検証と `-UploadOnly` の再開用
 - **macOS / Linux は CI** — `release/X.Y.Z` ブランチへの push で `release.yml` が発行 → Velopack パッケージ化 → R2 へアップロード
 - relay Worker は上記のとおり main への push で自動デプロイされる（手動なら `cd infra/cloudflare/relay && pnpm dlx wrangler deploy`）

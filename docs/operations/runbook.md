@@ -118,7 +118,7 @@ Release ビルドは Info 以上を出力し 7 日保持。アプリのトレイ
    （例: 1.0.70 で問題発覚 → 1.0.71 として 1.0.69 のコードを再リリース）
 2. 該当バージョンのコードを取り出す（`git checkout <旧 commit> -- src/`）
 3. `release/<新バージョン>` を push → `release.yml` が macOS / Linux を配信
-4. Windows は同じ run の `windows-release` ジョブを Environment `release` で承認する（Sigilune で CI 署名）
+4. Windows は同じ run の `windows-release` ジョブが承認待ちなしで続けて走る（Sigilune で CI 署名）
 5. R2 に新 manifest が配置 → ユーザーは次回 `Check4Update` でこちらを取得
 
 **TODO**: R2 cleanup を「archive/ への移動」に変更すれば、`archive/<old-version>` を manifest に

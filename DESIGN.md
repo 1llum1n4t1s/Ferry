@@ -118,7 +118,7 @@ operator の取得元・承認・実 version / deployment・probe 証跡を保�
 | TURN、R2 ペイロード保管、BYO relay を持たない | 現行の P2P-first + 有界 relay でコンポーネント数と運用負荷を抑える | symmetric NAT 等では Cloudflare relay が唯一の最終経路になる |
 | 転送ペイロードをサーバーへ永続化しない | プライバシー、保管コスト、データライフサイクルを PC 間に限定する | 中断転送はサーバーから部分再開できず、先頭から再送する |
 | Native AOT を全配布対象で使う | 起動、単体配布、ランタイム依存の一貫性を得る | 反射依存 API と JSON 型情報に制約がある |
-| Windows 署名を CI の別ジョブ（`release-local.ps1` + Sigilune）、macOS / Linux 配布を CI の既存ジョブで行う | Certum クラウド署名（TOTP の 30 秒窓）を 1 ジョブに閉じ、Apple 公証・クロスプラットフォーム build の条件と分離する | Windows ジョブは macOS / Linux の R2 配信後に Environment `release` の承認を経て走り、失敗時の再送はローカルの `-UploadOnly` か再実行で行う |
+| Windows 署名を CI の別ジョブ（`release-local.ps1` + Sigilune）、macOS / Linux 配布を CI の既存ジョブで行う | Certum クラウド署名（TOTP の 30 秒窓）を 1 ジョブに閉じ、Apple 公証・クロスプラットフォーム build の条件と分離する | Windows ジョブは macOS / Linux の R2 配信後に承認待ちなしで続けて走り、失敗時の再送はローカルの `-UploadOnly` か再実行で行う |
 
 ## 配布と運用の境界
 
