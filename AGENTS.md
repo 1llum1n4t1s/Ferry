@@ -39,7 +39,7 @@ cd infra/cloudflare/relay && node ./node_modules/wrangler/bin/wrangler.js deploy
 
 relayのtestはscript内でBunを指定する。Wranglerのdev/tailはSDK互換性のためNode.jsを明示するので、`bun run dev` / `bun run tail` の外側に `--bun` を付けない。
 
-> Windows 向けリリースは `pwsh scripts/release-local.ps1` でローカル実行する（コード署名のため）。macOS / Linux は `release/**` ブランチへの push で CI が配信する。配信境界は [DESIGN.md](DESIGN.md#配布と運用の境界)、詳細手順は [references/architecture.md](references/architecture.md) の「自動更新と配信（CI/CD）」を参照する。
+> リリースは `release/**` ブランチへの push で CI（`.github/workflows/release.yml`）が全 OS を配信する。Windows は macOS / Linux の配信後に `windows-release` ジョブが Environment `release` の承認を経て `scripts/release-local.ps1` を実行し、Sigilune で署名する。配信境界は [DESIGN.md](DESIGN.md#配布と運用の境界)、詳細手順は [references/architecture.md](references/architecture.md) の「自動更新と配信（CI/CD）」を参照する。
 >
 > 製品ページの配信は `../vps-web/deploy/deploy-lp.ps1` を使う。公開ホスト・更新ファイルの既存経路を維持する。
 >
@@ -108,9 +108,12 @@ relay の認証鍵移行・ペア通知 outbox・DeviceDO の通知保存/再生
 
 R2 配布は PowerShell 7.2 以降と同梱の `scripts/R2Distribution.Common.ps1` を使う。配布に Node.js・pnpm・Wrangler は不要（製品の JS ビルド要件は別途維持）。署名・転送・検証の正本は同梱の `scripts/R2Transfer.Core.cs` とし、PS helper は公開関数の互換入口とする。更新時は中核と使用する入口を同じディレクトリへ同梱する。固定名は `no-cache, must-revalidate`、バージョン付き成果物は不変として 1 年キャッシュし、payload を先、assets・RELEASES・releases を最後に送信する。
 
-リポジトリルートで事前確認を行い、失敗時は「署名証明書が見つからないよ。SimplySign Desktop を起動してトークンでログインしてから /vava を再実行してね」。公開依頼時に成功を確認してから実行する。
+通常の公開は `release/**` push で起動する `release.yml` に任せ、Windows を手元から重ねて配信しない（同じ版の二重配信・不変パッケージの衝突になる）。`windows-release` ジョブは Environment `release` の承認待ちになるので、承認して完了を確認する。署名は Sigilune（`scripts/Sigilune.Common.ps1`）で、CI は `SIGILUNE_EMAIL` / `SIGILUNE_TOTP_URI` / `CLOUDFLARE_API_TOKEN` を Environment の Secrets から受け取る。
+
+ローカル実行は配信しない検証（`-SkipUpload`）と、CI の配信が途中で止まったときの再開（`-UploadOnly`）に使う。事前に Sigilune のクラウドログインを確認し、失敗時は `sigilune status` で登録を確認するよう案内し、ログインを自動再試行しない。
 
 ```powershell
-pwsh -NoProfile -Command 'if (-not (Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -like "CN=Open Source Developer Yuichiro Shinozaki*" -and $_.NotAfter -gt (Get-Date) })) { exit 1 }'
-if ($LASTEXITCODE -eq 0) { pwsh -NoProfile -File scripts/release-local.ps1 } else { throw '署名証明書が見つからないよ。SimplySign Desktop を起動してトークンでログインしてから /vava を再実行してね' }
+$sigilune = if ($env:SIGILUNE_EXE) { $env:SIGILUNE_EXE } else { Join-Path $env:USERPROFILE '.local\Sigilune\bin\sigilune.exe' }
+& $sigilune login
+if ($LASTEXITCODE -eq 0) { pwsh -NoProfile -File scripts/release-local.ps1 -SkipUpload } else { throw 'Sigilune でクラウドにログインできなかったよ。sigilune status で登録を確認してね' }
 ```

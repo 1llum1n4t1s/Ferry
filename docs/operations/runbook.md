@@ -118,7 +118,7 @@ Release ビルドは Info 以上を出力し 7 日保持。アプリのトレイ
    （例: 1.0.70 で問題発覚 → 1.0.71 として 1.0.69 のコードを再リリース）
 2. 該当バージョンのコードを取り出す（`git checkout <旧 commit> -- src/`）
 3. `release/<新バージョン>` を push → `release.yml` が macOS / Linux を配信
-4. Windows は `pwsh scripts/release-local.ps1` をローカル実行（コード署名のため CI 不可）
+4. Windows は同じ run の `windows-release` ジョブを Environment `release` で承認する（Sigilune で CI 署名）
 5. R2 に新 manifest が配置 → ユーザーは次回 `Check4Update` でこちらを取得
 
 **TODO**: R2 cleanup を「archive/ への移動」に変更すれば、`archive/<old-version>` を manifest に
@@ -240,7 +240,7 @@ bun run --bun wrangler d1 export ferry_ledger --remote --output ferry_ledger_$(d
 1. **新トークン作成**: <https://dash.cloudflare.com/profile/api-tokens>
    - 権限: `Workers R2 Storage:Edit` + `Workers Scripts:Edit` + `D1:Edit`
    - スコープ: 対象アカウントのみ
-2. **GitHub Secrets 更新**: Settings → Secrets and variables → Actions → `CLOUDFLARE_API_TOKEN`
+2. **GitHub Secrets 更新**: Settings → Secrets and variables → Actions → `CLOUDFLARE_API_TOKEN`（Environment `release` の同名 Secret も。Windows の署名リリースが使う）
 3. **ローカル側も更新**: `D:\Dev\Secret\secrets.json` の `cloudflare.api_token`
    （`scripts/release-local.ps1` が実行時に読む）
 4. **動作確認**: `deploy-relay.yml` を `workflow_dispatch` で手動実行して通ることを確認

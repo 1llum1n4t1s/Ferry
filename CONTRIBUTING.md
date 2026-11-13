@@ -54,8 +54,9 @@ cd infra/cloudflare/relay && pnpm vitest run tests/signaling-ratelimit.test.ts
 版数管理・commit・ブランチ作成・古いブランチ整理は `/vava` スキルが一括で行う。手動で追う場合の要点:
 
 - バージョンは `Directory.Build.props` の `<Version>` が単一の正本
-- **Windows (win-x64 / win-arm64) はローカル署名リリース** — `pwsh scripts/release-local.ps1`。
-  Authenticode 署名に SimplySign Desktop のトークンログインとスマホ承認が要るため CI からは署名できない
+- **Windows (win-x64 / win-arm64) も CI** — `release.yml` の `windows-release` ジョブが macOS / Linux の配信後に
+  `scripts/release-local.ps1` を実行し、Sigilune で Authenticode 署名する（Environment `release` の承認が必要）。
+  ローカル実行は `-SkipUpload` の検証と `-UploadOnly` の再開用
 - **macOS / Linux は CI** — `release/X.Y.Z` ブランチへの push で `release.yml` が発行 → Velopack パッケージ化 → R2 へアップロード
 - relay Worker は上記のとおり main への push で自動デプロイされる（手動なら `cd infra/cloudflare/relay && pnpm dlx wrangler deploy`）
 

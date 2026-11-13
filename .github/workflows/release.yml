@@ -276,8 +276,8 @@ jobs:
             done < <(jq -r '.Assets[]?.FileName // empty' "$manifest_path")
           done
 
-          # win-x64 / win-arm64 はローカル署名リリース (scripts/release-local.ps1) が配信する
-          # ため CI 成果物には存在しない。R2 上の releases.win-*.json を keep set に取り込み、
+          # win-x64 / win-arm64 は後続の windows-release ジョブ (scripts/release-local.ps1) が配信する
+          # ため、この時点の CI 成果物には存在しない。R2 上の releases.win-*.json を keep set に取り込み、
           # 署名済み win nupkg を「manifest 外」と誤判定して削除しないようにする。
           # クエリ付き URL で CDN キャッシュをバイパスし、取得失敗時は誤削除防止のため
           # cleanup を安全側で中止する (release-local.ps1 側の osx/linux keep 取り込みと対称)。
@@ -406,3 +406,88 @@ jobs:
           fi
   # CF 単独完結 Step 6: Bridge ページは relay Worker の Static Assets（deploy-relay.yml）で配信するため、
   # Firebase Hosting への deploy job（firebase-deploy）は撤去した。src/Ferry.Bridge も削除済み。
+
+  # Windows (win-x64 / win-arm64) の署名付き Velopack リリース。
+  # - 署名は Sigilune (https://github.com/1llum1n4t1s/Sigilune) が Certum SimplySign のクラウド鍵で行うため、
+  #   本人の PC や SimplySign Desktop は不要。手順の本体は scripts/release-local.ps1 で、ローカル実行と同じ処理を通す。
+  # - r2-upload の後に直列で走らせる。release-local.ps1 の旧版清掃は他チャンネル (osx / linux) の manifest を
+  #   R2 から読んで保護するため、同じ run の macOS / Linux 配信が終わってから実行して取り違えを防ぐ。
+  #   win フィードは CI の velopack / package では生成しないので、二重配信にはならない。
+  # - Secrets (SIGILUNE_* / CLOUDFLARE_API_TOKEN) は Environment "release" のものだけを使い、このジョブ以外へ渡さない。
+  #   Environment の承認とブランチ許可 (release/** を含めること) を通ったときだけ実行される。
+  # - 署名は TOTP の 30 秒窓を共有できないため 1 ジョブで全 RID を署名する (RID ごとの並列ジョブにしない)。
+  windows-release:
+    needs: [r2-upload]
+    if: github.event.deleted != true
+    name: Windows release (Sigilune 署名)
+    # Native AOT の win-arm64 リンクは VS 2026 (MSVC 14.5x) を前提にするため windows-2025 を使う。
+    runs-on: windows-2025
+    timeout-minutes: 120
+    environment: release
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout sources
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git checkout --detach FETCH_HEAD
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" submodule update --init --recursive
+        working-directory: ${{ github.workspace }}
+      - name: Setup .NET
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sdkVersion = $null
+          if (Test-Path global.json) {
+            $settings = Get-Content global.json -Raw | ConvertFrom-Json -AsHashtable
+            if ($settings.ContainsKey('sdk') -and $settings['sdk'] -is [Collections.IDictionary] -and $settings['sdk'].ContainsKey('version')) {
+              $sdkVersion = [string]$settings['sdk']['version']
+            }
+          }
+          $installer = Join-Path $env:RUNNER_TEMP 'dotnet-install.ps1'
+          Invoke-WebRequest 'https://dot.net/v1/dotnet-install.ps1' -OutFile $installer
+          $install = Join-Path $env:RUNNER_TEMP 'dotnet'
+          $global:LASTEXITCODE = 0
+          if ($sdkVersion) { & $installer -Version $sdkVersion -InstallDir $install }
+          else { & $installer -Channel '11.0' -InstallDir $install }
+          if ($LASTEXITCODE -ne 0) { throw '.NET SDK installation failed' }
+          $dotnet = Join-Path $install 'dotnet.exe'
+          if (-not (Test-Path -LiteralPath $dotnet -PathType Leaf)) { throw '.NET SDK executable is missing' }
+          & $dotnet --version
+          if ($LASTEXITCODE -ne 0) { throw '.NET SDK version check failed' }
+          $install | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+          # release-local.ps1 は vpk を dotnet global tool として導入し PATH から呼ぶため、その配置先も通す。
+          (Join-Path $env:USERPROFILE '.dotnet\tools') | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+          "DOTNET_ROOT=$install" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Sigilune を導入
+        uses: 1llum1n4t1s/Sigilune@v1
+      - name: ビルド・署名・配信 (Windows)
+        env:
+          SIGILUNE_EMAIL: ${{ secrets.SIGILUNE_EMAIL }}
+          SIGILUNE_TOTP_URI: ${{ secrets.SIGILUNE_TOTP_URI }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          try {
+            & ./scripts/release-local.ps1
+          } finally {
+            # ランナー上の Certum セッションを残さない。
+            sigilune logout | Out-Null
+          }
+      - name: 成果物をアップロード
+        if: always()
+        # actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ferry-windows-release-packages
+          path: local-release/*/artifacts/*
+          if-no-files-found: warn
+          retention-days: 7

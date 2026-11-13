@@ -7,11 +7,11 @@ Apple の **Developer ID 署名 + 公証 (notarization)** を施すと、ユー�
 
 | OS | 署名方式 | 実行場所 |
 |----|---------|---------|
-| Windows (win-x64 / win-arm64) | Authenticode (Certum / SimplySign) | **ローカル** `scripts/release-local.ps1` (クラウド署名が CI 不可のため) |
+| Windows (win-x64 / win-arm64) | Authenticode (Certum / SimplySign クラウド鍵を Sigilune で使用) | **CI** `.github/workflows/release.yml` の `windows-release` ジョブ (`scripts/release-local.ps1`) |
 | **macOS (osx-arm64)** | **Developer ID 署名 + notarytool 公証 (app-specific password 方式)** | **CI** `.github/workflows/velopack.yml` (macos ランナー) |
 | Linux (linux-x64 / linux-arm64) | 署名不要 | CI |
 
-mac は win と逆で、Apple の署名・公証は macOS 上でしか実行できないため **macos-latest ランナー (CI) で署名する**。
+mac は、Apple の署名・公証が macOS 上でしか実行できないため **macos-latest ランナー (CI) で署名する**。
 ゆろ君が毎リリース Mac を起動する必要はなく、`release/**` push の既存フローにそのまま乗る。
 
 仕組み: `vpk pack` に `--signAppIdentity` / `--signInstallIdentity` / `--notaryProfile` を渡すと、

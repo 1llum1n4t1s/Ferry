@@ -1,19 +1,21 @@
-# release-local.ps1 — ローカル署名付き Velopack リリース (Windows チャンネル専用)
+# release-local.ps1 — 署名付き Velopack リリース (Windows チャンネル専用)
 #
-# SimplySign (Certum クラウド署名) は Desktop 接続 + スマホトークンが必要で
-# GitHub Actions からは署名できないため、Windows 向けリリースは本スクリプトでローカル実行する。
+# 署名は Sigilune (Certum SimplySign のクラウド鍵を signtool /dlib で使う CLI) で行う。
+# 通常のリリースは .github/workflows/release.yml (release/** push) の windows-release ジョブが
+# macOS / Linux の配信後に本スクリプトを実行する。ローカル実行も同じ手順で動き、検証や再開に使う。
 #
 # ⚠️ Ferry はクロスプラットフォーム配信 (win-x64 / win-arm64 / osx-arm64 / linux-x64 / linux-arm64)。
 #    本スクリプトが扱うのは Authenticode 署名対象の Windows 2 チャンネルのみ。
-#    macOS / Linux チャンネルは引き続き .github/workflows/release.yml (release/** push) が配信する。
+#    macOS / Linux チャンネルは同じ release.yml の r2-upload ジョブが配信する。
 #    Bridge ページは CF 単独完結 (Step 6) で relay Worker の Static Assets 配信へ移行済み (deploy-relay.yml)。
 #    クリーンアップは「Windows 以外のチャンネルの manifest を R2 から取得して保護」するため、
 #    他チャンネルの nupkg を誤削除しない。
 #
 # 前提:
-#   - SimplySign Desktop が接続済み (証明書が CurrentUser\My に見えていること)
+#   - Sigilune を使えること (scripts/Sigilune.Common.ps1 参照)。
+#     ローカルは `sigilune setup` で Certum アカウントを登録済み、CI は SIGILUNE_EMAIL / SIGILUNE_TOTP_URI を渡す
 #   - Directory.Build.props の <Version> がリリースしたいバージョンになっていること (/vava 済み)
-#   - D:\Dev\Secret\secrets.json に cloudflare.api_token があること
+#   - 環境変数 CLOUDFLARE_API_TOKEN (CI)、なければ D:\Dev\Secret\secrets.json の cloudflare.api_token (ローカル)
 #
 # 使い方:
 #   pwsh scripts/release-local.ps1                # フルリリース (build + sign + upload + cleanup)
@@ -46,9 +48,8 @@ $Bucket = 'ferry-updates'
 $BaseUrl = 'https://ferry.kagayoi.com'
 $AccountId = '10901bfadbf1005164774a7350082985'
 $SecretsPath = 'D:\Dev\Secret\secrets.json'
+# 署名者の CN。証明書の年次更新で thumbprint が変わっても同じ値で照合できる。
 $CertSubjectName = 'Open Source Developer Yuichiro Shinozaki'
-# /n (Subject 名) で選択: 証明書の年次更新で thumbprint が変わっても動く
-$SignParams = "/n `"$CertSubjectName`" /fd SHA256 /td SHA256 /tr http://time.certum.pl"
 
 # Ferry はチャンネル名 = RID (Lhamiel の 'win' とは異なり win-x64 もフル表記)
 $RuntimeMatrix = @{
@@ -287,13 +288,16 @@ foreach ($runtime in $Runtimes) { if (-not $RuntimeMatrix.ContainsKey($runtime))
 if ((Test-Path -LiteralPath $WorkDir) -and @(Get-ChildItem -LiteralPath $WorkDir -Recurse -Force | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count) { throw '作業ディレクトリにリンクが含まれています' }
 Write-Host "バージョン: $version"
 
-# SimplySign 接続確認 (証明書が見えなければ署名できないので最初に落とす)
-$cert = Get-ChildItem Cert:\CurrentUser\My |
-    Where-Object { $_.Subject -like "CN=$CertSubjectName*" -and $_.NotAfter -gt (Get-Date) }
-if (-not $cert) {
-    throw "署名証明書 (CN=$CertSubjectName) が見つかりません。SimplySign Desktop を起動してトークンでログインしてください。"
+# 署名の準備 (Sigilune の場所とクラウドへのログインを、ビルド前に確認して早く落とす)。
+# 検証済みパッケージを再送するだけの -UploadOnly では署名しないためログインしない。
+. (Join-Path $PSScriptRoot 'Sigilune.Common.ps1')
+if (-not $UploadOnly) {
+    $Sigilune = Resolve-SigiluneExe
+    Connect-Sigilune -SigiluneExe $Sigilune
+    # Velopack はファイルごとに別プロセスで署名テンプレートを実行する。Sigilune はログインを共有し、
+    # 署名後に有効性・署名者・タイムスタンプを検証して失敗なら非0で終わる。
+    $SignTemplate = "`"$Sigilune`" sign {{file}}"
 }
-Write-Host "署名証明書: $($cert.Subject) (期限 $($cert.NotAfter.ToString('yyyy-MM-dd')))"
 
 # vpk を固定バージョンで用意
 $vpkInstalled = (dotnet tool list --global | Select-String -SimpleMatch 'vpk') -match [regex]::Escape($VpkVersion)
@@ -305,9 +309,12 @@ if (-not $vpkInstalled) {
 
 # Cloudflare トークン (アップロード時のみ必要)
 if (-not $SkipUpload) {
-    $secrets = Get-Content $SecretsPath -Raw | ConvertFrom-Json
-    if (-not $secrets.cloudflare.api_token) { throw "secrets.json に cloudflare.api_token が見つかりません" }
-    $env:CLOUDFLARE_API_TOKEN = $secrets.cloudflare.api_token
+    # CI では Environment "release" の Secret が環境変数で渡る。ローカルは secrets.json から必要なキーだけ読む。
+    if (-not $env:CLOUDFLARE_API_TOKEN) {
+        $secrets = Get-Content $SecretsPath -Raw | ConvertFrom-Json
+        if (-not $secrets.cloudflare.api_token) { throw "secrets.json に cloudflare.api_token が見つかりません" }
+        $env:CLOUDFLARE_API_TOKEN = $secrets.cloudflare.api_token
+    }
     $env:CLOUDFLARE_ACCOUNT_ID = $AccountId
 }
 
@@ -358,7 +365,7 @@ foreach ($runtime in $Runtimes) {
     }
 
     Write-Host "== vpk pack + 署名: $runtime ==" -ForegroundColor Cyan
-    # CI (velopack.yml) の Windows 系 vpk pack 引数 + --signParams (ローカル署名の追加分)
+    # CI (velopack.yml) の Windows 系 vpk pack 引数 + --signTemplate (Sigilune 署名の追加分)
     # --icon: Setup.exe のアイコン (旧 CI は未指定でアイコン無し Setup.exe になっていた)
     Invoke-Native "vpk pack ($runtime)" {
         vpk pack `
@@ -369,7 +376,7 @@ foreach ($runtime in $Runtimes) {
             --outputDir $ArtifactsDir `
             --channel $config.Channel `
             --icon (Join-Path $RepoRoot 'icon\app.ico') `
-            --signParams $SignParams
+            --signTemplate $SignTemplate
     }
 }
 } finally {
