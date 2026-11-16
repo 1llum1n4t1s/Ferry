@@ -9,6 +9,10 @@ name: Dependency validation
   workflow_dispatch: {}
 permissions:
   contents: read
+# 同じ PR への連続 push では古い検証を打ち切る
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   dotnet:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.user.login == 'dependabot[bot]'

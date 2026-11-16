@@ -12,6 +12,10 @@ on:
         description: "CIビルドの修正だけを検証し、テストの重複実行を省く"
         type: boolean
         default: false
+      all_rids:
+        description: "release と同じ 5 RID・コンテナ構成で発行する(PR 既定は win-x64 と linux-x64 のみ)"
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -25,6 +29,12 @@ jobs:
   build:
     name: Build
     uses: ./.github/workflows/build.yml
+    # PR の検証は Native AOT の発行が通ることを win-x64 と linux-x64 で確認する。
+    # 5 RID すべての発行と配布物の検証は release.yml が引き続き担当する。
+    # 手動実行で all_rids を選ぶと release と同じ全 RID・コンテナ構成で検証できる。
+    with:
+      rids: ${{ (github.event_name == 'workflow_dispatch' && inputs.all_rids) && 'all' || 'win-x64,linux-x64' }}
+      fast: ${{ !(github.event_name == 'workflow_dispatch' && inputs.all_rids) }}
     secrets: inherit
   test:
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && !(github.event_name == 'workflow_dispatch' && inputs.build_only) }}
@@ -45,5 +55,10 @@ jobs:
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 11.0.x
+          # NuGet のパッケージ取得を lockfile 単位で再利用する(この job は資格情報を扱わない)
+          cache: true
+          cache-dependency-path: |
+            src/Ferry/packages.lock.json
+            tests/Ferry.Tests/packages.lock.json
       - name: Test
         run: dotnet test tests/Ferry.Tests/Ferry.Tests.csproj
