@@ -59,7 +59,7 @@ jobs:
             {"name":"Linux (arm64)","os":"ubuntu-latest","runtime":"linux-arm64","container":"ubuntu:20.04"}
           ]'
           include=$(jq -c --arg rids "${RIDS:-all}" --argjson fast "${FAST:-false}" '
-            ($rids | split(",") | map(gsub("^\s+|\s+$"; "")) | map(select(length > 0))) as $want
+            ($rids | split(",") | map(gsub("[ ]"; "")) | map(select(length > 0))) as $want
             | (if $want == ["all"] then map(.runtime) else $want end) as $want
             | ($want - map(.runtime)) as $unknown
             | if ($unknown | length) > 0 then error("unknown rids: " + ($unknown | join(","))) else . end
