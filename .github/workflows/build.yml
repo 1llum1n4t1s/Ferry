@@ -202,7 +202,7 @@ jobs:
           R2_ARTIFACT_BUCKET: ${{ vars.R2_ARTIFACT_BUCKET }}
           R2_ARTIFACT_ACCESS_KEY_ID: ${{ secrets.R2_ARTIFACT_ACCESS_KEY_ID }}
           R2_ARTIFACT_SECRET_ACCESS_KEY: ${{ secrets.R2_ARTIFACT_SECRET_ACCESS_KEY }}
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' && !inputs.fast }}
         run: |
           . ./scripts/R2Artifact.Common.ps1
           Publish-R2Artifact -AccountId $env:R2_ARTIFACT_ACCOUNT_ID -Bucket $env:R2_ARTIFACT_BUCKET -AccessKeyId $env:R2_ARTIFACT_ACCESS_KEY_ID -SecretAccessKey $env:R2_ARTIFACT_SECRET_ACCESS_KEY -Name 'deps.${{ matrix.runtime }}' -Path 'deps.${{ matrix.runtime }}.txt' | Out-Null
@@ -228,14 +228,14 @@ jobs:
           R2_ARTIFACT_BUCKET: ${{ vars.R2_ARTIFACT_BUCKET }}
           R2_ARTIFACT_ACCESS_KEY_ID: ${{ secrets.R2_ARTIFACT_ACCESS_KEY_ID }}
           R2_ARTIFACT_SECRET_ACCESS_KEY: ${{ secrets.R2_ARTIFACT_SECRET_ACCESS_KEY }}
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' && !inputs.fast }}
         run: |
           . ./scripts/R2Artifact.Common.ps1
           Publish-R2Artifact -AccountId $env:R2_ARTIFACT_ACCOUNT_ID -Bucket $env:R2_ARTIFACT_BUCKET -AccessKeyId $env:R2_ARTIFACT_ACCESS_KEY_ID -SecretAccessKey $env:R2_ARTIFACT_SECRET_ACCESS_KEY -Name 'ferry.${{ matrix.runtime }}' -Path 'publish/*' | Out-Null
         working-directory: ${{ github.workspace }}
       - name: Record artifact producer attempt
         id: artifact-attempt
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' && !inputs.fast }}
         shell: bash
         working-directory: ${{ github.workspace }}
         env:
