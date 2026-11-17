@@ -424,7 +424,7 @@ Write-Host "✅ R2 アップロード完了: $uploaded ファイル"
 # ---- 2.5 Cloudflare エッジキャッシュのパージ ----
 # 固定名ファイル (Setup.exe / Portable.zip / RELEASES / releases.*.json / assets.*.json) は
 # 毎リリースで中身が変わるのに URL が不変。CDN エッジが旧版を Cache-Control の max-age 分保持するため、
-# 古いキャッシュが残っているかを取得した内容のハッシュで確認し、不一致の URL だけパージする。
+# 固定 URL は配信内容を取得せず全件パージし、API の受付成功を確認する。
 # バージョン付き nupkg は URL が一意 (旧キャッシュなし) のためパージ不要。
 Write-Host '== Cloudflare キャッシュパージ ==' -ForegroundColor Cyan
 $cfHeaders = @{ Authorization = "Bearer $($env:CLOUDFLARE_API_TOKEN)" }
@@ -432,13 +432,7 @@ $zoneName = ([uri]$BaseUrl).Host -replace '^[^.]+\.', ''   # <sub>.kagayoi.com �
 $zoneResp = Invoke-RestMethod -Uri "https://api.cloudflare.com/client/v4/zones?name=$zoneName" -Headers $cfHeaders -TimeoutSec 30
 if (-not $zoneResp.success -or @($zoneResp.result).Count -ne 1 -or $zoneResp.result[0].account.id -ne $AccountId) { throw "Cloudflare zone '$zoneName' を対象アカウントで一意に確認できませんでした" }
 $zoneId = $zoneResp.result[0].id
-$purgeUrls = @(foreach ($artifact in (Get-ChildItem $ArtifactsDir -File | Where-Object { $_.Name -notlike '*.nupkg' })) {
-    $artifactUrl = "$BaseUrl/$($artifact.Name)"
-    $response = Invoke-WebRequest -Uri "${artifactUrl}?verify=$([Guid]::NewGuid().ToString('N'))" -Headers @{ 'Cache-Control' = 'no-cache' } -TimeoutSec 120
-    $bytes = if ($response.Content -is [byte[]]) { $response.Content } else { [Text.Encoding]::UTF8.GetBytes($response.Content) }
-    $remoteHash = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))
-    if ($remoteHash -ne (Get-FileHash -LiteralPath $artifact.FullName -Algorithm SHA256).Hash) { $artifactUrl }
-})
+$purgeUrls = @(Get-ChildItem $ArtifactsDir -File | Where-Object { $_.Name -notlike '*.nupkg' } | ForEach-Object { "$BaseUrl/$($_.Name)" })
 if ($purgeUrls.Count -gt 0) {
     $purgeBody = [PSCustomObject]@{ files = $purgeUrls } | ConvertTo-Json -Compress
     $purgeResp = Invoke-RestMethod -Method Post -Uri "https://api.cloudflare.com/client/v4/zones/$zoneId/purge_cache" `
@@ -448,15 +442,6 @@ if ($purgeUrls.Count -gt 0) {
     $purgeUrls | ForEach-Object { Write-Host "     $_" }
 } else {
     Write-Host '  パージ対象なし'
-}
-
-# ---- 3. 配信確認 (CDN/edge 伝播チェック) ----
-Write-Host '== 配信確認 ==' -ForegroundColor Cyan
-foreach ($runtime in $Runtimes) {
-    $channel = $RuntimeMatrix[$runtime].Channel
-    $url = "$BaseUrl/releases.$channel.json"
-    $resp = Invoke-WebRequest -Uri $url -TimeoutSec 30 -MaximumRetryCount 3 -RetryIntervalSec 5
-    Write-Host "  $url → HTTP $($resp.StatusCode) ($($resp.RawContentLength) bytes)"
 }
 
 # ---- 4. 旧バージョンのクリーンアップ (直近 N バージョン保持) ----
