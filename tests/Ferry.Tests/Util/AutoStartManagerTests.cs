@@ -13,11 +13,11 @@ public class AutoStartManagerTests
 {
     [Theory]
     // --- 開発ビルド（書き換え禁止 = false） ---
-    [InlineData(@"C:\Users\IMT\dev\Ferry\src\Ferry\bin\Debug\net10.0\Ferry.exe")]   // Windows Debug
-    [InlineData(@"C:\Users\IMT\dev\Ferry\src\Ferry\bin\Release\net10.0\Ferry.exe")] // Windows Release
-    [InlineData("/home/me/dev/Ferry/src/Ferry/bin/Debug/net10.0/Ferry")]            // Linux/mac Debug
-    [InlineData("/home/me/dev/Ferry/src/Ferry/bin/Release/net10.0/Ferry")]          // Linux/mac Release
-    [InlineData(@"C:\proj\Ferry\bin\debug\net10.0\Ferry.exe")]                      // 大文字小文字無視
+    [InlineData(@"C:\Users\IMT\dev\Ferry\src\Ferry\bin\Debug\net11.0\Ferry.exe")]   // Windows Debug
+    [InlineData(@"C:\Users\IMT\dev\Ferry\src\Ferry\bin\Release\net11.0\Ferry.exe")] // Windows Release
+    [InlineData("/home/me/dev/Ferry/src/Ferry/bin/Debug/net11.0/Ferry")]            // Linux/mac Debug
+    [InlineData("/home/me/dev/Ferry/src/Ferry/bin/Release/net11.0/Ferry")]          // Linux/mac Release
+    [InlineData(@"C:\proj\Ferry\bin\debug\net11.0\Ferry.exe")]                      // 大文字小文字無視
     public void IsProductionInstallPath_開発ビルドは_false(string path)
     {
         Assert.False(AutoStartManager.IsProductionInstallPath(path));

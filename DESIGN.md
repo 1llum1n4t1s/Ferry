@@ -12,7 +12,7 @@ Ferry は、2 台の PC を QR コードまたはワンタイムコードでペ�
 
 | コンポーネント | 責務 | 境界 |
 | --- | --- | --- |
-| `src/Ferry/` | .NET 10 / Avalonia の UI、ペア管理、接続確立、暗号ハンドシェイク、転送、自動更新 | 利用者のローカルデータと OS 資源を所有し、Cloudflare とは認証済み API / WebSocket で接続する |
+| `src/Ferry/` | .NET 11 / Avalonia の UI、ペア管理、接続確立、暗号ハンドシェイク、転送、自動更新 | 利用者のローカルデータと OS 資源を所有し、Cloudflare とは認証済み API / WebSocket で接続する |
 | `ConnectionService` | TCP 待受、STUN / UDP、relay への 3 段フォールバックと peer 単位の接続状態 | トランスポートの差を `ITransport` のストリームに畳み込む |
 | `TransferService` | 承認、64 KiB チャンク、フロー制御、SHA-256 整合性検証、キャンセル | 保存先の確定とファイル作成は受信承認後だけに行う |
 | `CloudflareSignaling` / `CfTokenProvider` | Worker API、inbox WebSocket、cfToken の取得・更新 | HTTP 詳細とデバイス認証をサービス層から分離する |

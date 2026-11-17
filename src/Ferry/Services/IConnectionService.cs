@@ -29,7 +29,7 @@ public interface IConnectionService
     /// <summary>PR #12 review (gemini-code-assist medium): プロパティ呼び出しごとに
     /// <c>new Dictionary&lt;,&gt;()</c> していたヒープアロケーションを排除するため、interface 内
     /// <c>private static readonly</c> として 1 度だけ空辞書を生成してキャッシュする
-    /// （C# 8.0 以降の interface static field 機能、TargetFramework=net10.0 で問題なし）。</summary>
+    /// （C# 8.0 以降の interface static field 機能、TargetFramework=net11.0 で問題なし）。</summary>
     private static readonly IReadOnlyDictionary<string, PeerInfo> EmptyConnectedPeers = new Dictionary<string, PeerInfo>(0);
 
     /// <summary>複数ペア同時接続対応 Stage 2: 接続中ピアの集合（peerId(SessionId) → PeerInfo）。

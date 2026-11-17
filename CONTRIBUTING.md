@@ -5,7 +5,7 @@
 
 ## 前提条件
 
-- .NET 10 SDK
+- .NET 11 SDK
 - Node.js + pnpm（relay Worker を触る場合のみ。lockfile は pnpm 固定）
 - Cloudflare wrangler CLI（relay Worker / Bridge ページを手動デプロイする場合のみ）
 - 対応 OS: Windows 10/11 (x64 / arm64), macOS (arm64), Linux (x64 / arm64)

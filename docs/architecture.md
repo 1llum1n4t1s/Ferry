@@ -10,7 +10,7 @@
 |---------|------|
 | UI | Avalonia UI 12.1 (Fluent テーマ) |
 | アーキテクチャ | MVVM (CommunityToolkit.Mvvm)、手動 DI |
-| ランタイム | .NET 10 / Native AOT (win-x64 / win-arm64 / osx-arm64 / linux-x64 / linux-arm64) |
+| ランタイム | .NET 11 / Native AOT (win-x64 / win-arm64 / osx-arm64 / linux-x64 / linux-arm64) |
 | P2P 通信 | TCP 直接接続 / UDP ホールパンチ (STUN: Cloudflare + Google) / WebSocket リレー |
 | シグナリング | Cloudflare Workers + Durable Objects + D1 |
 | ペアリング | QR コード (QRCoder) → Cloudflare Workers Static Assets の Bridge ページ |

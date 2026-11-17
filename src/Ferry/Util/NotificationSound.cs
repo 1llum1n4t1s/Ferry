@@ -10,7 +10,7 @@ namespace Ferry.Util;
 /// 受信完了などの通知音を OS ネイティブの手段で 1 回鳴らすヘルパー。best-effort（失敗は握りつぶす）。
 /// Win=`MessageBeep`(user32) / mac=`afplay` / Linux=`canberra-gtk-play`→`paplay`。
 /// System.Media.SystemSounds/SoundPlayer は Windows 専用アセンブリ(System.Windows.Extensions)依存で
-/// クロスプラットフォーム net10.0 から参照できないため、Windows は user32 の MessageBeep を P/Invoke する。
+/// クロスプラットフォーム net11.0 から参照できないため、Windows は user32 の MessageBeep を P/Invoke する。
 /// P/Invoke は実行時遅延解決なので非 Windows の AOT publish を壊さない（呼び出しは OS ガードで Windows 限定）。
 /// 各経路ともプロセス起動/呼び出しは非ブロッキング。
 /// </summary>

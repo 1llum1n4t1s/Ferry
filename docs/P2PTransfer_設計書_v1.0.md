@@ -30,7 +30,7 @@
 
 | カテゴリ | 技術 | 備考 |
 |----------|------|------|
-| 言語 | C# / .NET 10 | Native AOT 対応（※制約あり。後述） |
+| 言語 | C# / .NET 11 | Native AOT 対応（※制約あり。後述） |
 | UI フレームワーク | Avalonia UI (MVVM) | Zafiro.Avalonia 併用 |
 | P2P 通信 | WebRTC DataChannel | NuGet: SIPSorcery |
 | シグナリング | Firebase Realtime Database | 無料枠（同時接続 100, 1GB 転送/月） |
