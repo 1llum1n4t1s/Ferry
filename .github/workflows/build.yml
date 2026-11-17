@@ -51,9 +51,11 @@ jobs:
           FAST: ${{ inputs.fast }}
         run: |
           set -euo pipefail
+          # win-arm64 の Native AOT リンクは VS 2026 (MSVC 14.5x) が前提。VS 2022 のリンカーは
+          # .NET 11 の出力で LNK1322 (Cortex-A53 erratum 843419) になる (dotnet/runtime#133835) ため windows-2025 を使う。
           all='[
             {"name":"Windows x64","os":"windows-2022","runtime":"win-x64"},
-            {"name":"Windows ARM64","os":"windows-2022","runtime":"win-arm64"},
+            {"name":"Windows ARM64","os":"windows-2025","runtime":"win-arm64"},
             {"name":"macOS (Apple Silicon)","os":"macos-latest","runtime":"osx-arm64"},
             {"name":"Linux","os":"ubuntu-latest","runtime":"linux-x64","container":"ubuntu:20.04"},
             {"name":"Linux (arm64)","os":"ubuntu-latest","runtime":"linux-arm64","container":"ubuntu:20.04"}
