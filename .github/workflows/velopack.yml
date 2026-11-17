@@ -115,6 +115,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw '.NET SDK runtime check failed' }
           $install | Out-File $env:GITHUB_PATH -Append -Encoding utf8
           "DOTNET_ROOT=$install" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          # vpk (dotnet tool) は .NET 10 ランタイムを要求するが、ここには SDK 11 のランタイムしか無いため
+          # 最新メジャーへロールフォワードさせる(release-local.ps1 の Windows 署名経路と同じ設定)。
+          "DOTNET_ROLL_FORWARD=Major" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
       - name: Checkout app metadata
         if: ${{ !startsWith(matrix.runtime, 'win-') }}
         shell: bash

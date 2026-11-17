@@ -240,6 +240,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # コンテナは root で動き、workspace はランナー利用者の所有なので dubious ownership で git が止まる。
+          # 使い捨てコンテナ内の設定なので workspace だけを例外にする(build.yml と同じ)。
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git init .
           git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
           auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')
