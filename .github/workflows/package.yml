@@ -233,7 +233,21 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
           ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime
           apt-get update
-          apt-get install -y curl wget git dpkg-dev fakeroot tzdata zip unzip desktop-file-utils rpm libfuse2 file build-essential binutils python3 squashfs-tools cpio
+          apt-get install -y curl wget git dpkg-dev fakeroot tzdata zip unzip desktop-file-utils rpm libfuse2 file build-essential binutils python3 squashfs-tools cpio libicu66
+      - name: Install PowerShell in Linux container
+        # 後続の Download build などが shell: pwsh を使うが、ubuntu:20.04 には入っていない。
+        # build.yml と同じ版・ハッシュで導入する(PowerShell の実行には libicu が必要なので上で入れている)。
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=7.4.13
+          archive=powershell-$version-linux-x64.tar.gz
+          curl --fail --location --silent --show-error "https://github.com/PowerShell/PowerShell/releases/download/v$version/$archive" -o "$RUNNER_TEMP/$archive"
+          echo "59e5df675dacbfe45374c32c1bf2480168a33243423c9b19252d0476fd1b748c  $RUNNER_TEMP/$archive" | sha256sum --check -
+          mkdir -p /opt/powershell
+          tar -xzf "$RUNNER_TEMP/$archive" -C /opt/powershell
+          chmod +x /opt/powershell/pwsh
+          echo /opt/powershell >> "$GITHUB_PATH"
       - name: Checkout sources
         shell: bash
         env:
