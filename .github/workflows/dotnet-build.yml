@@ -43,7 +43,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-2022, macos-latest, ubuntu-latest]
-    runs-on: ${{ fromJSON(startsWith(matrix.os, 'macos-') && '["self-hosted","macOS","ARM64","m3mb14"]' || format('["{0}"]', matrix.os)) }}
+    # 公開リポジトリなので全 OS を GitHub 提供ランナーで動かす（matrix 名と実体が一致する）。
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

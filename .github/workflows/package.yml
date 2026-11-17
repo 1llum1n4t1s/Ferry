@@ -122,7 +122,8 @@ jobs:
     outputs:
       osx-arm64: ${{ steps.artifact-attempt.outputs['osx-arm64'] }}
     name: Package macOS
-    runs-on: [self-hosted, macOS, ARM64, m3mb14]
+    # 未署名 portable の .app 化だけで、署名鍵を使わないので GitHub 提供の Apple Silicon ランナーで動かす。
+    runs-on: macos-latest
     strategy:
       matrix:
         include:

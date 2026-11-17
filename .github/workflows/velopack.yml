@@ -77,7 +77,9 @@ jobs:
             os: ubuntu-latest
             mainExe: ferry
     name: Velopack ${{ matrix.label }}
-    runs-on: ${{ fromJSON(startsWith(matrix.os, 'macos-') && '["self-hosted","macOS","ARM64","m3mb14"]' || format('["{0}"]', matrix.os)) }}
+    # 公開リポジトリなので GitHub 提供ランナーを使う。macOS の署名・公証は一時キーチェーンへ
+    # GitHub Secrets の証明書を取り込む step が行うため、ランナーの種類に依存しない。
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Setup .NET
         shell: pwsh

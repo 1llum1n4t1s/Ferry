@@ -82,7 +82,8 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.plan.outputs.include) }}
     name: Build ${{ matrix.name }}
-    runs-on: ${{ fromJSON(startsWith(matrix.os, 'macos-') && '["self-hosted","macOS","ARM64","m3mb14"]' || format('["{0}"]', matrix.os)) }}
+    # 公開リポジトリなので全 OS を GitHub 提供ランナーで動かす（macOS は Apple Silicon の macos-latest）。
+    runs-on: ${{ matrix.os }}
     container: ${{ matrix.container || '' }}
     steps:
       - name: Install common CLI tools
