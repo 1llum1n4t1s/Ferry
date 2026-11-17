@@ -1,0 +1,37 @@
+name: Test
+# .NET 単体テストと R2 転送プロトコルの検証をまとめた再利用ワークフロー。
+# PR（dotnet-build.yml）・main への push・release/** の配信前（release.yml）が同じ検証を共有する。
+on:
+  workflow_call:
+
+# 検証だけなので読み取り権限に絞る（この workflow は資格情報を扱わない）
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, macos-latest, ubuntu-latest]
+    # 公開リポジトリなので全 OS を GitHub 提供ランナーで動かす（matrix 名と実体が一致する）。
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Verify R2 transfer protocol offline
+        shell: pwsh
+        run: |
+          & (Join-Path $env:GITHUB_WORKSPACE 'tests/R2Transfer/Run.ps1') -WorkRoot (Join-Path $env:RUNNER_TEMP 'r2-transfer-check')
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 11.0.x
+          # NuGet のパッケージ取得を lockfile 単位で再利用する
+          cache: true
+          cache-dependency-path: |
+            src/Ferry/packages.lock.json
+            tests/Ferry.Tests/packages.lock.json
+      - name: Test
+        run: dotnet test tests/Ferry.Tests/Ferry.Tests.csproj

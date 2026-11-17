@@ -43,7 +43,7 @@ relayのtestはscript内でBunを指定する。Wranglerのdev/tailはSDK互換�
 >
 > 製品ページの配信は `../vps-web/deploy/deploy-lp.ps1` を使う。公開ホスト・更新ファイルの既存経路を維持する。
 >
-> PR（→ main）は `.github/workflows/dotnet-build.yml`（".NET Build"）が build + test で検証する。Markdown と `docs/**` だけの変更は対象外。配信 CI とは別ワークフローなので、コード変更の正否はこの PR CI で確認する。
+> PR（→ main）は `.github/workflows/dotnet-build.yml`（".NET Build"）が build + test で検証する（main への push でも同じ検証を行う）。Markdown と `docs/**` だけの変更は対象外。テスト本体は再利用ワークフロー `test.yml` に置き、`release.yml` も配信前（`r2-upload` の前提）に同じテストを通す。コード変更の正否はこの CI で確認する。
 >
 > **relay（`infra/cloudflare/relay/**`）の PR は `relay-check.yml`（"Relay Check"）**の `tsc --noEmit` + `bun run --bun test` で検証する。.NET の CI では relay を検証しない。同じ検証は `deploy-relay.yml`（main push）でも配信前に実行する。
 

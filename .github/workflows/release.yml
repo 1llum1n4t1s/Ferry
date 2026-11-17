@@ -46,6 +46,11 @@ jobs:
           version=$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props)
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$version" >> "$GITHUB_OUTPUT"
+  # 配信前に .NET 単体テストを通す。r2-upload が needs に含めるので、失敗すると R2 へ何も書かない。
+  test:
+    if: github.event.deleted != true
+    name: Test
+    uses: ./.github/workflows/test.yml
   package:
     needs: [build, version]
     name: Package
@@ -75,7 +80,7 @@ jobs:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
   r2-upload:
-    needs: [build, package, velopack, version]
+    needs: [build, package, velopack, version, test]
     name: R2 Upload
     runs-on: ubuntu-latest
     permissions:

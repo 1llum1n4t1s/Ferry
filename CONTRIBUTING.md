@@ -42,7 +42,7 @@ cd infra/cloudflare/relay && pnpm vitest run tests/signaling-ratelimit.test.ts
 
 | workflow | トリガー | 内容 |
 |---|---|---|
-| `dotnet-build.yml`（".NET Build"） | main への PR / 手動 | .NET の build + test。**relay は素通りする** |
+| `dotnet-build.yml`（".NET Build"） | main への PR / main への push / 手動 | .NET の build + test（テスト本体は `test.yml`、`release.yml` の配信前にも使う）。**relay は素通りする** |
 | `relay-check.yml`（"Relay Check"） | `infra/cloudflare/relay/**` の PR | relay の `tsc --noEmit` + `pnpm test` |
 | `deploy-relay.yml` | `infra/cloudflare/relay/**` を main に push | 検証 → `wrangler deploy` で自動配信 |
 | `deploy-landing.yml` | `web/**` を main に push | ランディングページを配信 |

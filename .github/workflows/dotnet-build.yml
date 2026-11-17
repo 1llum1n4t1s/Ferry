@@ -6,6 +6,12 @@ on:
     paths-ignore:
       - "docs/**"
       - "**.md"
+  # main への直接 push（マージ後・直接コミット）でもビルドとテストを回し、PR を経ない変更の退行を検出する
+  push:
+    branches: ["main"]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
   workflow_dispatch:
     inputs:
       build_only:
@@ -38,28 +44,6 @@ jobs:
     secrets: inherit
   test:
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && !(github.event_name == 'workflow_dispatch' && inputs.build_only) }}
-    name: Test (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-2022, macos-latest, ubuntu-latest]
-    # 公開リポジトリなので全 OS を GitHub 提供ランナーで動かす（matrix 名と実体が一致する）。
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Verify R2 transfer protocol offline
-        shell: pwsh
-        run: |
-          & (Join-Path $env:GITHUB_WORKSPACE 'tests/R2Transfer/Run.ps1') -WorkRoot (Join-Path $env:RUNNER_TEMP 'r2-transfer-check')
-      - name: Setup .NET
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: 11.0.x
-          # NuGet のパッケージ取得を lockfile 単位で再利用する(この job は資格情報を扱わない)
-          cache: true
-          cache-dependency-path: |
-            src/Ferry/packages.lock.json
-            tests/Ferry.Tests/packages.lock.json
-      - name: Test
-        run: dotnet test tests/Ferry.Tests/Ferry.Tests.csproj
+    name: Test
+    # 実際の検証内容は release.yml の配信前検証と共有する再利用ワークフローに置く
+    uses: ./.github/workflows/test.yml
