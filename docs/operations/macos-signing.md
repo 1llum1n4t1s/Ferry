@@ -12,7 +12,7 @@ Apple の **Developer ID 署名 + 公証 (notarization)** を施すと、ユー�
 | Linux (linux-x64 / linux-arm64) | 署名不要 | CI |
 
 mac は、Apple の署名・公証が macOS 上でしか実行できないため **macos-latest ランナー (CI) で署名する**。
-ゆろ君が毎リリース Mac を起動する必要はなく、`release/**` push の既存フローにそのまま乗る。
+ゆろ君が毎リリース Mac を起動する必要はなく、版タグ `v<版>` push の既存フローにそのまま乗る。
 
 仕組み: `vpk pack` に `--signAppIdentity` / `--signInstallIdentity` / `--notaryProfile` を渡すと、
 Velopack が **`.app` の codesign → `.pkg` の productsign → notarytool への公証申請 → stapler でチケット添付** まで自動実行する。
@@ -86,7 +86,7 @@ $secrets = [ordered]@{
 foreach ($k in $secrets.Keys) { gh secret set $k --repo $repo --body ([string]$secrets[$k]); "set: $k" }
 ```
 
-> ⚠️ Secrets 未投入のまま `release/**` を push すると、osx ジョブが意図的に fail する
+> ⚠️ Secrets 未投入のまま 版タグ `v<版>` を push すると、osx ジョブが意図的に fail する
 > (未署名 pkg の配信を防ぐガード)。証明書/パスワードを入れ替えたら上記で再投入してからリリースする。
 
 ---
@@ -111,7 +111,7 @@ foreach ($k in $secrets.Keys) { gh secret set $k --repo $repo --body ([string]$s
 
 ## リリースと検証
 
-1. 通常どおり `/vava` → `release/x.y.z` push
+1. 通常どおり `/vava` → 版タグ `vx.y.z` push
 2. CI の Velopack ジョブが osx-arm64 を署名・公証して R2 (`ferry-updates`) に配信
 3. Mac でダウンロードして確認:
 

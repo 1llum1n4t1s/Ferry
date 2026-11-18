@@ -1,7 +1,7 @@
 # release-local.ps1 — 署名付き Velopack リリース (Windows チャンネル専用)
 #
 # 署名は Sigilune (Certum SimplySign のクラウド鍵を signtool /dlib で使う CLI) で行う。
-# 通常のリリースは .github/workflows/release.yml (release/** push) の windows-release ジョブが
+# 通常のリリースは .github/workflows/release.yml (版タグ v<版> の push) の windows-release ジョブが
 # macOS / Linux の配信後に本スクリプトを実行する。ローカル実行も同じ手順で動き、検証や再開に使う。
 #
 # ⚠️ Ferry はクロスプラットフォーム配信 (win-x64 / win-arm64 / osx-arm64 / linux-x64 / linux-arm64)。

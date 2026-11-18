@@ -123,7 +123,7 @@ operator の取得元・承認・実 version / deployment・probe 証跡を保�
 ## 配布と運用の境界
 
 - `infra/cloudflare/relay/**` の `main` push は `deploy-relay.yml` が型チェックと vitest 後に Worker を配信する。D1 `schema.sql` の変更は Worker deploy と別に適用する。
-- `release/**` push は macOS / Linux を build・署名・公証し、R2 へ配信する。Windows x64 / ARM64 は同じ run の `windows-release` ジョブが `scripts/release-local.ps1` を実行し、Sigilune（Certum SimplySign のクラウド鍵）で署名して配信する。
+- main の commit に付けた軽量タグ `v<版>` の push は macOS / Linux を build・署名・公証し、R2 へ配信する。Windows x64 / ARM64 は同じ run の `windows-release` ジョブが `scripts/release-local.ps1` を実行し、Sigilune（Certum SimplySign のクラウド鍵）で署名して配信する。
 - CI は `build/scripts/verify-release.py` で最終 package と Velopack feed を検証する。版・RID・ネイティブ形式・publish 出力との対応に加え、macOS の署名・公証と manifest のハッシュ・サイズを照合し、成果物の SHA-256 と source / run / version・依存解決結果を結び付けた証拠を生成する。R2 への最初の書き込み前に証拠の集合と配布実物を再照合し、別 run や未検証の成果物の混入を拒否する。
 - Windows は通常公開と `-UploadOnly` の両方で、版・PE の RID・署名・manifest・publish 出力と package / Portable の内容を検証する。`-UploadOnly` でも同版の publish 出力を照合に使い、検証後の SHA-256 を各 upload 直前に再確認する。ビルド/署名と公開を分離して、検証した成果物をそのまま配信できる。
 - CI と Windows の公開処理は、R2 の一覧と既存オブジェクトの実物を使い、同じ version の配布物の異内容上書きを拒否する。CI は version 付き package 全形式、Windows は nupkg を対象とする。CDN のキャッシュ済み 404 を未公開の根拠にしない。

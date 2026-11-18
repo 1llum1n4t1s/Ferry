@@ -7,7 +7,7 @@ name: Deploy Relay
 # 誰も再デプロイせず数日放置された結果、本番 relay が旧コードのまま /auth/token を 426 で
 # 弾き続けた (24h で 433 回)。リリースに紐づかない手動運用が構造的原因だったため CI 化する。
 #
-# Velopack 配信 (release/**) や landing (vps-web/lp/ferry/) のパイプラインとは完全に独立。
+# Velopack 配信 (版タグ v<x.y.z>) や landing (vps-web/lp/ferry/) のパイプラインとは完全に独立。
 # secret (SALT / SESSION_HMAC_SECRET) は Worker に永続するので、
 # コードデプロイ (`wrangler deploy`) では再設定不要。
 #

@@ -1,6 +1,6 @@
 name: Test
 # .NET 単体テストと R2 転送プロトコルの検証をまとめた再利用ワークフロー。
-# PR（dotnet-build.yml）・main への push・release/** の配信前（release.yml）が同じ検証を共有する。
+# PR（dotnet-build.yml）・main への push・版タグの配信前（release.yml）が同じ検証を共有する。
 on:
   workflow_call:
 

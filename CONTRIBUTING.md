@@ -46,18 +46,18 @@ cd infra/cloudflare/relay && pnpm vitest run tests/signaling-ratelimit.test.ts
 | `relay-check.yml`（"Relay Check"） | `infra/cloudflare/relay/**` の PR | relay の `tsc --noEmit` + `pnpm test` |
 | `deploy-relay.yml` | `infra/cloudflare/relay/**` を main に push | 検証 → `wrangler deploy` で自動配信 |
 | `deploy-landing.yml` | `web/**` を main に push | ランディングページを配信 |
-| `release.yml` | `release/**` への push | macOS / Linux の発行・署名・公証・R2 アップロード |
+| `release.yml` | 軽量タグ `v<x.y.z>` の push | macOS / Linux の発行・署名・公証・R2 アップロード |
 | `relay-healthcheck.yml` | 15 分ごとの cron | relay の死活監視 |
 
 ## リリース
 
-版数管理・commit・ブランチ作成・古いブランチ整理は `/vava` スキルが一括で行う。手動で追う場合の要点:
+版数管理・commit・版タグの作成・push は `/vava` スキルが一括で行う。手動で追う場合の要点:
 
 - バージョンは `Directory.Build.props` の `<Version>` が単一の正本
 - **Windows (win-x64 / win-arm64) も CI** — `release.yml` の `windows-release` ジョブが macOS / Linux の配信後に
   `scripts/release-local.ps1` を実行し、Sigilune で Authenticode 署名する（Secrets は Environment `release` から渡す。承認待ちはない）。
   ローカル実行は `-SkipUpload` の検証と `-UploadOnly` の再開用
-- **macOS / Linux は CI** — `release/X.Y.Z` ブランチへの push で `release.yml` が発行 → Velopack パッケージ化 → R2 へアップロード
+- **macOS / Linux は CI** — main の commit に付けた軽量タグ `vX.Y.Z` の push で `release.yml` が（`guard` ジョブでタグ・commit・版を検査したうえで）発行 → Velopack パッケージ化 → R2 へアップロード
 - relay Worker は上記のとおり main への push で自動デプロイされる（手動なら `cd infra/cloudflare/relay && pnpm dlx wrangler deploy`）
 
 ## 依存関係
