@@ -41,12 +41,12 @@ jobs:
       - name: Bun セットアップ
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: '1.4.4'
+          bun-version: '1.4.5'
 
       - name: 依存をインストール (lockfile 固定)
         working-directory: infra/cloudflare/relay
         run: |
-          bun --no-env-file --no-install --bun run bun add --global --trust pnpm@12.16.1 --network-concurrency=4
+          bun --no-env-file --no-install --bun run bun add --global --trust pnpm@12.21.0 --network-concurrency=4
           bun --no-env-file --no-install --bun run pnpm install --lockfile-only --frozen-lockfile --network-concurrency=4
 
       - name: Bun で製品依存を導入

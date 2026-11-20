@@ -22,7 +22,7 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
-    - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+    - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
       with:
         dotnet-version: 11.0.x
     - run: 'dotnet build Ferry.slnx -c Release
@@ -42,11 +42,11 @@ jobs:
         persist-credentials: false
     - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       with:
-        bun-version: 1.4.4
+        bun-version: 1.4.5
     - name: Validate locked dependency policies
       working-directory: infra/cloudflare/relay
       run: |
-        bun --no-env-file --no-install --bun run bun add --global --trust pnpm@12.16.1 --network-concurrency=4
+        bun --no-env-file --no-install --bun run bun add --global --trust pnpm@12.21.0 --network-concurrency=4
         bun --no-env-file --no-install --bun run pnpm install --lockfile-only --frozen-lockfile --network-concurrency=4
     - run: 'bun --no-env-file --no-install --bun run bun install --frozen-lockfile --no-save --network-concurrency=4
 

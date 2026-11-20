@@ -56,7 +56,7 @@ relay の認証鍵移行・ペア通知 outbox・DeviceDO の通知保存/再生
 - NuGet の直接依存は `src/Ferry/Ferry.csproj` と `tests/Ferry.Tests/Ferry.Tests.csproj`、解決結果は各ディレクトリの `packages.lock.json` で管理する。参照変更時は対応する lockfile も更新し、Avalonia 本体・Desktop・Fluent・Fonts.Inter の版を揃える。
 - `tests/Ferry.StartupSmoke/` は本体へのプロジェクト参照を持ち、独自の `packages.lock.json` も照合する。Dependabot の NuGet 対象にも含める。
 - relay は `infra/cloudflare/relay/package.json`、`pnpm-lock.yaml`、`pnpm-workspace.yaml`、`bunfig.toml` を照合する。インストールは同ディレクトリで `bun --no-env-file --no-install --bun run bun install --frozen-lockfile --no-save --network-concurrency=4`。公式 Bun shim を使い、許可した lifecycle に外部 Node を要求しない。依存更新時は `trustedDependencies`、リリース待機の例外を確認し、型チェックとテストを実行する。
-- 導入前に `bun --no-env-file --no-install --bun run bun add --global --trust pnpm@12.16.1 --network-concurrency=4` で固定した native CLI を準備し、`bun --no-env-file --no-install --bun run pnpm install --lockfile-only --frozen-lockfile --network-concurrency=4` で既存の supply-chain policy を維持する。`--trust` は global CLI manifest の pnpm だけを対象にし、製品の許可一覧は変えない。lock-only 検査は node_modules と lifecycle を作らず、正本 lockfile も変えない。
+- 導入前に `bun --no-env-file --no-install --bun run bun add --global --trust pnpm@12.21.0 --network-concurrency=4` で固定した native CLI を準備し、`bun --no-env-file --no-install --bun run pnpm install --lockfile-only --frozen-lockfile --network-concurrency=4` で既存の supply-chain policy を維持する。`--trust` は global CLI manifest の pnpm だけを対象にし、製品の許可一覧は変えない。lock-only 検査は node_modules と lifecycle を作らず、正本 lockfile も変えない。
 - Dependabot は `.github/dependabot.yml` で GitHub Actions、上記 3 つの NuGet プロジェクト、relay の npm 依存を監視する。プロジェクト追加・移動時は更新対象も照合する。
 
 ## アーキテクチャ

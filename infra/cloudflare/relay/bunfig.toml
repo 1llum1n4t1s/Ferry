@@ -3,4 +3,3 @@ env = false
 [install]
 auto = "disable"
 minimumReleaseAge = 86400
-minimumReleaseAgeExcludes = ["@cloudflare/workers-types@5.20261031.1"]

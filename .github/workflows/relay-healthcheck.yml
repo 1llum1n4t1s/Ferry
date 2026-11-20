@@ -103,19 +103,11 @@ jobs:
               `- **curl 終了コード**: ${curlExit}\n` +
               `- **curl エラー**: \`${curlError}\`\n` +
               `- **対象**: https://watashiba.kagayoi.com/health\n\n` +
-              `## 確認手順\n\n` +
+              `## 確認・復旧手順\n\n` +
               `1. Cloudflare ステータス: https://www.cloudflarestatus.com/\n` +
-              `2. wrangler tail で実時間ログ確認:\n` +
-              `   \`\`\`bash\n` +
-              `   cd infra/cloudflare/relay && wrangler tail --name ferry-relay\n` +
-              `   \`\`\`\n` +
-              `3. SALT secret が正しく設定されているか確認:\n` +
-              `   \`\`\`bash\n` +
-              `   cd infra/cloudflare/relay && wrangler secret list\n` +
-              `   \`\`\`\n\n` +
-              `## 復旧手順 (詳細は docs/operations/runbook.md シナリオ B 参照)\n\n` +
-              `- 直前 deploy で発生したなら: \`wrangler rollback --name ferry-relay\`\n` +
-              `- SALT 消失なら: \`wrangler secret put SALT\`\n\n` +
+              `2. 切り分けと復旧（実時間ログ・deploy 履歴・rollback・secret の再設定）は ` +
+              `[runbook の「シナリオ B: relay Worker に繋がらない / オンライン表示が出ない」](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/docs/operations/runbook.md) ` +
+              `の手順に従う。\n\n` +
               `この Issue は relay-healthcheck workflow が自動作成しました。`;
 
             // 既存の未 close な auto-created issue があれば重複作成しない
