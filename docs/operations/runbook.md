@@ -224,14 +224,14 @@ bun run --bun wrangler d1 export ferry_ledger --remote --output ferry_ledger_$(d
 > refresh ループ（約 50 分周期）が回るまで 401 のままになる。
 
 1. **新シークレット生成**: `openssl rand -hex 32`
-2. **Workers Secret 更新**: `cd infra/cloudflare/relay && bun run --bun wrangler secret put SESSION_HMAC_SECRET`
+2. **Workers Secret 更新**: `secret put` で単独更新せず、新しい値を含む非公開 JSON を Worker のコードと同じ version へ upload する（`cd infra/cloudflare/relay && pwsh -NoProfile -File scripts/Deploy-CloudflareWorker.ps1 -ConfigPath wrangler.toml -SecretsFile <非公開JSON>`。[relay README](../../infra/cloudflare/relay/README.md#論理フェンスでの切替) と同じ手順）。JSON は secret 値を含むので証跡へ転載しない
 3. **即座に確認**: `curl -s https://watashiba.kagayoi.com/health` が 200 であること（未設定だと 503 で `failed:["SESSION_HMAC_SECRET"]`）
 4. **クライアント影響の確認**: `wrangler tail` で `reject` の `BAD_TOKEN` が一時的に増え、数分で収束することを確認
 
 ### SALT（pairId の DO 名ハッシュ用）
 
 1. **新 SALT 生成**: `openssl rand -hex 32`
-2. **Workers Secret 更新**: `cd infra/cloudflare/relay && bun run --bun wrangler secret put SALT`
+2. **Workers Secret 更新**: `cd infra/cloudflare/relay && node ./node_modules/wrangler/bin/wrangler.js secret put SALT`（relay README の初期設定と同じ Node.js 経由の呼び出し。値は対話プロンプトへ貼る）
 3. ⚠️ **進行中のリレー転送は切断される**（DO 名が変わり別インスタンスになるため）。閑散時間に実施する
 4. クライアント側の変更は不要（pairId のハッシュ化は relay 内部のみ）
 
@@ -298,7 +298,7 @@ gh run list --workflow deploy-relay.yml --limit 3
 **復旧手順**:
 
 - (1) スキーマ不整合なら `wrangler d1 execute --file=schema.sql` を実行。データ消失なら Time Travel で復元
-- (2) `/health` の `failed` に応じて `wrangler secret put` で再設定
+- (2) `/health` の `failed` に応じて `node ./node_modules/wrangler/bin/wrangler.js secret put <名前>` で再設定（`cd infra/cloudflare/relay` で実行。SESSION_HMAC_SECRET は単独で更新せず上記の secrets-file 付き deploy を使う）
 - (3) `wrangler deploy` で Static Assets ごと再配信
 - (4) `deploy-relay.yml` を再実行。型チェック / テストで落ちているなら**まずそれを直す**（本番配信のゲート）
 
@@ -330,7 +330,7 @@ bun run --bun wrangler deployments list
 **復旧手順**:
 
 - (1) `bun run --bun wrangler rollback` または再 deploy
-- (2) `/health` の `failed` を見て `wrangler secret put <名前>` で再設定
+- (2) `/health` の `failed` を見て `node ./node_modules/wrangler/bin/wrangler.js secret put <名前>` で再設定（SESSION_HMAC_SECRET は単独で更新せず secrets-file 付き deploy を使う）
 - (3) <https://dash.cloudflare.com/> で Workers の使用量・請求状況を確認
 - (4) `wrangler tail` の DO 例外を確認。TCP/UDP 直結は影響を受けないので、ユーザーには
       「同じ LAN なら転送できる」旨を案内できる
