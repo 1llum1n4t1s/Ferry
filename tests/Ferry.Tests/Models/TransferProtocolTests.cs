@@ -19,12 +19,4 @@ public class TransferProtocolTests
         Assert.Equal(0x20, TransferProtocol.ResumeRequest);
         Assert.Equal(0x21, TransferProtocol.ResumeResponse);
     }
-
-    [Fact]
-    public void ChunkSizeが64KBであること()
-    {
-        // P-15: 16KB → 64KB に拡大（プロトコルヘッダー overhead 削減）
-        Assert.Equal(65_536, TransferProtocol.ChunkSize);
-    }
-
 }

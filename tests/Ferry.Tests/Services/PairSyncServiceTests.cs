@@ -1,13 +1,8 @@
-using System;
-using System.Collections.Generic;
 using System.Net;
-using System.Threading;
-using System.Threading.Tasks;
 using Ferry.Infrastructure;
 using Ferry.Models;
 using Ferry.Services;
 using NSubstitute;
-using Xunit;
 
 namespace Ferry.Tests.Services;
 
@@ -18,30 +13,19 @@ namespace Ferry.Tests.Services;
 ///   - 404 を <see cref="PairSyncService"/> の閾値 (Consecutive404Threshold=3) 連続で受けて初めて削除
 ///   - 401/403/5xx は『不明』として未操作（カウンタもリセットしない）
 ///   - 200 で値ありなら 404 カウンタをリセット
-///   - 200 + body="null" は 404 と同じ扱い（Firebase REST の挙動）
+///   - 200 + body="null" は 404 と同じ扱い（旧 Firebase REST 由来の互換分岐）
 ///   - applyGracePeriod=true の起動直後 5min は 404 でも削除しない
 ///
-/// FirebaseSignaling は sealed のため、内部 fetchPair デリゲートを直接差し替えるテスト用 ctor を使う。
+/// ペア取得は fetchPair デリゲートで行うため、テストではそのデリゲートを直接差し替えるテスト用 ctor を使う。
 /// </summary>
 public sealed class PairSyncServiceTests
 {
     private const string DeviceId = "alice";
     private const string PeerId = "bob";
-    // GeneratePairId(alice,bob) = "alice_bob" (Ordinal: a < b)
+    // Util.PairId.Generate(alice,bob) = "alice_bob" (Ordinal: a < b)
     private const string ExpectedPairId = "alice_bob";
 
     // === 404 連続閾値 ===
-
-    [Fact]
-    public async Task CheckOnceAsync_404を1回受けてもローカル削除しない()
-    {
-        var registry = SubstituteRegistry();
-        var svc = CreateServiceFromQueue(registry, [(HttpStatusCode.NotFound, "null")]);
-
-        await svc.CheckOnceAsync(applyGracePeriod: false, TestContext.Current.CancellationToken);
-
-        await registry.DidNotReceive().RemovePeerAsync(Arg.Any<string>());
-    }
 
     [Fact]
     public async Task CheckOnceAsync_404を3回連続で受けたらローカル削除する()
@@ -65,7 +49,7 @@ public sealed class PairSyncServiceTests
     public async Task CheckOnceAsync_200_null_body_も404と同じ扱い()
     {
         var registry = SubstituteRegistry();
-        // Firebase REST は存在しないキーを 200 + "null" で返すケースがある
+        // 旧 Firebase REST 由来で、存在しないキーを 200 + "null" で返すケースがある（互換分岐）
         var svc = CreateServiceFromQueue(registry, [
             (HttpStatusCode.OK, "null"),
             (HttpStatusCode.OK, "null"),
@@ -323,6 +307,53 @@ public sealed class PairSyncServiceTests
 
         await svc.HandleRemoteUnpairAsync(ExpectedPairId, TestContext.Current.CancellationToken);
 
+        await registry.DidNotReceive().RemovePeerAsync(Arg.Any<string>());
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    public async Task UnpairPush_再確認が不明ステータスなら削除しない(HttpStatusCode status)
+    {
+        var registry = SubstituteRegistry();
+        using var svc = new PairSyncService((_, _) => Task.FromResult((status, "")), registry, DeviceId);
+
+        await svc.HandleRemoteUnpairAsync(ExpectedPairId, TestContext.Current.CancellationToken);
+
+        await registry.DidNotReceive().RemovePeerAsync(Arg.Any<string>());
+        // 不明でも pending marker は必ず解除される
+        registry.Received(1).ClearPendingRemoval(PeerId);
+    }
+
+    [Fact]
+    public async Task UnpairPush_200かつnull本文は不在確証として削除する()
+    {
+        var registry = SubstituteRegistry();
+        using var svc = new PairSyncService((_, _) => Task.FromResult((HttpStatusCode.OK, "null")), registry, DeviceId);
+
+        await svc.HandleRemoteUnpairAsync(ExpectedPairId, TestContext.Current.CancellationToken);
+
+        await registry.Received(1).RemovePeerAsync(PeerId);
+    }
+
+    [Fact]
+    public async Task CheckOnceAsync_責任者の未観察peerはbackfill成功で観察フラグを永続化する()
+    {
+        // DeviceId "alice" < PeerId "bob" なので alice が責任者。404 を受けたら PUT で SSoT を補完し、
+        // 成功したら PairsSsotObserved=true を update-only API で永続化して削除カウントへ進まない。
+        var peer = new PairedPeer { PeerId = PeerId, DisplayName = "Bob", PairsSsotObserved = false };
+        var registry = SubstituteRegistry(peer);
+        registry.UpdatePeerIfPresentAsync(peer).Returns(Task.FromResult(true));
+        var signaling = Substitute.For<ISignalingService>();
+        signaling.GetPairWithStatusAsync(ExpectedPairId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult((HttpStatusCode.NotFound, "null")));
+        using var svc = new PairSyncService(signaling, registry, DeviceId);
+
+        await svc.CheckOnceAsync(applyGracePeriod: false, TestContext.Current.CancellationToken);
+
+        await signaling.Received(1).PutPairAsync(ExpectedPairId, Arg.Is<PairRecord>(r => r.PairId == ExpectedPairId), Arg.Any<CancellationToken>());
+        Assert.True(peer.PairsSsotObserved);
+        await registry.Received(1).UpdatePeerIfPresentAsync(peer);
         await registry.DidNotReceive().RemovePeerAsync(Arg.Any<string>());
     }
 

@@ -9,24 +9,16 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { verifyEcdsaSig, base64UrlEncode } from '../src/auth';
+import { generateEcdsaP256Fixture, signIeeeP1363 } from './fixtures';
 
 let pubKeyB64Url = '';
 let validSigB64Url = '';
 const message = 'ferry-auth-v1|deadbeef00112233445566778899aabb|pubkey-fixture|1700000000000';
 
 beforeAll(async () => {
-  const kp = await crypto.subtle.generateKey(
-    { name: 'ECDSA', namedCurve: 'P-256' },
-    true,
-    ['sign', 'verify'],
-  );
-  const spki = await crypto.subtle.exportKey('spki', kp.publicKey);
-  pubKeyB64Url = base64UrlEncode(new Uint8Array(spki));
-  const sigBuf = await crypto.subtle.sign(
-    { name: 'ECDSA', hash: 'SHA-256' },
-    kp.privateKey,
-    new TextEncoder().encode(message),
-  );
+  const { spkiDer, privateKey } = await generateEcdsaP256Fixture();
+  pubKeyB64Url = base64UrlEncode(new Uint8Array(spkiDer));
+  const sigBuf = await signIeeeP1363(privateKey, new TextEncoder().encode(message));
   validSigB64Url = base64UrlEncode(new Uint8Array(sigBuf));
 });
 

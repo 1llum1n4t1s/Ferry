@@ -279,4 +279,36 @@ public class TransferServiceValidationTests
         Assert.Equal(TransferService.MaxPendingApprovalsPerPeer, approvalCount);
         Assert.Equal("この送信元の受信承認待ちが上限に達しています", reject.Reason);
     }
+
+    // 細工された短い/壊れたメッセージ 1 通で受信ループを殺せない不変条件（リモート DoS 防止）。
+    // HandleReceivedData の catch-all が受け持ち、当該メッセージだけを破棄して後続の処理を続ける。
+    [Theory]
+    [InlineData(TransferProtocol.FileAck, false)]
+    [InlineData(TransferProtocol.FileReject, false)]
+    [InlineData(TransferProtocol.FileApprove, false)]
+    [InlineData(TransferProtocol.FileFlowAck, false)]
+    [InlineData(TransferProtocol.FileHash, false)]
+    [InlineData(TransferProtocol.ResumeRequest, false)]
+    [InlineData(TransferProtocol.FileMeta, true)]
+    public void 短すぎる受信や壊れたJSONは例外を出さず破棄され後続のFileMetaを処理できる(byte messageType, bool invalidJsonBody)
+    {
+        var connectionService = Substitute.For<IConnectionService>();
+        var settingsService = Substitute.For<ISettingsService>();
+        settingsService.Settings.Returns(new AppSettings());
+        using var service = new TransferService(connectionService, settingsService);
+        var approvalCount = 0;
+        service.ApprovalRequested += (_, _) => Interlocked.Increment(ref approvalCount);
+
+        // 種別バイトだけの短いメッセージ、または FileMeta の不正 JSON
+        byte[] malformed = invalidJsonBody ? [messageType, (byte)'{', (byte)'!'] : [messageType];
+        var ex = Record.Exception(() => service.HandleReceivedData(malformed, "peer-B"));
+        Assert.Null(ex);
+        Assert.Equal(0, approvalCount);
+
+        // 破棄のあとも、正しい FileMeta は通常どおり承認要求になる
+        service.HandleReceivedData(
+            FileChunker.CreateFileMetaMessage("ok.bin", 0, 0, string.Empty, Guid.NewGuid()),
+            "peer-B");
+        Assert.Equal(1, approvalCount);
+    }
 }

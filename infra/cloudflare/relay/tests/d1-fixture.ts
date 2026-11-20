@@ -1,5 +1,6 @@
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
+import { vi } from 'vitest';
 
 /** SQL の文字列分岐を模倣せず、実 SQLite の制約・transaction を通す D1 fixture。 */
 export class SqliteD1 {
@@ -40,4 +41,18 @@ export class SqliteD1 {
   seedKey(deviceId: string, publicKey: string) {
     this.sqlite.prepare('INSERT INTO device_key_bindings VALUES (?,?,?)').run(deviceId, publicKey, Date.now());
   }
+}
+
+/** `prepare().bind().first()` だけに答える pair 台帳スタブ。row が Error なら D1 障害を再現する。 */
+export function pairLedgerDb(row: object | null | Error): D1Database {
+  return {
+    prepare: vi.fn(() => ({
+      bind: vi.fn(() => ({
+        first: vi.fn(async () => {
+          if (row instanceof Error) throw row;
+          return row;
+        }),
+      })),
+    })),
+  } as unknown as D1Database;
 }

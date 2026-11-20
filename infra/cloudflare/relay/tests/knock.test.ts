@@ -387,3 +387,119 @@ describe('DeviceDO.notify の knock transient 化', () => {
     }
   });
 });
+
+// ------------------ DeviceDO.notify: 世代付き配信（admit / 保存 / 配信の特性）------------------
+
+describe('DeviceDO.notify の世代付き配信', () => {
+  const PAIRING_ID = 'p';
+  const GENERATION = 'gen-1';
+
+  function setup(opts: { revision?: number; active?: number; outbox?: boolean } = {}) {
+    if (!(globalThis as { WebSocket?: unknown }).WebSocket) {
+      (globalThis as { WebSocket?: unknown }).WebSocket = { OPEN: 1 };
+    }
+    const fake = makeFakeState();
+    const db = new SqliteD1();
+    db.sqlite.prepare('INSERT INTO pairing_generations VALUES (?,?,?,?)')
+      .run(PAIRING_ID, GENERATION, opts.revision ?? 3, opts.active ?? 1);
+    if (opts.outbox ?? true) {
+      db.sqlite.prepare('INSERT INTO pairing_outbox VALUES (?,?,?,?,?,?,?,?)')
+        .run(GENERATION, B, PAIRING_ID, '{}', Date.now(), Date.now() + 60 * 60 * 1000, Date.now(), 0);
+    }
+    const dev = new DeviceDO(fake.state as never, { DB: db });
+    const post = async (body: object, delivery: string | null = GENERATION) => {
+      const headers: Record<string, string> = { 'content-type': 'application/json' };
+      if (delivery) {
+        headers['X-Ferry-Pairing-Delivery'] = delivery;
+        headers['X-Ferry-Recipient'] = B;
+      }
+      const res = await dev.fetch(new Request('https://do/notify', { method: 'POST', headers, body: JSON.stringify(body) }));
+      return { res, json: (await res.json()) as { ok: boolean; delivered: number } };
+    };
+    return { ...fake, db, post };
+  }
+
+  const pairEvent = () => ({ pairingId: PAIRING_ID, sidA: A, sidB: B, createdAt: Date.now() });
+
+  it('世代・outbox が一致すれば inbox と pair-revision を1回の put で保存し、世代・revision 付きで配信する', async () => {
+    const { putSpy, sent, post } = setup({ revision: 3 });
+    const { res, json } = await post(pairEvent());
+    expect(res.status).toBe(200);
+    expect(json.delivered).toBe(1);
+    expect(putSpy).toHaveBeenCalledTimes(1);
+    const stored = putSpy.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(Object.keys(stored).sort()).toEqual(['inbox', `pair-revision:${PAIRING_ID}`]);
+    expect(stored[`pair-revision:${PAIRING_ID}`]).toBe(3);
+    const inbox = stored.inbox as Array<Record<string, unknown>>;
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0]._pairingGeneration).toBe(GENERATION);
+    expect(inbox[0]._pairingRevision).toBe(3);
+    const message = JSON.parse(sent[0]);
+    expect(message._pairingGeneration).toBe(GENERATION);
+    expect(message._pairingRevision).toBe(3);
+  });
+
+  it('outbox 行が無い成立通知は保存も配信もせず「配信0件」で受理する', async () => {
+    const { putSpy, sent, post } = setup({ outbox: false });
+    const { res, json } = await post(pairEvent());
+    expect(res.status).toBe(200);
+    expect(json).toEqual({ ok: true, delivered: 0 });
+    expect(putSpy).not.toHaveBeenCalled();
+    expect(sent).toHaveLength(0);
+  });
+
+  it('保存済み revision のほうが新しければ保存も配信もしない', async () => {
+    const { putSpy, sent, store, post } = setup({ revision: 3 });
+    store.set(`pair-revision:${PAIRING_ID}`, 5);
+    const { json } = await post(pairEvent());
+    expect(json).toEqual({ ok: true, delivered: 0 });
+    expect(putSpy).not.toHaveBeenCalled();
+    expect(sent).toHaveLength(0);
+  });
+
+  it('active が合わない通知（取消済み世代への成立通知）は配信0件で受理する', async () => {
+    const { putSpy, post } = setup({ active: 0 });
+    expect((await post(pairEvent())).json.delivered).toBe(0);
+    expect(putSpy).not.toHaveBeenCalled();
+  });
+
+  it('世代が違う通知は active が合っていても配信0件で受理する', async () => {
+    // unpair・active=0・outbox なしは世代が一致すれば受理される（次のテスト）ので、delivery だけを変える。
+    const { putSpy, sent, post } = setup({ active: 0, outbox: false });
+    const { json } = await post({ type: 'unpair', pairingId: PAIRING_ID, createdAt: Date.now() }, 'other-generation');
+    expect(json).toEqual({ ok: true, delivered: 0 });
+    expect(putSpy).not.toHaveBeenCalled();
+    expect(sent).toHaveLength(0);
+  });
+
+  it('unpair は active=0 の世代なら outbox 行なしでも保存・配信する', async () => {
+    const { putSpy, sent, post } = setup({ active: 0, outbox: false, revision: 4 });
+    const { json } = await post({ type: 'unpair', pairingId: PAIRING_ID, createdAt: Date.now() });
+    expect(json.delivered).toBe(1);
+    expect(putSpy).toHaveBeenCalledTimes(1);
+    expect((putSpy.mock.calls[0][0] as unknown as Record<string, unknown>)[`pair-revision:${PAIRING_ID}`]).toBe(4);
+    expect(JSON.parse(sent[0])._pairingRevision).toBe(4);
+  });
+
+  it('世代ヘッダーなし（旧 worker の通知）は revision を付けず inbox だけを保存する', async () => {
+    const { db, putSpy, sent, post } = setup();
+    db.sqlite.prepare('DELETE FROM pairing_generations').run();
+    db.sqlite.prepare('INSERT INTO pairs VALUES (?,?,?,?)').run(PAIRING_ID, '', '', Date.now());
+    const { json } = await post(pairEvent(), null);
+    expect(json.delivered).toBe(1);
+    expect(putSpy).toHaveBeenCalledTimes(1);
+    expect(putSpy.mock.calls[0][0]).toBe('inbox');
+    const message = JSON.parse(sent[0]);
+    expect(message._pairingRevision).toBeUndefined();
+    expect(message._pairingGeneration).toBeUndefined();
+  });
+
+  it('世代ヘッダーなしでも新世代の台帳行があれば旧通知は配信0件で受理する', async () => {
+    const { db, putSpy, post } = setup();
+    // pairs 行も有るので、結果を分けるのは pairing_generations 行の有無だけ（有りなら配信0件）。
+    db.sqlite.prepare('INSERT INTO pairs VALUES (?,?,?,?)').run(PAIRING_ID, '', '', Date.now());
+    const { json } = await post(pairEvent(), null);
+    expect(json).toEqual({ ok: true, delivered: 0 });
+    expect(putSpy).not.toHaveBeenCalled();
+  });
+});

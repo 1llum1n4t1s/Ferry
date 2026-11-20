@@ -14,8 +14,6 @@ public class AutoStartManagerTests
     [Theory]
     // --- 開発ビルド（書き換え禁止 = false） ---
     [InlineData(@"C:\Users\IMT\dev\Ferry\src\Ferry\bin\Debug\net11.0\Ferry.exe")]   // Windows Debug
-    [InlineData(@"C:\Users\IMT\dev\Ferry\src\Ferry\bin\Release\net11.0\Ferry.exe")] // Windows Release
-    [InlineData("/home/me/dev/Ferry/src/Ferry/bin/Debug/net11.0/Ferry")]            // Linux/mac Debug
     [InlineData("/home/me/dev/Ferry/src/Ferry/bin/Release/net11.0/Ferry")]          // Linux/mac Release
     [InlineData(@"C:\proj\Ferry\bin\debug\net11.0\Ferry.exe")]                      // 大文字小文字無視
     public void IsProductionInstallPath_開発ビルドは_false(string path)
@@ -26,12 +24,6 @@ public class AutoStartManagerTests
     [Theory]
     // --- 本番配布形態（書き換え可 = true） ---
     [InlineData(@"C:\Users\IMT\AppData\Local\Ferry\current\Ferry.exe")]   // Velopack Windows
-    [InlineData(@"C:\Users\IMT\AppData\Local\Ferry\Ferry.exe")]           // Velopack シム
-    [InlineData("/Applications/Ferry.app/Contents/MacOS/Ferry")]          // macOS .app
-    [InlineData("/tmp/.mount_Ferry12345/AppRun")]                         // Linux AppImage 実行時の ProcessPath（マウント内）
-    [InlineData("/home/me/Downloads/Ferry-1.0.60-linux-x64.AppImage")]    // Linux AppImage の $APPIMAGE 実体
-    [InlineData("/opt/ferry/Ferry")]                                      // Linux .deb/.rpm
-    [InlineData("/usr/lib/ferry/Ferry")]                                  // Linux パッケージ別配置
     public void IsProductionInstallPath_本番配布は_true(string path)
     {
         Assert.True(AutoStartManager.IsProductionInstallPath(path));
@@ -39,7 +31,6 @@ public class AutoStartManagerTests
 
     [Theory]
     [InlineData(null)]
-    [InlineData("")]
     public void IsProductionInstallPath_パス不明は安全側で_true(string? path)
     {
         // パス不明時は本番扱い（true）。登録経路に別途の空パスガードがあるため誤登録は起きない。

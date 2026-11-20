@@ -1,6 +1,3 @@
-using System;
-using System.IO;
-using System.Threading.Tasks;
 using Ferry.Models;
 using Ferry.Services;
 
@@ -37,108 +34,58 @@ public sealed class PeerRegistryServiceTests : IDisposable
     // === コンストラクタ ===
 
     [Fact]
-    public void コンストラクタ_ファイルが存在しない場合_空リストで初期化()
-    {
-        var svc = CreateService();
-        Assert.Empty(svc.GetPairedPeers());
-    }
-
-    [Fact]
     public void コンストラクタ_不正なJSONファイル_例外を投げずに空リストで初期化()
     {
         File.WriteAllText(_filePath, "{ invalid json }}}");
         var svc = CreateService();
         Assert.Empty(svc.GetPairedPeers());
+
+        // 破損ファイルは .corrupt-* へ退避され、元の名前は空く（AGENTS.md の保存契約）
+        Assert.False(File.Exists(_filePath));
+        Assert.Single(Directory.GetFiles(_tempDir, "peers.json.corrupt-*"));
     }
 
     // === AddOrUpdatePeerAsync ===
 
     [Fact]
-    public async Task AddOrUpdatePeerAsync_新規ピアを追加()
-    {
-        var svc = CreateService();
-        var peer = CreatePeer();
-
-        await svc.AddOrUpdatePeerAsync(peer);
-
-        Assert.Single(svc.GetPairedPeers());
-        Assert.Equal("peer1", svc.GetPairedPeers()[0].PeerId);
-        Assert.Equal("テストPC", svc.GetPairedPeers()[0].DisplayName);
-    }
-
-    [Fact]
-    public async Task AddOrUpdatePeerAsync_既存ピアのDisplayNameとLastTransferAtを更新()
-    {
-        var svc = CreateService();
-        var peer = CreatePeer();
-        await svc.AddOrUpdatePeerAsync(peer);
-
-        var updated = new PairedPeer
-        {
-            PeerId = "peer1",
-            DisplayName = "更新後の名前",
-            LastTransferAt = new DateTime(2026, 3, 14, 12, 0, 0, DateTimeKind.Utc),
-        };
-        await svc.AddOrUpdatePeerAsync(updated);
-
-        // 1件のまま更新される
-        Assert.Single(svc.GetPairedPeers());
-        Assert.Equal("更新後の名前", svc.GetPairedPeers()[0].DisplayName);
-        Assert.Equal(new DateTime(2026, 3, 14, 12, 0, 0, DateTimeKind.Utc), svc.GetPairedPeers()[0].LastTransferAt);
-    }
-
-    [Fact]
-    public async Task AddOrUpdatePeerAsync_複数ピアを追加()
-    {
-        var svc = CreateService();
-        await svc.AddOrUpdatePeerAsync(CreatePeer("peer1", "PC-A"));
-        await svc.AddOrUpdatePeerAsync(CreatePeer("peer2", "PC-B"));
-
-        Assert.Equal(2, svc.GetPairedPeers().Count);
-    }
-
-    [Fact]
     public async Task AddOrUpdatePeerAsync_ファイルに永続化される()
     {
         var svc = CreateService();
-        await svc.AddOrUpdatePeerAsync(CreatePeer());
+        var peer = CreatePeer();
+        // 接続経路・状態表示は実行時の状態で、peers.json へは書かれない（[JsonIgnore]）
+        peer.Route = ConnectionRoute.Direct;
+        peer.ConnectionStatusText = "接続済み";
+        peer.PairSecret = "secret-key";
+        await svc.AddOrUpdatePeerAsync(peer);
 
         // ファイルが存在することを確認
         Assert.True(File.Exists(_filePath));
+        var json = File.ReadAllText(_filePath);
+        Assert.Contains("\"PeerId\"", json);
+        Assert.DoesNotContain("\"Route\"", json);
+        Assert.DoesNotContain("\"ConnectionStatusText\"", json);
+        Assert.DoesNotContain("\"RouteBadgeLabel\"", json);
+        Assert.DoesNotContain("\"RouteBadgeTooltip\"", json);
+
+        // 同一 PeerId の再追加は挿入ではなく既存の更新（DisplayName / LastTransferAt）。
+        // PairSecret が空の更新では既存鍵を消さない。
+        var lastTransfer = new DateTime(2026, 3, 14, 12, 0, 0, DateTimeKind.Utc);
+        await svc.AddOrUpdatePeerAsync(new PairedPeer { PeerId = "peer1", DisplayName = "更新後", LastTransferAt = lastTransfer });
+        var updated = Assert.Single(svc.GetPairedPeers());
+        Assert.Equal("更新後", updated.DisplayName);
+        Assert.Equal(lastTransfer, updated.LastTransferAt);
+        Assert.Equal("secret-key", updated.PairSecret);
 
         // 新インスタンスで読み直して確認
         var svc2 = CreateService();
         var reloaded = Assert.Single(svc2.GetPairedPeers());
         Assert.Equal("peer1", reloaded.PeerId);
-        Assert.Equal("テストPC", reloaded.DisplayName);
+        Assert.Equal("更新後", reloaded.DisplayName);
+        Assert.Equal(lastTransfer, reloaded.LastTransferAt);
+        Assert.Equal("secret-key", reloaded.PairSecret);
     }
 
     // === RemovePeerAsync ===
-
-    [Fact]
-    public async Task RemovePeerAsync_存在するピアを削除()
-    {
-        var svc = CreateService();
-        await svc.AddOrUpdatePeerAsync(CreatePeer());
-
-        await svc.RemovePeerAsync("peer1");
-
-        Assert.Empty(svc.GetPairedPeers());
-    }
-
-    [Fact]
-    public async Task RemovePeerAsync_存在しないPeerIdでも例外を投げない()
-    {
-        var svc = CreateService();
-        await svc.AddOrUpdatePeerAsync(CreatePeer());
-
-        // 存在しない peerId で呼び出し → 例外なし
-        var ex = await Record.ExceptionAsync(() => svc.RemovePeerAsync("nonexistent"));
-        Assert.Null(ex);
-
-        // 既存ピアは残る
-        Assert.Single(svc.GetPairedPeers());
-    }
 
     [Fact]
     public async Task RemovePeerAsync_削除がファイルに反映される()
@@ -152,21 +99,6 @@ public sealed class PeerRegistryServiceTests : IDisposable
     }
 
     // === UpdatePeerIfPresentAsync (Codex 第15弾 #2) ===
-
-    [Fact]
-    public async Task UpdatePeerIfPresentAsync_既存ピアを更新してtrueを返す()
-    {
-        var svc = CreateService();
-        await svc.AddOrUpdatePeerAsync(CreatePeer());
-
-        var updated = new PairedPeer { PeerId = "peer1", DisplayName = "更新後", PairsSsotObserved = true };
-        var result = await svc.UpdatePeerIfPresentAsync(updated);
-
-        Assert.True(result);
-        Assert.Single(svc.GetPairedPeers());
-        Assert.Equal("更新後", svc.GetPairedPeers()[0].DisplayName);
-        Assert.True(svc.GetPairedPeers()[0].PairsSsotObserved);
-    }
 
     [Fact]
     public async Task UpdatePeerIfPresentAsync_不在ピアはinsertせずfalseを返す()
@@ -189,31 +121,13 @@ public sealed class PeerRegistryServiceTests : IDisposable
         await svc.AddOrUpdatePeerAsync(new PairedPeer { PeerId = "peer1", DisplayName = "PC-A", PairSecret = "secret-key" });
 
         // PairSecret を空にした更新でも既存鍵は維持される (AddOrUpdate と同じ規約)。
-        var result = await svc.UpdatePeerIfPresentAsync(new PairedPeer { PeerId = "peer1", DisplayName = "PC-A2", PairSecret = null });
+        var result = await svc.UpdatePeerIfPresentAsync(
+            new PairedPeer { PeerId = "peer1", DisplayName = "PC-A2", PairSecret = null, PairsSsotObserved = true });
 
         Assert.True(result);
+        Assert.Single(svc.GetPairedPeers());
         Assert.Equal("secret-key", svc.GetPairedPeers()[0].PairSecret);
         Assert.Equal("PC-A2", svc.GetPairedPeers()[0].DisplayName);
+        Assert.True(svc.GetPairedPeers()[0].PairsSsotObserved);
     }
-
-    // === FindPeer ===
-
-    [Fact]
-    public async Task FindPeer_存在するピアを返す()
-    {
-        var svc = CreateService();
-        await svc.AddOrUpdatePeerAsync(CreatePeer());
-
-        var found = svc.FindPeer("peer1");
-        Assert.NotNull(found);
-        Assert.Equal("テストPC", found.DisplayName);
-    }
-
-    [Fact]
-    public void FindPeer_存在しないPeerIdでnullを返す()
-    {
-        var svc = CreateService();
-        Assert.Null(svc.FindPeer("nonexistent"));
-    }
-
 }

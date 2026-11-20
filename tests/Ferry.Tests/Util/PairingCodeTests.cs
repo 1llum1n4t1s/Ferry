@@ -26,7 +26,6 @@ public sealed class PairingCodeTests
 
     [Theory]
     [InlineData("")]
-    [InlineData("not-a-code")]
     [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.short")]
     [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.extra")]
     public void 不正なコードは拒否する(string code)

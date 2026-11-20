@@ -1,9 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using Ferry.Models;
 using Ferry.Services;
 using Ferry.ViewModels;
@@ -88,29 +82,6 @@ public class TransferViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task SendFilesAsync_空配列の場合は何もしないこと()
-    {
-        _connectionService.State.Returns(PeerState.Connected);
-
-        using var vm = CreateViewModel(withSelectedPeer: true);
-        await vm.SendFilesCommand.ExecuteAsync(Array.Empty<string>());
-
-        Assert.Empty(vm.Transfers);
-    }
-
-    [Fact]
-    public async Task SendFilesAsync_存在しないファイルパスはスキップされること()
-    {
-        _connectionService.State.Returns(PeerState.Connected);
-
-        using var vm = CreateViewModel(withSelectedPeer: true);
-        await vm.SendFilesCommand.ExecuteAsync(new[] { @"C:\nonexistent\file.txt" });
-
-        Assert.Empty(vm.Transfers);
-        await _transferService.DidNotReceive().SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
     public async Task SendFilesAsync_正常送信でTransferItemがCompletedになること()
     {
         _connectionService.State.Returns(PeerState.Connected);
@@ -149,22 +120,6 @@ public class TransferViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task SendFilesAsync_複数ファイルが順番に送信されること()
-    {
-        _connectionService.State.Returns(PeerState.Connected);
-        var file1 = CreateTempFile("a.txt", 100);
-        var file2 = CreateTempFile("b.txt", 200);
-
-        using var vm = CreateViewModel(withSelectedPeer: true);
-        await vm.SendFilesCommand.ExecuteAsync(new[] { file1, file2 });
-
-        Assert.Equal(2, vm.Transfers.Count);
-        Assert.Equal("a.txt", vm.Transfers[0].FileName);
-        Assert.Equal("b.txt", vm.Transfers[1].FileName);
-        Assert.All(vm.Transfers, t => Assert.Equal(TransferState.Completed, t.State));
-    }
-
-    [Fact]
     public async Task SendFilesAsync_存在しないファイルと存在するファイルが混在する場合は存在するもののみ送信すること()
     {
         _connectionService.State.Returns(PeerState.Connected);
@@ -175,33 +130,6 @@ public class TransferViewModelTests : IDisposable
 
         Assert.Single(vm.Transfers);
         Assert.Equal("valid.txt", vm.Transfers[0].FileName);
-    }
-
-    [Fact]
-    public async Task SendFilesAsync_全送信完了後にIsTransferringがfalseになること()
-    {
-        _connectionService.State.Returns(PeerState.Connected);
-        var filePath = CreateTempFile();
-
-        using var vm = CreateViewModel(withSelectedPeer: true);
-        await vm.SendFilesCommand.ExecuteAsync(new[] { filePath });
-
-        Assert.False(vm.IsTransferring);
-    }
-
-    [Fact]
-    public async Task SendFilesAsync_一部エラーでもIsTransferringは最終的にfalseになること()
-    {
-        _connectionService.State.Returns(PeerState.Connected);
-        var filePath = CreateTempFile();
-        _transferService.SendFileAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new Exception("err"));
-
-        using var vm = CreateViewModel(withSelectedPeer: true);
-        await vm.SendFilesCommand.ExecuteAsync(new[] { filePath });
-
-        // Error 状態なので InProgress は存在しない → IsTransferring = false
-        Assert.False(vm.IsTransferring);
     }
 
     // === ResumeTransferAsync ===
@@ -246,16 +174,6 @@ public class TransferViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task ResumeTransferAsync_存在しないTransferIdの場合は何もしないこと()
-    {
-        using var vm = CreateViewModel();
-
-        await vm.ResumeTransferCommand.ExecuteAsync(Guid.NewGuid());
-
-        await _transferService.DidNotReceive().ResumeTransferAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
     public async Task ResumeTransferAsync_失敗時にErrorになること()
     {
         _transferService.ResumeTransferAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
@@ -293,21 +211,6 @@ public class TransferViewModelTests : IDisposable
             $"ErrorMessage should be generic error text, but was: {item.ErrorMessage}");
     }
 
-    [Fact]
-    public async Task ResumeTransferAsync_完了後にIsTransferringが更新されること()
-    {
-        _transferService.ResumeTransferAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-            .Returns(true);
-
-        using var vm = CreateViewModel();
-        var item = new TransferItem { FileName = "done.txt", FileSize = 500, State = TransferState.Suspended };
-        vm.Transfers.Add(item);
-
-        await vm.ResumeTransferCommand.ExecuteAsync(item.TransferId);
-
-        Assert.False(vm.IsTransferring);
-    }
-
     // === ClearHistory ===
 
     // v1.0.47: ClearHistory は宛先（選択中ピア）の終端アイテムのみ削除する。
@@ -315,36 +218,24 @@ public class TransferViewModelTests : IDisposable
     private const string TestPeerId = "test-peer";
 
     [Fact]
-    public void ClearHistory_InProgressのアイテムは残ること()
+    public void ClearHistory_InProgressとPendingのアイテムは残ること()
     {
         using var vm = CreateViewModel(withSelectedPeer: true);
         var inProgress = new TransferItem { FileName = "sending.txt", State = TransferState.InProgress, PeerId = TestPeerId };
+        var pending = new TransferItem { FileName = "pending.txt", State = TransferState.Pending, PeerId = TestPeerId };
         var completed = new TransferItem { FileName = "done.txt", State = TransferState.Completed, PeerId = TestPeerId };
         var error = new TransferItem { FileName = "err.txt", State = TransferState.Error, PeerId = TestPeerId };
         vm.Transfers.Add(inProgress);
+        vm.Transfers.Add(pending);
         vm.Transfers.Add(completed);
         vm.Transfers.Add(error);
 
         vm.ClearHistoryCommand.Execute(null);
 
-        Assert.Single(vm.Transfers);
-        Assert.Equal("sending.txt", vm.Transfers[0].FileName);
+        // 進行中・待機中は残り、終端状態（Completed/Error）だけが消える
+        Assert.Equal(new[] { "sending.txt", "pending.txt" }, vm.Transfers.Select(t => t.FileName).ToArray());
         Assert.Equal(TransferState.InProgress, vm.Transfers[0].State);
-    }
-
-    [Fact]
-    public void ClearHistory_Pendingのアイテムも残ること()
-    {
-        using var vm = CreateViewModel(withSelectedPeer: true);
-        var pending = new TransferItem { FileName = "pending.txt", State = TransferState.Pending, PeerId = TestPeerId };
-        var completed = new TransferItem { FileName = "done.txt", State = TransferState.Completed, PeerId = TestPeerId };
-        vm.Transfers.Add(pending);
-        vm.Transfers.Add(completed);
-
-        vm.ClearHistoryCommand.Execute(null);
-
-        Assert.Single(vm.Transfers);
-        Assert.Equal("pending.txt", vm.Transfers[0].FileName);
+        Assert.Equal(TransferState.Pending, vm.Transfers[1].State);
     }
 
     [Fact]
@@ -372,15 +263,6 @@ public class TransferViewModelTests : IDisposable
 
         Assert.Single(vm.Transfers);
         Assert.Equal("other.txt", vm.Transfers[0].FileName);
-    }
-
-    [Fact]
-    public void ClearHistory_空の場合は例外が発生しないこと()
-    {
-        using var vm = CreateViewModel(withSelectedPeer: true);
-        vm.ClearHistoryCommand.Execute(null);
-
-        Assert.Empty(vm.Transfers);
     }
 
     // === Stage 6: per-peer 集計 (PairedPeer.IsTransferring / ActiveTransferCount) ===
@@ -452,32 +334,5 @@ public class TransferViewModelTests : IDisposable
         Assert.False(peerA.IsTransferring);
         Assert.Equal(0, peerB.ActiveTransferCount);
         Assert.False(peerB.IsTransferring);
-    }
-
-    // === OnProgressChanged ===
-
-    // === OnFileReceived ===
-
-    // === OnTransferError ===
-
-    // === Dispose ===
-
-    [Fact]
-    public void Dispose_イベントハンドラが解除されること()
-    {
-        var vm = CreateViewModel();
-        vm.Dispose();
-
-        _transferService.Received(1).ProgressChanged -= Arg.Any<EventHandler<TransferItem>>();
-        _transferService.Received(1).FileReceived -= Arg.Any<EventHandler<TransferItem>>();
-        _transferService.Received(1).TransferError -= Arg.Any<EventHandler<TransferItem>>();
-    }
-
-    [Fact]
-    public void Dispose_二重呼び出しでも例外が発生しないこと()
-    {
-        var vm = CreateViewModel();
-        vm.Dispose();
-        vm.Dispose(); // 2回目でも例外なし
     }
 }

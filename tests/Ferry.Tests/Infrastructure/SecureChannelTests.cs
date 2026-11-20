@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Ferry.Infrastructure;
 using Ferry.Models;
 
@@ -90,23 +89,6 @@ public class SecureChannelTests
     }
 
     [Fact]
-    public void 非対応チャネルはStartで即平文フォールバックしアプリデータを素通しすること()
-    {
-        // フラグ OFF 相当（ConnectionService は本来チャネルを生成しないが、防御的に検証）。
-        var ch = new SecureChannel(DevA, DevB, Secret(0x11), secureEnabled: false);
-        var start = ch.Start();
-        Assert.Equal(SecureOutcome.FellBackToPlaintext, start.Outcome);
-        Assert.Empty(start.Send); // Hello を送らない
-
-        // アプリデータは素通しで配送、紛れ込んだハンドシェイクフレームは捨てる。
-        var app = new byte[] { TransferProtocol.FileMeta, 7, 7 };
-        Assert.Equal(app, Assert.Single(ch.OnFrame(app).Deliver));
-        var stray = new byte[1 + SecureChannel.SessionNonceSize + 16];
-        stray[0] = TransferProtocol.SecureHello;
-        Assert.Empty(ch.OnFrame(stray).Deliver);
-    }
-
-    [Fact]
     public void HasPairSecretが暗号必須チャネルと正当な平文チャネルを区別すること()
     {
         // ConnectionService.SendAsyncCore の fail-closed ゲートがこの述語に依存する。
@@ -114,7 +96,6 @@ public class SecureChannelTests
         // 逆に PairSecret 非保有（公開鍵交換前の旧ペア）は平文フォールバックが正当なので素通しする。
         Assert.True(new SecureChannel(DevA, DevB, Secret(0x11), secureEnabled: true).HasPairSecret);
         Assert.False(new SecureChannel(DevA, DevB, null, secureEnabled: true).HasPairSecret);
-        Assert.False(new SecureChannel(DevA, DevB, Secret(0x11), secureEnabled: false).HasPairSecret);
 
         // ハンドシェイク進行中（AwaitingHello）は HasPairSecret かつ !IsSecure = ゲートが閉じる状態
         var ch = new SecureChannel(DevA, DevB, Secret(0x11), secureEnabled: true);
@@ -164,6 +145,11 @@ public class SecureChannelTests
         var app = new byte[] { TransferProtocol.FileMeta, 5 };
         Assert.Equal(app, Assert.Single(ch.OnFrame(app).Deliver));
         Assert.Equal(SecureOutcome.None, ch.OnTimeout().Outcome); // 平文確定後のタイムアウトは無害
+
+        // 紛れ込んだハンドシェイクフレーム（Hello）は捨てて、アプリへは配送しない。
+        var stray = new byte[1 + SecureChannel.SessionNonceSize + 16];
+        stray[0] = TransferProtocol.SecureHello;
+        Assert.Empty(ch.OnFrame(stray).Deliver);
     }
 
     [Fact]

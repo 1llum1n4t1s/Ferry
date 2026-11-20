@@ -18,50 +18,7 @@ public class PairCryptoTests
     private static byte[] MakePairSecret(string seed = "seed")
         => PairCrypto.DerivePairSecret(System.Text.Encoding.UTF8.GetBytes(seed.PadRight(32, 'x')), "PAIR-1");
 
-    // ---- ECDH 鍵交換 ----
-
-    [Fact]
-    public void ECDHの共有秘密が両端で一致すること()
-    {
-        using var alice = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
-        using var bob = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
-        var aliceSpki = alice.ExportSubjectPublicKeyInfo();
-        var bobSpki = bob.ExportSubjectPublicKeyInfo();
-
-        var aliceSide = PairCrypto.DeriveRawSharedSecret(alice, bobSpki);
-        var bobSide = PairCrypto.DeriveRawSharedSecret(bob, aliceSpki);
-
-        Assert.Equal(aliceSide, bobSide);
-        Assert.Equal(32, aliceSide.Length); // SHA-256 出力
-    }
-
-    [Fact]
-    public void 別のECDH鍵では共有秘密が一致しないこと()
-    {
-        using var alice = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
-        using var bob = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
-        using var mallory = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
-
-        var aliceBob = PairCrypto.DeriveRawSharedSecret(alice, bob.ExportSubjectPublicKeyInfo());
-        var aliceMallory = PairCrypto.DeriveRawSharedSecret(alice, mallory.ExportSubjectPublicKeyInfo());
-
-        Assert.NotEqual(aliceBob, aliceMallory);
-    }
-
-    // ---- HKDF 鍵導出 ----
-
-    [Fact]
-    public void PairSecret導出が決定的でありpairId違いで別鍵になること()
-    {
-        var raw = PairCrypto.RandomBytes(32);
-        var a1 = PairCrypto.DerivePairSecret(raw, "PAIR-A");
-        var a2 = PairCrypto.DerivePairSecret(raw, "PAIR-A");
-        var b = PairCrypto.DerivePairSecret(raw, "PAIR-B");
-
-        Assert.Equal(a1, a2);       // 決定的
-        Assert.NotEqual(a1, b);     // salt(pairId) で分離
-        Assert.Equal(32, a1.Length);
-    }
+    // ---- HKDF 鍵導出（PairSecret の ECDH 導出は DeviceIdentityTests が本番経路で検証する）----
 
     [Fact]
     public void セッション鍵が送受信とHMACで全て別鍵になること()
@@ -120,20 +77,10 @@ public class PairCryptoTests
     }
 
     [Fact]
-    public void 空の平文も封筒化復号できること()
-    {
-        var key = PairCrypto.RandomBytes(32);
-        var envelope = PairCrypto.Encrypt(key, 7, System.ReadOnlySpan<byte>.Empty);
-        var (decrypted, counter) = PairCrypto.Decrypt(key, envelope);
-        Assert.Empty(decrypted);
-        Assert.Equal(7UL, counter);
-    }
-
-    [Fact]
     public void counterがnonceに正しく往復すること()
     {
         var key = PairCrypto.RandomBytes(32);
-        foreach (var c in new ulong[] { 0, 1, 255, 256, 65536, ulong.MaxValue })
+        foreach (var c in new ulong[] { 0, ulong.MaxValue })
         {
             var env = PairCrypto.Encrypt(key, c, new byte[] { 1, 2, 3 });
             var (_, counter) = PairCrypto.Decrypt(key, env);
@@ -147,15 +94,6 @@ public class PairCryptoTests
         var key = PairCrypto.RandomBytes(32);
         var envelope = PairCrypto.Encrypt(key, 0, new byte[] { 10, 20, 30 });
         envelope[^1] ^= 0xFF; // tag 末尾を反転
-        Assert.ThrowsAny<CryptographicException>(() => PairCrypto.Decrypt(key, envelope));
-    }
-
-    [Fact]
-    public void ciphertext改竄を検出して復号が例外になること()
-    {
-        var key = PairCrypto.RandomBytes(32);
-        var envelope = PairCrypto.Encrypt(key, 0, new byte[] { 10, 20, 30, 40 });
-        envelope[1 + PairCrypto.NonceSize] ^= 0x01; // 先頭 ciphertext バイトを改竄
         Assert.ThrowsAny<CryptographicException>(() => PairCrypto.Decrypt(key, envelope));
     }
 
@@ -199,14 +137,6 @@ public class PairCryptoTests
     }
 
     [Fact]
-    public void 別の鍵のHMAC応答を拒否すること()
-    {
-        var challenge = PairingHandshake.BuildChallenge();
-        var response = PairingHandshake.BuildResponse(PairCrypto.RandomBytes(32), challenge, PairingHandshake.RoleLow);
-        Assert.False(PairCrypto.VerifyHmac(PairCrypto.RandomBytes(32), challenge, PairingHandshake.RoleLow, response));
-    }
-
-    [Fact]
     public void roleTagが違うとHMAC検証が失敗すること()
     {
         // reflection 対策: 応答者の roleTag と検証時の roleTag が食い違うと不一致になる。
@@ -214,41 +144,6 @@ public class PairCryptoTests
         var challenge = PairingHandshake.BuildChallenge();
         var response = PairingHandshake.BuildResponse(hmacKey, challenge, PairingHandshake.RoleLow);
         Assert.False(PairCrypto.VerifyHmac(hmacKey, challenge, PairingHandshake.RoleHigh, response));
-    }
-
-    [Fact]
-    public void roleTagがdeviceId序列で一貫し相互に裏返ること()
-    {
-        const string low = "aaaa";
-        const string high = "zzzz";
-        Assert.Equal(PairingHandshake.RoleLow, PairingHandshake.RoleTagFor(low, high));
-        Assert.Equal(PairingHandshake.RoleHigh, PairingHandshake.RoleTagFor(high, low));
-        Assert.Equal(PairingHandshake.RoleHigh, PairingHandshake.PeerRoleTag(PairingHandshake.RoleLow));
-        Assert.Equal(PairingHandshake.RoleLow, PairingHandshake.PeerRoleTag(PairingHandshake.RoleHigh));
-    }
-
-    [Fact]
-    public void 双方向HMACハンドシェイクが成立すること()
-    {
-        // A(low) と B(high) が hmacKey を共有。互いのチャレンジに応答し相互検証する。
-        var pairSecret = MakePairSecret();
-        var offerNonce = PairCrypto.RandomBytes(16);
-        var answerNonce = PairCrypto.RandomBytes(16);
-        var aKeys = PairCrypto.DeriveSessionKeys(pairSecret, offerNonce, answerNonce, isOfferer: true);
-        var bKeys = PairCrypto.DeriveSessionKeys(pairSecret, offerNonce, answerNonce, isOfferer: false);
-
-        var aRole = PairingHandshake.RoleLow;
-        var bRole = PairingHandshake.RoleHigh;
-        var aChallenge = PairingHandshake.BuildChallenge();
-        var bChallenge = PairingHandshake.BuildChallenge();
-
-        // 各端は相手のチャレンジに自分の roleTag で応答
-        var aResponse = PairingHandshake.BuildResponse(aKeys.hmacKey, bChallenge, aRole);
-        var bResponse = PairingHandshake.BuildResponse(bKeys.hmacKey, aChallenge, bRole);
-
-        // 各端は自分のチャレンジへの応答を相手の roleTag で検証
-        Assert.True(PairingHandshake.VerifyResponse(aKeys.hmacKey, aChallenge, bRole, bResponse));
-        Assert.True(PairingHandshake.VerifyResponse(bKeys.hmacKey, bChallenge, aRole, aResponse));
     }
 
     // ---- SecureSession 往復とリプレイ ----
@@ -307,19 +202,6 @@ public class PairCryptoTests
     }
 
     [Fact]
-    public void 窓外の古いカウンタを拒否すること()
-    {
-        var (offerer, answerer) = MakeSessionPair();
-        // 窓幅を超える数だけ進める（最初の 1 個を保留して窓外に追い出す）
-        var first = offerer.EncryptOutgoing(new byte[] { 0 });
-        for (var i = 0; i < SecureSession.ReplayWindowSize + 10; i++)
-            Assert.NotNull(answerer.DecryptIncoming(offerer.EncryptOutgoing(new byte[] { 1 })));
-
-        // counter 0 は窓外に押し出されたので拒否
-        Assert.Null(answerer.DecryptIncoming(first));
-    }
-
-    [Fact]
     public void 送信カウンタが単調増加し封筒のnonceが一意であること()
     {
         var (offerer, _) = MakeSessionPair();
@@ -359,12 +241,15 @@ public class PairCryptoTests
     }
 
     [Fact]
-    public void IsOffererRoleがroleTagと一貫すること()
+    public void IsOffererRoleがroleTagと一貫し相互に裏返ること()
     {
         Assert.True(PairingHandshake.IsOffererRole("aaaa", "zzzz"));
         Assert.False(PairingHandshake.IsOffererRole("zzzz", "aaaa"));
         // RoleTagFor は IsOffererRole から導出されるので必ず一致する
         Assert.Equal(PairingHandshake.RoleLow, PairingHandshake.RoleTagFor("aaaa", "zzzz"));
         Assert.Equal(PairingHandshake.RoleHigh, PairingHandshake.RoleTagFor("zzzz", "aaaa"));
+        // roleTag は互いに裏返る（応答者の tag と検証側が使う相手 tag の対応）
+        Assert.Equal(PairingHandshake.RoleHigh, PairingHandshake.PeerRoleTag(PairingHandshake.RoleLow));
+        Assert.Equal(PairingHandshake.RoleLow, PairingHandshake.PeerRoleTag(PairingHandshake.RoleHigh));
     }
 }

@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using Ferry.Models;
 using Ferry.Services;
@@ -16,7 +12,7 @@ namespace Ferry.Tests.ViewModels;
 /// Avalonia Dispatcher を使用するメソッド（OnStateChanged, OnRouteChanged, OnPairingCompleted, ClearQrCodeImage）は
 /// 単体テスト環境では動作しないためスキップする。
 /// </summary>
-public class ConnectionViewModelTests : IDisposable
+public class ConnectionViewModelTests
 {
     private readonly IConnectionService _connectionService;
     private readonly IQrCodeService _qrCodeService;
@@ -44,8 +40,6 @@ public class ConnectionViewModelTests : IDisposable
         // rere #B1-001: presence ファクトリはスタブ（テストは StartPresenceMonitoring を呼ばない）。
         new(_connectionService, _qrCodeService, _settingsService, _peerRegistry, Substitute.For<IPresenceServiceFactory>());
 
-    public void Dispose() { }
-
     // === コンストラクタ ===
 
     [Fact]
@@ -65,76 +59,37 @@ public class ConnectionViewModelTests : IDisposable
         Assert.Equal("peer2", vm.PairedPeers[1].PeerId);
     }
 
-    [Fact]
-    public void コンストラクタ_ペアなしの場合PairedPeersが空であること()
+    /// <summary>PairedPeer.WentOnline に登録されているハンドラ数（field-like event の backing field を反射で読む）。</summary>
+    private static int WentOnlineHandlerCount(PairedPeer peer)
     {
-        using var vm = CreateViewModel();
-
-        Assert.Empty(vm.PairedPeers);
+        var field = typeof(PairedPeer).GetField(nameof(PairedPeer.WentOnline),
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        Assert.NotNull(field);
+        return (field!.GetValue(peer) as Delegate)?.GetInvocationList().Length ?? 0;
     }
 
     [Fact]
-    public void コンストラクタ_HasPairedPeersがペア数に応じて設定されること()
+    public void PairedPeersの追加と削除でWentOnline購読が1件ずつ張られ外れること()
     {
-        var peers = new List<PairedPeer>
-        {
-            new() { PeerId = "peer1", DisplayName = "PC-1" },
-        };
-        _peerRegistry.GetPairedPeers().Returns(peers);
+        var initial = new PairedPeer { PeerId = "peer1", DisplayName = "PC-1" };
+        _peerRegistry.GetPairedPeers().Returns(new List<PairedPeer> { initial });
 
         using var vm = CreateViewModel();
+        // 初期ロード分は ctor が直接購読する（二重購読すると Online エッジで経路 Probe が 2 回走る）
+        Assert.Equal(1, WentOnlineHandlerCount(initial));
 
-        Assert.True(vm.HasPairedPeers);
-    }
+        var added = new PairedPeer { PeerId = "peer2", DisplayName = "PC-2" };
+        vm.PairedPeers.Add(added);
+        Assert.Equal(1, WentOnlineHandlerCount(added));
 
-    [Fact]
-    public void コンストラクタ_ペアなしの場合HasPairedPeersがfalseであること()
-    {
-        using var vm = CreateViewModel();
+        vm.PairedPeers.Remove(added);
+        Assert.Equal(0, WentOnlineHandlerCount(added));
 
-        Assert.False(vm.HasPairedPeers);
-    }
-
-    [Fact]
-    public void コンストラクタ_イベントハンドラが登録されること()
-    {
-        using var vm = CreateViewModel();
-
-        // StateChanged, RouteChanged, PairingCompleted が購読されていることを確認
-        // （Dispose で -= するため、購読されていればエラーにならない）
-        _connectionService.Received(1).StateChanged += Arg.Any<EventHandler<PeerState>>();
-        _connectionService.Received(1).RouteChanged += Arg.Any<EventHandler<ConnectionRoute>>();
-        _connectionService.Received(1).PairingCompleted += Arg.Any<EventHandler<PairedPeer>>();
-    }
-
-    [Fact]
-    public void コンストラクタ_初期状態がDisconnectedであること()
-    {
-        using var vm = CreateViewModel();
-
-        Assert.Equal(PeerState.Disconnected, vm.ConnectionState);
-        Assert.Equal(string.Empty, vm.StatusText);
-        Assert.Equal(string.Empty, vm.SessionId);
-        Assert.Equal(string.Empty, vm.PeerName);
-        Assert.False(vm.IsConnecting);
-        Assert.Null(vm.SelectedPeer);
+        vm.PairedPeers.Remove(initial);
+        Assert.Equal(0, WentOnlineHandlerCount(initial));
     }
 
     // === StartSessionCommand ===
-
-    [Fact]
-    public async Task StartSessionAsync_セッションIDが設定されること()
-    {
-        _connectionService.StartPairingSessionAsync(Arg.Any<CancellationToken>())
-            .Returns("test-session-id");
-        // Bitmap を返すと Dispose で Dispatcher が必要になるため null を返す
-        _qrCodeService.GenerateQrBitmap(Arg.Any<string>()).Returns((Bitmap?)null);
-
-        using var vm = CreateViewModel();
-        await vm.StartSessionCommand.ExecuteAsync(null);
-
-        Assert.Equal("test-session-id", vm.SessionId);
-    }
 
     [Fact]
     public async Task StartSessionAsync_コピー用コードに短命nonceを含めること()
@@ -177,21 +132,7 @@ public class ConnectionViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task StartSessionAsync_QRコードURL生成に正しいパラメータが渡されること()
-    {
-        _connectionService.StartPairingSessionAsync(Arg.Any<CancellationToken>())
-            .Returns("sid123");
-        _qrCodeService.GenerateQrBitmap(Arg.Any<string>()).Returns((Bitmap?)null);
-
-        using var vm = CreateViewModel();
-        await vm.StartSessionCommand.ExecuteAsync(null);
-
-        _qrCodeService.Received(1).GenerateQrBitmap(
-            Arg.Is<string>(url => url != null && url.Contains("sid=sid123") && url.Contains("name=TestPC")));
-    }
-
-    [Fact]
-    public async Task StartSessionAsync_既定ではCFBridgeのURLが使われること()
+    public async Task StartSessionAsync_QRコードURLはCFBridgeを宛先にsidと端末名のパラメータを持つこと()
     {
         _connectionService.StartPairingSessionAsync(Arg.Any<CancellationToken>())
             .Returns("sid123");
@@ -202,71 +143,16 @@ public class ConnectionViewModelTests : IDisposable
 
         // CF 単独完結: QR の宛先は常に CF 版 Bridge（relay Worker の Static Assets）固定
         _qrCodeService.Received(1).GenerateQrBitmap(
-            Arg.Is<string>(url => url != null && url.StartsWith(Ferry.AppConstants.CfBridgePageUrl) && url.Contains("sid=sid123")));
-    }
-
-    [Fact]
-    public async Task StartSessionAsync_成功時にWaitingForPairingになること()
-    {
-        _connectionService.StartPairingSessionAsync(Arg.Any<CancellationToken>())
-            .Returns("sid123");
-        _qrCodeService.GenerateQrBitmap(Arg.Any<string>()).Returns((Bitmap?)null);
-
-        using var vm = CreateViewModel();
-        await vm.StartSessionCommand.ExecuteAsync(null);
-
-        Assert.Equal(PeerState.WaitingForPairing, vm.ConnectionState);
-        // ローカライズ後: テスト環境ではリソースが未ロードのため App.Text() はキーを返す
-        Assert.True(
-            vm.StatusText.Contains("QR コード") || vm.StatusText.Contains("Text.Status.ScanQR"),
-            $"StatusText should contain QR code text, but was: {vm.StatusText}");
-    }
-
-    [Fact]
-    public async Task StartSessionAsync_例外発生時にErrorになること()
-    {
-        _connectionService.StartPairingSessionAsync(Arg.Any<CancellationToken>())
-            .ThrowsAsync(new InvalidOperationException("テストエラー"));
-
-        using var vm = CreateViewModel();
-        await vm.StartSessionCommand.ExecuteAsync(null);
-
-        Assert.Equal(PeerState.Error, vm.ConnectionState);
-        // ローカライズ後: テスト環境では App.Text("Status.Error", msg) がキーを返す場合がある
-        Assert.True(
-            vm.StatusText.Contains("テストエラー") || vm.StatusText.Contains("Text.Status.Error"),
-            $"StatusText should contain error info, but was: {vm.StatusText}");
-    }
-
-    [Fact]
-    public async Task StartSessionAsync_完了後にIsConnectingがfalseになること()
-    {
-        _connectionService.StartPairingSessionAsync(Arg.Any<CancellationToken>())
-            .Returns("sid123");
-        _qrCodeService.GenerateQrBitmap(Arg.Any<string>()).Returns((Bitmap?)null);
-
-        using var vm = CreateViewModel();
-        await vm.StartSessionCommand.ExecuteAsync(null);
-
-        Assert.False(vm.IsConnecting);
-    }
-
-    [Fact]
-    public async Task StartSessionAsync_例外発生時もIsConnectingがfalseになること()
-    {
-        _connectionService.StartPairingSessionAsync(Arg.Any<CancellationToken>())
-            .ThrowsAsync(new Exception("fail"));
-
-        using var vm = CreateViewModel();
-        await vm.StartSessionCommand.ExecuteAsync(null);
-
-        Assert.False(vm.IsConnecting);
+            Arg.Is<string>(url => url != null
+                && url.StartsWith(Ferry.AppConstants.CfBridgePageUrl)
+                && url.Contains("sid=sid123")
+                && url.Contains("name=TestPC")));
     }
 
     // === RemovePeerAsync ===
 
     [Fact]
-    public async Task RemovePeerAsync_ピアがコレクションから削除されること()
+    public async Task RemovePeerAsync_ピアがコレクションとレジストリから削除され複数残る間はStartSessionしないこと()
     {
         var peers = new List<PairedPeer>
         {
@@ -280,49 +166,9 @@ public class ConnectionViewModelTests : IDisposable
 
         Assert.Single(vm.PairedPeers);
         Assert.Equal("peer2", vm.PairedPeers[0].PeerId);
-    }
-
-    [Fact]
-    public async Task RemovePeerAsync_レジストリのRemovePeerAsyncが呼ばれること()
-    {
-        var peers = new List<PairedPeer>
-        {
-            new() { PeerId = "peer1", DisplayName = "PC-1" },
-        };
-        _peerRegistry.GetPairedPeers().Returns(peers);
-
-        using var vm = CreateViewModel();
-        await vm.RemovePeerCommand.ExecuteAsync("peer1");
-
         await _peerRegistry.Received(1).RemovePeerAsync("peer1");
-    }
-
-    [Fact]
-    public async Task RemovePeerAsync_存在しないpeerIdでも例外が発生しないこと()
-    {
-        using var vm = CreateViewModel();
-
-        // 例外が発生しないことを確認
-        await vm.RemovePeerCommand.ExecuteAsync("nonexistent");
-
-        await _peerRegistry.Received(1).RemovePeerAsync("nonexistent");
-    }
-
-    [Fact]
-    public async Task RemovePeerAsync_HasPairedPeersが更新されること()
-    {
-        var peers = new List<PairedPeer>
-        {
-            new() { PeerId = "peer1", DisplayName = "PC-1" },
-        };
-        _peerRegistry.GetPairedPeers().Returns(peers);
-
-        using var vm = CreateViewModel();
-        Assert.True(vm.HasPairedPeers);
-
-        await vm.RemovePeerCommand.ExecuteAsync("peer1");
-
-        Assert.False(vm.HasPairedPeers);
+        // ペアが残っているので新規ペアリングセッションは始めない
+        await _connectionService.DidNotReceive().StartPairingSessionAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -381,23 +227,6 @@ public class ConnectionViewModelTests : IDisposable
         await _connectionService.Received().StartPairingSessionAsync(Arg.Any<CancellationToken>());
     }
 
-    [Fact]
-    public async Task RemovePeerAsync_複数ピアが残っている場合StartSessionは発火しないこと()
-    {
-        var peers = new List<PairedPeer>
-        {
-            new() { PeerId = "peer1", DisplayName = "PC-1" },
-            new() { PeerId = "peer2", DisplayName = "PC-2" },
-        };
-        _peerRegistry.GetPairedPeers().Returns(peers);
-
-        using var vm = CreateViewModel();
-        await vm.RemovePeerCommand.ExecuteAsync("peer1");
-
-        // StartPairingSessionAsync が呼ばれないこと
-        await _connectionService.DidNotReceive().StartPairingSessionAsync(Arg.Any<CancellationToken>());
-    }
-
     // === DisconnectAsync ===
 
     [Fact]
@@ -416,18 +245,10 @@ public class ConnectionViewModelTests : IDisposable
         await vm.DisconnectCommand.ExecuteAsync(null);
 
         Assert.Equal(PeerState.Disconnected, vm.ConnectionState);
-        Assert.Equal(string.Empty, vm.PeerName);
         Assert.Equal(string.Empty, vm.SessionId);
         Assert.Equal(string.Empty, vm.StatusText);
         Assert.Null(vm.QrCodeImage);
-    }
-
-    [Fact]
-    public async Task DisconnectAsync_ConnectionServiceのDisconnectAsyncが呼ばれること()
-    {
-        using var vm = CreateViewModel();
-        await vm.DisconnectCommand.ExecuteAsync(null);
-
+        // 選択中ピアが無いときは全体切断（ピア指定なし）を呼ぶ
         await _connectionService.Received(1).DisconnectAsync(Arg.Any<CancellationToken>());
     }
 
@@ -504,7 +325,6 @@ public class ConnectionViewModelTests : IDisposable
         vm.SelectedPeer = peer;
 
         // 接続は行われない
-        Assert.Equal("PC-1", vm.PeerName);
         Assert.Equal(PeerState.Disconnected, vm.ConnectionState);
         await _connectionService.DidNotReceive().ConnectToPeerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -528,16 +348,6 @@ public class ConnectionViewModelTests : IDisposable
 
         Assert.Equal(string.Empty, peer.ConnectionStatusText);
         Assert.Equal(PeerState.Disconnected, vm.ConnectionState);
-        Assert.False(vm.IsConnecting);
-    }
-
-    [Fact]
-    public void SelectedPeerにnullを設定しても接続は試みられないこと()
-    {
-        using var vm = CreateViewModel();
-        vm.SelectedPeer = null;
-
-        _connectionService.DidNotReceive().ConnectToPeerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -556,18 +366,4 @@ public class ConnectionViewModelTests : IDisposable
         _connectionService.DidNotReceive().StopListeningForConnection();
     }
 
-    // === AddNewPeerCommand ===
-
-    [Fact]
-    public async Task AddNewPeerAsync_StartSessionAsyncが呼ばれること()
-    {
-        _connectionService.StartPairingSessionAsync(Arg.Any<CancellationToken>())
-            .Returns("new-sid");
-        _qrCodeService.GenerateQrBitmap(Arg.Any<string>()).Returns((Bitmap?)null);
-
-        using var vm = CreateViewModel();
-        await vm.AddNewPeerCommand.ExecuteAsync(null);
-
-        await _connectionService.Received().StartPairingSessionAsync(Arg.Any<CancellationToken>());
-    }
 }

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { pairLedgerDb } from './d1-fixture';
 import { handlePresence } from '../src/device-routes';
 import { mintSessionToken } from '../src/auth';
 import type { Env } from '../src/index';
@@ -6,19 +7,6 @@ import type { Env } from '../src/index';
 const A = 'a'.repeat(32);
 const B = 'b'.repeat(32);
 const SECRET = 'test-cf-hmac-secret-0123456789';
-
-function pairLedgerDb(row: object | null | Error): D1Database {
-  return {
-    prepare: vi.fn(() => ({
-      bind: vi.fn(() => ({
-        first: vi.fn(async () => {
-          if (row instanceof Error) throw row;
-          return row;
-        }),
-      })),
-    })),
-  } as unknown as D1Database;
-}
 
 function makeEnv(db: D1Database, fetch = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }))): Env {
   return {

@@ -4,7 +4,7 @@ import { SqliteD1 } from './d1-fixture';
  *
  * Cloudflare bindings に依存しない純関数 / pure handler ロジックを Node.js (Web Crypto 内蔵) で検証する。
  * - base64Url の URL safe ラウンドトリップ
- * - handleAuthToken の正常系・別鍵 401・clock skew 400・KV first-write-wins binding・cfToken 発行
+ * - handleAuthToken の正常系・別鍵 401・clock skew 400・D1 first-write-wins binding・cfToken 発行
  *
  * （旧 Firebase Custom Token 経路 mintCustomToken / rs256Sign / handlePairToken は Step 7 で撤去済み。）
  */

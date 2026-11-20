@@ -1,20 +1,14 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text.RegularExpressions;
-using Xunit;
 
 namespace Ferry.Tests.Resources;
 
 /// <summary>
 /// ロケール辞書（<c>src/Ferry/Resources/Locales/*.axaml</c>）の整合性テスト。
 ///
-/// rere レビュー #C-29: 既存の <c>PairedPeerTests</c> は <c>App.Text</c> がキー未解決時に返す
-/// フォールバック文字列（<c>$"Text.{key}"</c>）を期待値にしている。ユニットテストには
-/// Avalonia の Application が存在せず <c>Application.Current == null</c> なので、あれは
-/// 「enum → キー名」のマッピングしか検証しておらず、**そのキーが辞書に実在するか**は
-/// 一切見ていない。つまりキー名を打ち間違えても、辞書側からキーを消しても、テストは緑のまま
+/// rere レビュー #C-29: ユニットテストには Avalonia の Application が存在せず <c>Application.Current == null</c> なので、
+/// <c>App.Text</c> はキー未解決時のフォールバック文字列（<c>$"Text.{key}"</c>）を返す。VM やモデルのテストで
+/// 文言を比較しても「enum → キー名」のマッピングしか検証できず、**そのキーが辞書に実在するか**は
+/// 一切見えない。つまりキー名を打ち間違えても、辞書側からキーを消しても、テストは緑のまま
 /// UI に生の <c>Text.Route.Lan.Badge</c> が表示される。
 ///
 /// ここでは Avalonia を起動せず、.axaml をテキストとして読んで次を固定する:

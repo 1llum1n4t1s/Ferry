@@ -1,0 +1,206 @@
+{
+  "OS": "Microsoft Windows NT 10.0.26300.0",
+  "Runtime": "11.0.0",
+  "Avalonia": "12.1.6.0",
+  "Utc": "2026-11-20T09:38:12.0202681+00:00",
+  "ScreenshotKind": "Avalonia visual tree (not OS compositor)",
+  "Results": [
+    {
+      "Name": "normal",
+      "Passed": true,
+      "BeforeShow": "Normal",
+      "StartupState": "Normal",
+      "StartupVisible": true,
+      "RestoredState": "Normal",
+      "Width": 920,
+      "Height": 620
+    },
+    {
+      "Name": "minimized",
+      "Passed": true,
+      "BeforeShow": "Normal",
+      "StartupState": "Minimized",
+      "StartupVisible": true,
+      "RestoredState": "Normal",
+      "Width": 920,
+      "Height": 620
+    },
+    {
+      "Name": "minimized-tray",
+      "Passed": true,
+      "BeforeShow": "Normal",
+      "StartupState": "Minimized",
+      "StartupVisible": false,
+      "RestoredState": "Normal",
+      "Width": 920,
+      "Height": 620
+    },
+    {
+      "Name": "maximized-minimized",
+      "Passed": true,
+      "BeforeShow": "Maximized",
+      "StartupState": "Minimized",
+      "StartupVisible": true,
+      "RestoredState": "Maximized",
+      "Width": 920,
+      "Height": 620
+    },
+    {
+      "Name": "rtl-before-window-and-later-dialog",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "rtl-settings-only",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "locale-change-existing-windows",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "skipped-tag-localized-binding",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "settings-accessible-names-en_US",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "settings-accessible-names-he_IL",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "transfer-events-dispatcher",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "transfer-result-ack-ui",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "transfer-result-failure-ui",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "folder-batches-and-legacy-ui",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "corrupt-settings-identity",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "secondary-peer-cancel",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "secondary-peer-flowack-after-cancel",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "approve-overlap-disconnect",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "approve-overlap-reject",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "approve-overlap-cancel",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "folder-sequential-approval",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "legacy-buffer-before-approval",
+      "Passed": true,
+      "Error": null
+    },
+    {
+      "Name": "udp-cancel-then-send",
+      "Passed": true,
+      "Error": null
+    }
+  ],
+  "TemporaryDirectories": [
+    {
+      "Path": "C:\\Users\\IMT\\AppData\\Local\\Temp\\Ferry-Integration-1f241f89ee224233bb46b65d001c827a",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\AppData\\Local\\Temp\\Ferry-Integration-daa9e1781742444e87481f8e7ff085fb",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\AppData\\Local\\Temp\\Ferry-Integration-ffc5f37c88af419dab56370b933a4258",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\AppData\\Local\\Temp\\Ferry-Integration-7077638c714947f7aaae1cf3995791d4",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\AppData\\Local\\Temp\\Ferry-Gogo-5c3cf604f1f14602bb2875274fda5270",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\AppData\\Local\\Temp\\Ferry-Gogo-91b7c1e7913a441d8c0c253dca60531c",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\AppData\\Local\\Temp\\Ferry-Gogo-a512740b18934254a72b63855af327d6",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\AppData\\Local\\Temp\\Ferry-Gogo-1a875aab4638478db8ff58f4f642c068",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\AppData\\Local\\Temp\\Ferry-Gogo-eb245180e9e34a60b43a08b9382bc442",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\AppData\\Local\\Temp\\Ferry-Gogo-8b443f422dc94db5af2bb1426ea3430a",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\AppData\\Local\\Temp\\Ferry-Gogo-717c63d22b0c48bebccb4e61952acb68",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\AppData\\Local\\Temp\\Ferry-Gogo-972a3bf4f0c649afb3a577ca49dcf385",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\AppData\\Local\\Temp\\Ferry-Gogo-0c4fa15a142c43ddad1b9a58131bdf87",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\AppData\\Local\\Temp\\Ferry-Gogo-d0db559bf0dd471f8829850ae82cd26b",
+      "Removed": true
+    },
+    {
+      "Path": "C:\\Users\\IMT\\AppData\\Local\\Temp\\Ferry-Gogo-d94c5a6a946a4fdc975d716d29bbff4f",
+      "Removed": true
+    }
+  ]
+}

@@ -5,14 +5,14 @@
  *   - signIeeeP1363: ECDSA P-256 IEEE P1363 raw 64-byte 署名（auth.ts handleAuthToken と同一形式）
  */
 
-export async function generateKeyPair(
+async function generateKeyPair(
     algo: RsaHashedKeyGenParams | EcKeyGenParams,
     usages: KeyUsage[],
 ): Promise<CryptoKeyPair> {
     return crypto.subtle.generateKey(algo, true, usages) as Promise<CryptoKeyPair>;
 }
 
-export async function exportKey(format: 'pkcs8' | 'spki', key: CryptoKey): Promise<ArrayBuffer> {
+async function exportKey(format: 'pkcs8' | 'spki', key: CryptoKey): Promise<ArrayBuffer> {
     return crypto.subtle.exportKey(format, key);
 }
 

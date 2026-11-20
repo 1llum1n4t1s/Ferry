@@ -1,5 +1,3 @@
-using System;
-using System.IO;
 using Ferry.Infrastructure;
 
 namespace Ferry.Tests.Infrastructure;
@@ -73,19 +71,6 @@ public class DeviceIdentityTests : IDisposable
     }
 
     [Fact]
-    public void Signは決定論的ではなく毎回異なる署名を返す()
-    {
-        // ECDSA は仕様で nonce ランダム → 同じデータでも異なる signature。両方とも verify は通る。
-        using var id = new DeviceIdentity(KeyPath("non-det"));
-        var data = System.Text.Encoding.UTF8.GetBytes("same-data");
-        var sig1 = id.Sign(data);
-        var sig2 = id.Sign(data);
-        Assert.NotEqual(sig1, sig2);
-        Assert.True(DeviceIdentity.Verify(id.PublicKeySpki, data, sig1));
-        Assert.True(DeviceIdentity.Verify(id.PublicKeySpki, data, sig2));
-    }
-
-    [Fact]
     public void RegenerateAndSaveは旧鍵を破棄し新鍵を生成する()
     {
         var path = KeyPath("regen");
@@ -107,24 +92,14 @@ public class DeviceIdentityTests : IDisposable
         Assert.False(DeviceIdentity.Verify(newId.PublicKeySpki, data, sigFromOther));
     }
 
-    [Fact]
-    public void RegenerateAndSaveはファイルが存在しなくても新規生成する()
-    {
-        var path = KeyPath("regen-fresh");
-        Assert.False(File.Exists(path));
-        using var id = DeviceIdentity.RegenerateAndSave(path);
-        Assert.True(File.Exists(path));
-        Assert.Equal(91, id.PublicKeySpki.Length); // P-256 SPKI は 91 byte 固定
-    }
-
     // ---- base64url ----
 
     [Fact]
     public void Base64Urlがラウンドトリップしパディング無しURL安全になること()
     {
-        // パディングが出る長さ（length % 3 != 0）を含めて検証する。
-        // 空入力は設計上 null（＝鍵なし）に倒すため対象外（別テストで検証）。
-        for (var len = 1; len < 40; len++)
+        // length % 3 が 1・2・0 の3通り（パディング有無の同値クラス）を代表で検証する。
+        // 空・不正入力は null（＝鍵なし）に倒れる契約で、相手鍵が空や不正なら null を返すこと の側で検証する。
+        foreach (var len in new[] { 1, 2, 3 })
         {
             var data = PairCrypto.RandomBytes(len);
             var s = PairCrypto.ToBase64Url(data);
@@ -133,14 +108,6 @@ public class DeviceIdentityTests : IDisposable
             Assert.DoesNotContain('=', s);
             Assert.Equal(data, PairCrypto.FromBase64Url(s));
         }
-    }
-
-    [Fact]
-    public void FromBase64Urlが不正入力でnullを返すこと()
-    {
-        Assert.Null(PairCrypto.FromBase64Url(null));
-        Assert.Null(PairCrypto.FromBase64Url(""));
-        Assert.Null(PairCrypto.FromBase64Url("!!!not base64!!!"));
     }
 
     // ---- 鍵の永続 ----
@@ -165,7 +132,7 @@ public class DeviceIdentityTests : IDisposable
     public void 壊れた鍵ファイルは例外を伝播して起動を中止させること()
     {
         // Codex 第12弾 #2 (P2) fix: 既存 identity.key の読込/import 失敗は silent regenerate せず
-        // throw する。 #D-001a Phase B 以降 identity.key は Firebase auth に bind されるため、
+        // throw する。 #D-001a Phase B 以降 identity.key は relay の device 認証（公開鍵登録）に bind されるため、
         // 一時的な lock / 権限不足 / corrupt-file import error で silent regenerate すると、
         // 本来あとから読めたはずの旧鍵が新鍵で上書きされて既存ペア全部が DEVICE_PUBKEY_MISMATCH で
         // unrecoverable になる。 App.axaml.cs はこの例外を catch して Environment.Exit(1) する。

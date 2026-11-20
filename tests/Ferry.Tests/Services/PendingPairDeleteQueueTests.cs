@@ -1,7 +1,4 @@
-using System;
-using System.IO;
 using System.Text.Json;
-using System.Threading.Tasks;
 using Ferry.Models;
 using Ferry.Services;
 
@@ -39,14 +36,6 @@ public sealed class PendingPairDeleteQueueTests : IDisposable
     // === Enqueue ===
 
     [Fact]
-    public async Task EnqueueAsync_新規追加されCountが増える()
-    {
-        var q = CreateQueue();
-        await q.EnqueueAsync("a_b");
-        Assert.Equal(1, q.Count);
-    }
-
-    [Fact]
     public async Task EnqueueAsync_同じpairIdは重複追加せず既存をリセットする()
     {
         var q = CreateQueue();
@@ -75,21 +64,6 @@ public sealed class PendingPairDeleteQueueTests : IDisposable
         await q.EnqueueAsync("a_b");
         await q.ProcessAsync(_ => Task.FromResult(true));
         Assert.Equal(0, q.Count);
-    }
-
-    [Fact]
-    public async Task ProcessAsync_失敗するとRetryCountが増える()
-    {
-        var q = CreateQueue();
-        await q.EnqueueAsync("a_b");
-        await q.ProcessAsync(_ => Task.FromResult(false));
-        Assert.Equal(1, q.Count);
-
-        // 保存ファイルから RetryCount=1 を確認
-        var items = LoadItems();
-        Assert.Single(items);
-        Assert.Equal(1, items[0].RetryCount);
-        Assert.True(items[0].LastRetryAtMs > 0);
     }
 
     [Fact]

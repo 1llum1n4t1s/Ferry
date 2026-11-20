@@ -8,6 +8,7 @@
  * 枠を RATELIMIT_SIG（600 req/60s）へ分離したことを、消費先と 429 挙動の両面で固定する。
  */
 import { describe, it, expect, vi } from 'vitest';
+import { pairLedgerDb } from './d1-fixture';
 import { handleSignaling } from '../src/signaling-routes';
 import { mintSessionToken } from '../src/auth';
 import type { Env } from '../src/index';
@@ -31,19 +32,6 @@ function makeEnv(extra: Partial<Env> = {}): { env: Env; doFetch: ReturnType<type
     ...extra,
   } as unknown as Env;
   return { env, doFetch };
-}
-
-function pairLedgerDb(row: object | null | Error): D1Database {
-  return {
-    prepare: vi.fn(() => ({
-      bind: vi.fn(() => ({
-        first: vi.fn(async () => {
-          if (row instanceof Error) throw row;
-          return row;
-        }),
-      })),
-    })),
-  } as unknown as D1Database;
 }
 
 async function sigRequest(env: Env, deviceId: string, method: string, path: string, body?: object): Promise<Response> {

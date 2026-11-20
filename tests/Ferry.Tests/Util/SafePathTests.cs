@@ -3,8 +3,9 @@ using Ferry.Util;
 namespace Ferry.Tests.Util;
 
 /// <summary>
-/// SafePath（受信パスの送信元 OS 非依存な安全化）の純関数を網羅的にテストする。
+/// SafePath（受信パスの送信元 OS 非依存な安全化）の純関数をテストする。
 /// 特に Windows 送信 → mac/Linux 受信の混在で正規ファイルを誤拒否しない・トラバーサルを弾く、を固定する。
+/// 同じ分岐に入る入力の繰り返しは代表1件だけ残し、境界の入力（部分一致・兄弟プレフィックス・NUL など）は残す。
 /// </summary>
 public class SafePathTests
 {
@@ -12,38 +13,26 @@ public class SafePathTests
 
     [Theory]
     [InlineData("sub\\file.txt", "sub/file.txt")]
-    [InlineData("a\\b\\c", "a/b/c")]
     [InlineData("already/slash.txt", "already/slash.txt")]
-    [InlineData("noseparator.txt", "noseparator.txt")]
     public void NormalizeSeparators_バックスラッシュをスラッシュに変換する(string input, string expected)
     {
         Assert.Equal(expected, SafePath.NormalizeSeparators(input));
-    }
-
-    [Fact]
-    public void NormalizeSeparators_空文字はそのまま返す()
-    {
-        Assert.Equal("", SafePath.NormalizeSeparators(""));
     }
 
     // ==================== HasParentTraversal ====================
 
     [Theory]
     [InlineData("a/../b")]
-    [InlineData("../escape")]
-    [InlineData("a/b/..")]
-    [InlineData("..")]
+    [InlineData("../escape")]   // 先頭の要素
+    [InlineData("a/b/..")]      // 末尾の要素
     public void HasParentTraversal_親参照のパス要素を含むとtrue(string path)
     {
         Assert.True(SafePath.HasParentTraversal(path));
     }
 
     [Theory]
-    [InlineData("a/b/c")]
-    [InlineData("photos/sub/file.jpg")]
     [InlineData("my..file.txt")]    // substring に ".." を含むが要素単位では traversal でない（誤拒否しない）
     [InlineData("..foo/bar")]       // ".." で始まるが別物のフォルダ名
-    [InlineData("single.txt")]
     [InlineData("")]
     public void HasParentTraversal_正規パスはfalse(string path)
     {
@@ -54,9 +43,7 @@ public class SafePathTests
 
     [Theory]
     [InlineData("/evil.txt")]     // 先頭 "/"（絶対パス化け／フラット化の兆候）
-    [InlineData("/")]
     [InlineData("./evil.txt")]    // 先頭 "." root
-    [InlineData(".")]
     public void HasUnsafeRoot_先頭が空やドットrootはtrue(string path)
     {
         Assert.True(SafePath.HasUnsafeRoot(path));
@@ -64,8 +51,6 @@ public class SafePathTests
 
     [Theory]
     [InlineData("photos/sub/a.jpg")]
-    [InlineData("folder/file.txt")]
-    [InlineData("single.txt")]
     [InlineData("")]
     public void HasUnsafeRoot_正規rootはfalse(string path)
     {
@@ -75,10 +60,8 @@ public class SafePathTests
     // ==================== SafeFileName ====================
 
     [Theory]
-    [InlineData("file.txt", "file.txt")]
     [InlineData("sub\\file.txt", "file.txt")]              // Windows 送信由来の '\' 区切りを剥がす（混在 OS の本丸）
     [InlineData("C:\\Users\\x\\report.txt", "report.txt")] // ドライブ付きフルパスでも basename
-    [InlineData("a/b/c.txt", "c.txt")]
     [InlineData("deep\\path/mixed\\name.txt", "name.txt")] // '\' と '/' 混在
     public void SafeFileName_ディレクトリ要素を剥がしてbasenameを返す(string input, string expected)
     {
@@ -119,12 +102,6 @@ public class SafePathTests
     }
 
     [Fact]
-    public void IsWithinDirectory_多段で親へ脱出するパスはfalse()
-    {
-        Assert.False(SafePath.IsWithinDirectory(BaseDir, Path.Combine(BaseDir, "sub", "..", "..", "evil")));
-    }
-
-    [Fact]
     public void IsWithinDirectory_絶対パス混入はfalse()
     {
         // RelativePath 経路で絶対パス/別ドライブが Path.Combine をすり抜けても、最終防御で弾く。
@@ -156,17 +133,13 @@ public class SafePathTests
 
     [Theory]
     [InlineData("ab\0cd.txt")]   // NUL（Path.* を throw させる本丸）
-    [InlineData("line\nbreak")]  // 改行
-    [InlineData("tab\there")]    // タブ
     public void ContainsControlChar_制御文字を含むとtrue(string s)
     {
         Assert.True(SafePath.ContainsControlChar(s));
     }
 
     [Theory]
-    [InlineData("normal.txt")]
     [InlineData("日本語ファイル.png")]
-    [InlineData("sub/dir/file.bin")]
     [InlineData("")]
     [InlineData(null)]
     public void ContainsControlChar_通常文字列はfalse(string? s)

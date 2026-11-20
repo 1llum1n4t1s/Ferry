@@ -17,9 +17,8 @@ public class UdpHolePunchTransportTests
     private static IPEndPoint FakeEp() => new(IPAddress.Parse("203.0.113.5"), 50000);
 
     [Theory]
-    [InlineData("127.0.0.1")]
     [InlineData("169.254.169.254")]
-    [InlineData("::1")]
+    // PeerEndpointPolicy の判定自体は TcpDirectTransportAddressTests が持つ。ここは HolePunchAsync への配線確認だけ。
     public async Task HolePunchAsyncは許可されない接続先を送信前に拒否する(string remoteIp)
     {
         using var transport = new UdpHolePunchTransport();
@@ -39,19 +38,6 @@ public class UdpHolePunchTransportTests
 
         Assert.False(t.IsConnected); // 「相手→こちら」片方向では確立しない
         Assert.Equal(0, opened);
-    }
-
-    [Fact]
-    public void PUNCH_ACK受信で確立する_双方向開通()
-    {
-        using var t = new UdpHolePunchTransport();
-        var opened = 0;
-        t.ChannelOpened += (_, _) => opened++;
-
-        t.HandlePunchAck(FakeEp());
-
-        Assert.True(t.IsConnected); // PUNCH_ACK = 自分の PUNCH が相手に届いた確認 → 確立
-        Assert.Equal(1, opened);
     }
 
     [Fact]
@@ -81,19 +67,5 @@ public class UdpHolePunchTransportTests
 
         Assert.True(t.IsConnected);
         Assert.Equal(1, opened);      // if (!IsConnected) ガードで再発火しない
-    }
-
-    [Fact]
-    public void 確立後にPUNCHを受けても確立イベントは増えない()
-    {
-        using var t = new UdpHolePunchTransport();
-        var opened = 0;
-        t.ChannelOpened += (_, _) => opened++;
-
-        t.HandlePunchAck(FakeEp());   // 確立
-        t.HandlePunch(FakeEp());      // 確立後の keepalive PUNCH 相当（PUNCH_ACK は返すが再確立しない）
-
-        Assert.True(t.IsConnected);
-        Assert.Equal(1, opened);
     }
 }

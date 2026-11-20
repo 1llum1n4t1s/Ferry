@@ -1,30 +1,10 @@
-using Ferry.Models;
-
 namespace Ferry.Tests.Models;
 
 /// <summary>
-/// AppSettings の DeviceId 生成と保存互換性を検証する。
+/// AppSettings の DeviceId 確定と保存互換性を検証する。
 /// </summary>
 public class AppSettingsTests
 {
-    [Fact]
-    public void DeviceIdがGUID形式の32文字16進数であること()
-    {
-        var settings = new AppSettings();
-        // "N" フォーマット: ハイフンなし32文字
-        Assert.Equal(32, settings.DeviceId.Length);
-        Assert.True(Guid.TryParseExact(settings.DeviceId, "N", out _),
-            $"DeviceId '{settings.DeviceId}' は GUID の N フォーマットではない");
-    }
-
-    [Fact]
-    public void DeviceIdがインスタンスごとに異なること()
-    {
-        var a = new AppSettings();
-        var b = new AppSettings();
-        Assert.NotEqual(a.DeviceId, b.DeviceId);
-    }
-
     [Fact]
     public void AppConstantsの接続先URLが非空で期待スキームであること()
     {
@@ -57,40 +37,25 @@ public class AppSettingsTests
     }
 
     [Fact]
-    public void 位置未設定のNaNウィンドウ座標を含む新規設定がserializeできること()
-    {
-        // WindowX/WindowY は「位置未設定」を double.NaN で表す。既定の System.Text.Json は NaN を
-        // 書けず ArgumentException になるため、AppSettingsJsonContext で AllowNamedFloatingPointLiterals
-        // を有効化している。初回起動 (= NaN のまま) の同期 Save が落ちて settings.json が永続化されない
-        // 回帰を固定化する。
-        var s = new AppSettings(); // WindowX/Y = double.NaN
-        Assert.True(double.IsNaN(s.WindowX) && double.IsNaN(s.WindowY));
-
-        var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
-            s, Ferry.Infrastructure.AppSettingsJsonContext.Default.AppSettings);
-        var round = System.Text.Json.JsonSerializer.Deserialize(
-            json, Ferry.Infrastructure.AppSettingsJsonContext.Default.AppSettings);
-
-        // NaN センチネルが round-trip し、IsNaN 判定 (位置復元のゲート) と整合すること
-        Assert.NotNull(round);
-        Assert.True(double.IsNaN(round!.WindowX) && double.IsNaN(round.WindowY));
-    }
-
-    [Fact]
     public void 新規インストールは初回Saveでsettingsjsonが生成されDeviceIdが確定すること()
     {
         // settings.json が存在しない初回起動: 初回 Save でファイルが生成され DeviceId が永続化される。
-        // WindowX/Y の NaN を書けず初回 Save が落ちて永続化されない回帰（AllowNamedFloatingPointLiterals）を固定化する。
+        // WindowX/Y は「位置未設定」を double.NaN で表す。既定の System.Text.Json は NaN を書けず ArgumentException になるため、
+        // AppSettingsJsonContext で AllowNamedFloatingPointLiterals を有効化している。初回 Save が落ちて永続化されない
+        // 回帰を固定化する（NaN センチネルの round-trip が IsNaN 判定＝位置復元のゲートと整合すること）。
         var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"ferry_test_{System.Guid.NewGuid():N}.json");
         try
         {
             using var svc = new Ferry.Services.SettingsService(path);
             Assert.True(System.IO.File.Exists(path)); // 初回 Save で生成される
-            Assert.Equal(32, svc.Settings.DeviceId.Length);
+            // "N" フォーマット: ハイフンなし 32 文字の GUID
+            Assert.True(Guid.TryParseExact(svc.Settings.DeviceId, "N", out _),
+                $"DeviceId '{svc.Settings.DeviceId}' は GUID の N フォーマットではない");
 
-            // 再ロードしても同じ DeviceId が読める（永続化が成立している）
+            // 再ロードしても同じ DeviceId が読め、NaN 座標も保たれる（永続化が成立している）
             using var reloaded = new Ferry.Services.SettingsService(path);
             Assert.Equal(svc.Settings.DeviceId, reloaded.Settings.DeviceId);
+            Assert.True(double.IsNaN(reloaded.Settings.WindowX) && double.IsNaN(reloaded.Settings.WindowY));
         }
         finally
         {

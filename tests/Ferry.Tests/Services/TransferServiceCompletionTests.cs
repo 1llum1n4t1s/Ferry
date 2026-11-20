@@ -10,7 +10,7 @@ public class TransferServiceCompletionTests
 {
     [Theory]
     [InlineData(0)]
-    [InlineData(70_000)]
+    [InlineData(131_072)] // ChunkSize(65536) のちょうど2倍 = 端数なしの境界
     public async Task 検証ACKまで待機し誤peerと誤IDと誤tokenと早過ぎるACKを無視する(int length)
     {
         using var pair = new Pair();
@@ -242,12 +242,12 @@ public class TransferServiceCompletionTests
             var ack = await pair.Ack.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
             Assert.Equal(34, ack.Length);
             Assert.Equal(1, ack[1]);
+            Assert.Equal(SHA256.HashData(data), ack[2..34]); // 旧 ACK は hash が offset 2 から 32 バイト
         }
     }
 
     [Theory]
     [InlineData(0L, 300d)]
-    [InlineData(16_777_216L, 301d)]
     [InlineData(1_099_511_627_776L, 65_836d)]
     [InlineData(long.MaxValue, 86_400d)]
     public void 受信結果の期限はサイズに応じた有界な猶予を持つ(long size, double seconds)
