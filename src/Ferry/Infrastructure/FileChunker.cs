@@ -1,7 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -207,62 +204,9 @@ public static class FileChunker
     }
 
     /// <summary>
-    /// Ping メッセージを生成する。
-    /// </summary>
-    public static byte[] CreatePingMessage() => [TransferProtocol.Ping];
-
-    /// <summary>
     /// Pong メッセージを生成する。
     /// </summary>
     public static byte[] CreatePongMessage() => [TransferProtocol.Pong];
-
-    /// <summary>
-    /// ファイルを読み込み、チャンクの列挙を返す。
-    /// </summary>
-    public static IEnumerable<(int Index, byte[] Data)> ReadChunks(string filePath)
-    {
-        // FileShare.ReadWrite: 他プロセスが書込み中のファイル（自分の現行ログ等）も読み取って送信できるようにする。
-        // File.OpenRead (FileShare.Read) だと書込みハンドル保持中のファイルで IOException になる。
-        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        var buffer = new byte[TransferProtocol.ChunkSize];
-        var index = 0;
-        int bytesRead;
-
-        while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
-        {
-            // M-4: Buffer.BlockCopy → Span.CopyTo（コードベース一貫性）
-            var chunk = new byte[bytesRead];
-            buffer.AsSpan(0, bytesRead).CopyTo(chunk);
-            yield return (index, chunk);
-            index++;
-        }
-    }
-
-    /// <summary>
-    /// ファイルを読み込みつつ SHA-256 を並行計算するチャンク列挙。
-    /// P-3: 送信パスで「ハッシュ計算 + チャンク送信」を 1 度のディスク読みで完結させる。
-    /// 列挙完了後に <paramref name="hashSink"/>.GetHashAndReset() で最終ハッシュが取れる。
-    /// </summary>
-    public static IEnumerable<(int Index, byte[] Data)> ReadChunksWithHash(string filePath, IncrementalHash hashSink)
-    {
-        // FileShare.ReadWrite: 他プロセスが書込み中のファイル（自分の現行ログ等）も読み取って送信できるようにする。
-        // File.OpenRead (FileShare.Read) だと書込みハンドル保持中のファイルで IOException になる。
-        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        var buffer = new byte[TransferProtocol.ChunkSize];
-        var index = 0;
-        int bytesRead;
-
-        while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
-        {
-            // ハッシュは元バッファ上で計算（コピー前のサイズ分だけ）
-            hashSink.AppendData(buffer, 0, bytesRead);
-
-            var chunk = new byte[bytesRead];
-            buffer.AsSpan(0, bytesRead).CopyTo(chunk);
-            yield return (index, chunk);
-            index++;
-        }
-    }
 
     /// <summary>
     /// 内部送信用のチャンク列挙。Data は次の MoveNext または Dispose までだけ有効。
@@ -325,15 +269,6 @@ public static class FileChunker
         // File.OpenRead (FileShare.Read) だと書込みハンドル保持中のファイルで IOException になる。
         using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         return SHA256.HashData(stream);
-    }
-
-    /// <summary>
-    /// ファイルの SHA-256 ハッシュを 16 進文字列で返す。
-    /// </summary>
-    public static string ComputeSha256Hex(string filePath)
-    {
-        var hash = ComputeSha256(filePath);
-        return Convert.ToHexStringLower(hash);
     }
 
     /// <summary>

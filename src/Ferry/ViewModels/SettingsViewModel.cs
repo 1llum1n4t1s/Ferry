@@ -1,8 +1,6 @@
-using System;
-using System.Collections.ObjectModel;
-using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Ferry.Models;
 using Ferry.Services;
 
 namespace Ferry.ViewModels;
@@ -160,15 +158,10 @@ public sealed partial class SettingsViewModel : ViewModelBase
         {
             var s = _settingsService.Settings;
             DisplayName = s.DisplayName;
-            SelectedThemeIndex = s.ThemeMode switch
-            {
-                "Light" => 1,
-                "Dark" => 2,
-                _ => 0, // "System" またはその他
-            };
+            SelectedThemeIndex = ThemeModeToIndex(s.ThemeMode);
             SelectedLocale = string.IsNullOrEmpty(s.Locale) ? App.DetectDefaultLocale() : s.Locale;
             SaveDirectory = string.IsNullOrEmpty(s.SaveDirectory)
-                ? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads")
+                ? AppSettings.GetDefaultSaveDirectory()
                 : s.SaveDirectory;
             StartMinimized = s.StartMinimized;
             MinimizeToTray = s.MinimizeToTray;
@@ -217,11 +210,20 @@ public sealed partial class SettingsViewModel : ViewModelBase
         catch (Exception ex) { Util.Logger.LogException("IgnoreUpdateTag 自動クリアの永続化に失敗", ex); }
     }
 
-    private static string ThemeIndexToMode(int index) => index switch
+    /// <summary>テーマ選択インデックス（0=System / 1=Light / 2=Dark）→ ThemeMode 文字列。範囲外は "System"。</summary>
+    internal static string ThemeIndexToMode(int index) => index switch
     {
         1 => "Light",
         2 => "Dark",
         _ => "System",
+    };
+
+    /// <summary>ThemeMode 文字列 → テーマ選択インデックス。"System" と未知の値は 0。</summary>
+    private static int ThemeModeToIndex(string? mode) => mode switch
+    {
+        "Light" => 1,
+        "Dark" => 2,
+        _ => 0,
     };
 
     /// <summary>

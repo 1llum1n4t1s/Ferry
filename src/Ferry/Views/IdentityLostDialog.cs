@@ -1,4 +1,3 @@
-using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -87,7 +86,7 @@ public sealed class IdentityLostDialog : Window
     /// <summary>
     /// clean slate 実行完了後に表示する確認ダイアログ。
     ///
-    /// 既に in-memory の deviceIdentity / firebaseAuthClient は **古い鍵を保持している**ため、
+    /// 既に in-memory の deviceIdentity / cfTokenProvider は **古い鍵を保持している**ため、
     /// 再起動せずに続行すると新しい identity.key と整合しなくなり、次回の `/auth/token` でまた
     /// `DEVICE_PUBKEY_MISMATCH` → IdentityLostDialog ループに陥る。新しい鍵を採用するには
     /// プロセスを終了させて次回起動で再構築する必要がある。

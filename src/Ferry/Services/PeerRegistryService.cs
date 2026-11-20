@@ -1,10 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 using Ferry.Infrastructure;
 using Ferry.Models;
 
@@ -153,8 +147,7 @@ public sealed class PeerRegistryService : IPeerRegistryService, IDisposable
             // 破損ファイルを退避して診断用に保全
             try
             {
-                var backup = _filePath + $".corrupt-{DateTime.Now:yyyyMMddHHmmss}";
-                File.Move(_filePath, backup, overwrite: true);
+                var backup = Util.AtomicFile.QuarantineCorrupt(_filePath);
                 Util.Logger.Log($"破損した peers.json を退避しました: {backup}", Util.LogLevel.Warning);
             }
             catch { /* 退避失敗は無視 */ }

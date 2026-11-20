@@ -1,15 +1,12 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 using Ferry.Models;
 
 namespace Ferry.Services;
 
 /// <summary>
 /// プレゼンス（オンライン/オフライン検知）の抽象。
-/// rere #B1-001: ConnectionViewModel が Infrastructure 層（FirebaseSignaling）を直接 new していた
+/// rere #B1-001: ConnectionViewModel が Infrastructure 層の実装（旧 FirebaseSignaling）を直接 new していた
 /// レイヤー境界違反を解消するため、presence の heartbeat / poll をこのインターフェース越しに行う。
-/// 実装は Infrastructure 層（FirebaseSignaling）が担い、VM は Services 抽象だけに依存する。
+/// 実装は Infrastructure 層（CloudflarePresenceServiceFactory が生成する Cloudflare relay 版）が担い、VM は Services 抽象だけに依存する。
 /// </summary>
 public interface IPresenceService : IDisposable
 {

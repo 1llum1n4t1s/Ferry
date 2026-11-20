@@ -1,11 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
-using System.Threading;
-using System.Threading.Tasks;
 using Ferry.Models;
 
 namespace Ferry.Infrastructure;
@@ -350,7 +345,7 @@ public sealed class TcpDirectTransport : ITransport
         //   RTT  30ms (国内 WAN)     → 約  70 Mbps
         //   RTT 100ms (海外 / VPN)   → 約  21 Mbps
         // ※ 上記は BDP からの理論値であって実測ではない。
-        // CLAUDE.md が IPoE 環境の救済として推している「end-to-end IPv6 での TCP 直結」は
+        // IPoE 環境の救済として想定している「end-to-end IPv6 での TCP 直結」は
         // まさにこの WAN 経路なので、自動チューニングに任せた方が速い。
         // 送信側 (SO_SNDBUF) も同様に OS の自動調整へ委ねる。
         // 低速回線での過大バッファリングはアプリ層のフロー制御（FileFlowAck）とは無関係

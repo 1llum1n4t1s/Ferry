@@ -1,7 +1,7 @@
 namespace Ferry.Models;
 
 /// <summary>
-/// rere #D-001(a) Phase B §6.3: Firebase 側のペア削除（pairs/{pairId} DELETE）が
+/// rere #D-001(a) Phase B §6.3: relay 側のペア削除（D1 の pairs/{pairId} DELETE）が
 /// オフライン中に失敗した時に永続化される再試行アイテム。
 /// `%APPDATA%\Ferry\pending-pair-deletes.json` に保存され、起動時に処理される。
 /// </summary>

@@ -1,16 +1,10 @@
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Net;
-using System.Net.Http;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading;
-using System.Threading.Tasks;
 using Ferry.Models;
-using Ferry.Services;
 
 namespace Ferry.Infrastructure;
 
@@ -35,7 +29,6 @@ public sealed class CloudflareSignaling : ISignalingService
     private string _lastPairingNonce = string.Empty;
 
     private CancellationTokenSource? _inboxCts;
-    private Task? _inboxLoop;
     private long _pairingWatchStartedAtMs;
 
     /// <summary>inbox WS の接続状態（1=接続中）。listener が安全網ポーリング間隔の調整に読む。</summary>
@@ -200,7 +193,7 @@ public sealed class CloudflareSignaling : ISignalingService
         StopWatching();
         _pairingWatchStartedAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         _inboxCts = new CancellationTokenSource();
-        _inboxLoop = Task.Run(() => InboxLoopAsync(_inboxCts.Token));
+        _ = Task.Run(() => InboxLoopAsync(_inboxCts.Token));
     }
 
     public void StopWatching()
@@ -208,7 +201,6 @@ public sealed class CloudflareSignaling : ISignalingService
         try { _inboxCts?.Cancel(); } catch { }
         _inboxCts?.Dispose();
         _inboxCts = null;
-        _inboxLoop = null;
     }
 
     /// <summary>/inbox WebSocket を張り、ペア成立イベントを受けて <see cref="PairingDetected"/> を発火する。

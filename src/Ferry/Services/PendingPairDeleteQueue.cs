@@ -1,17 +1,11 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading;
-using System.Threading.Tasks;
 using Ferry.Models;
 
 namespace Ferry.Services;
 
 /// <summary>
-/// rere #D-001(a) Phase B §6.3: Firebase pairs/{pairId} DELETE が失敗（オフライン等）したときの
+/// rere #D-001(a) Phase B §6.3: relay（D1 台帳）の pairs/{pairId} DELETE が失敗（オフライン等）したときの
 /// 再試行キュー。`%APPDATA%\Ferry\pending-pair-deletes.json` に永続。
 ///
 /// 起動時 + アプリ前面復帰時に <see cref="ProcessAsync"/> を呼んで queue の各アイテムを retry する。
@@ -31,7 +25,7 @@ public sealed class PendingPairDeleteQueue : IDisposable
     // Codex P2 fix (第10弾 #2): in-flight cancel marker。 ProcessAsync の callback await 中に
     // RemoveAsync(pairId) が呼ばれたとき、 reserve で既に _items に居ない item の cancellation を
     // in-flight callback まで伝播させるための signal。 ProcessAsync は復帰時に _inFlight を check し、
-    // cancelled なら queue に戻さない (= stale Firebase DELETE 後の retry resurrect を防ぐ)。
+    // cancelled なら queue に戻さない (= stale な relay DELETE 後の retry resurrect を防ぐ)。
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _inFlight = new();
     private List<PendingPairDelete> _items = [];
 
@@ -97,7 +91,7 @@ public sealed class PendingPairDeleteQueue : IDisposable
         // 旧実装は _items.RemoveAll が 0 (= 既に reserve 済) のとき Persist skip していたため、
         // in-flight cancellation marker はメモリに記録されるものの、 アプリ終了 / background retry 中断で
         // 次起動時に cancellation 情報が失われ、 disk 上の queue に古い pairId が残って次起動の
-        // ProcessAsync で誤って新ペアの Firebase pairs ノードを削除する race があった。
+        // ProcessAsync で誤って新ペアの relay 上の pairs 台帳行を削除する race があった。
         // Codex 第15弾 verify minor: 最新 _items の snapshot は PersistAsync 内 (_saveLock 配下) で確定する。
         if (changed || cancelledInFlight) await PersistAsync();
     }
@@ -137,7 +131,7 @@ public sealed class PendingPairDeleteQueue : IDisposable
             // Codex P2 fix (第10弾 #2 + verify follow-up): cancelled marker の評価と callback 失敗時の
             // queue 戻しを **同一 _lock 配下で atomic に** 実行する。 cancelled==true なら RemoveAsync が
             // in-flight 中に走った = 再ペア成立。 callback の成否に関わらず queue 復活させず結果無視
-            // (= stale Firebase DELETE 後の retry resurrect を防ぐ)。
+            // (= stale な relay DELETE 後の retry resurrect を防ぐ)。
             // Codex 第15弾 #3 (P2) fix: in-flight marker は **persist の後** に落とす。 旧実装はこの lock 内で
             // TryRemove して marker を即落とし、 queue の最新 state は batch footer (全 item 処理後に 1 度) でしか
             // 永続化しなかった。 そのため「delete 成功 → 同一 device と再ペア → footer の persist 前にアプリ終了」で、
@@ -199,7 +193,7 @@ public sealed class PendingPairDeleteQueue : IDisposable
             Util.Logger.Log($"pending-pair-deletes.json の読み込みに失敗: {ex.Message}", Util.LogLevel.Warning);
             try
             {
-                File.Move(_filePath, _filePath + $".corrupt-{DateTime.Now:yyyyMMddHHmmss}", overwrite: true);
+                Util.AtomicFile.QuarantineCorrupt(_filePath);
             }
             catch { /* 退避失敗は無視 */ }
         }

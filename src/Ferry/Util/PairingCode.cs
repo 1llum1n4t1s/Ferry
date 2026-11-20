@@ -1,5 +1,3 @@
-using System;
-
 namespace Ferry.Util;
 
 /// <summary>コード貼付ペアリングで共有する短命コードの生成・解析。</summary>

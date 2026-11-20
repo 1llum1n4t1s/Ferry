@@ -1,13 +1,7 @@
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
-using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -36,16 +30,13 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     /// （設定 UI は撤去済み。設定画面には「自動（最大 10）」の表示のみ残す）。</summary>
     public const int MaxParallelSends = 10;
 
-    [ObservableProperty]
-    public partial bool IsTransferring { get; set; }
-
     /// <summary>選択中ピアの転送アイテムがあるか（空状態表示の切替に使用）。</summary>
     [ObservableProperty]
     public partial bool HasTransfers { get; set; }
 
-    /// <summary>承認待ちの受信アイテムがあるか（サイドメニュー下部パネル表示用）。</summary>
-    [ObservableProperty]
-    public partial bool HasPendingApproval { get; set; }
+    /// <summary>承認待ちの受信アイテムがあるか（サイドメニュー下部パネル表示用）。
+    /// <see cref="PendingApprovals"/> の CollectionChanged から導出する（手動更新はしない）。</summary>
+    public bool HasPendingApproval => PendingApprovals.Count > 0;
 
     /// <summary>現在 VisibleTransfers にフィルタしている宛先 PeerId。</summary>
     private string _selectedPeerId = string.Empty;
@@ -92,6 +83,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         _selectedPeerId = _connectionViewModel.SelectedPeer?.PeerId ?? string.Empty;
 
         VisibleTransfers.CollectionChanged += (_, _) => HasTransfers = VisibleTransfers.Count > 0;
+        PendingApprovals.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasPendingApproval));
         Transfers.CollectionChanged += OnTransfersCollectionChanged;  // rere #C1-001: O(1) 引き索引を自動維持
 
         // 転送中の毎秒レート表示。DI 組み立ては UI スレッドなのでここで生成・開始してよい。
@@ -201,8 +193,6 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         // 3) 期待より長い場合の余りを落とす（1) で拾えるのは所属違いのみ）
         while (VisibleTransfers.Count > desired.Count)
             VisibleTransfers.RemoveAt(VisibleTransfers.Count - 1);
-
-        HasTransfers = VisibleTransfers.Count > 0;
     }
 
     /// <summary>マスターと、選択中なら表示ビューにアイテムを追加する。</summary>
@@ -311,9 +301,32 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         return list.FirstOrDefault(t => !t.IsTerminal) ?? list[0];
     }
 
+    /// <summary>送信用の <see cref="TransferItem"/>（Pending）を生成する。FolderBatchId の決め方は呼び出し側が持つ。</summary>
+    private static TransferItem CreateSendItem(PairedPeer peer, string absolutePath, string? relativePath, Guid? folderBatchId)
+    {
+        var fileInfo = new FileInfo(absolutePath);
+        return new TransferItem
+        {
+            FileName = relativePath ?? fileInfo.Name,
+            FileSize = fileInfo.Length,
+            Direction = TransferDirection.Send,
+            State = TransferState.Pending,
+            PeerName = peer.DisplayName,
+            PeerId = peer.PeerId,
+            SourceFilePath = absolutePath,
+            RelativePath = relativePath,
+            FolderBatchId = folderBatchId,
+        };
+    }
+
+    /// <summary>送信開始前に、ユーザーが個別にキャンセル / 削除した（または既にエラーの）行かどうか。
+    /// 該当行は送信も Error 上書きもしない。</summary>
+    private bool IsSkippedBeforeSend(TransferItem item)
+        => item.State is TransferState.Cancelled or TransferState.Error
+            || FindTransfer(item.TransferId) is null;
+
     private void RecomputeIsTransferring()
     {
-        IsTransferring = Transfers.Any(t => t.State == TransferState.InProgress);
         // 複数ペア同時接続対応 Stage 6: PairedPeer ごとに進行中転送件数を集計し、
         // PairedPeer.IsTransferring / ActiveTransferCount を set する（左ペインのバッジ用）。
         // 集計は Transfers の全行を peerId でグルーピングする線形走査（通常 ~10 行）。
@@ -433,19 +446,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         var items = new List<TransferItem>(entries.Count);
         foreach (var (absolutePath, relativePath, folderBatchId) in entries)
         {
-            var fi = new FileInfo(absolutePath);
-            var item = new TransferItem
-            {
-                FileName = relativePath ?? fi.Name,
-                FileSize = fi.Length,
-                Direction = TransferDirection.Send,
-                State = TransferState.Pending,
-                PeerName = peer.DisplayName,
-                PeerId = peer.PeerId,
-                SourceFilePath = absolutePath,
-                RelativePath = relativePath,
-                FolderBatchId = folderBatchId,
-            };
+            var item = CreateSendItem(peer, absolutePath, relativePath, folderBatchId);
             AddTransfer(item);
             items.Add(item);
         }
@@ -467,8 +468,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             {
                 // Codex #3516961668: 接続待ち中にユーザーが個別キャンセル/削除した行を
                 // Error で上書きしない（下の並列送信ループの skip 条件と同じガード）
-                if (item.State is TransferState.Cancelled or TransferState.Error
-                    || FindTransfer(item.TransferId) is null)
+                if (IsSkippedBeforeSend(item))
                     continue;
                 item.State = TransferState.Error;
                 item.ErrorMessage = ex is PeerUnreachableException or InvalidOperationException
@@ -495,8 +495,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 // SendItemAsync 開始前は _sendCtsByItem に CTS が無く、service にも _activeTransfers が無いため、
                 // CancelTransfer は単に State を Cancelled に書き換えるだけ。ここで尊重しないと
                 // キャンセル済み行も律儀に送ってしまう。
-                if (item.State is TransferState.Cancelled or TransferState.Error
-                    || FindTransfer(item.TransferId) is null)
+                if (IsSkippedBeforeSend(item))
                     return;
                 await SendItemAsync(item, peer);
             }
@@ -520,19 +519,7 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
     /// </summary>
     private async Task SendOneFileAsync(string absolutePath, string? relativePath, PairedPeer peer)
     {
-        var fileInfo = new FileInfo(absolutePath);
-        var item = new TransferItem
-        {
-            FileName = relativePath ?? fileInfo.Name,
-            FileSize = fileInfo.Length,
-            Direction = TransferDirection.Send,
-            State = TransferState.Pending,
-            PeerName = peer.DisplayName,
-            PeerId = peer.PeerId,
-            SourceFilePath = absolutePath,
-            RelativePath = relativePath,
-            FolderBatchId = relativePath is null ? null : Guid.NewGuid(),
-        };
+        var item = CreateSendItem(peer, absolutePath, relativePath, relativePath is null ? null : Guid.NewGuid());
         AddTransfer(item);
         RecomputeIsTransferring();
         try { await SendItemAsync(item, peer); }
@@ -831,7 +818,6 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         if (pending != null)
         {
             PendingApprovals.Remove(pending);
-            HasPendingApproval = PendingApprovals.Count > 0;
             pending.State = TransferState.Cancelled;
             if (FindTransfer(pending.TransferId) is null)
                 AddTransfer(pending);
@@ -972,7 +958,6 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
                 pending.State = TransferState.Cancelled;
                 pending.ErrorMessage = e.ErrorMessage;
                 PendingApprovals.Remove(pending);
-                HasPendingApproval = PendingApprovals.Count > 0;
             }
 
             // 進行中送信は SendOneFileAsync のリトライループが状態を所有する。
@@ -1033,7 +1018,6 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
             }
 
             PendingApprovals.Add(CreateDisplayCopy(e));  // rere #B1-001: サービス instance を bind しない
-            HasPendingApproval = PendingApprovals.Count > 0;
         });
     }
 
@@ -1047,7 +1031,6 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         if (item == null) return;
 
         PendingApprovals.Remove(item);
-        HasPendingApproval = PendingApprovals.Count > 0;
 
         item.State = TransferState.InProgress;
         AddTransfer(item);
@@ -1065,7 +1048,6 @@ public sealed partial class TransferViewModel : ViewModelBase, IDisposable
         if (item == null) return;
 
         PendingApprovals.Remove(item);
-        HasPendingApproval = PendingApprovals.Count > 0;
 
         _transferService.RejectTransfer(transferId.ToString());
         item.State = TransferState.Cancelled;

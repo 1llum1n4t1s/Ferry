@@ -1,5 +1,3 @@
-using System;
-
 namespace Ferry.Infrastructure;
 
 /// <summary>
@@ -8,7 +6,7 @@ namespace Ferry.Infrastructure;
 /// 偽ピア / signaling すり替え MITM を排除するゲート。両端がセッション認証鍵(hmacKey)を共有していれば、
 /// 互いに乱数チャレンジを送り、HMAC(hmacKey, peerChallenge || myRoleTag) を応答して検証する。一致しなければ即切断。
 ///
-/// roleTag は deviceId 序列（GeneratePairId と同じ Ordinal 比較）で固定的に決まり、
+/// roleTag は deviceId 序列（Util.PairId.Generate と同じ Ordinal 比較）で固定的に決まり、
 /// どちらが実際に SDP offer を出したかとは独立。各端が自分の roleTag で応答し相手は相手の roleTag で検証することで、
 /// チャレンジをそのまま反射する reflection attack を防ぐ。
 ///
@@ -20,14 +18,14 @@ public static class PairingHandshake
     /// <summary>チャレンジ乱数の長さ（バイト）。</summary>
     public const int ChallengeNonceSize = 16;
 
-    /// <summary>deviceId 序列が小さい側の roleTag（GeneratePairId の Ordinal 比較で先頭になる側）。</summary>
+    /// <summary>deviceId 序列が小さい側の roleTag（Util.PairId.Generate の Ordinal 比較で先頭になる側）。</summary>
     public const byte RoleLow = 0x01;
 
     /// <summary>deviceId 序列が大きい側の roleTag。</summary>
     public const byte RoleHigh = 0x02;
 
     /// <summary>
-    /// deviceId 序列（Ordinal 比較）から「自分が offerer 役か」を決める唯一のソース。GeneratePairId と同じ規則。
+    /// deviceId 序列（Ordinal 比較）から「自分が offerer 役か」を決める唯一のソース。Util.PairId.Generate と同じ規則。
     /// DeriveSessionKeys の isOfferer も RoleTagFor もこれを通すことで、ConnectionService が両者を別々に
     /// 計算して食い違わせる（→ keyTx/keyRx 逆転で復号全失敗）誤用を防ぐ（crypto レビュー #D-001b）。
     /// 同一 deviceId（self-connect）は roleTag が対称化して reflection 防御が無効になるため例外で弾く。

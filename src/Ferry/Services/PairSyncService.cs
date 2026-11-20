@@ -1,10 +1,5 @@
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
 using System.Net;
-using System.Threading;
-using System.Threading.Tasks;
 using Ferry.Infrastructure;
 using Ferry.Models;
 
@@ -29,7 +24,7 @@ public sealed class PairSyncService : IDisposable
     private readonly IPeerRegistryService _peerRegistry;
     private readonly string _deviceId;
     /// <summary>
-    /// Codex 第13弾 #3 (P2) fix: 起動時 immediate sync の前に Firebase Auth 完了を待つために保持する。
+    /// Codex 第13弾 #3 (P2) fix: 起動時 immediate sync の前に relay 認証（トークン取得）の完了を待つために保持する。
     /// 旧実装は <see cref="App.axaml.cs"/> の fire-and-forget SignIn と並行で <see cref="CheckOnceAsync"/> が走り、
     /// 認証前の GetPairWithStatusAsync が 401 で返って unknown state 扱い (削除しない) になっていた。
     /// start-minimized tray 経路では 5min/15min 後の retry も <see cref="_isActive"/>=false で skip され、
@@ -66,7 +61,7 @@ public sealed class PairSyncService : IDisposable
     }
 
     /// <summary>
-    /// テスト用コンストラクタ。FirebaseSignaling は sealed のため、HTTP 取得デリゲートを直接差し替えて
+    /// テスト用コンストラクタ。CloudflareSignaling は sealed のため、HTTP 取得デリゲートを直接差し替えて
     /// 404 閾値 / grace period / 401 未操作などのロジックを単体検証する。
     /// 本番経路は public ctor（ISignalingService + ensureAuthAsync デリゲート）を使う。
     /// </summary>
@@ -130,7 +125,7 @@ public sealed class PairSyncService : IDisposable
     {
         try
         {
-            // Codex 第13弾 #3 (P2) fix: 起動時 immediate sync の前に Firebase Auth 完了を待つ。
+            // Codex 第13弾 #3 (P2) fix: 起動時 immediate sync の前に relay 認証の完了を待つ。
             // 旧実装は App.axaml.cs の fire-and-forget SignIn と並行で走り、 未認証 GET が 401 で返って
             // unknown state 扱い (削除しない) になっていた。 start-minimized tray 経路では 5min/15min check が
             // _isActive=false で skip され、 remote unpair が起動から最大 15min 反映されない問題に直結。
@@ -141,8 +136,8 @@ public sealed class PairSyncService : IDisposable
                 catch (IdentityLostException)
                 {
                     // identity.key 紛失 → App.axaml.cs の IdentityLost ハンドラが clean slate UI を出す。
-                    // ここでは sync ループ自体を回さず即抜ける (Firebase 全 REST が 401 で返るため意味なし)。
-                    // refresh ループ (FirebaseAuthClient 内) も同様に IdentityLost で停止しているので整合的。
+                    // ここでは sync ループ自体を回さず即抜ける (relay への認証付き要求が全て 401 で返るため意味なし)。
+                    // トークン更新ループ (認証クライアント内) も同様に IdentityLost で停止しているので整合的。
                     // 将来 identity.key 復旧経路 (export/import 等) を入れる場合は、 復旧後に App 側から
                     // pairSyncService.Start() を呼び直すこと (Start は古い CTS を Cancel/Dispose してから
                     // 再生成する冪等実装なので安全)。
@@ -223,11 +218,11 @@ public sealed class PairSyncService : IDisposable
         foreach (var peer in peers)
         {
             if (ct.IsCancellationRequested) return;
-            var pairId = GeneratePairId(_deviceId, peer.PeerId);
+            var pairId = Util.PairId.Generate(_deviceId, peer.PeerId);
             try
             {
                 var (status, body) = await _fetchPair(pairId, ct);
-                if (status == HttpStatusCode.OK && body != "null")
+                if (IsPresent(status, body))
                 {
                     _consecutive404[peer.PeerId] = 0;  // 存在確認できたらカウンタリセット
                     // Codex P1 fix (第2弾): 一度でも SSoT を観察したら以後 backfill 不可にして remote unpair を resurrect
@@ -239,16 +234,10 @@ public sealed class PairSyncService : IDisposable
                         // race があった (第9弾 #6 の FindPeer 再 check では隙間を完全には閉じられない)。
                         // UpdatePeerIfPresentAsync は _peersLock 内で「存在確認 → 更新」を 1 アトミックにまとめ、
                         // 不在なら insert せず false を返すので race を構造的に閉じる (= ユーザーの remove 意図を尊重)。
-                        peer.PairsSsotObserved = true;
-                        try
-                        {
-                            if (!await _peerRegistry.UpdatePeerIfPresentAsync(peer))
-                                Util.Logger.Log($"PairSync 200 観察したが peer はローカルから削除済 → 永続化 skip", Util.LogLevel.Debug);
-                        }
-                        catch (Exception ex) { Util.Logger.Log($"PairsSsotObserved 永続化に失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }
+                        await PersistSsotObservedAsync(peer, "PairSync 200 観察したが peer はローカルから削除済 → 永続化 skip");
                     }
                 }
-                else if (status == HttpStatusCode.NotFound || (status == HttpStatusCode.OK && body == "null"))
+                else if (IsConfirmedAbsent(status, body))
                 {
                     // Codex P1 fix (第2弾): backfill は **未観察 (= 旧 peers.json upgrade 由来)** の peer に限定する。
                     // 新規 PairingDetected で AddOrUpdatePeerAsync された peer は最初から PairsSsotObserved=true で
@@ -263,7 +252,7 @@ public sealed class PairSyncService : IDisposable
                             // snapshot 取得後 → PUT 発射までに manual remove が走ると、 stale peer 参照で PUT が走り
                             // SSoT を recreate して remote unpair 拒否される race を防ぐ。
                             // Codex 第14弾 #3 (P2) fix: FindPeer != null のまま IsPendingRemoval (= unpair が
-                            // marker 済みだが Firebase DELETE/queue 経路がまだ完了していない window) でも PUT を止める。
+                            // marker 済みだが relay の DELETE / queue 経路がまだ完了していない window) でも PUT を止める。
                             // WritePairRecordWithFallback の ShouldAbortPairWrite と同じ防御で、 legacy unobserved
                             // peer の backfill が unpair 中に SSoT を recreate して remote 側の削除観測を妨げる race を塞ぐ。
                             if (_peerRegistry.FindPeer(peer.PeerId) == null || _peerRegistry.IsPendingRemoval(peer.PeerId))
@@ -286,13 +275,7 @@ public sealed class PairSyncService : IDisposable
                             _consecutive404[peer.PeerId] = 0;
                             // Codex 第15弾 #2 (P2) fix: backfill 成功時の観察フラグ永続化も update-only API に統一。
                             // 「FindPeer → AddOrUpdate」の隙間 unpair で resurrect する race を _peersLock 内アトミックで閉じる。
-                            peer.PairsSsotObserved = true;
-                            try
-                            {
-                                if (!await _peerRegistry.UpdatePeerIfPresentAsync(peer))
-                                    Util.Logger.Log($"backfill 成功したが peer はローカルから削除済 → 永続化 skip", Util.LogLevel.Debug);
-                            }
-                            catch (Exception ex) { Util.Logger.Log($"PairsSsotObserved 永続化に失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }
+                            await PersistSsotObservedAsync(peer, "backfill 成功したが peer はローカルから削除済 → 永続化 skip");
                             continue;
                         }
                         catch (OperationCanceledException) { throw; }  // CodeRabbit: shutdown キャンセルは即座にループへ伝播
@@ -302,7 +285,7 @@ public sealed class PairSyncService : IDisposable
                             // fall through to counting (marker は立てないので次サイクルで再試行可能)
                         }
                     }
-                    // Firebase は GET で「存在しない」を 200 + null body で返すケースがある
+                    // 旧 Firebase REST 由来の互換分岐（不在を 200 + null body で返す経路）。現行 relay は不在なら 404 を返す
                     var count = _consecutive404.AddOrUpdate(peer.PeerId, 1, (_, n) => n + 1);
                     Util.Logger.Log($"pairs/{pairId} 不在検出 ({count}/{Consecutive404Threshold})", Util.LogLevel.Debug);
                     if (!inGrace && count >= Consecutive404Threshold)
@@ -329,7 +312,7 @@ public sealed class PairSyncService : IDisposable
                             continue;
                         }
                         var (recheckStatus, recheckBody) = await _fetchPair(pairId, ct);
-                        if (recheckStatus == HttpStatusCode.OK && recheckBody != "null")
+                        if (IsPresent(recheckStatus, recheckBody))
                         {
                             Util.Logger.Log($"pairs/{pairId} 削除直前の再確認で SSoT 復活を検出 → 削除中止 (同一 peer 再ペア)");
                             _consecutive404[peer.PeerId] = 0;
@@ -340,10 +323,7 @@ public sealed class PairSyncService : IDisposable
                         // 状態であり、 ここで削除すると正当ペアを誤って消し、 削除後は次サイクルで列挙されず復旧不能になる。
                         // 確証できないときはカウンタを保持 (リセットしない) して skip し、 次サイクル以降で確証が得られた
                         // ときだけ削除する (= 元の 3 連続 404 ガードと同じく不明は非破壊)。
-                        bool recheckConfirmedAbsent =
-                            recheckStatus == HttpStatusCode.NotFound ||
-                            (recheckStatus == HttpStatusCode.OK && recheckBody == "null");
-                        if (!recheckConfirmedAbsent)
+                        if (!IsConfirmedAbsent(recheckStatus, recheckBody))
                         {
                             Util.Logger.Log($"pairs/{pairId} 削除直前の再確認が HTTP {(int)recheckStatus} → 不在を確証できず削除を保留", Util.LogLevel.Debug);
                             continue;
@@ -391,7 +371,7 @@ public sealed class PairSyncService : IDisposable
             {
                 peer = _peerRegistry.GetPairedPeers()
                     .FirstOrDefault(candidate => string.Equals(
-                        GeneratePairId(_deviceId, candidate.PeerId), pairId, StringComparison.Ordinal));
+                        Util.PairId.Generate(_deviceId, candidate.PeerId), pairId, StringComparison.Ordinal));
             }
             catch (Exception ex)
             {
@@ -407,9 +387,7 @@ public sealed class PairSyncService : IDisposable
             try
             {
                 var (status, body) = await _fetchPair(pairId, ct);
-                var confirmedAbsent = status == HttpStatusCode.NotFound
-                    || (status == HttpStatusCode.OK && body == "null");
-                if (!confirmedAbsent)
+                if (!IsConfirmedAbsent(status, body))
                 {
                     Util.Logger.Log($"pairs/{pairId} unpair push 後の再確認が HTTP {(int)status} → 即時削除しない", Util.LogLevel.Debug);
                     return;
@@ -432,8 +410,31 @@ public sealed class PairSyncService : IDisposable
         }
     }
 
-    // pairId 導出規約は Util.PairId.Generate に集約済（ConnectionService と共通の単一定義点）。
-    private static string GeneratePairId(string a, string b) => Util.PairId.Generate(a, b);
+    /// <summary>ペア台帳に「存在」を確認できた応答（200 かつ本文が null 以外）。</summary>
+    private static bool IsPresent(HttpStatusCode status, string body)
+        => status == HttpStatusCode.OK && body != "null";
+
+    /// <summary>
+    /// ペア台帳に「不在」を確証できた応答（404、または 200 かつ本文 "null"）。
+    /// 401/403/5xx などの不明応答は存在でも不在確証でもないため、!IsPresent で代用しないこと。
+    /// </summary>
+    private static bool IsConfirmedAbsent(HttpStatusCode status, string body)
+        => status == HttpStatusCode.NotFound || (status == HttpStatusCode.OK && body == "null");
+
+    /// <summary>
+    /// SSoT 観察済みフラグを立て、peers.json へ update-only で永続化する（失敗は握って継続）。
+    /// UpdatePeerIfPresentAsync は peer が既に削除済みなら insert せず false を返す。
+    /// </summary>
+    private async Task PersistSsotObservedAsync(PairedPeer peer, string skipLog)
+    {
+        peer.PairsSsotObserved = true;
+        try
+        {
+            if (!await _peerRegistry.UpdatePeerIfPresentAsync(peer))
+                Util.Logger.Log(skipLog, Util.LogLevel.Debug);
+        }
+        catch (Exception ex) { Util.Logger.Log($"PairsSsotObserved 永続化に失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }
+    }
 
     public void Dispose()
     {

@@ -1,7 +1,3 @@
-using System;
-using System.IO;
-using System.Threading.Tasks;
-
 namespace Ferry.Util;
 
 /// <summary>
@@ -72,6 +68,17 @@ public static class AtomicFile
             // 保存自体を失敗させる価値は無いが、緩い権限で置かれた事実は残す。
             Logger.Log($"ファイル権限の制限に失敗（0600 未適用）: {ex.Message}", LogLevel.Warning);
         }
+    }
+
+    /// <summary>
+    /// 破損ファイルを「元の名前.corrupt-yyyyMMddHHmmss（ローカル時刻）」へ退避し、移動先のパスを返す。
+    /// ログは出さない（呼び出し側が必要に応じて記録する）。Move の失敗は例外のまま呼び出し側へ伝える。
+    /// </summary>
+    internal static string QuarantineCorrupt(string path)
+    {
+        var backup = path + $".corrupt-{DateTime.Now:yyyyMMddHHmmss}";
+        File.Move(path, backup, overwrite: true);
+        return backup;
     }
 
     /// <summary>Move 成功後は tmp が消えているので no-op、Move 失敗時のみ残骸を掃除する（best-effort）。</summary>

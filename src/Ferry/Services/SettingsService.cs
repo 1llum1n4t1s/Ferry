@@ -1,8 +1,5 @@
-using System;
-using System.IO;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using Ferry.Infrastructure;
 using Ferry.Models;
 
@@ -106,15 +103,14 @@ public sealed partial class SettingsService : ISettingsService, IDisposable
             // 破損ファイルを退避して診断用に保全（次回 Save で静かに上書きされるのを防ぐ）
             try
             {
-                var backup = _filePath + $".corrupt-{DateTime.Now:yyyyMMddHHmmss}";
-                File.Move(_filePath, backup, overwrite: true);
+                var backup = Util.AtomicFile.QuarantineCorrupt(_filePath);
                 archived = true;
                 Util.Logger.Log($"破損した settings.json を退避しました: {backup}", Util.LogLevel.Warning);
 
                 // rere レビュー #F-009: 破損ファイルから DeviceId だけサルベージ。
                 // 旧実装は corrupt 退避するだけで DeviceId は新規採番されていたため、
                 // ペア相手側の peers.json に書かれた旧 DeviceId と一致せず「自分は B を見ているが
-                // B からは自分が居ない」という壊滅的状態に陥った (CLAUDE.md 既知制限通り)。
+                // B からは自分が居ない」という壊滅的状態に陥った (DeviceId 再生成がペア関係に影響する既知の制約)。
                 // 退避ファイルから regex で DeviceId フィールドだけ抜き出して新 Settings に
                 // 注入することで、JSON 全体は壊れていても ID は救出できる
                 try
@@ -189,8 +185,12 @@ public sealed partial class SettingsService : ISettingsService, IDisposable
             if (!File.Exists(_deviceIdBackupPath)) return false;
             var id = File.ReadAllText(_deviceIdBackupPath).Trim().ToLowerInvariant();
             // settings.json の DeviceId と同じ 32 桁 hex 形式だけ受け入れる
-            if (id.Length != 32 || !System.Linq.Enumerable.All(id, c => (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
-                return false;
+            if (id.Length != 32) return false;
+            foreach (var c in id)
+            {
+                // 上で小文字化済みなので小文字の 16 進のみを許す（元の 0-9 / a-f 判定と同値）
+                if (!char.IsAsciiHexDigitLower(c)) return false;
+            }
             Settings.DeviceId = id;
             return true;
         }

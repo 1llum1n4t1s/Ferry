@@ -1,13 +1,6 @@
-using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using Ferry.Infrastructure;
 using Ferry.Models;
 
@@ -1559,7 +1552,7 @@ public sealed class TransferService : ITransferService, IDisposable
         if (value.Length != 64) return false;
         foreach (var c in value)
         {
-            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+            if (!char.IsAsciiHexDigit(c))
                 return false;
         }
         return true;

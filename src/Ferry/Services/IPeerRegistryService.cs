@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Ferry.Models;
 
 namespace Ferry.Services;
@@ -42,7 +39,7 @@ public interface IPeerRegistryService
 
     /// <summary>
     /// Codex 第12弾 #3 (P2) fix: ユーザーが手動で unpair した直後の race を防ぐための removal-intent marker。
-    /// <see cref="RemovePeerAsync"/> 前に立てて、Firebase DELETE / 後段の registry 削除が完了するまでの間、
+    /// <see cref="RemovePeerAsync"/> 前に立てて、relay の pair DELETE / 後段の registry 削除が完了するまでの間、
     /// 他経路 (例: <see cref="Ferry.Services.ConnectionService.WritePairRecordWithFallback"/> の責任者書込み /
     /// 30 秒 fallback) が「<see cref="FindPeer"/> != null」だけを根拠に PUT pairs/{pairId} を再発行して
     /// 削除済みペアを resurrect するのを防ぐ。

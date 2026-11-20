@@ -1,9 +1,5 @@
-using System;
-using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading;
-using System.Threading.Tasks;
 using Ferry.Infrastructure;
 using Ferry.Models;
 
@@ -23,7 +19,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// <summary>TCP 直接接続のタイムアウト（秒）。</summary>
     private const int TcpConnectTimeoutSeconds = 5;
     /// <summary>v1.0.38 review fix v10: probe 側全体タイムアウト。
-    /// listener の WaitForSdpAsync(5s) + HandleProbeOfferAsync の TCP connect(5s) + Firebase write を
+    /// listener の WaitForSdpAsync(5s) + HandleProbeOfferAsync の TCP connect(5s) + relay への answer 書込みを
     /// カバーできる長さに設定 (旧 TcpConnectTimeoutSeconds+2=7s では answer 間に合わず Unknown 連発)。</summary>
     private const int ProbeOverallTimeoutSeconds = 15;
 
@@ -34,7 +30,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// ⚠ 必ず <see cref="OfferV2PollSeconds"/> より長くすること。Answer 側は ExternalIp 付き offer-v2 を
     /// 最大 OfferV2PollSeconds 読み直してから自分の endpoint を publish するため、
     /// 待ち(10s) ＜ ポーリング(8s) になると endpoint 到着前に Offer 側が諦め、cross-NAT で必ず
-    /// リレー転落する（CLAUDE.md 記載の構造バグ class）。rere #B2-002: 直書きを定数化し依存を明文化。</summary>
+    /// リレー転落する（過去に実機で起きた構造バグ class）。rere #B2-002: 直書きを定数化し依存を明文化。</summary>
     private const int OfferEndpointWaitSeconds = 10;
     /// <summary>UDP ホールパンチ: Answer 側が ExternalIp 付き offer-v2 を読み直すポーリング時間（秒）。
     /// 必ず <see cref="OfferEndpointWaitSeconds"/> より短く保つこと（上記参照）。</summary>
@@ -46,7 +42,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// 旧コードは answerCts に CancelAfter を設定せず WhenAny に渡していたため、相手が無応答
     /// (オフライン / 旧バージョン非互換 / シグナリング不成立) かつ TCP も来ない場合に WhenAny が
     /// 永久待機し、UI が「待機中」のまま固着していた (実機ログ 2026-06-17 で確認)。answer は通常 ~6s で
-    /// 届く (相手の TCP 5s + offer-v2 ポーリング + Firebase write を含む) ので、余裕を持たせて 20s。
+    /// 届く (相手の TCP 5s + offer-v2 ポーリング + relay への書込みを含む) ので、余裕を持たせて 20s。
     /// 超過時は answerTask が cancel されて WhenAny を抜け、answerJson==null 経路で明示エラーに落とす
     /// (相手不在なのでリレーも来ず、即エラーの方が体感が良い。answer が来た上での UDP 失敗は別途リレーへ)。</summary>
     private const int OfferAnswerWaitSeconds = 20;
@@ -59,7 +55,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     /// <summary>rere #D-003: role調停の deferral 判定で「ペア相手の offer が新しい」とみなす上限(ms)。
     /// この時間内に作られた offer なら相手は今まさに接続を試みていると判断して譲歩する。
-    /// 過去に放置された古い offer (cleanup 漏れ/Firebase 6h cleanup 待ち) で誤って譲歩しないための鮮度ゲート。</summary>
+    /// 過去に放置された古い offer (cleanup 漏れ / offer の TTL 1h 切れ待ち) で誤って譲歩しないための鮮度ゲート。</summary>
     private const int RoleDeferFreshnessMs = 60_000;
 
     /// <summary>rere PR#8 #F2: role調停で listener に委譲した後、listener が実際に接続を確立 (State=Connected)
@@ -213,7 +209,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     /// <summary>
     /// この pairing watch セッションで既に処理した pairingId。
-    /// Firebase 購読時に既存子 (stale な pairings/ エントリ) が replay されても、
+    /// relay の pairing 購読時に既存の stale な pairing エントリが replay されても、
     /// 同じ pairing を二重に PairingCompleted へ流さないための重複排除。
     /// StartPairingSessionAsync 開始時にクリアする。
     /// Codex 第6弾 verify minor: IdTokenRefreshed で StartWatchingPairing を再呼出する経路と
@@ -384,7 +380,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
         // Codex P2 fix (第12弾 #4): 再起動を跨いだ pairings replay 防御は AppSettings.SeenPairingIds
         // (per-pairingId LRU) に集約済み。 ConnectionService の constructor で _seenPairingIds (in-memory)
-        // に展開済みなので、 ここで FirebaseSignaling へ追加注入する必要は無い (旧 LatestConsumedPairingAtMs
+        // に展開済みなので、 ここで _signaling へ追加注入する必要は無い (旧 LatestConsumedPairingAtMs
         // の global timestamp gate は撤去)。
 
         _signaling.PairingDetected += OnPairingDetected;
@@ -447,7 +443,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             if (sig == null) return;
 
             // 同一 pairing の重複検知（購読時の既存子 replay 含む）はスキップ。
-            // watch はここでは止めない。stale な pairings/ エントリ (過去に成立済みで Firebase に
+            // watch はここでは止めない。stale な pairing エントリ (過去に成立済みで relay に
             // 1 時間残るもの) を拾っても watcher を生かしておき、新規デバイスとのペアリングを
             // 検知し続けられるようにする。成立確定 (新規ピア) 時に VM が StopPairingWatch を呼ぶ。
             if (!_seenPairingIds.TryAdd(info.PairingId, 0)) return;
@@ -492,11 +488,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             };
 
             // rere #D-001(b): 相手の公開鍵 × 自分の秘密鍵の ECDH から PairSecret を導出して永続する。
-            // pairId は GeneratePairId（接続時と同じ Ordinal 規則）で salt 分離。相手 pk が空/不正なら
+            // pairId は Util.PairId.Generate（接続時と同じ Ordinal 規則）で salt 分離。相手 pk が空/不正なら
             // null のまま（平文フォールバック）。導出失敗で例外を出さず、ペアリング自体は成立させる。
             if (_identity != null && !string.IsNullOrEmpty(info.PeerPublicKey))
             {
-                var pairId = GeneratePairId(_deviceId, info.PeerId);
+                var pairId = Util.PairId.Generate(_deviceId, info.PeerId);
                 var secret = _identity.TryDerivePairSecret(info.PeerPublicKey, pairId);
                 if (secret != null)
                 {
@@ -522,7 +518,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
             // #D-001a Phase B: pairs/{pairId} SSoT への書込（責任者書込 + 30s fallback）
             // 詳細は docs/design/firebase-auth-pair-ssot.md §6.1 参照。
-            WritePairRecordWithFallback(sig, info.PeerId, info.PeerDisplayName);
+            WritePairRecordWithFallback(info.PeerId, info.PeerDisplayName);
 
             // Codex P2 fix (第5弾 #4): pairing 成立 = QR/コードがその役目を終えた瞬間なので、
             // 自分の sessions/{_deviceId} と pairing_nonces/{_deviceId} を即時 revoke する。
@@ -536,7 +532,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             // verify 指摘 (第5弾 minor): 旧実装は `_ = Task.Run(...)` で fire-and-forget だったため、
             // pairing 成立直後に Disconnect が走ると sig が Dispose されて ObjectDisposedException で
             // revoke skip され QR/nonce が即時 revoke されない race があった。tempSig パターン (寿命分離) +
-            // 同期 await で race を解消する。最終的な失敗は CleanupAsync / firebase-cleanup.yml が後追い掃除。
+            // 同期 await で race を解消する。最終的な失敗は CleanupAsync と relay の定期クリーンアップ (maintenance.ts の cron) が後追い掃除。
             try
             {
                 using var revokeSig = NewSignaling();
@@ -544,10 +540,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             }
             catch (Exception ex) { Util.Logger.Log($"pairing tokens 即時 revoke 失敗 (継続): {ex.Message}", Util.LogLevel.Debug); }
 
-            // pairings/{pairingId} は **削除しない** 。即削除すると、もう片方の PC が Firebase の
-            // InsertOrUpdate イベントを受け取る前にエントリが消え、ペアリング検知漏れが起きる
-            // (片方の画面に相手が表示されない症状)。CreatedAt ベースで GitHub Actions が
-            // 1 時間後に自動掃除するため、即時 cleanup は不要。
+            // pairing エントリは **削除しない** 。即削除すると、もう片方の PC が relay からの
+            // pairing 通知を受け取る前にエントリが消え、ペアリング検知漏れが起きる
+            // (片方の画面に相手が表示されない症状)。ペア成立通知は DeviceDO の inbox に TTL 1 時間で
+            // 保持され、期限切れで prune されるため、即時 cleanup は不要。
         }
         catch (Exception ex)
         {
@@ -709,7 +705,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
     private async Task ListenForIncomingConnectionAsync(string peerId, CancellationToken ct)
     {
-        var pairId = GeneratePairId(_deviceId, peerId);
+        var pairId = Util.PairId.Generate(_deviceId, peerId);
         Util.Logger.Log($"着信接続ポーリング開始: pairId={Util.Logger.MaskPairId(pairId)}");
 
         // Stage 4: per-Session の Connecting 所有権を扱う。Session は StartListeningForConnection が
@@ -1089,7 +1085,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
             Util.Logger.Log($"オンデマンド接続開始: peer={peerId}, deviceId={_deviceId}");
 
-            var pairId = GeneratePairId(_deviceId, peerId);
+            var pairId = Util.PairId.Generate(_deviceId, peerId);
 
             // rere #D-003: role調停。deviceId 序列で「主 offerer(小) / 譲歩側(大)」を決める。
             // 譲歩側は、ペア相手由来の *新しい* offer が既に出ていれば自分の offer を送らず、着信監視
@@ -1465,7 +1461,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// <summary>
     /// 軽量プローブで経路だけ判定する（データチャンネルは確立せず即切断）。
     /// メインの <see cref="_signaling"/> / <see cref="_transport"/> / <see cref="State"/> には触らず、
-    /// 一時的な FirebaseSignaling と transport を使う。着信監視 (StartListeningForConnection) は
+    /// 一時的な signaling (NewSignaling()) と transport を使う。着信監視 (StartListeningForConnection) は
     /// Probe 中だけ停止して、競合を避ける。
     /// TCP/UDP のみ実試行、リレーは推定（Cloudflare Workers の DO duration コスト回避）。
     /// </summary>
@@ -1494,7 +1490,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         ISignalingService? probeSig = null;
         TcpDirectTransport? tcpTransport = null;
         UdpHolePunchTransport? udpTransport = null;
-        var pairId = GeneratePairId(_deviceId, peerId);
+        var pairId = Util.PairId.Generate(_deviceId, peerId);
 
         // v1.0.38 review fix v12: 自分の probe を識別する nonce。bidirectional 同時 probe で
         // 相手の probe の answer を誤認しないよう、answer 側が echo する nonce を発行する。
@@ -1543,7 +1539,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             //     - WaitForSdpAsync(offer, 5s) で待機中に probe offer 到着 → 5s 後 next iter
             //     - TryReadProbeOfferAsync で検出 (即時)
             //     - HandleProbeOfferAsync の TCP connect 5s (TcpConnectTimeoutSeconds)
-            //     - probeSig.SendProbeAnswerAsync (Firebase write 1-2s)
+            //     - probeSig.SendProbeAnswerAsync (relay への write 1-2s)
             //   合計 ~13s なので 15s に設定 (旧 7s では非 LAN ピアで answer が間に合わずに Unknown)
             using var stageCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             stageCts.CancelAfter(TimeSpan.FromSeconds(ProbeOverallTimeoutSeconds));
@@ -1655,7 +1651,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         // 並列接続が解禁された後（Stage 4）も旧 API を使う呼び出し側は単数前提を維持。
         var session = LookupActiveSession();
         if (session == null) throw new InvalidOperationException("接続されていません");
-        await SendAsyncCore(session, data, ct);
+        await SendAsyncCore(session, (ReadOnlyMemory<byte>)data, ct);
     }
 
     /// <summary>
@@ -1676,7 +1672,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         ArgumentException.ThrowIfNullOrEmpty(peerId);
         if (!_sessions.TryGetValue(peerId, out var session) || session.Transport == null)
             throw new InvalidOperationException($"指定 peer は接続されていません: {Util.Logger.MaskDeviceId(peerId)}");
-        await SendAsyncCore(session, data, ct);
+        await SendAsyncCore(session, (ReadOnlyMemory<byte>)data, ct);
     }
 
     /// <summary>Stage 5: peerId 指定の <see cref="ReadOnlyMemory{T}"/> 版送信。</summary>
@@ -1687,11 +1683,6 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             throw new InvalidOperationException($"指定 peer は接続されていません: {Util.Logger.MaskDeviceId(peerId)}");
         await SendAsyncCore(session, data, ct);
     }
-
-    /// <summary>Stage 5: 共通化された送信コア。暗号ハンドシェイク完了を待ち、必要なら封筒化して transport に流す。
-    /// 各 SendAsync オーバーロードが <see cref="ConnectionSession"/> を解決した後に委譲する。</summary>
-    private Task SendAsyncCore(ConnectionSession session, byte[] data, CancellationToken ct)
-        => SendAsyncCore(session, (ReadOnlyMemory<byte>)data, ct);
 
     /// <summary>
     /// PairSecret を持つチャネルが未確立のまま平文送信へ落ちるのを止める（fail-closed）。
@@ -2532,7 +2523,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// pairs/{pairId} 書込（責任者経路 / 30s fallback 経路）に共通の中止判定。
     /// peer が local registry から外れた（unpair 済）か、ユーザー起点の unpair が in-flight
     /// (<see cref="IPeerRegistryService.IsPendingRemoval"/>) のとき true を返す。これがないと
-    /// Firebase DELETE 完了前に PUT が走って削除済みペアを resurrect する race を許す。
+    /// relay の pair DELETE 完了前に PUT が走って削除済みペアを resurrect する race を許す。
     /// テスト用 ctor は _peerRegistry=null で、その場合は本番防御をスキップ（常に false）する。
     /// 新しい writer 経路を足すときも必ずここを通すことで、guard の貼り忘れによる resurrect バグを防ぐ。
     /// </summary>
@@ -2546,9 +2537,9 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// - 非責任者: 30s 後に GET、未存在なら自分が書込（責任者クラッシュ救済）
     /// 設計 §6.1 参照。fire-and-forget で実行（例外は内部で握る）。
     /// </summary>
-    private void WritePairRecordWithFallback(ISignalingService sig, string peerId, string peerDisplayName)
+    private void WritePairRecordWithFallback(string peerId, string peerDisplayName)
     {
-        var pairId = GeneratePairId(_deviceId, peerId);
+        var pairId = Util.PairId.Generate(_deviceId, peerId);
         var isResponsible = string.Compare(_deviceId, peerId, StringComparison.Ordinal) < 0;
         var nameA = isResponsible ? _displayName : peerDisplayName;
         var nameB = isResponsible ? peerDisplayName : _displayName;
@@ -2559,10 +2550,10 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             NameB = nameB,
             CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         };
-        // CodeRabbit 指摘: 引数 sig は呼出側 (_signaling) の参照で、責任者側は即時に使う一方
-        // 非責任者は 30s Task.Delay 後に使う。その間に _signaling.Dispose() が走ると ObjectDisposedException
-        // で fallback 書込が消失する。fallback 用に dedicated signaling を作って sig 寿命と切り離す。
-        // 責任者側も async/await の継続後に sig が無効化されるレースを避けるため tempSig 化する (僅か数 ms の追加)。
+        // CodeRabbit 指摘: 旧実装は呼出側の signaling (_signaling) を引数で受け取っており、責任者側は即時に使う一方
+        // 非責任者は 30s Task.Delay 後に使うため、その間に _signaling.Dispose() が走ると ObjectDisposedException
+        // で fallback 書込が消失した。現在は引数を持たず、書込ごとに dedicated signaling (tempSig) を作って
+        // _signaling の寿命と切り離す。責任者側も async/await の継続後に無効化されるレースを避けるため tempSig 化する (僅か数 ms の追加)。
         // PII 防止: pairId は両 deviceId を含むのでログマスクする。
         var maskedPair = Util.Logger.MaskPairId(pairId);
         if (isResponsible)
@@ -2708,7 +2699,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     }
 
     /// <summary>外部から pairId を導出するための公開ヘルパー（ConnectionViewModel.RemovePeerAsync で使う）。</summary>
-    public string GeneratePairIdFor(string peerId) => GeneratePairId(_deviceId, peerId);
+    public string GeneratePairIdFor(string peerId) => Util.PairId.Generate(_deviceId, peerId);
 
     /// <summary>
     /// #D-001a Phase B §6.3: pairs/{pairId} を削除する（SSoT 反映）。
@@ -2717,7 +2708,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
     /// </summary>
     public async Task DeletePairFromRelayAsync(string peerId, CancellationToken ct = default)
     {
-        var pairId = GeneratePairId(_deviceId, peerId);
+        var pairId = Util.PairId.Generate(_deviceId, peerId);
         var sig = _signaling;
         if (sig != null)
         {
@@ -2727,10 +2718,6 @@ public sealed class ConnectionService : IConnectionService, IDisposable
         using var tempSig = NewSignaling();
         await tempSig.DeletePairAsync(pairId, ct);
     }
-
-    // pairId 導出規約は Util.PairId.Generate に集約済（ConnectionService / PairSyncService 共通）。
-    // 既存の多数の呼び出し点を変えないための薄いラッパ。
-    private static string GeneratePairId(string a, string b) => Util.PairId.Generate(a, b);
 
     // === 接続情報のシリアライズ ===
 

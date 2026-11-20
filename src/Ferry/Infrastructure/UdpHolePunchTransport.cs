@@ -1,10 +1,7 @@
-using System;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
-using System.Threading;
-using System.Threading.Tasks;
 using Ferry.Models;
 
 namespace Ferry.Infrastructure;
@@ -216,7 +213,7 @@ public sealed class UdpHolePunchTransport : ITransport
                 // シーケンス番号をパケットに書き込み（Slice で範囲を明示）
                 BinaryPrimitives.WriteUInt32BigEndian(frag.AsSpan(1, 4), seq);
 
-                var info = new SentPacketInfo(seq, (uint)msgId, frag);
+                var info = new SentPacketInfo((uint)msgId, frag);
                 _sentPackets[seq] = info;
 
                 try
@@ -686,14 +683,12 @@ public sealed class UdpHolePunchTransport : ITransport
 
     private sealed class SentPacketInfo
     {
-        public readonly uint Seq;
         public readonly uint MsgId;
         public readonly byte[] Packet;
         public long SentAtTick;
 
-        public SentPacketInfo(uint seq, uint msgId, byte[] packet)
+        public SentPacketInfo(uint msgId, byte[] packet)
         {
-            Seq = seq;
             MsgId = msgId;
             Packet = packet;
             SentAtTick = Environment.TickCount64;

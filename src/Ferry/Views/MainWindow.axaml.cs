@@ -1,8 +1,4 @@
-using System;
 using System.ComponentModel;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -11,7 +7,6 @@ using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Reactive; // AnonymousObserver<T>。旧来 FirebaseDatabase.net→System.Reactive が transitive 提供していた Subscribe(Action<T>) 拡張が Step 6 のパッケージ撤去で消えたため、Avalonia 自前の observer で明示購読する
 using Avalonia.Threading;
-using Ferry.Infrastructure;
 using Ferry.Models;
 using Ferry.Services;
 using Ferry.ViewModels;

@@ -1,5 +1,3 @@
-using System;
-using System.IO;
 using System.Security.Cryptography;
 
 namespace Ferry.Infrastructure;
@@ -35,10 +33,12 @@ public sealed class DeviceIdentity : IDisposable
     }
 
     /// <summary>既定パス（%APPDATA%\Ferry\identity.key、peers.json と同じディレクトリ）で構築する。</summary>
-    public static DeviceIdentity CreateDefault()
-        => new(Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Ferry", "identity.key"));
+    public static DeviceIdentity CreateDefault() => new(DefaultPath);
+
+    /// <summary>identity.key の既定パス（%APPDATA%\Ferry\identity.key）。起動時の生成と clean slate の再生成で共有する。</summary>
+    internal static string DefaultPath { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "Ferry", "identity.key");
 
     /// <summary>
     /// rere #D-001(a) Phase B: 与えられたデータに対し ECDSA P-256 SHA-256 で署名する。
@@ -71,7 +71,7 @@ public sealed class DeviceIdentity : IDisposable
     /// <summary>
     /// rere #D-001(a) Phase B / Q2 採用案: identity.key を破棄して新規鍵を生成する（clean slate）。
     /// Workers `/auth/token` が 401 DEVICE_PUBKEY_MISMATCH を返したとき、ユーザー承認を経て呼ばれる。
-    /// 既存ペアは PairSecret/Firebase auth とも整合が取れなくなるため、呼び出し側で peers.json も
+    /// 既存ペアは PairSecret/relay の認証（/auth/token）とも整合が取れなくなるため、呼び出し側で peers.json も
     /// 同時に空配列で reset し、新規ペアリングからやり直す前提。
     /// </summary>
     public static DeviceIdentity RegenerateAndSave(string keyFilePath)
@@ -111,7 +111,7 @@ public sealed class DeviceIdentity : IDisposable
     {
         // Codex 第12弾 #2 (P2) fix: 既存 identity.key の読込/import 失敗時は silent regenerate せず throw。
         // 旧実装は read/import 失敗を warning ログだけで握り潰し CreateAndSave に落としていた。
-        // #D-001a Phase B 以降 identity.key は Firebase auth に bind されるため、 一時的な lock /
+        // #D-001a Phase B 以降 identity.key は relay の認証（D1 に登録した公開鍵）に bind されるため、 一時的な lock /
         // 権限不足 / corrupt-file import error で silent regenerate すると、 本来あとから読めたはずの
         // 旧鍵が新鍵で上書きされ、 次の /auth/token が DEVICE_PUBKEY_MISMATCH を返して既存 peer 全部が
         // unrecoverable になる致命的データロス経路を作る。 File.Exists 経路は throw して App.axaml.cs の

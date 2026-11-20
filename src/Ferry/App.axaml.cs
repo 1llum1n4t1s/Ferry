@@ -1,8 +1,4 @@
-using System;
-using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
-using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Platform;
 using Avalonia.Controls;
@@ -49,7 +45,7 @@ public partial class App : Application
     /// <summary>自動更新の配信元 URL（Cloudflare R2 ferry-updates 経由）。</summary>
     private const string UpdateBaseUrl = "https://ferry.kagayoi.com";
 
-    // rere #D-004: Firebase DB / Bridge / Relay の各 URL は Ferry.AppConstants に一本化し、
+    // rere #D-004: Bridge / Relay の各 URL は Ferry.AppConstants に一本化し、
     // settings.json からの書き換えを廃止した（改ざん面の対称化。UpdateBaseUrl と同方針）。
 
     /// <summary>サポートロケールの表示順+表示名の単一の真実の源。<see cref="Dictionary{TKey,TValue}"/> の
@@ -161,8 +157,7 @@ public partial class App : Application
             var needsSave = false;
             if (string.IsNullOrEmpty(settings.SaveDirectory))
             {
-                settings.SaveDirectory = System.IO.Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+                settings.SaveDirectory = Models.AppSettings.GetDefaultSaveDirectory();
                 needsSave = true;
             }
             if (needsSave)
@@ -209,7 +204,7 @@ public partial class App : Application
             // peerRegistry を IdentityLost ハンドラより前で宣言（lambda capture 解析のため）
             var peerRegistry = new PeerRegistryService();
             // CF 単独完結移行 (dual-path): clean slate ハンドラ（identity.key 紛失リカバリー）は auth provider に
-            // 依存しないので変数化し、Firebase / CF どちらの IdentityLost イベントにも同じものを繋ぐ。
+            // 依存しないので変数化し、CfTokenProvider の IdentityLost イベントへ繋ぐ。
             EventHandler onIdentityLost = (_, _) =>
             {
                 Util.Logger.Log("identity.key 紛失イベントを検知 → clean slate UI を表示", Util.LogLevel.Warning);
@@ -247,10 +242,7 @@ public partial class App : Application
                         // 次回起動で旧 identity に戻る（rollback 不要・自動リカバリ）。
                         var newDeviceId = System.Guid.NewGuid().ToString("N");
                         // 1. identity.key を破棄して新規生成（失敗時 throw → settings.json 未変更で旧 DeviceId 維持）
-                        var keyPath = System.IO.Path.Combine(
-                            System.Environment.GetFolderPath(System.Environment.SpecialFolder.ApplicationData),
-                            "Ferry", "identity.key");
-                        Infrastructure.DeviceIdentity.RegenerateAndSave(keyPath).Dispose();  // 新鍵をディスクに保存
+                        Infrastructure.DeviceIdentity.RegenerateAndSave(Infrastructure.DeviceIdentity.DefaultPath).Dispose();  // 新鍵をディスクに保存
                         // 2. peers.json を空にする（既存ペアは PairSecret も含めて全消去）。
                         //    失敗時 throw → settings.json 未変更で旧 DeviceId 維持（次回起動で旧 identity に戻る）。
                         foreach (var p in peerRegistry.GetPairedPeers().ToList())
@@ -259,7 +251,7 @@ public partial class App : Application
                         settings.DeviceId = newDeviceId;
                         await settingsService.SaveAsync();
                         Util.Logger.Log("identity 紛失リカバリー完了 - アプリを終了します");
-                        // 4. in-memory の deviceIdentity / firebaseAuthClient は古い鍵を保持しているため、
+                        // 4. in-memory の deviceIdentity / cfTokenProvider は古い鍵を保持しているため、
                         //    続行すると次回 /auth/token でまた DEVICE_PUBKEY_MISMATCH → ダイアログ無限ループに陥る。
                         //    確認ダイアログを表示してからプロセスを終了し、次回起動で新鍵で再構築させる。
                         await Views.IdentityLostDialog.ShowRestartRequiredAsync(GetMainWindow());
@@ -294,23 +286,19 @@ public partial class App : Application
                 () => new Infrastructure.CloudflareSignaling(cfTokenProvider, settings.DeviceId, cfHttp);
             Func<System.Threading.CancellationToken, System.Threading.Tasks.Task> ensureAuthAsync = cfTokenProvider.EnsureTokenAsync;
             IPresenceServiceFactory presenceFactory = new Infrastructure.CloudflarePresenceServiceFactory(cfTokenProvider, settings.DeviceId, cfHttp);
-            IDisposable authProvider = cfTokenProvider;
-            // CfTokenProvider.EnsureTokenAsync 自体が成功時に refresh ループを起動する。失敗時は次の signaling op が再試行。
-            Func<System.Threading.Tasks.Task> initialEnsureAsync = () => cfTokenProvider.EnsureTokenAsync();
-            Action onInitialEnsureFailure = () => { };
             Util.Logger.Log("signaling 経路: Cloudflare (CF 単独完結)");
 
             // 初回 SignIn を fire-and-forget で開始。完了前の signaling 操作は auth 例外になり、
             // 既存リトライ経路で吸収される（実装の段階性を保つ）。
-            // Codex P2 fix: 初回失敗時 (起動時 offline 等) は onInitialEnsureFailure で refresh ループを
-            // 立ち上げてバックグラウンド再試行に委ねる（旧実装は失敗時に何もせず永遠 unauthenticated 状態が続いた）。
+            // CfTokenProvider.EnsureTokenAsync が refresh ループを起動するのは成功時だけ。失敗時（起動時 offline 等）は
+            // ログだけ残し、次の signaling 操作が EnsureTokenAsync を再試行する。
             _ = System.Threading.Tasks.Task.Run(async () =>
             {
                 try
                 {
                     // EnsureSignInAsync / EnsureTokenAsync は冪等で semaphore 直列化されるので、
                     // PendingPairDeleteQueue 起動 retry 経路の ensure と並行に来ても 1 回しか走らない。
-                    await initialEnsureAsync();
+                    await cfTokenProvider.EnsureTokenAsync();
                 }
                 catch (Infrastructure.IdentityLostException)
                 {
@@ -319,7 +307,6 @@ public partial class App : Application
                 catch (Exception ex)
                 {
                     Util.Logger.Log($"認証 初回 SignIn 失敗（refresh ループに委譲して短期バックオフで再試行）: {ex.Message}", Util.LogLevel.Warning);
-                    onInitialEnsureFailure();
                 }
             });
             // peerRegistry / settingsService は暗号チャネルの PairSecret 引き当て・フラグ参照に使うため先に生成して注入する。
@@ -342,12 +329,7 @@ public partial class App : Application
             SetLocale(locale);
 
             // テーマを設定から復元
-            RequestedThemeVariant = settings.ThemeMode switch
-            {
-                "Light" => ThemeVariant.Light,
-                "Dark" => ThemeVariant.Dark,
-                _ => ThemeVariant.Default, // "System" = OS 追従
-            };
+            RequestedThemeVariant = ThemeModeToVariant(settings.ThemeMode);
 
             // rere #B1-001: presence は Infrastructure を VM が直接 new せず、ファクトリ経由で生成する。
             // CF 単独完結移行: presenceFactory は上の dual-path 分岐で経路別に生成済み。
@@ -415,7 +397,7 @@ public partial class App : Application
                     catch (Exception ex) { Util.Logger.Log($"PendingPairDelete 定期処理エラー: {ex.Message}", Util.LogLevel.Warning); }
                 }
             });
-            // rere PR#8 #F4: プレゼンス監視は実 Firebase I/O を伴うため ctor ではなく本番起動時にここで開始する。
+            // rere PR#8 #F4: プレゼンス監視は実 relay I/O を伴うため ctor ではなく本番起動時にここで開始する。
             connectionVm.StartPresenceMonitoring();
             var transferVm = new TransferViewModel(connectionService, transferService, connectionVm, settingsService);
             var settingsVm = new SettingsViewModel(settingsService, transferService);
@@ -423,12 +405,7 @@ public partial class App : Application
             // N-6: SettingsViewModel から MVVM 違反を除去するため、テーマ切替 / 更新チェックは App 側で実行する
             settingsVm.ThemeChangeRequested += (_, themeIndex) =>
             {
-                RequestedThemeVariant = themeIndex switch
-                {
-                    1 => ThemeVariant.Light,
-                    2 => ThemeVariant.Dark,
-                    _ => ThemeVariant.Default, // OS 追従
-                };
+                RequestedThemeVariant = ThemeModeToVariant(SettingsViewModel.ThemeIndexToMode(themeIndex));
             };
             settingsVm.UpdateCheckRequested += (_, _) => Check4Update(true);
 
@@ -456,11 +433,11 @@ public partial class App : Application
                 DisposeQuietly(pairSyncService, nameof(PairSyncService));
                 DisposeQuietly(pairSyncSignaling, "Signaling");
                 DisposeQuietly(connectionService, nameof(ConnectionService));
-                // CF 単独完結移行: auth provider（FirebaseAuthClient / CfTokenProvider）は signaling から
+                // CF 単独完結移行: auth provider（CfTokenProvider）は signaling から
                 // 参照されている可能性があるため、ConnectionService 破棄後に破棄する。
-                DisposeQuietly(authProvider, "AuthProvider");
-                // CF 経路の共有 HttpClient（Firebase 経路では null）。
-                if (cfHttp != null) DisposeQuietly(cfHttp, "CfHttpClient");
+                DisposeQuietly(cfTokenProvider, "AuthProvider");
+                // CF 経路の共有 HttpClient。
+                DisposeQuietly(cfHttp, "CfHttpClient");
                 // ConnectionService が参照を持つので、それを破棄した後に鍵を破棄する。
                 DisposeQuietly(deviceIdentity, nameof(Infrastructure.DeviceIdentity));
             };
@@ -651,6 +628,14 @@ public partial class App : Application
         try { disposable.Dispose(); }
         catch (Exception ex) { Util.Logger.LogException($"{name} の Dispose で例外", ex); }
     }
+
+    /// <summary>ThemeMode 文字列（"Light" / "Dark" / "System"）を ThemeVariant に変換する。"System" と未知の値は OS 追従。</summary>
+    private static ThemeVariant ThemeModeToVariant(string? mode) => mode switch
+    {
+        "Light" => ThemeVariant.Light,
+        "Dark" => ThemeVariant.Dark,
+        _ => ThemeVariant.Default,
+    };
 
     /// <summary>
     /// システムのカルチャからデフォルトロケールを検出する。

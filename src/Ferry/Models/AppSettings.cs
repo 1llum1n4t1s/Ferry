@@ -1,8 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Threading;
-
 namespace Ferry.Models;
 
 /// <summary>
@@ -18,7 +13,11 @@ public sealed class AppSettings
 
     /// <summary>受信ファイルの保存先ディレクトリ。
     /// デフォルトはユーザーの「ダウンロード」フォルダ（Win/Mac 共通）。</summary>
-    public string SaveDirectory { get; set; } =
+    public string SaveDirectory { get; set; } = GetDefaultSaveDirectory();
+
+    /// <summary>受信ファイルの既定の保存先（ユーザープロファイル配下の「Downloads」）。
+    /// 設定の初期値・空値の補完で共通に使う。静的メソッドなので JSON シリアライズ対象にならない。</summary>
+    public static string GetDefaultSaveDirectory() =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
 
     // rere #D-004: Firebase DB / Bridge / Relay の各 URL は攻撃面削減のため settings.json から撤去し、
@@ -135,7 +134,7 @@ public sealed class AppSettings
     /// <summary>
     /// Codex 第12弾 #4 (P2) fix: 過去 consume 済みの pairingId を固定サイズ LRU で永続化する。
     /// 再起動跨ぎで in-memory <c>ConnectionService._seenPairingIds</c> が空になっても、
-    /// Firebase に残った old pairings entry (cleanup 前) を replay として弾く。
+    /// relay 側に TTL 内で残っている古い pairing 通知（DeviceDO の inbox / outbox は期限 1 時間）を replay として弾く。
     /// 上限 <see cref="Ferry.Services.ConnectionService.SeenPairingIdsCap"/> 件を超えたら先頭 (= 最古) から落とす。
     /// 旧 LatestConsumedPairingAtMs (global timestamp gate) の副作用 (=clock skew 60s 遅れの正規 peer まで
     /// 弾く) を回避する。更新は <see cref="AddSeenPairingId"/> 経由で行う（copy-on-write の不変条件を所有者が守る）。

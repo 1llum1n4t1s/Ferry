@@ -1,4 +1,3 @@
-using System;
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
@@ -52,7 +51,7 @@ public static class PairCrypto
 
     /// <summary>
     /// バイト列を base64url（パディング無し）で文字列化する。QR の URL クエリ（&pk=...）や
-    /// Firebase の文字列フィールドにそのまま載せられる URL 安全表現。
+    /// relay の文字列フィールド（JSON）にそのまま載せられる URL 安全表現。
     /// </summary>
     public static string ToBase64Url(byte[] data)
         => Convert.ToBase64String(data).TrimEnd('=').Replace('+', '-').Replace('/', '_');
@@ -102,7 +101,7 @@ public static class PairCrypto
     /// <summary>
     /// 接続ごとのセッション鍵を PairSecret と offer/answer nonce から導出する。
     /// 送信方向(keyTx)・受信方向(keyRx)を別鍵にして nonce 空間を完全に分離する。
-    /// <paramref name="isOfferer"/> は deviceId 序列（GeneratePairId と同じ Ordinal 比較）で決まる固定の役割で、
+    /// <paramref name="isOfferer"/> は deviceId 序列（Util.PairId.Generate と同じ Ordinal 比較）で決まる固定の役割で、
     /// どちらが実際に SDP offer を送ったかとは独立（両端が同じ方向→鍵の対応を得るため）。
     /// </summary>
     public static (byte[] keyTx, byte[] keyRx, byte[] hmacKey) DeriveSessionKeys(

@@ -1,5 +1,3 @@
-using System;
-using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -59,7 +57,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     {
         IsAddPeerMode = true;
         if (Connection is not null)
-            await Connection.AddNewPeerCommand.ExecuteAsync(null);
+            await Connection.StartSessionCommand.ExecuteAsync(null);
     }
 
     /// <summary>
