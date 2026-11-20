@@ -13,12 +13,10 @@
 
 import type { Env } from './index';
 import { pairLedgerMode, d1Unavailable, ledgerMisconfigured } from './pair-ledger';
-import { hashPairId } from './index';
+import { hashPairId, PAIR_ID_RE } from './ids';
 import { verifySessionToken } from './auth';
 import { notifyInbox } from './device-routes';
 import { jsonError, readTextBody } from './http';
-
-const PAIR_ID_RE = /^[a-f0-9]{32}_[a-f0-9]{32}$/;
 
 /** `/sig` から PairDO を起こす前に正式 pairs の存在を確認する。 */
 async function ensurePairRegistered(env: Env, pairId: string): Promise<Response | null> {

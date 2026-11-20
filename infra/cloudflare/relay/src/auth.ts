@@ -16,6 +16,7 @@
 import type { Env } from './index';
 import { jsonOk, jsonError, readJsonBody } from './http';
 import { bindDeviceKey } from './key-bindings';
+import { HEX32_RE } from './ids';
 
 // ---------- Public handlers ----------
 
@@ -31,7 +32,7 @@ export async function handleAuthToken(req: Request, env: Env): Promise<Response>
   if ('error' in body) return body.error;
 
   const { deviceId, pubKeySpki, ts, sig } = body.value as Record<string, unknown>;
-  if (typeof deviceId !== 'string' || !/^[a-f0-9]{32}$/.test(deviceId)) {
+  if (typeof deviceId !== 'string' || !HEX32_RE.test(deviceId)) {
     return jsonError(400, 'INVALID_DEVICE_ID', 'deviceId must be 32 hex chars');
   }
   if (typeof pubKeySpki !== 'string' || pubKeySpki.length === 0 || pubKeySpki.length > 256) {
@@ -68,7 +69,7 @@ export async function handleAuthToken(req: Request, env: Env): Promise<Response>
   // device rate limit は **強整合な D1 binding の勝者確認後** に消費する。
   // 旧実装は signature verify 直後に device RL を消費していたため、attacker が自分の鍵で
   // 「victim deviceId を主張する」リクエストを作ると、 signature は自鍵で valid → device RL を
-  // victim 名義で消費 → 続いて KV check で DEVICE_PUBKEY_MISMATCH 401 を受ける、 という流れで
+  // victim 名義で消費 → 続いて D1 の鍵束縛 check で DEVICE_PUBKEY_MISMATCH 401 を受ける、 という流れで
   // victim の RATELIMIT_DEVICE 枠だけ枯渇させられた (本物 client が 429 で締め出される DoS)。
   // 対策: D1 の確定鍵と pubKeySpki が mismatch なら device RL を消費せず即 401 を返す。
   // mismatch でない (= 既存 binding と一致 / 新規 bind) ときだけ device RL を消費する。
@@ -178,10 +179,17 @@ export async function verifySessionToken(token: string, env: Env): Promise<{ dev
   } catch {
     return null;
   }
-  if (typeof payload.sub !== 'string' || !/^[a-f0-9]{32}$/.test(payload.sub)) return null;
+  if (typeof payload.sub !== 'string' || !HEX32_RE.test(payload.sub)) return null;
   // exp は秒。clock skew は持たせず厳密に判定 (1h TTL に対し数秒のズレは誤差範囲)。
   if (typeof payload.exp !== 'number' || payload.exp * 1000 < Date.now()) return null;
   return { deviceId: payload.sub };
+}
+
+/** `Authorization: Bearer <cfToken>` ヘッダーから claims を得る。ヘッダー欠如・形式違い・検証失敗は null。 */
+export async function bearerClaims(req: Request, env: Env): Promise<{ deviceId: string } | null> {
+  const authz = req.headers.get('Authorization');
+  if (!authz || !authz.startsWith('Bearer ')) return null;
+  return verifySessionToken(authz.slice('Bearer '.length), env);
 }
 
 async function hmacKey(secret: string): Promise<CryptoKey> {

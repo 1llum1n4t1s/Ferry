@@ -401,27 +401,27 @@ function normalizeLease(value: unknown, roomId: string): LeaseRecord | null {
   };
 }
 
+/** 月次バケットの map を正規化する。月キーが YYYY-MM でないものは捨て、null-prototype map を返す。 */
+function normalizeMonths(value: unknown): Record<string, MetricBucket> {
+  const months = Object.create(null) as Record<string, MetricBucket>;
+  const raw = asRecord(value);
+  if (raw) {
+    for (const [bucket, item] of Object.entries(raw)) {
+      if (MONTH_RE.test(bucket)) months[bucket] = normalizeBucket(item);
+    }
+  }
+  return months;
+}
+
 function normalizeState(value: unknown): PersistedQuotaState {
   const source = asRecord(value);
   // roomId/leaseId は外部入力由来なので、prototype pollution を避けるため
   // 状態 map は null-prototype で保持する。
-  const globalMonths = Object.create(null) as Record<string, MetricBucket>;
-  const legacyMonths = Object.create(null) as Record<string, MetricBucket>;
+  const globalMonths = normalizeMonths(source?.globalMonths);
+  const legacyMonths = normalizeMonths(source?.legacyMonths);
   const leases = Object.create(null) as Record<string, LeaseRecord>;
   const settled = Object.create(null) as Record<string, SettledRecord>;
 
-  const rawGlobal = asRecord(source?.globalMonths);
-  if (rawGlobal) {
-    for (const [bucket, raw] of Object.entries(rawGlobal)) {
-      if (MONTH_RE.test(bucket)) globalMonths[bucket] = normalizeBucket(raw);
-    }
-  }
-  const rawLegacy = asRecord(source?.legacyMonths);
-  if (rawLegacy) {
-    for (const [bucket, raw] of Object.entries(rawLegacy)) {
-      if (MONTH_RE.test(bucket)) legacyMonths[bucket] = normalizeBucket(raw);
-    }
-  }
   const rawLeases = asRecord(source?.leases);
   if (rawLeases) {
     for (const [roomId, raw] of Object.entries(rawLeases)) {

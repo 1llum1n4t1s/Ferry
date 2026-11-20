@@ -10,6 +10,7 @@ import { reserveRelayQuota, settleRelayQuota, validateRelayQuotaConfig } from '.
 import { verifySessionToken } from './auth';
 import { cleanupExpiredPairingData } from './maintenance';
 import { drainPairingOutbox } from './pairing-outbox';
+import { HEX32_RE, hashPairId, isCanonicalPairId } from './ids';
 
 export interface Env {
   RELAY: DurableObjectNamespace;
@@ -63,8 +64,6 @@ export interface Env {
   RELAY_MAX_FRAME_BYTES?: string;
 }
 
-/** C# 側 `Util.PairId.Generate` と一致する pairId の形式。 */
-export const RELAY_PAIR_ID_RE = /^[a-f0-9]{32}_[a-f0-9]{32}$/;
 const RELAY_PATH = '/ferry-relay';
 const INTERNAL_ROLE = 'X-Ferry-Role';
 const INTERNAL_DEVICE = 'X-Ferry-Device';
@@ -320,12 +319,6 @@ function extractBearerToken(value: string): string | null {
   return match?.[1] ?? null;
 }
 
-function isCanonicalPairId(pairId: string): boolean {
-  if (!RELAY_PAIR_ID_RE.test(pairId)) return false;
-  const [a, b] = pairId.split('_');
-  return a < b;
-}
-
 function isPairParticipant(pairId: string, deviceId: string): boolean {
   const [a, b] = pairId.split('_');
   return deviceId === a || deviceId === b;
@@ -338,14 +331,6 @@ async function pairExists(env: Env, pairId: string): Promise<boolean> {
     .bind(pairId)
     .first();
   return row !== null && row !== undefined;
-}
-
-export async function hashPairId(pairId: string, salt: string): Promise<string> {
-  const data = new TextEncoder().encode(pairId + '|' + salt);
-  const buf = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
 }
 
 /**
@@ -872,8 +857,8 @@ function readInternalAdmission(req: Request): RelayAdmission | null {
   if (!isCanonicalPairId(roomId)) return null;
   if (!RELAY_ROLES.has(roleValue)) return null;
   if (tierValue !== 'authenticated' && tierValue !== 'legacy') return null;
-  if (tierValue === 'authenticated' && !/^[a-f0-9]{32}$/.test(deviceId)) return null;
-  if (deviceId && !/^[a-f0-9]{32}$/.test(deviceId)) return null;
+  if (tierValue === 'authenticated' && !HEX32_RE.test(deviceId)) return null;
+  if (deviceId && !HEX32_RE.test(deviceId)) return null;
   return {
     roomId,
     role: roleValue as RelayRole,
@@ -892,11 +877,7 @@ function isValidLease(value: unknown, roomId: string): value is RelayQuotaLease 
   return typeof candidate.leaseId === 'string' && candidate.leaseId.length > 0
     && candidate.roomId === roomId
     && (candidate.tier === 'authenticated' || candidate.tier === 'legacy')
-    && typeof candidate.expiresAt === 'number' && Number.isFinite(candidate.expiresAt) && candidate.expiresAt > 0
-    && typeof candidate.maxBytes === 'number' && Number.isFinite(candidate.maxBytes) && candidate.maxBytes >= 0
-    && typeof candidate.maxMessages === 'number' && Number.isFinite(candidate.maxMessages) && candidate.maxMessages >= 0
-    && typeof candidate.maxIdleMs === 'number' && Number.isFinite(candidate.maxIdleMs) && candidate.maxIdleMs >= 0
-    && typeof candidate.maxFrameBytes === 'number' && Number.isFinite(candidate.maxFrameBytes) && candidate.maxFrameBytes >= 0;
+    && isLimits(candidate);
 }
 
 function isRelayAttachment(value: unknown): value is RelayAttachment {

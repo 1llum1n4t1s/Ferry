@@ -19,12 +19,11 @@
 import type { Env } from './index';
 import { pairLedgerMode, d1Unavailable, ledgerMisconfigured } from './pair-ledger';
 import { pairingDeliveryStatements, tryDrainPairingOutbox } from './pairing-outbox';
-import { verifySessionToken } from './auth';
+import { bearerClaims } from './auth';
 import { notifyInbox } from './device-routes';
 import { jsonOk, jsonError, readJsonObject } from './http';
+import { HEX32_RE as HEX32, PAIR_ID_RE, derivePairId } from './ids';
 
-const HEX32 = /^[a-f0-9]{32}$/;
-const PAIR_ID_RE = /^[a-f0-9]{32}_[a-f0-9]{32}$/;
 const NONCE_TTL_MS = 60 * 60 * 1000;
 const MAX_DISPLAY_NAME_LEN = 128;
 const MAX_PUBLIC_KEY_LEN = 256;
@@ -63,25 +62,15 @@ function orientPairNames(
   return sidA < sidB ? { nameA, nameB } : { nameA: nameB, nameB: nameA };
 }
 
-/** C# ConnectionService.GeneratePairId と同じ規約: deviceId を Ordinal 昇順に並べて "_" 連結。
- *  hex 小文字なら JS 文字列比較 (UTF-16 code unit) は .NET Ordinal と一致する。 */
-export function derivePairId(a: string, b: string): string {
-  return a < b ? `${a}_${b}` : `${b}_${a}`;
-}
+export { derivePairId }; // tests/pairing.test.ts が参照する（実体は ids.ts）。
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
-
-async function authBearer(req: Request, env: Env): Promise<{ deviceId: string } | null> {
-  const authz = req.headers.get('Authorization');
-  if (!authz || !authz.startsWith('Bearer ')) return null;
-  return verifySessionToken(authz.slice('Bearer '.length), env);
-}
 
 // ---------- /pair/session ----------
 
 export async function handlePairSession(req: Request, env: Env, url: URL): Promise<Response> {
   const segs = url.pathname.split('/').filter((s) => s.length > 0); // ["pair","session", sid?]
-  const claims = await authBearer(req, env);
+  const claims = await bearerClaims(req, env);
   if (!claims) return jsonError(401, 'BAD_TOKEN', 'cfToken invalid or expired');
   const method = req.method;
 
@@ -364,7 +353,7 @@ function pairingEvent(
  * /pair/link を割り込ませて自動的に信頼ピアへ入る経路を作らない。
  */
 export async function handlePairLink(req: Request, env: Env): Promise<Response> {
-  const claims = await authBearer(req, env);
+  const claims = await bearerClaims(req, env);
   if (!claims) return jsonError(401, 'BAD_TOKEN', 'cfToken invalid or expired');
 
   // bearer 検証済み (本人確認済み) なので deviceId-scoped rate limit で sidB 総当たり探索や
@@ -451,7 +440,7 @@ export async function handlePairs(req: Request, env: Env, url: URL): Promise<Res
   const pairId = segs[1] ?? '';
   if (!PAIR_ID_RE.test(pairId)) return jsonError(400, 'BAD_PAIR_ID', 'pairId must be {32hex}_{32hex}');
 
-  const claims = await authBearer(req, env);
+  const claims = await bearerClaims(req, env);
   if (!claims) return jsonError(401, 'BAD_TOKEN', 'cfToken invalid or expired');
   const [a, b] = pairId.split('_');
   if (a >= b) return jsonError(400, 'BAD_PAIR_ID', 'pairId must use canonical deviceId order');

@@ -20,7 +20,7 @@
 
    ```powershell
    cd infra/cloudflare/relay
-   bun --no-env-file --no-install --bun run bun add --global --trust pnpm@12.16.1 --network-concurrency=4
+   bun --no-env-file --no-install --bun run bun add --global --trust pnpm@12.21.0 --network-concurrency=4
    bun --no-env-file --no-install --bun run pnpm install --lockfile-only --frozen-lockfile --network-concurrency=4
    bun --no-env-file --no-install --bun run bun install --frozen-lockfile --no-save --network-concurrency=4
    ```
@@ -94,7 +94,7 @@ rollback してはならない。remote schema / import / deploy は別途明示
 既存鍵と違う import は全 INSERT を失敗させ、上書きしない。
 
 ```powershell
-# Bun 1.4.4。既定は --local。作業先は絶対パスで指定する。
+# Bun 1.4.5。既定は --local。作業先は絶対パスで指定する。
 bun scripts/import-key-snapshot.mjs --input <snapshot.json> --sha256 <承認済SHA256> --count <件数> --persist-to <作業領域の絶対パス> --writers-frozen --snapshot-approved --snapshot-provenance <取得元・承認者・カットオフ説明>
 # 同じ固定入力を検証し、最後に ready を明示する場合だけ --activate を付ける。
 # 本番運用では --persist-to の代わりに --remote --work-dir <SQL作業領域の絶対パス> を明示する。

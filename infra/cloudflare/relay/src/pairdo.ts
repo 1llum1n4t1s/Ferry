@@ -21,12 +21,10 @@
  * して休眠、活動が進んでいれば再設定。短間隔で全 DO を起こさない (CF 公式警告) よう lazy + 1h TTL。
  */
 
-import { readJsonObject } from './http';
+import { jsonResponse as json, readJsonObject } from './http';
+import { HEX32_RE } from './ids'; // PairDO へ届く識別子はクライアント入力なので、storage キーへ使う前に形式を固定する。
 
 const SIGNALING_TTL_MS = 60 * 60 * 1000; // 1h。Firebase の firebase-cleanup.yml と同じ stale 閾値。
-
-/** PairDO へ届く識別子はクライアント入力なので、storage キーへ使う前に形式を固定する。 */
-const HEX32_RE = /^[a-f0-9]{32}$/;
 
 /** SDP / endpoint は値単位でも上限を設け、JSON 本文上限の内側で扱えるようにする。 */
 export const MAX_SDP_BYTES = 16 * 1024;
@@ -202,7 +200,7 @@ export class PairDO {
       return json(404, { error: 'NOT_FOUND' });
     }
     // storage キーが sender なので from は構造的に保証されるが、payload の from も返して
-    // クライアント側の From==peer 検証 (FirebaseSignaling と同じ二重防護) を維持できるようにする。
+    // クライアント側の From==peer 検証（二重防護）を維持できるようにする。
     return json(200, { endpoint: v.data, from: v.from });
   }
 
@@ -310,13 +308,6 @@ export class PairDO {
       await this.state.storage.setAlarm(createdAt + SIGNALING_TTL_MS);
     }
   }
-}
-
-function json(status: number, body: object): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
 }
 
 /** sender は storage キーの一部なので、未指定と形式不正を区別して拒否する。 */

@@ -12,16 +12,9 @@
 import type { Env } from './index';
 import { pairLedgerMode, d1Unavailable, ledgerMisconfigured } from './pair-ledger';
 import { tryDrainPairingOutbox } from './pairing-outbox';
-import { hashPairId } from './index'; // 汎用 salted SHA-256 (pairId/deviceId 共通の DO 名ハッシュ)
-import { verifySessionToken } from './auth';
+import { hashPairId, HEX32_RE as DEVICE_RE, derivePairId } from './ids'; // hashPairId は pairId/deviceId 共通の DO 名ハッシュ
+import { bearerClaims } from './auth';
 import { jsonError, readTextBody } from './http';
-
-const DEVICE_RE = /^[a-f0-9]{32}$/;
-
-/** C# の pairId 規約と同じく deviceId を Ordinal 昇順で連結する。 */
-function derivePairId(a: string, b: string): string {
-  return a < b ? `${a}_${b}` : `${b}_${a}`;
-}
 
 /** peer presence の GET を正式ペア当事者に限定する。 */
 async function ensurePresencePair(env: Env, selfId: string, peerId: string): Promise<Response | null> {
@@ -51,12 +44,6 @@ async function ensurePresencePair(env: Env, selfId: string, peerId: string): Pro
   }
 }
 
-async function authBearer(req: Request, env: Env): Promise<{ deviceId: string } | null> {
-  const authz = req.headers.get('Authorization');
-  if (!authz || !authz.startsWith('Bearer ')) return null;
-  return verifySessionToken(authz.slice('Bearer '.length), env);
-}
-
 async function deviceStub(env: Env, deviceId: string): Promise<DurableObjectStub> {
   const id = env.DEVICE.idFromName(await hashPairId(deviceId, env.SALT));
   return env.DEVICE.get(id);
@@ -68,7 +55,7 @@ export async function handlePresence(req: Request, env: Env, url: URL): Promise<
   const deviceId = segs[1] ?? '';
   if (!DEVICE_RE.test(deviceId)) return jsonError(400, 'BAD_DEVICE_ID', 'deviceId must be 32 hex');
 
-  const claims = await authBearer(req, env);
+  const claims = await bearerClaims(req, env);
   if (!claims) return jsonError(401, 'BAD_TOKEN', 'cfToken invalid or expired');
 
   const method = req.method;
@@ -107,7 +94,7 @@ export async function handleInbox(req: Request, env: Env): Promise<Response> {
     return new Response('Expected websocket', { status: 426 });
   }
   // ClientWebSocket は Authorization ヘッダを付けられる (C# 側 Options.SetRequestHeader)。
-  const claims = await authBearer(req, env);
+  const claims = await bearerClaims(req, env);
   if (!claims) return new Response('Unauthorized', { status: 401 });
 
   // heartbeat/pairs と同じ binding でも key を分離し、通常の presence 枠を焼かない。

@@ -10,11 +10,16 @@
  * クライアントからは入力起因かサーバー障害か区別できなくなる。
  */
 
-export function jsonOk(body: object): Response {
+/** 任意ステータスの JSON レスポンス。reject ログを出さない（jsonError と違い 401 以上でも無言）。 */
+export function jsonResponse(status: number, body: object): Response {
   return new Response(JSON.stringify(body), {
-    status: 200,
+    status,
     headers: { 'content-type': 'application/json' },
   });
+}
+
+export function jsonOk(body: object): Response {
+  return jsonResponse(200, body);
 }
 
 /**
