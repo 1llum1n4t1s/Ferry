@@ -138,3 +138,25 @@ async function readBodyBytes(req: Request, maxBytes: number): Promise<Uint8Array
   }
   return bytes;
 }
+
+/**
+ * Rate Limit binding を 1 回消費し、拒否すべきなら応答を返す（通す場合は null）。
+ * binding が無ければ制限しない。超過は 429、binding の例外は 503 RATE_LIMIT_UNAVAILABLE で fail closed にする
+ * （例外を Worker へ素通しして CF 既定の 500 にせず、/inbox・/ferry-relay・pair/session と同じ契約へ揃える）。
+ */
+export async function rateLimitDenied(
+  limiter: RateLimit | undefined,
+  key: string,
+  limitedCode: string,
+  limitedMessage: string,
+  label: string,
+): Promise<Response | null> {
+  if (!limiter) return null;
+  try {
+    const { success } = await limiter.limit({ key });
+    return success ? null : jsonError(429, limitedCode, limitedMessage);
+  } catch (e) {
+    console.error(`${label} rate limit failed`, String(e));
+    return jsonError(503, 'RATE_LIMIT_UNAVAILABLE', 'rate limit unavailable');
+  }
+}

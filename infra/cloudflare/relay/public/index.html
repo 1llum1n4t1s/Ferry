@@ -235,22 +235,22 @@
 
         <!-- 進行状況パネル (初期表示 + ペアリング処理中) -->
         <div class="status" id="statusPanel">
-            <p class="status-text" id="statusText">セッション情報を取得中…</p>
-            <div class="spinner" id="spinner"></div>
-            <p class="error hidden" id="errorDetail" style="margin-top: 12px; font-size: 0.9rem;"></p>
+            <p class="status-text" id="statusText" role="status" aria-live="polite">セッション情報を取得中…</p>
+            <div class="spinner" id="spinner" aria-hidden="true"></div>
+            <p class="error hidden" id="errorDetail" role="alert" style="margin-top: 12px; font-size: 0.9rem;"></p>
         </div>
 
         <!-- ペアリング完了 -->
         <div class="hidden" id="pairedPanel">
             <p class="success">✓ ペアリング完了</p>
-            <p class="paired-names" id="pairedNames"></p>
+            <p class="paired-names" id="pairedNames" role="status"></p>
             <p style="color: #888; font-size: 0.85rem; margin-top: 16px;">このページを閉じてください</p>
         </div>
 
         <!-- エラー表示 -->
         <div class="hidden" id="errorPanel">
             <div class="error-box">
-                <p class="error" id="errorText"></p>
+                <p class="error" id="errorText" role="alert"></p>
             </div>
             <button class="btn" onclick="location.reload()">再試行</button>
         </div>

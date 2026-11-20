@@ -14,7 +14,7 @@
  */
 
 import type { Env } from './index';
-import { jsonOk, jsonError, readJsonBody } from './http';
+import { jsonOk, jsonError, readJsonBody, rateLimitDenied } from './http';
 import { bindDeviceKey } from './key-bindings';
 import { HEX32_RE } from './ids';
 
@@ -23,10 +23,8 @@ import { HEX32_RE } from './ids';
 /** PC 用: 署名チャレンジ検証 + D1 の不変鍵 binding + 1h cfToken */
 export async function handleAuthToken(req: Request, env: Env): Promise<Response> {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
-  if (env.RATELIMIT_IP) {
-    const { success } = await env.RATELIMIT_IP.limit({ key: ip });
-    if (!success) return jsonError(429, 'IP_RATE_LIMIT', 'IP rate limit exceeded');
-  }
+  const ipDenied = await rateLimitDenied(env.RATELIMIT_IP, ip, 'IP_RATE_LIMIT', 'IP rate limit exceeded', 'auth/token ip');
+  if (ipDenied) return ipDenied;
 
   const body = await readJsonBody(req);
   if ('error' in body) return body.error;
@@ -85,10 +83,8 @@ export async function handleAuthToken(req: Request, env: Env): Promise<Response>
   }
 
   // pubKey 一致確認後に device rate limit を消費 (mismatch では消費しない設計)
-  if (env.RATELIMIT_DEVICE) {
-    const { success } = await env.RATELIMIT_DEVICE.limit({ key: deviceId });
-    if (!success) return jsonError(429, 'DEVICE_RATE_LIMIT', 'deviceId rate limit exceeded');
-  }
+  const deviceDenied = await rateLimitDenied(env.RATELIMIT_DEVICE, deviceId, 'DEVICE_RATE_LIMIT', 'deviceId rate limit exceeded', 'auth/token device');
+  if (deviceDenied) return deviceDenied;
 
   // CF 単独完結: 自前 HMAC bearer (cfToken) を発行 (uid = deviceId, exp = iat+3600)。
   // /signaling・/presence・/pairs・/inbox の認可に使う。SESSION_HMAC_SECRET は本番必須。

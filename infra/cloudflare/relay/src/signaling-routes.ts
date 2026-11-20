@@ -16,7 +16,7 @@ import { pairLedgerMode, d1Unavailable, ledgerMisconfigured } from './pair-ledge
 import { hashPairId, PAIR_ID_RE } from './ids';
 import { verifySessionToken } from './auth';
 import { notifyInbox } from './device-routes';
-import { jsonError, readTextBody } from './http';
+import { jsonError, readTextBody, rateLimitDenied } from './http';
 
 /** `/sig` から PairDO を起こす前に正式 pairs の存在を確認する。 */
 async function ensurePairRegistered(env: Env, pairId: string): Promise<Response | null> {
@@ -93,10 +93,8 @@ export async function handleSignaling(req: Request, env: Env, url: URL, ctx?: Wa
   // 上限は実測ピーク（接続 1 + Probe 2 ≒ 90 req/分）に複数ピア・リトライ分の余裕を見た値。
   // RATELIMIT_DEVICE へフォールバックしないのは、それが上記の障害そのものを復活させるため
   // （binding は wrangler.toml で宣言済みなので本番では常に存在する）。
-  if (env.RATELIMIT_SIG) {
-    const { success } = await env.RATELIMIT_SIG.limit({ key: claims.deviceId });
-    if (!success) return jsonError(429, 'DEVICE_RATE_LIMIT', 'deviceId rate limit exceeded');
-  }
+  const sigDenied = await rateLimitDenied(env.RATELIMIT_SIG, claims.deviceId, 'DEVICE_RATE_LIMIT', 'deviceId rate limit exceeded', 'sig device');
+  if (sigDenied) return sigDenied;
 
   // 3+4. PairDO へ forward (sender キーは X-Ferry-Device で強制)
   const doId = env.PAIR.idFromName(await hashPairId(pairId, env.SALT));

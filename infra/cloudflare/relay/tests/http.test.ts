@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_JSON_BODY_BYTES, readJsonBody, readJsonObject } from '../src/http';
+import { MAX_JSON_BODY_BYTES, rateLimitDenied, readJsonBody, readJsonObject } from '../src/http';
 
 function objectBodyOfBytes(length: number): string {
   const prefix = '{"value":"';
@@ -71,5 +71,21 @@ describe('readJsonBody の本文上限', () => {
       status: 400,
       error: 'INVALID_JSON',
     });
+  });
+});
+describe('rateLimitDenied', () => {
+  const limiterOf = (limit: () => Promise<{ success: boolean }>) => ({ limit }) as unknown as RateLimit;
+
+  it('binding が無ければ制限しない', async () => {
+    expect(await rateLimitDenied(undefined, 'k', 'C', 'm', 'l')).toBeNull();
+  });
+
+  it('成功は通し、超過は 429、binding の例外は 503 RATE_LIMIT_UNAVAILABLE で fail closed にする', async () => {
+    expect(await rateLimitDenied(limiterOf(async () => ({ success: true })), 'k', 'C', 'm', 'l')).toBeNull();
+    const limited = await rateLimitDenied(limiterOf(async () => ({ success: false })), 'k', 'C', 'm', 'l');
+    expect(limited?.status).toBe(429);
+    const failed = await rateLimitDenied(limiterOf(async () => { throw new Error('boom'); }), 'k', 'C', 'm', 'l');
+    expect(failed?.status).toBe(503);
+    expect(((await failed!.json()) as { error: string }).error).toBe('RATE_LIMIT_UNAVAILABLE');
   });
 });

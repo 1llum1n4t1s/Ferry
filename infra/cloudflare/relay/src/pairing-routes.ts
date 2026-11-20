@@ -21,7 +21,7 @@ import { pairLedgerMode, d1Unavailable, ledgerMisconfigured } from './pair-ledge
 import { pairingDeliveryStatements, tryDrainPairingOutbox } from './pairing-outbox';
 import { bearerClaims } from './auth';
 import { notifyInbox } from './device-routes';
-import { jsonOk, jsonError, readJsonObject } from './http';
+import { jsonOk, jsonError, readJsonObject, rateLimitDenied } from './http';
 import { HEX32_RE as HEX32, PAIR_ID_RE, derivePairId } from './ids';
 
 const NONCE_TTL_MS = 60 * 60 * 1000;
@@ -158,10 +158,8 @@ export async function handlePairCreate(req: Request, env: Env): Promise<Response
   // bearer 不要の公開エンドポイント (Bridge から呼ぶ) なので IP rate limit で乱打を抑える
   // (/auth/token の handleAuthToken と同じパターン)。
   const ip = req.headers.get('CF-Connecting-IP') ?? 'unknown';
-  if (env.RATELIMIT_IP) {
-    const { success } = await env.RATELIMIT_IP.limit({ key: ip });
-    if (!success) return jsonError(429, 'IP_RATE_LIMIT', 'IP rate limit exceeded');
-  }
+  const ipDenied = await rateLimitDenied(env.RATELIMIT_IP, ip, 'IP_RATE_LIMIT', 'IP rate limit exceeded', 'pair/create ip');
+  if (ipDenied) return ipDenied;
 
   const parsed = await readJsonObject(req);
   if ('error' in parsed) return parsed.error;
@@ -358,10 +356,8 @@ export async function handlePairLink(req: Request, env: Env): Promise<Response> 
 
   // bearer 検証済み (本人確認済み) なので deviceId-scoped rate limit で sidB 総当たり探索や
   // notifyInbox 経由のペアリング通知スパムを抑える (/auth/token の RATELIMIT_DEVICE と同じパターン)。
-  if (env.RATELIMIT_DEVICE) {
-    const { success } = await env.RATELIMIT_DEVICE.limit({ key: claims.deviceId });
-    if (!success) return jsonError(429, 'DEVICE_RATE_LIMIT', 'deviceId rate limit exceeded');
-  }
+  const deviceDenied = await rateLimitDenied(env.RATELIMIT_DEVICE, claims.deviceId, 'DEVICE_RATE_LIMIT', 'deviceId rate limit exceeded', 'pair/link device');
+  if (deviceDenied) return deviceDenied;
 
   const parsed = await readJsonObject(req);
   if ('error' in parsed) return parsed.error;
