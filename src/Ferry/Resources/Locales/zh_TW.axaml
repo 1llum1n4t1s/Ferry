@@ -200,4 +200,15 @@
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">已將「{0}」與「{1}」配對。</x:String>
 
   <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">無法確認接收結果。重新傳送前請檢查另一台裝置。</x:String>
+
+  <x:String x:Key="Text.IdentityLost.Title" xml:space="preserve">Ferry - 裝置身分金鑰</x:String>
+  <x:String x:Key="Text.IdentityLost.Heading" xml:space="preserve">裝置身分金鑰已損毀</x:String>
+  <x:String x:Key="Text.IdentityLost.Body" xml:space="preserve">由於重新安裝作業系統、磁碟錯誤或應用程式更新失敗，裝置的長期金鑰 (identity.key) 可能已遺失。要產生新金鑰並重新配對嗎？</x:String>
+  <x:String x:Key="Text.IdentityLost.Warning" xml:space="preserve">繼續後，目前所有配對都會被清除（對方裝置上也需要重新登記）。</x:String>
+  <x:String x:Key="Text.IdentityLost.Later" xml:space="preserve">稍後</x:String>
+  <x:String x:Key="Text.IdentityLost.Reset" xml:space="preserve">重新開始</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Title" xml:space="preserve">Ferry - 需要重新啟動</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Heading" xml:space="preserve">已產生新金鑰</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Body" xml:space="preserve">應用程式即將結束。下次啟動時請使用新金鑰重新配對。</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Exit" xml:space="preserve">結束</x:String>
 </ResourceDictionary>

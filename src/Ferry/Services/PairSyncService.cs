@@ -271,7 +271,7 @@ public sealed class PairSyncService : IDisposable
                             // セッション中 backfill が永久 skip され、削除 guard と相まって peer も SSoT もない宙ぶらりん
                             // 状態になる。
                             _backfillAttempted.TryAdd(peer.PeerId, 0);  // 成功時のみ marker
-                            Util.Logger.Log($"pairs/{pairId} backfill 成功 (legacy peer)");
+                            Util.Logger.Log($"pairs/{Util.Logger.MaskPairId(pairId)} backfill 成功 (legacy peer)");
                             _consecutive404[peer.PeerId] = 0;
                             // Codex 第15弾 #2 (P2) fix: backfill 成功時の観察フラグ永続化も update-only API に統一。
                             // 「FindPeer → AddOrUpdate」の隙間 unpair で resurrect する race を _peersLock 内アトミックで閉じる。
@@ -281,13 +281,13 @@ public sealed class PairSyncService : IDisposable
                         catch (OperationCanceledException) { throw; }  // CodeRabbit: shutdown キャンセルは即座にループへ伝播
                         catch (Exception ex)
                         {
-                            Util.Logger.Log($"pairs/{pairId} backfill 失敗 → 次サイクルで再試行: {ex.Message}", Util.LogLevel.Debug);
+                            Util.Logger.Log($"pairs/{Util.Logger.MaskPairId(pairId)} backfill 失敗 → 次サイクルで再試行: {ex.Message}", Util.LogLevel.Debug);
                             // fall through to counting (marker は立てないので次サイクルで再試行可能)
                         }
                     }
                     // 旧 Firebase REST 由来の互換分岐（不在を 200 + null body で返す経路）。現行 relay は不在なら 404 を返す
                     var count = _consecutive404.AddOrUpdate(peer.PeerId, 1, (_, n) => n + 1);
-                    Util.Logger.Log($"pairs/{pairId} 不在検出 ({count}/{Consecutive404Threshold})", Util.LogLevel.Debug);
+                    Util.Logger.Log($"pairs/{Util.Logger.MaskPairId(pairId)} 不在検出 ({count}/{Consecutive404Threshold})", Util.LogLevel.Debug);
                     if (!inGrace && count >= Consecutive404Threshold)
                     {
                         // Codex P1 fix (第3弾): 観察未済 (legacy peer) は責任者側 PC がまだ upgrade してないだけの
@@ -296,7 +296,7 @@ public sealed class PairSyncService : IDisposable
                         // まで削除を延期する (= 責任者が upgrade して書くか、明示的に DELETE するまで残す)。
                         if (!peer.PairsSsotObserved)
                         {
-                            Util.Logger.Log($"pairs/{pairId} 連続 {count} 回不在だが未観察 (legacy peer) のため削除を延期");
+                            Util.Logger.Log($"pairs/{Util.Logger.MaskPairId(pairId)} 連続 {count} 回不在だが未観察 (legacy peer) のため削除を延期");
                             continue;
                         }
                         // Codex 第14弾 #1 (P2) fix: 削除を確定する直前に pair を再 fetch する。
@@ -308,13 +308,13 @@ public sealed class PairSyncService : IDisposable
                         // IsPendingRemoval (ユーザー起点の unpair in-flight) のときも削除は冗長なので中止する。
                         if (_peerRegistry.IsPendingRemoval(peer.PeerId))
                         {
-                            Util.Logger.Log($"pairs/{pairId} 削除中止: ユーザー起点の unpair 進行中", Util.LogLevel.Debug);
+                            Util.Logger.Log($"pairs/{Util.Logger.MaskPairId(pairId)} 削除中止: ユーザー起点の unpair 進行中", Util.LogLevel.Debug);
                             continue;
                         }
                         var (recheckStatus, recheckBody) = await _fetchPair(pairId, ct);
                         if (IsPresent(recheckStatus, recheckBody))
                         {
-                            Util.Logger.Log($"pairs/{pairId} 削除直前の再確認で SSoT 復活を検出 → 削除中止 (同一 peer 再ペア)");
+                            Util.Logger.Log($"pairs/{Util.Logger.MaskPairId(pairId)} 削除直前の再確認で SSoT 復活を検出 → 削除中止 (同一 peer 再ペア)");
                             _consecutive404[peer.PeerId] = 0;
                             continue;
                         }
@@ -325,10 +325,10 @@ public sealed class PairSyncService : IDisposable
                         // ときだけ削除する (= 元の 3 連続 404 ガードと同じく不明は非破壊)。
                         if (!IsConfirmedAbsent(recheckStatus, recheckBody))
                         {
-                            Util.Logger.Log($"pairs/{pairId} 削除直前の再確認が HTTP {(int)recheckStatus} → 不在を確証できず削除を保留", Util.LogLevel.Debug);
+                            Util.Logger.Log($"pairs/{Util.Logger.MaskPairId(pairId)} 削除直前の再確認が HTTP {(int)recheckStatus} → 不在を確証できず削除を保留", Util.LogLevel.Debug);
                             continue;
                         }
-                        Util.Logger.Log($"pairs/{pairId} が連続 {count} 回不在 → ローカル削除");
+                        Util.Logger.Log($"pairs/{Util.Logger.MaskPairId(pairId)} が連続 {count} 回不在 → ローカル削除");
                         await _peerRegistry.RemovePeerAsync(peer.PeerId);
                         _consecutive404.TryRemove(peer.PeerId, out _);
                     }
@@ -336,7 +336,7 @@ public sealed class PairSyncService : IDisposable
                 // 401/403/5xx/その他 → 『不明』として未操作（カウンタもリセットしない）
                 else
                 {
-                    Util.Logger.Log($"pairs/{pairId} 取得が HTTP {(int)status} → 不明判定で未操作", Util.LogLevel.Debug);
+                    Util.Logger.Log($"pairs/{Util.Logger.MaskPairId(pairId)} 取得が HTTP {(int)status} → 不明判定で未操作", Util.LogLevel.Debug);
                 }
             }
             catch (OperationCanceledException) { throw; }
@@ -389,13 +389,13 @@ public sealed class PairSyncService : IDisposable
                 var (status, body) = await _fetchPair(pairId, ct);
                 if (!IsConfirmedAbsent(status, body))
                 {
-                    Util.Logger.Log($"pairs/{pairId} unpair push 後の再確認が HTTP {(int)status} → 即時削除しない", Util.LogLevel.Debug);
+                    Util.Logger.Log($"pairs/{Util.Logger.MaskPairId(pairId)} unpair push 後の再確認が HTTP {(int)status} → 即時削除しない", Util.LogLevel.Debug);
                     return;
                 }
 
                 if (_peerRegistry.FindPeer(peer.PeerId) == null) return;
 
-                Util.Logger.Log($"pairs/{pairId} unpair push と D1 不在を確認 → ローカル削除");
+                Util.Logger.Log($"pairs/{Util.Logger.MaskPairId(pairId)} unpair push と D1 不在を確認 → ローカル削除");
                 await _peerRegistry.RemovePeerAsync(peer.PeerId);
                 _consecutive404.TryRemove(peer.PeerId, out _);
             }

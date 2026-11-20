@@ -142,6 +142,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         // (App.OnFrameworkInitializationCompleted で生成 → MainWindowViewModel.Settings が保持) なので、
         // static イベントへの購読はプロセス寿命と一致する。明示解除 (Dispose) は不要。
         App.UpdateCheckStateChanged += OnAppUpdateCheckStateChanged;
+        App.IgnoreUpdateTagChanged += OnAppIgnoreUpdateTagChanged;
         IsCheckingUpdate = App.IsUpdateCheckInProgress;
     }
 
@@ -341,6 +342,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
     /// <see cref="IsCheckingUpdate"/> を更新する。バックグラウンドスレッドから呼ばれうるため
     /// Dispatcher.UIThread.Post で必ず UI スレッドへ送る (Lhamiel と同じパターン)。
     /// </summary>
+    private void OnAppIgnoreUpdateTagChanged(string tag)
+    {
+        Avalonia.Threading.Dispatcher.UIThread.Post(() => IgnoredUpdateTag = tag ?? string.Empty);
+    }
+
     private void OnAppUpdateCheckStateChanged(bool inProgress)
     {
         Avalonia.Threading.Dispatcher.UIThread.Post(() => IsCheckingUpdate = inProgress);

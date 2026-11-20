@@ -215,4 +215,15 @@ Hindi ito maibabalik.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">Naipares ang "{0}" sa "{1}".</x:String>
 
   <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Hindi makumpirma ang pagtanggap. Suriin ang kabilang device bago magpadala muli.</x:String>
+
+  <x:String x:Key="Text.IdentityLost.Title" xml:space="preserve">Ferry - Susi ng pagkakakilanlan ng device</x:String>
+  <x:String x:Key="Text.IdentityLost.Heading" xml:space="preserve">Sira ang susi ng pagkakakilanlan ng device</x:String>
+  <x:String x:Key="Text.IdentityLost.Body" xml:space="preserve">Maaring nawala ang pangmatagalang susi ng device (identity.key) dahil sa muling pag-install ng OS, error sa disk, o pumalyang update ng app. Gumawa ng bagong susi at mag-pair muli?</x:String>
+  <x:String x:Key="Text.IdentityLost.Warning" xml:space="preserve">Kung magpapatuloy, buburahin ang lahat ng kasalukuyang pair (kailangan din itong irehistro muli sa ibang mga device).</x:String>
+  <x:String x:Key="Text.IdentityLost.Later" xml:space="preserve">Mamaya</x:String>
+  <x:String x:Key="Text.IdentityLost.Reset" xml:space="preserve">Magsimula muli</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Title" xml:space="preserve">Ferry - Kailangang i-restart</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Heading" xml:space="preserve">Nakagawa ng bagong susi</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Body" xml:space="preserve">Magsasara na ang app. Mag-pair muli gamit ang bagong susi sa susunod na pagbukas.</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Exit" xml:space="preserve">Lumabas</x:String>
 </ResourceDictionary>

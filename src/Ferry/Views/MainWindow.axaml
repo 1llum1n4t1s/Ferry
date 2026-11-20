@@ -136,6 +136,7 @@
                                     <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2">
                                         <!-- オンラインインジケーター -->
                                         <Ellipse Grid.Column="0" Width="10" Height="10"
+                                                 AutomationProperties.Name="{Binding IsOnline, Converter={x:Static conv:OnlineStatusToTextConverter.Instance}}"
                                                  Fill="{Binding IsOnline, Converter={x:Static conv:OnlineStatusToBrushConverter.Instance}}"
                                                  VerticalAlignment="Center"
                                                  Margin="0,0,8,0" />

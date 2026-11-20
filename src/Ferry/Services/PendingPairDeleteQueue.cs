@@ -116,7 +116,7 @@ public sealed class PendingPairDeleteQueue : IDisposable
                 var idx = _items.FindIndex(i => i.PairId == item.PairId);
                 if (idx < 0)
                 {
-                    Util.Logger.Log($"pending delete pairId={item.PairId} は再ペアリングで取消済み → retry skip", Util.LogLevel.Debug);
+                    Util.Logger.Log($"pending delete pairId={Util.Logger.MaskPairId(item.PairId)} は再ペアリングで取消済み → retry skip", Util.LogLevel.Debug);
                     continue;
                 }
                 reserved = _items[idx];

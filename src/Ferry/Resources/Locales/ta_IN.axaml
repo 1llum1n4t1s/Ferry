@@ -215,4 +215,15 @@
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">"{0}" மற்றும் "{1}" இணைக்கப்பட்டன.</x:String>
 
   <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">பெறப்பட்டதை உறுதிப்படுத்த முடியவில்லை. மீண்டும் அனுப்பும் முன் மற்ற சாதனத்தைச் சரிபார்க்கவும்.</x:String>
+
+  <x:String x:Key="Text.IdentityLost.Title" xml:space="preserve">Ferry - சாதன அடையாள விசை</x:String>
+  <x:String x:Key="Text.IdentityLost.Heading" xml:space="preserve">சாதன அடையாள விசை சேதமடைந்துள்ளது</x:String>
+  <x:String x:Key="Text.IdentityLost.Body" xml:space="preserve">OS மறுநிறுவல், வட்டு பிழை அல்லது பயன்பாட்டு புதுப்பிப்பு தோல்வி காரணமாக சாதனத்தின் நீண்டகால விசை (identity.key) இழக்கப்பட்டிருக்கலாம். புதிய விசையை உருவாக்கி மீண்டும் இணைக்கலாமா?</x:String>
+  <x:String x:Key="Text.IdentityLost.Warning" xml:space="preserve">தொடர்ந்தால், தற்போதைய அனைத்து இணைப்புகளும் அழிக்கப்படும் (மற்ற சாதனங்களிலும் மீண்டும் பதிவு செய்ய வேண்டும்).</x:String>
+  <x:String x:Key="Text.IdentityLost.Later" xml:space="preserve">பின்னர்</x:String>
+  <x:String x:Key="Text.IdentityLost.Reset" xml:space="preserve">மீண்டும் தொடங்கு</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Title" xml:space="preserve">Ferry - மறுதொடக்கம் தேவை</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Heading" xml:space="preserve">புதிய விசை உருவாக்கப்பட்டது</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Body" xml:space="preserve">பயன்பாடு இப்போது மூடப்படும். அடுத்த முறை தொடங்கும்போது புதிய விசையுடன் மீண்டும் இணைக்கவும்.</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Exit" xml:space="preserve">வெளியேறு</x:String>
 </ResourceDictionary>

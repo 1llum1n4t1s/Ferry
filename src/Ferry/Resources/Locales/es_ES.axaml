@@ -200,4 +200,15 @@ Esta acción no se puede deshacer.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">«{0}» se emparejó con «{1}».</x:String>
 
   <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">No se pudo confirmar la recepción. Comprueba el otro dispositivo antes de reenviar.</x:String>
+
+  <x:String x:Key="Text.IdentityLost.Title" xml:space="preserve">Ferry - Clave de identidad del dispositivo</x:String>
+  <x:String x:Key="Text.IdentityLost.Heading" xml:space="preserve">La clave de identidad del dispositivo está dañada</x:String>
+  <x:String x:Key="Text.IdentityLost.Body" xml:space="preserve">Es posible que la clave a largo plazo del dispositivo (identity.key) se haya perdido por una reinstalación del sistema, un error de disco o una actualización fallida de la app. ¿Generar una clave nueva y volver a emparejar?</x:String>
+  <x:String x:Key="Text.IdentityLost.Warning" xml:space="preserve">Si continúas, se borrarán todos los emparejamientos actuales (también habrá que volver a registrarlos en los otros dispositivos).</x:String>
+  <x:String x:Key="Text.IdentityLost.Later" xml:space="preserve">Más tarde</x:String>
+  <x:String x:Key="Text.IdentityLost.Reset" xml:space="preserve">Empezar de nuevo</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Title" xml:space="preserve">Ferry - Se requiere reiniciar</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Heading" xml:space="preserve">Se generó una clave nueva</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Body" xml:space="preserve">La app se cerrará ahora. Vuelve a emparejar con la clave nueva la próxima vez que la abras.</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Exit" xml:space="preserve">Salir</x:String>
 </ResourceDictionary>

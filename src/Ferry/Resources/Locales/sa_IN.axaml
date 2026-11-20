@@ -215,4 +215,15 @@
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">"{0}" "{1}" इत्यनेन सह योजितम्।</x:String>
 
   <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">प्राप्तिः निश्चेतुं न शक्यते। पुनः प्रेषणात् पूर्वम् अन्ययन्त्रं परीक्ष्यताम्।</x:String>
+
+  <x:String x:Key="Text.IdentityLost.Title" xml:space="preserve">Ferry - यन्त्रपरिचयकुञ्जिका</x:String>
+  <x:String x:Key="Text.IdentityLost.Heading" xml:space="preserve">यन्त्रपरिचयकुञ्जिका क्षतिग्रस्ता अस्ति</x:String>
+  <x:String x:Key="Text.IdentityLost.Body" xml:space="preserve">ओएस्-पुनःस्थापनात्, डिस्क्-दोषात्, अनुप्रयोगस्य अद्यतनविफलतायाः वा कारणात् यन्त्रस्य दीर्घकालिकी कुञ्जिका (identity.key) नष्टा स्यात्। नूतनां कुञ्जिकां निर्माय पुनः युग्मीकरणं करणीयम् वा?</x:String>
+  <x:String x:Key="Text.IdentityLost.Warning" xml:space="preserve">अनुवर्तने सति सर्वाणि वर्तमानयुग्मानि मार्क्ष्यन्ते (अन्येषु यन्त्रेष्वपि पुनः पञ्जीकरणीयानि)।</x:String>
+  <x:String x:Key="Text.IdentityLost.Later" xml:space="preserve">पश्चात्</x:String>
+  <x:String x:Key="Text.IdentityLost.Reset" xml:space="preserve">पुनः आरभताम्</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Title" xml:space="preserve">Ferry - पुनरारम्भः आवश्यकः</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Heading" xml:space="preserve">नूतना कुञ्जिका निर्मिता</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Body" xml:space="preserve">अनुप्रयोगः इदानीं निर्गमिष्यति। अग्रिमारम्भे नूतनकुञ्जिकया पुनः युग्मीकरणं कुरुत।</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Exit" xml:space="preserve">निर्गम्यताम्</x:String>
 </ResourceDictionary>

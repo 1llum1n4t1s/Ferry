@@ -215,4 +215,15 @@ This cannot be undone.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">Paired "{0}" with "{1}".</x:String>
 
   <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Could not confirm receipt. Check the other device before resending.</x:String>
+
+  <x:String x:Key="Text.IdentityLost.Title" xml:space="preserve">Ferry - Device identity key</x:String>
+  <x:String x:Key="Text.IdentityLost.Heading" xml:space="preserve">The device identity key is damaged</x:String>
+  <x:String x:Key="Text.IdentityLost.Body" xml:space="preserve">The device's long-term key (identity.key) may have been lost because of an OS reinstall, a disk error, or a failed app update. Generate a new key and pair again?</x:String>
+  <x:String x:Key="Text.IdentityLost.Warning" xml:space="preserve">If you continue, all current pairs will be erased (they must also be registered again on the other devices).</x:String>
+  <x:String x:Key="Text.IdentityLost.Later" xml:space="preserve">Later</x:String>
+  <x:String x:Key="Text.IdentityLost.Reset" xml:space="preserve">Start over</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Title" xml:space="preserve">Ferry - Restart required</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Heading" xml:space="preserve">A new key was generated</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Body" xml:space="preserve">The app will now quit. Pair again with the new key the next time you launch it.</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Exit" xml:space="preserve">Quit</x:String>
 </ResourceDictionary>

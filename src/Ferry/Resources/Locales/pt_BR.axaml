@@ -218,4 +218,15 @@ Esta ação não pode ser desfeita.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">"{0}" foi pareado com "{1}".</x:String>
 
   <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Não foi possível confirmar o recebimento. Verifique o outro dispositivo antes de reenviar.</x:String>
+
+  <x:String x:Key="Text.IdentityLost.Title" xml:space="preserve">Ferry - Chave de identidade do dispositivo</x:String>
+  <x:String x:Key="Text.IdentityLost.Heading" xml:space="preserve">A chave de identidade do dispositivo está danificada</x:String>
+  <x:String x:Key="Text.IdentityLost.Body" xml:space="preserve">A chave de longo prazo do dispositivo (identity.key) pode ter sido perdida por uma reinstalação do sistema, erro de disco ou falha na atualização do app. Gerar uma nova chave e refazer o pareamento?</x:String>
+  <x:String x:Key="Text.IdentityLost.Warning" xml:space="preserve">Se continuar, todos os pareamentos atuais serão apagados (também será preciso registrá-los novamente nos outros dispositivos).</x:String>
+  <x:String x:Key="Text.IdentityLost.Later" xml:space="preserve">Mais tarde</x:String>
+  <x:String x:Key="Text.IdentityLost.Reset" xml:space="preserve">Recomeçar</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Title" xml:space="preserve">Ferry - Reinício necessário</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Heading" xml:space="preserve">Uma nova chave foi gerada</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Body" xml:space="preserve">O app será encerrado agora. Pareie novamente com a nova chave na próxima vez que abri-lo.</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Exit" xml:space="preserve">Sair</x:String>
 </ResourceDictionary>

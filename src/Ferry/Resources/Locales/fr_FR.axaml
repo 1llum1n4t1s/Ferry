@@ -200,4 +200,15 @@ Cette action est irréversible.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">« {0} » a été associé à « {1} ».</x:String>
 
   <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Impossible de confirmer la réception. Vérifiez l’autre appareil avant de renvoyer.</x:String>
+
+  <x:String x:Key="Text.IdentityLost.Title" xml:space="preserve">Ferry - Clé d’identité de l’appareil</x:String>
+  <x:String x:Key="Text.IdentityLost.Heading" xml:space="preserve">La clé d’identité de l’appareil est endommagée</x:String>
+  <x:String x:Key="Text.IdentityLost.Body" xml:space="preserve">La clé à long terme de l’appareil (identity.key) a peut-être été perdue à cause d’une réinstallation du système, d’une erreur de disque ou d’une mise à jour échouée de l’application. Générer une nouvelle clé et refaire l’appairage ?</x:String>
+  <x:String x:Key="Text.IdentityLost.Warning" xml:space="preserve">Si vous continuez, tous les appairages actuels seront effacés (ils devront aussi être enregistrés à nouveau sur les autres appareils).</x:String>
+  <x:String x:Key="Text.IdentityLost.Later" xml:space="preserve">Plus tard</x:String>
+  <x:String x:Key="Text.IdentityLost.Reset" xml:space="preserve">Recommencer</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Title" xml:space="preserve">Ferry - Redémarrage requis</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Heading" xml:space="preserve">Une nouvelle clé a été générée</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Body" xml:space="preserve">L’application va se fermer. Refaites l’appairage avec la nouvelle clé au prochain lancement.</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Exit" xml:space="preserve">Quitter</x:String>
 </ResourceDictionary>

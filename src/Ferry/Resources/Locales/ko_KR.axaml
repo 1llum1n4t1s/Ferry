@@ -203,4 +203,15 @@
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">"{0}"과(와) "{1}"을(를) 페어링했습니다.</x:String>
 
   <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">수신 결과를 확인할 수 없습니다. 다시 보내기 전에 상대 기기를 확인하세요.</x:String>
+
+  <x:String x:Key="Text.IdentityLost.Title" xml:space="preserve">Ferry - 기기 식별 키</x:String>
+  <x:String x:Key="Text.IdentityLost.Heading" xml:space="preserve">기기 식별 키가 손상되었습니다</x:String>
+  <x:String x:Key="Text.IdentityLost.Body" xml:space="preserve">OS 재설치, 디스크 오류 또는 앱 업데이트 실패로 기기의 장기 키(identity.key)가 분실되었을 수 있습니다. 새 키를 생성하고 다시 페어링하시겠습니까?</x:String>
+  <x:String x:Key="Text.IdentityLost.Warning" xml:space="preserve">계속하면 현재 페어 목록이 모두 삭제됩니다(상대 기기에도 다시 등록해야 합니다).</x:String>
+  <x:String x:Key="Text.IdentityLost.Later" xml:space="preserve">나중에</x:String>
+  <x:String x:Key="Text.IdentityLost.Reset" xml:space="preserve">다시 시작</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Title" xml:space="preserve">Ferry - 재시작 필요</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Heading" xml:space="preserve">새 키를 생성했습니다</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Body" xml:space="preserve">앱을 종료합니다. 다음 실행 시 새 키로 다시 페어링하세요.</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Exit" xml:space="preserve">종료</x:String>
 </ResourceDictionary>

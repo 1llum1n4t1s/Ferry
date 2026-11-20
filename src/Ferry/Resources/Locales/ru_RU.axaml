@@ -217,4 +217,15 @@
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">«{0}» связан с «{1}».</x:String>
 
   <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Не удалось подтвердить получение. Проверьте другое устройство перед повторной отправкой.</x:String>
+
+  <x:String x:Key="Text.IdentityLost.Title" xml:space="preserve">Ferry - Ключ идентификации устройства</x:String>
+  <x:String x:Key="Text.IdentityLost.Heading" xml:space="preserve">Ключ идентификации устройства повреждён</x:String>
+  <x:String x:Key="Text.IdentityLost.Body" xml:space="preserve">Долговременный ключ устройства (identity.key) мог быть утерян из-за переустановки ОС, ошибки диска или неудачного обновления приложения. Создать новый ключ и выполнить сопряжение заново?</x:String>
+  <x:String x:Key="Text.IdentityLost.Warning" xml:space="preserve">Если продолжить, все текущие пары будут удалены (их также придётся заново зарегистрировать на других устройствах).</x:String>
+  <x:String x:Key="Text.IdentityLost.Later" xml:space="preserve">Позже</x:String>
+  <x:String x:Key="Text.IdentityLost.Reset" xml:space="preserve">Начать заново</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Title" xml:space="preserve">Ferry - Требуется перезапуск</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Heading" xml:space="preserve">Создан новый ключ</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Body" xml:space="preserve">Приложение сейчас закроется. При следующем запуске выполните сопряжение заново с новым ключом.</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Exit" xml:space="preserve">Выйти</x:String>
 </ResourceDictionary>

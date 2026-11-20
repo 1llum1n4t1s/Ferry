@@ -1083,7 +1083,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             session.ConnectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             var linked = session.ConnectCts.Token;
 
-            Util.Logger.Log($"オンデマンド接続開始: peer={peerId}, deviceId={_deviceId}");
+            Util.Logger.Log($"オンデマンド接続開始: peer={Util.Logger.MaskDeviceId(peerId)}, deviceId={Util.Logger.MaskDeviceId(_deviceId)}");
 
             var pairId = Util.PairId.Generate(_deviceId, peerId);
 
@@ -1181,7 +1181,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
 
             session.PairId = pairId;
             _currentPairId = pairId;  // 単数 _currentPairId は primary alias として更新
-            Util.Logger.Log($"pairId 生成: {pairId}");
+            Util.Logger.Log($"pairId 生成: {Util.Logger.MaskPairId(pairId)}");
 
             // 古いシグナリングデータを削除
             await sessionSig.CleanupSignalingDataAsync(pairId, linked);
@@ -1476,11 +1476,11 @@ public sealed class ConnectionService : IConnectionService, IDisposable
                 Util.Logger.Log($"Probe スキップ: 同じピアに接続中 → 現 Route={Route} を返す");
                 return Route;
             }
-            Util.Logger.Log($"Probe スキップ: 別のピアに接続中 (current={ConnectedPeer?.SessionId}, probe={peerId})");
+            Util.Logger.Log($"Probe スキップ: 別のピアに接続中 (current={Util.Logger.MaskDeviceId(ConnectedPeer?.SessionId)}, probe={Util.Logger.MaskDeviceId(peerId)})");
             return ConnectionRoute.Unknown;
         }
 
-        Util.Logger.Log($"経路 Probe 開始: peer={peerId}");
+        Util.Logger.Log($"経路 Probe 開始: peer={Util.Logger.MaskDeviceId(peerId)}");
 
         // v1.0.38 review fix v2: probe 中も listening を維持する。
         // 自分の probe offer は ConnectionInfo.From=_deviceId で識別して
@@ -1641,7 +1641,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             probeSig?.Dispose();
 
             // v1.0.38 review fix v2: listening は probe 中も停止していないので再開不要
-            Util.Logger.Log($"経路 Probe 終了: peer={peerId}");
+            Util.Logger.Log($"経路 Probe 終了: peer={Util.Logger.MaskDeviceId(peerId)}");
         }
     }
 
@@ -1951,7 +1951,7 @@ public sealed class ConnectionService : IConnectionService, IDisposable
             var parts = endpointStr.Split(':');
             if (parts.Length != 2 || !int.TryParse(parts[1], out var remotePort))
             {
-                Util.Logger.Log($"Answer エンドポイントのパース失敗: {endpointStr}", Util.LogLevel.Warning);
+                Util.Logger.Log($"Answer エンドポイントのパース失敗: {Util.Logger.MaskIp(endpointStr)}", Util.LogLevel.Warning);
                 udpTransport.Dispose();
                 return false;
             }

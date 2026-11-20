@@ -213,4 +213,15 @@
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">"{0}" הותאם עם "{1}".</x:String>
 
   <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">לא ניתן לאשר את הקבלה. יש לבדוק במכשיר השני לפני שליחה חוזרת.</x:String>
+
+  <x:String x:Key="Text.IdentityLost.Title" xml:space="preserve">Ferry - מפתח זהות המכשיר</x:String>
+  <x:String x:Key="Text.IdentityLost.Heading" xml:space="preserve">מפתח זהות המכשיר פגום</x:String>
+  <x:String x:Key="Text.IdentityLost.Body" xml:space="preserve">ייתכן שהמפתח לטווח ארוך של המכשיר (identity.key) אבד עקב התקנה מחדש של מערכת ההפעלה, שגיאת דיסק או עדכון אפליקציה שנכשל. ליצור מפתח חדש ולבצע צימוד מחדש?</x:String>
+  <x:String x:Key="Text.IdentityLost.Warning" xml:space="preserve">אם תמשיך, כל הצימודים הנוכחיים יימחקו (יהיה צורך לרשום אותם מחדש גם במכשירים האחרים).</x:String>
+  <x:String x:Key="Text.IdentityLost.Later" xml:space="preserve">מאוחר יותר</x:String>
+  <x:String x:Key="Text.IdentityLost.Reset" xml:space="preserve">להתחיל מחדש</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Title" xml:space="preserve">Ferry - נדרשת הפעלה מחדש</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Heading" xml:space="preserve">נוצר מפתח חדש</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Body" xml:space="preserve">האפליקציה תיסגר כעת. בהפעלה הבאה בצע צימוד מחדש עם המפתח החדש.</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Exit" xml:space="preserve">יציאה</x:String>
 </ResourceDictionary>

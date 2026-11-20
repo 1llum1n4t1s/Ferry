@@ -201,4 +201,15 @@
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">已将“{0}”与“{1}”配对。</x:String>
 
   <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">无法确认接收结果。重新发送前请检查另一台设备。</x:String>
+
+  <x:String x:Key="Text.IdentityLost.Title" xml:space="preserve">Ferry - 设备身份密钥</x:String>
+  <x:String x:Key="Text.IdentityLost.Heading" xml:space="preserve">设备身份密钥已损坏</x:String>
+  <x:String x:Key="Text.IdentityLost.Body" xml:space="preserve">由于重装系统、磁盘错误或应用更新失败，设备的长期密钥 (identity.key) 可能已丢失。要生成新密钥并重新配对吗？</x:String>
+  <x:String x:Key="Text.IdentityLost.Warning" xml:space="preserve">继续后，当前所有配对都将被清除（对方设备上也需要重新登记）。</x:String>
+  <x:String x:Key="Text.IdentityLost.Later" xml:space="preserve">稍后</x:String>
+  <x:String x:Key="Text.IdentityLost.Reset" xml:space="preserve">重新开始</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Title" xml:space="preserve">Ferry - 需要重启</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Heading" xml:space="preserve">已生成新密钥</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Body" xml:space="preserve">应用将退出。下次启动时请使用新密钥重新配对。</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Exit" xml:space="preserve">退出</x:String>
 </ResourceDictionary>

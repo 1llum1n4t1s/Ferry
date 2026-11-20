@@ -306,7 +306,7 @@ public partial class App : Application
                 }
                 catch (Exception ex)
                 {
-                    Util.Logger.Log($"認証 初回 SignIn 失敗（refresh ループに委譲して短期バックオフで再試行）: {ex.Message}", Util.LogLevel.Warning);
+                    Util.Logger.Log($"認証 初回 SignIn 失敗（次の signaling 操作の EnsureTokenAsync が再試行する）: {ex.Message}", Util.LogLevel.Warning);
                 }
             });
             // peerRegistry / settingsService は暗号チャネルの PairSecret 引き当て・フラグ参照に使うため先に生成して注入する。
@@ -362,7 +362,7 @@ public partial class App : Application
                     {
                         using var sig = signalingFactory();
                         await sig.DeletePairAsync(pairId);
-                        Util.Logger.Log($"pairs/{pairId} retry DELETE 成功");
+                        Util.Logger.Log($"pairs/{Util.Logger.MaskPairId(pairId)} retry DELETE 成功");
                         return true;
                     }
                     catch { return false; }
@@ -992,5 +992,11 @@ public partial class App : Application
         if (s == null) return;
         s.IgnoreUpdateTag = tag;
         _ = _settingsService!.SaveAsync();
+        // 開いている設定画面の VM へ反映する（購読側で UI スレッドへ marshal する）。
+        try { IgnoreUpdateTagChanged?.Invoke(tag); }
+        catch (Exception ex) { Util.Logger.LogException("IgnoreUpdateTagChanged ハンドラで例外", ex); }
     }
+
+    /// <summary>「このバージョンを無視」が記録されたときに発火するイベント（引数は無視対象タグ）。</summary>
+    public static event Action<string>? IgnoreUpdateTagChanged;
 }

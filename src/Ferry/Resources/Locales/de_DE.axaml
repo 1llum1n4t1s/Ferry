@@ -202,4 +202,15 @@ Dies kann nicht rückgängig gemacht werden.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">„{0}“ wurde mit „{1}“ gekoppelt.</x:String>
 
   <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Der Empfang konnte nicht bestätigt werden. Prüfen Sie das andere Gerät vor dem erneuten Senden.</x:String>
+
+  <x:String x:Key="Text.IdentityLost.Title" xml:space="preserve">Ferry - Geräteidentitätsschlüssel</x:String>
+  <x:String x:Key="Text.IdentityLost.Heading" xml:space="preserve">Der Geräteidentitätsschlüssel ist beschädigt</x:String>
+  <x:String x:Key="Text.IdentityLost.Body" xml:space="preserve">Der langfristige Schlüssel des Geräts (identity.key) ist möglicherweise durch eine Neuinstallation des Betriebssystems, einen Festplattenfehler oder ein fehlgeschlagenes App-Update verloren gegangen. Einen neuen Schlüssel erzeugen und erneut koppeln?</x:String>
+  <x:String x:Key="Text.IdentityLost.Warning" xml:space="preserve">Wenn Sie fortfahren, werden alle aktuellen Kopplungen gelöscht (sie müssen auch auf den anderen Geräten neu registriert werden).</x:String>
+  <x:String x:Key="Text.IdentityLost.Later" xml:space="preserve">Später</x:String>
+  <x:String x:Key="Text.IdentityLost.Reset" xml:space="preserve">Neu beginnen</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Title" xml:space="preserve">Ferry - Neustart erforderlich</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Heading" xml:space="preserve">Ein neuer Schlüssel wurde erzeugt</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Body" xml:space="preserve">Die App wird jetzt beendet. Koppeln Sie beim nächsten Start erneut mit dem neuen Schlüssel.</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Exit" xml:space="preserve">Beenden</x:String>
 </ResourceDictionary>

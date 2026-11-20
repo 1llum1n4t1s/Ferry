@@ -9,7 +9,7 @@ namespace Ferry.Views;
 /// rere #D-001(a) Phase B / Q2 採用案: identity.key 紛失検出 → clean slate UI。
 /// Workers /auth/token が 401 DEVICE_PUBKEY_MISMATCH を返したときに表示する。
 ///
-/// XAML を使わず純コードで構築（最小実装・ロケール依存なし・新規 axaml/AOT 注意点回避）。
+/// XAML を使わず純コードで構築し、文言は 18 言語のロケール辞書（Text.IdentityLost.*）から引く。
 /// </summary>
 public sealed class IdentityLostDialog : Window
 {
@@ -18,7 +18,7 @@ public sealed class IdentityLostDialog : Window
 
     public IdentityLostDialog()
     {
-        Title = "Ferry - 端末識別の鍵";
+        Title = App.Text("IdentityLost.Title");
         Width = 520;
         Height = 240;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -32,17 +32,14 @@ public sealed class IdentityLostDialog : Window
 
         root.Children.Add(new TextBlock
         {
-            Text = "端末識別の鍵が壊れています",
+            Text = App.Text("IdentityLost.Heading"),
             FontSize = 18,
             FontWeight = FontWeight.Bold,
         });
 
         root.Children.Add(new TextBlock
         {
-            Text =
-                "OS 再インストール / ディスクエラー / アプリ更新失敗で端末の長期鍵 (identity.key) が " +
-                "紛失した可能性があります。新しい鍵を生成してペアリングをやり直しますか？\n" +
-                "やり直す場合、現在のペア一覧はすべて消去されます（相手側の登録も含めて再登録が必要）。",
+            Text = App.Text("IdentityLost.Body") + "\n" + App.Text("IdentityLost.Warning"),
             TextWrapping = TextWrapping.Wrap,
             LineHeight = 22,
         });
@@ -56,7 +53,7 @@ public sealed class IdentityLostDialog : Window
 
         var laterBtn = new Button
         {
-            Content = "後で",
+            Content = App.Text("IdentityLost.Later"),
             Padding = new Thickness(16, 6),
         };
         laterBtn.Click += (_, _) =>
@@ -68,7 +65,7 @@ public sealed class IdentityLostDialog : Window
 
         var resetBtn = new Button
         {
-            Content = "やり直す",
+            Content = App.Text("IdentityLost.Reset"),
             Padding = new Thickness(16, 6),
             FontWeight = FontWeight.SemiBold,
         };
@@ -95,7 +92,7 @@ public sealed class IdentityLostDialog : Window
     {
         var dialog = new Window
         {
-            Title = "Ferry - 再起動が必要",
+            Title = App.Text("IdentityLost.Restart.Title"),
             Width = 460,
             Height = 200,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -104,19 +101,19 @@ public sealed class IdentityLostDialog : Window
         var root = new StackPanel { Margin = new Thickness(24), Spacing = 14 };
         root.Children.Add(new TextBlock
         {
-            Text = "新しい鍵を生成しました",
+            Text = App.Text("IdentityLost.Restart.Heading"),
             FontSize = 18,
             FontWeight = FontWeight.Bold,
         });
         root.Children.Add(new TextBlock
         {
-            Text = "アプリを終了します。次回起動時に新しい鍵で再ペアリングしてください。",
+            Text = App.Text("IdentityLost.Restart.Body"),
             TextWrapping = TextWrapping.Wrap,
             LineHeight = 22,
         });
         var okBtn = new Button
         {
-            Content = "終了",
+            Content = App.Text("IdentityLost.Restart.Exit"),
             Padding = new Thickness(16, 6),
             HorizontalAlignment = HorizontalAlignment.Right,
             FontWeight = FontWeight.SemiBold,

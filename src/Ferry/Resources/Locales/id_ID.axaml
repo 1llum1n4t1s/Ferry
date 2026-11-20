@@ -215,4 +215,15 @@ Tindakan ini tidak dapat dibatalkan.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">"{0}" telah disandingkan dengan "{1}".</x:String>
 
   <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Penerimaan tidak dapat dikonfirmasi. Periksa perangkat lain sebelum mengirim ulang.</x:String>
+
+  <x:String x:Key="Text.IdentityLost.Title" xml:space="preserve">Ferry - Kunci identitas perangkat</x:String>
+  <x:String x:Key="Text.IdentityLost.Heading" xml:space="preserve">Kunci identitas perangkat rusak</x:String>
+  <x:String x:Key="Text.IdentityLost.Body" xml:space="preserve">Kunci jangka panjang perangkat (identity.key) mungkin hilang karena instal ulang OS, kesalahan disk, atau pembaruan aplikasi yang gagal. Buat kunci baru dan pasangkan ulang?</x:String>
+  <x:String x:Key="Text.IdentityLost.Warning" xml:space="preserve">Jika dilanjutkan, semua pasangan saat ini akan dihapus (pasangan juga harus didaftarkan ulang di perangkat lain).</x:String>
+  <x:String x:Key="Text.IdentityLost.Later" xml:space="preserve">Nanti</x:String>
+  <x:String x:Key="Text.IdentityLost.Reset" xml:space="preserve">Mulai ulang</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Title" xml:space="preserve">Ferry - Perlu memulai ulang</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Heading" xml:space="preserve">Kunci baru telah dibuat</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Body" xml:space="preserve">Aplikasi akan ditutup sekarang. Pasangkan ulang dengan kunci baru saat aplikasi dibuka berikutnya.</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Exit" xml:space="preserve">Keluar</x:String>
 </ResourceDictionary>

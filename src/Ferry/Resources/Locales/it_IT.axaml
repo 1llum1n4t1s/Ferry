@@ -217,4 +217,15 @@ Questa azione non può essere annullata.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">«{0}» è stato associato a «{1}».</x:String>
 
   <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Impossibile confermare la ricezione. Controlla l’altro dispositivo prima di inviare di nuovo.</x:String>
+
+  <x:String x:Key="Text.IdentityLost.Title" xml:space="preserve">Ferry - Chiave di identità del dispositivo</x:String>
+  <x:String x:Key="Text.IdentityLost.Heading" xml:space="preserve">La chiave di identità del dispositivo è danneggiata</x:String>
+  <x:String x:Key="Text.IdentityLost.Body" xml:space="preserve">La chiave a lungo termine del dispositivo (identity.key) potrebbe essere andata persa per una reinstallazione del sistema, un errore del disco o un aggiornamento non riuscito dell’app. Generare una nuova chiave e rifare l’abbinamento?</x:String>
+  <x:String x:Key="Text.IdentityLost.Warning" xml:space="preserve">Se continui, tutti gli abbinamenti attuali verranno cancellati (andranno registrati di nuovo anche sugli altri dispositivi).</x:String>
+  <x:String x:Key="Text.IdentityLost.Later" xml:space="preserve">Più tardi</x:String>
+  <x:String x:Key="Text.IdentityLost.Reset" xml:space="preserve">Ricomincia</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Title" xml:space="preserve">Ferry - Riavvio necessario</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Heading" xml:space="preserve">È stata generata una nuova chiave</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Body" xml:space="preserve">L’app verrà chiusa. Al prossimo avvio rifai l’abbinamento con la nuova chiave.</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Exit" xml:space="preserve">Esci</x:String>
 </ResourceDictionary>

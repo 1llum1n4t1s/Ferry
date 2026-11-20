@@ -239,7 +239,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             catch (Exception ex)
             {
                 var pairId = _connectionService.GeneratePairIdFor(peerId);
-                Util.Logger.Log($"pairs/{pairId} 即時 DELETE 失敗 → PendingPairDeleteQueue へ: {ex.Message}", Util.LogLevel.Warning);
+                Util.Logger.Log($"pairs/{Util.Logger.MaskPairId(pairId)} 即時 DELETE 失敗 → PendingPairDeleteQueue へ: {ex.Message}", Util.LogLevel.Warning);
                 if (_pendingPairDeletes != null)
                     await _pendingPairDeletes.EnqueueAsync(pairId);
             }
@@ -458,7 +458,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             }
             catch (Exception ex)
             {
-                Util.Logger.Log($"RefreshPeers ピア更新エラー: {peer.PeerId}, {ex.Message}", Util.LogLevel.Warning);
+                Util.Logger.Log($"RefreshPeers ピア更新エラー: {Util.Logger.MaskDeviceId(peer.PeerId)}, {ex.Message}", Util.LogLevel.Warning);
             }
         });
 
@@ -504,7 +504,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         {
             // 着信接続監視を開始（相手からの Offer に自動応答できるようにする）
             _connectionService.StartListeningForConnection(newValue.PeerId);
-            Util.Logger.Log($"ピア選択・着信監視開始: {newValue.DisplayName} ({newValue.PeerId})");
+            Util.Logger.Log($"ピア選択・着信監視開始: {newValue.DisplayName} ({Util.Logger.MaskDeviceId(newValue.PeerId)})");
         }
         else if (!_keepListeningOnDeselect)
         {
@@ -624,7 +624,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             {
                 if (PairedPeers.Any(p => p.PeerId == peer.PeerId))
                 {
-                    Util.Logger.Log($"既知ピアのペアリング再検知を無視: {peer.DisplayName} ({peer.PeerId})");
+                    Util.Logger.Log($"既知ピアのペアリング再検知を無視: {peer.DisplayName} ({Util.Logger.MaskDeviceId(peer.PeerId)})");
                     return false;
                 }
 
@@ -1115,7 +1115,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
         {
             if (_lastProbeAt.TryGetValue(peer.PeerId, out var last) && now - last < ProbeCooldown)
             {
-                Util.Logger.Log($"経路 Probe スキップ (cooldown): peer={peer.PeerId}, last={last:O}");
+                Util.Logger.Log($"経路 Probe スキップ (cooldown): peer={Util.Logger.MaskDeviceId(peer.PeerId)}, last={last:O}");
                 return;
             }
         }
@@ -1132,7 +1132,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                 if (!_probeQueue.Contains(peer))
                 {
                     _probeQueue.Enqueue(peer);
-                    Util.Logger.Log($"経路 Probe 待ちキューに追加 (他で実行中): peer={peer.PeerId}, queue={_probeQueue.Count}");
+                    Util.Logger.Log($"経路 Probe 待ちキューに追加 (他で実行中): peer={Util.Logger.MaskDeviceId(peer.PeerId)}, queue={_probeQueue.Count}");
                 }
             }
             return;
@@ -1159,11 +1159,11 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
                 if (route != ConnectionRoute.Unknown || !isLiveConnectedPeer)
                     peer.Route = route;
             });
-            Util.Logger.Log($"経路 Probe 完了: peer={peer.PeerId}, route={route}");
+            Util.Logger.Log($"経路 Probe 完了: peer={Util.Logger.MaskDeviceId(peer.PeerId)}, route={route}");
         }
         catch (Exception ex)
         {
-            Util.Logger.Log($"経路 Probe エラー: peer={peer.PeerId}, {ex.Message}", Util.LogLevel.Warning);
+            Util.Logger.Log($"経路 Probe エラー: peer={Util.Logger.MaskDeviceId(peer.PeerId)}, {ex.Message}", Util.LogLevel.Warning);
         }
         finally
         {
@@ -1180,7 +1180,7 @@ public sealed partial class ConnectionViewModel : ViewModelBase, IDisposable
             }
             if (next != null)
             {
-                Util.Logger.Log($"経路 Probe 待ちキューから取り出し: peer={next.PeerId}");
+                Util.Logger.Log($"経路 Probe 待ちキューから取り出し: peer={Util.Logger.MaskDeviceId(next.PeerId)}");
                 _ = Task.Run(() => ProbePeerRouteAsync(next));
             }
         }

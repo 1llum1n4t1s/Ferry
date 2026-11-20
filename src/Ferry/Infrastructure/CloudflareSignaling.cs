@@ -235,7 +235,9 @@ public sealed class CloudflareSignaling : ISignalingService
                 var buf = new byte[16 * 1024];
                 while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
                 {
-                    var sb = new StringBuilder();
+                    // 断片ごとに UTF-8 デコードすると、断片境界をまたぐ多バイト文字（端末名など）が
+                    // U+FFFD に化けるため、メッセージ全体のバイト列を集約してから 1 回でデコードする。
+                    using var msgBytes = new MemoryStream();
                     WebSocketReceiveResult result;
                     do
                     {
@@ -245,11 +247,11 @@ public sealed class CloudflareSignaling : ISignalingService
                             await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None);
                             break;
                         }
-                        sb.Append(Encoding.UTF8.GetString(buf, 0, result.Count));
+                        msgBytes.Write(buf, 0, result.Count);
                     } while (!result.EndOfMessage);
 
                     if (result.MessageType == WebSocketMessageType.Close) break;
-                    HandleInboxMessage(sb.ToString());
+                    HandleInboxMessage(Encoding.UTF8.GetString(msgBytes.GetBuffer(), 0, (int)msgBytes.Length));
                 }
                 Volatile.Write(ref _inboxConnected, 0);
             }
@@ -488,7 +490,7 @@ public sealed class CloudflareSignaling : ISignalingService
 
     public async Task CleanupSignalingDataAsync(string pairId, CancellationToken ct = default)
     {
-        try { using var resp = await SendAsync(HttpMethod.Delete, Url($"/sig/{Esc(pairId)}"), null, ct); Util.Logger.Log($"シグナリングデータ削除(CF): {pairId}"); }
+        try { using var resp = await SendAsync(HttpMethod.Delete, Url($"/sig/{Esc(pairId)}"), null, ct); Util.Logger.Log($"シグナリングデータ削除(CF): {Util.Logger.MaskPairId(pairId)}"); }
         catch (Exception ex) { Util.Logger.Log($"シグナリングデータ削除エラー(CF): {ex.Message}", Util.LogLevel.Warning); }
     }
 

@@ -215,4 +215,15 @@
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">«{0}» зв'язано з «{1}».</x:String>
 
   <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Не вдалося підтвердити отримання. Перевірте інший пристрій перед повторним надсиланням.</x:String>
+
+  <x:String x:Key="Text.IdentityLost.Title" xml:space="preserve">Ferry - Ключ ідентифікації пристрою</x:String>
+  <x:String x:Key="Text.IdentityLost.Heading" xml:space="preserve">Ключ ідентифікації пристрою пошкоджено</x:String>
+  <x:String x:Key="Text.IdentityLost.Body" xml:space="preserve">Довготривалий ключ пристрою (identity.key) міг бути втрачений через перевстановлення ОС, помилку диска або невдале оновлення застосунку. Створити новий ключ і виконати сполучення заново?</x:String>
+  <x:String x:Key="Text.IdentityLost.Warning" xml:space="preserve">Якщо продовжити, усі поточні пари буде видалено (їх також доведеться зареєструвати заново на інших пристроях).</x:String>
+  <x:String x:Key="Text.IdentityLost.Later" xml:space="preserve">Пізніше</x:String>
+  <x:String x:Key="Text.IdentityLost.Reset" xml:space="preserve">Почати заново</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Title" xml:space="preserve">Ferry - Потрібен перезапуск</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Heading" xml:space="preserve">Створено новий ключ</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Body" xml:space="preserve">Застосунок зараз закриється. Під час наступного запуску виконайте сполучення заново з новим ключем.</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Exit" xml:space="preserve">Вийти</x:String>
 </ResourceDictionary>

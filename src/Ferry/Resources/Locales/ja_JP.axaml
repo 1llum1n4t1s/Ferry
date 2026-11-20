@@ -218,4 +218,15 @@
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">「{0}」と「{1}」をペアリングしました。</x:String>
 
   <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">受信結果を確認できません。再送前に相手の保存先を確認してください</x:String>
+
+  <x:String x:Key="Text.IdentityLost.Title" xml:space="preserve">Ferry - 端末識別の鍵</x:String>
+  <x:String x:Key="Text.IdentityLost.Heading" xml:space="preserve">端末識別の鍵が壊れています</x:String>
+  <x:String x:Key="Text.IdentityLost.Body" xml:space="preserve">OS 再インストール / ディスクエラー / アプリ更新失敗で端末の長期鍵 (identity.key) が紛失した可能性があります。新しい鍵を生成してペアリングをやり直しますか？</x:String>
+  <x:String x:Key="Text.IdentityLost.Warning" xml:space="preserve">やり直す場合、現在のペア一覧はすべて消去されます（相手側の登録も含めて再登録が必要）。</x:String>
+  <x:String x:Key="Text.IdentityLost.Later" xml:space="preserve">後で</x:String>
+  <x:String x:Key="Text.IdentityLost.Reset" xml:space="preserve">やり直す</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Title" xml:space="preserve">Ferry - 再起動が必要</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Heading" xml:space="preserve">新しい鍵を生成しました</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Body" xml:space="preserve">アプリを終了します。次回起動時に新しい鍵で再ペアリングしてください。</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Exit" xml:space="preserve">終了</x:String>
 </ResourceDictionary>

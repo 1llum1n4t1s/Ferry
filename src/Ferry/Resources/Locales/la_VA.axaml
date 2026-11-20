@@ -215,4 +215,15 @@ Hoc revocari non potest.</x:String>
   <x:String x:Key="Text.Connection.PairFromCode.Success" xml:space="preserve">"{0}" cum "{1}" coniunctum est.</x:String>
 
   <x:String x:Key="Text.Transfer.Error.ResultUnknown" xml:space="preserve">Receptio confirmari non potest. Alterum apparatum inspice antequam iterum mittas.</x:String>
+
+  <x:String x:Key="Text.IdentityLost.Title" xml:space="preserve">Ferry - Clavis identitatis apparatus</x:String>
+  <x:String x:Key="Text.IdentityLost.Heading" xml:space="preserve">Clavis identitatis apparatus laesa est</x:String>
+  <x:String x:Key="Text.IdentityLost.Body" xml:space="preserve">Clavis diuturna apparatus (identity.key) fortasse periit propter systema operativum iterum institutum, errorem disci, vel renovationem applicationis irritam. Novam clavem generare et iterum coniungere?</x:String>
+  <x:String x:Key="Text.IdentityLost.Warning" xml:space="preserve">Si pergis, omnia paria praesentia delebuntur (in aliis quoque apparatibus iterum inscribenda sunt).</x:String>
+  <x:String x:Key="Text.IdentityLost.Later" xml:space="preserve">Postea</x:String>
+  <x:String x:Key="Text.IdentityLost.Reset" xml:space="preserve">Iterum incipere</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Title" xml:space="preserve">Ferry - Reinitium necessarium</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Heading" xml:space="preserve">Nova clavis generata est</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Body" xml:space="preserve">Applicatio nunc claudetur. Proximo initio cum nova clave iterum coniunge.</x:String>
+  <x:String x:Key="Text.IdentityLost.Restart.Exit" xml:space="preserve">Exire</x:String>
 </ResourceDictionary>
