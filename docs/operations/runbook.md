@@ -24,7 +24,7 @@ rere レビュー #F-008 / #F-015 対応で新設。
 
 ## システム構成の把握
 
-障害の切り分けに必要な最小限の構成。詳細は `CLAUDE.md` を参照。
+障害の切り分けに必要な最小限の構成。詳細は [`DESIGN.md`](../../DESIGN.md) と [`references/architecture.md`](../../references/architecture.md) を参照。
 
 | コンポーネント | 実体 | 落ちると何が起きるか |
 |---|---|---|
@@ -390,7 +390,7 @@ nslookup stun.l.google.com
 
 - (1) 並列送信数を減らす（複数ファイルを一度にドロップしない）。
       ⚠️ フロー制御の窓は**転送 1 件あたり** 32MB なので、10 並列だと最大 320MB が DO に積まれうる
-      （既知の課題。CLAUDE.md のマージン論証は単一転送前提）
+      （既知の課題。[`references/architecture.md`](../../references/architecture.md) のマージン論証は単一転送前提）
 - (2) v1.0.70 以降へ更新（KeepAliveTimeout により half-open を検出）
 - (3) 受信側の空き容量を確認（承認時に `SetLength` で事前確保するため、承認時点でエラーになる）
 

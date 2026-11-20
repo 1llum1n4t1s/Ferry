@@ -1,5 +1,7 @@
 # Firebase Custom Token Auth + ペア削除 SSoT 設計（v2 改訂版）
 
+> この文書は履歴資料。現行の設計は [DESIGN.md](../../DESIGN.md) を参照。
+
 **対象バージョン**: v1.0.62
 **関連**: rere #D-001a（保留解除）/ Codex P2 #3318454466 / 本 PR で Phase B 完成
 **ステータス**: 着手前合意済（6観点×敵対的検証で 19件 designUpdates と 10件 open questions 反映済・全 GO）

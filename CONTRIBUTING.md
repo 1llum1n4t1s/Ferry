@@ -1,40 +1,20 @@
 # 開発者向けガイド
 
-利用者向けのインストール・使い方は [`README.md`](README.md)、全体像は [`docs/architecture.md`](docs/architecture.md)、
-実装の正本（接続の非対称手順・Native AOT 制約・既知の落とし穴）は [`CLAUDE.md`](CLAUDE.md) を参照。
+利用者向けのインストール・使い方は [`README.md`](README.md)、全体像は [`DESIGN.md`](DESIGN.md)、
+実装の詳細（接続の非対称手順・Native AOT 制約・既知の落とし穴）は [`references/architecture.md`](references/architecture.md)、
+作業規約と必須検証は [`AGENTS.md`](AGENTS.md) を参照。
 
 ## 前提条件
 
 - .NET 11 SDK
-- Node.js + pnpm（relay Worker を触る場合のみ。lockfile は pnpm 固定）
-- Cloudflare wrangler CLI（relay Worker / Bridge ページを手動デプロイする場合のみ）
+- Bun と pnpm 12.21.0（relay Worker を触る場合のみ。導入手順は [`AGENTS.md`](AGENTS.md#依存関係の保守) と [relay README](infra/cloudflare/relay/README.md)。lockfile は pnpm 固定）
+- Cloudflare wrangler CLI（relay Worker / Bridge ページを手動デプロイする場合のみ。relay の `node_modules` 同梱版を使う）
 - 対応 OS: Windows 10/11 (x64 / arm64), macOS (arm64), Linux (x64 / arm64)
 
-## ビルドと実行
+## ビルド・実行・テスト
 
-```bash
-# デバッグビルド（単体プロジェクト / ソリューション全体）
-dotnet build src/Ferry/Ferry.csproj
-dotnet build Ferry.slnx
-
-# ローカル起動して実機確認する
-dotnet run --project src/Ferry/Ferry.csproj
-
-# リリース発行 (Native AOT、ランタイム指定が必須)
-dotnet publish src/Ferry/Ferry.csproj -c Release -r win-x64
-```
-
-## テスト
-
-```bash
-# アプリのテスト（全件 / フィルタ）
-dotnet test tests/Ferry.Tests/Ferry.Tests.csproj
-dotnet test tests/Ferry.Tests/Ferry.Tests.csproj --filter "FullyQualifiedName~FileChunkerTests"
-
-# relay Worker の型チェック + テスト（全件 / ファイル指定）
-cd infra/cloudflare/relay && pnpm exec tsc --noEmit && pnpm test
-cd infra/cloudflare/relay && pnpm vitest run tests/signaling-ratelimit.test.ts
-```
+コマンドは二重管理でずれやすいため、正本を [`AGENTS.md`](AGENTS.md#ビルドテストコマンド) の「ビルド・テストコマンド」に一本化している。
+デバッグビルド・ローカル起動・Native AOT 発行・アプリのテスト・relay Worker の型チェックとテスト・実ウィンドウの回帰検証はそちらを参照する。
 
 テスト内の非同期メソッドには `TestContext.Current.CancellationToken` を渡す（xUnit1051 警告回避）。
 
@@ -43,9 +23,8 @@ cd infra/cloudflare/relay && pnpm vitest run tests/signaling-ratelimit.test.ts
 | workflow | トリガー | 内容 |
 |---|---|---|
 | `dotnet-build.yml`（".NET Build"） | main への PR / main への push / 手動 | .NET の build + test（テスト本体は `test.yml`、`release.yml` の配信前にも使う）。**relay は素通りする** |
-| `relay-check.yml`（"Relay Check"） | `infra/cloudflare/relay/**` の PR | relay の `tsc --noEmit` + `pnpm test` |
+| `relay-check.yml`（"Relay Check"） | `infra/cloudflare/relay/**` の PR | relay の `tsc --noEmit` + `bun run test` |
 | `deploy-relay.yml` | `infra/cloudflare/relay/**` を main に push | 検証 → `wrangler deploy` で自動配信 |
-| `deploy-landing.yml` | `web/**` を main に push | ランディングページを配信 |
 | `release.yml` | 軽量タグ `v<x.y.z>` の push | macOS / Linux の発行・署名・公証・R2 アップロード |
 | `relay-healthcheck.yml` | 15 分ごとの cron | relay の死活監視 |
 
@@ -58,9 +37,9 @@ cd infra/cloudflare/relay && pnpm vitest run tests/signaling-ratelimit.test.ts
   `scripts/release-local.ps1` を実行し、Sigilune で Authenticode 署名する（Secrets は Environment `release` から渡す。承認待ちはない）。
   ローカル実行は `-SkipUpload` の検証と `-UploadOnly` の再開用
 - **macOS / Linux は CI** — main の commit に付けた軽量タグ `vX.Y.Z` の push で `release.yml` が（`guard` ジョブでタグ・commit・版を検査したうえで）発行 → Velopack パッケージ化 → R2 へアップロード
-- relay Worker は上記のとおり main への push で自動デプロイされる（手動なら `cd infra/cloudflare/relay && pnpm dlx wrangler deploy`）
+- relay Worker は上記のとおり main への push で自動デプロイされる（手動デプロイの手順は [`AGENTS.md`](AGENTS.md#ビルドテストコマンド) を参照。製品ページの配信は `vps-web` 側の `deploy-lp.ps1`）
 
 ## 依存関係
 
-`/deps` スキルが .NET / pnpm / GitHub Actions を横断して更新する。GitHub Actions は SHA 固定で参照し、
+`/deps` スキルが .NET / relay（pnpm lockfile）/ GitHub Actions を横断して更新する。GitHub Actions は SHA 固定で参照し、
 横に `# vX.Y.Z` のバージョンコメントを添える運用。

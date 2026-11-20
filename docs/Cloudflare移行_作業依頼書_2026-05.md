@@ -1,5 +1,7 @@
 # Ferry Cloudflare 移行 作業依頼書
 
+> この文書は履歴資料。現行の設計は [DESIGN.md](../DESIGN.md) を参照。
+
 最終更新: 2026-05-26 / 起票元: RealTimeTranslator 月額サブスク化検討セッションで派生 / 担当: ゆろさん (本人) + Claude Code
 
 ---

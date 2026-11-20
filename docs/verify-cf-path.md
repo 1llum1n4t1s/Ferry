@@ -1,5 +1,7 @@
 # CF 経路 dual-path 2 台実機検証手順（Step 3.5/4.5 ゲート）
 
+> この文書は履歴資料。現行の設計は [DESIGN.md](../DESIGN.md) を参照。 `UseCloudflareSignaling` フラグは撤去済みで、この手順は現在は実行できない。
+
 Firebase 撤去（`docs/design/cf-only-migration.md`）の Step 5（既定切替）に進む前に必須のゲート。CF インフラ（D1 / Worker / secret / Bridge）はライブで整備済みなので、**残るは「2 台実機で CF 経路がフル疎通するか」と「cold start が Firebase と同等以下か」の実測**だけ。
 
 ## 前提
